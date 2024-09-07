@@ -14,20 +14,21 @@
     "build": "tsc",
     "clean": "git clean -xdf .cache .turbo dist node_modules",
     "dev": "tsc",
-    "format": "prettier --check . --ignore-path ../../.gitignore",
-    "lint": "eslint",
+    "format": "biome format .",
+    "format:fix": "biome format . --write ",
+    "lint": "biome lint .",
+    "lint:fix": "biome lint . --fix",
+    "format-and-lint": "biome check .",
+    "format-and-lint:fix": "biome check . --fix",
     "typecheck": "tsc --noEmit --emitDeclarationOnly false"
   },
   "dependencies": {
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@memoize/eslint-config": "workspace:*",
-    "@memoize/prettier-config": "workspace:*",
     "@memoize/tsconfig": "workspace:*",
     "eslint": "catalog:",
     "prettier": "catalog:",
     "typescript": "catalog:"
-  },
-  "prettier": "@memoize/prettier-config"
+  }
 }

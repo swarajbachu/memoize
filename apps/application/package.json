@@ -7,8 +7,12 @@
     "build": "pnpm with-env next build",
     "clean": "git clean -xdf .cache .next .turbo node_modules",
     "dev": "pnpm with-env next dev",
-    "format": "prettier --check . --ignore-path ../../.gitignore",
-    "lint": "eslint",
+    "format": "biome format .",
+    "format:fix": "biome format . --write ",
+    "lint": "biome lint .",
+    "lint:fix": "biome lint . --fix",
+    "format-and-lint": "biome check .",
+    "format-and-lint:fix": "biome check . --fix",
     "start": "pnpm with-env next start",
     "typecheck": "tsc --noEmit",
     "with-env": "dotenv -e ../../.env --"
@@ -32,8 +36,6 @@
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@memoize/eslint-config": "workspace:*",
-    "@memoize/prettier-config": "workspace:*",
     "@memoize/tailwind-config": "workspace:*",
     "@memoize/tsconfig": "workspace:*",
     "@types/node": "^20.14.15",
@@ -45,6 +47,5 @@
     "prettier": "catalog:",
     "tailwindcss": "catalog:",
     "typescript": "catalog:"
-  },
-  "prettier": "@memoize/prettier-config"
+  }
 }

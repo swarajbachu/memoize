@@ -5,16 +5,18 @@
   "scripts": {
     "build": "nitro build",
     "clean": "git clean -xdf .cache .nitro .output .turbo .vercel node_modules",
-    "lint": "eslint",
-    "format": "prettier --check . --ignore-path ../../.gitignore",
+    "format": "biome format .",
+    "format:fix": "biome format . --write ",
+    "lint": "biome lint .",
+    "lint:fix": "biome lint . --fix",
+    "format-and-lint": "biome check .",
+    "format-and-lint:fix": "biome check . --fix",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@auth/core": "0.34.2"
   },
   "devDependencies": {
-    "@memoize/eslint-config": "workspace:*",
-    "@memoize/prettier-config": "workspace:*",
     "@memoize/tailwind-config": "workspace:*",
     "@memoize/tsconfig": "workspace:*",
     "@types/node": "^20.14.15",
@@ -23,6 +25,5 @@
     "nitropack": "^2.9.7",
     "prettier": "catalog:",
     "typescript": "catalog:"
-  },
-  "prettier": "@memoize/prettier-config"
+  }
 }
