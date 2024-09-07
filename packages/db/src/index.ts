@@ -1,5 +1,5 @@
-export * from "drizzle-orm/sql";
-export { alias } from "drizzle-orm/sqlite-core";
+export * from 'drizzle-orm/sql'
+export { alias } from 'drizzle-orm/sqlite-core'
 
 import { drizzle } from 'drizzle-orm/d1'
 
@@ -13,7 +13,6 @@ export { users }
 export const schema = {
   ...users,
 }
-
 
 // const pool = new Pool({ connectionString: env.POSTGRES_URL });
 // export const db = drizzle(pool, { schema });

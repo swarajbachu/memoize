@@ -1,7 +1,7 @@
-import { HydrateClient } from "~/trpc/server";
-import { AuthShowcase } from "./_components/auth-showcase";
+import { HydrateClient } from '~/trpc/server'
+import { AuthShowcase } from './_components/auth-showcase'
 
-export const runtime = "edge";
+export const runtime = 'edge'
 
 export default function HomePage() {
   // You can await this here if you don't want to show Suspense fallback below
@@ -19,5 +19,5 @@ export default function HomePage() {
         </div>
       </main>
     </HydrateClient>
-  );
+  )
 }

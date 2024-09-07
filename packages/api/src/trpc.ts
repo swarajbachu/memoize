@@ -8,7 +8,7 @@
  */
 import type { Session } from '@memoize/auth'
 import { auth, validateToken } from '@memoize/auth'
-import { db } from '@memoize/db/client'
+import { db } from '@memoize/db'
 import { TRPCError, initTRPC } from '@trpc/server'
 import superjson from 'superjson'
 import { ZodError } from 'zod'
