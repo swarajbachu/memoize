@@ -1,0 +1,13 @@
+name = "memoize-app"
+compatibility_date = "2024-08-22"
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = ".vercel/output/static"
+
+[placement]
+mode = "smart"
+
+[[d1_databases]]
+binding = "DATABASE"
+database_name = "memoize-db"
+database_id = "89db89cf-3073-4f6f-a2db-09e1003c9f9c"
+preview_database_id = "DATABASE"                     # Required for Pages local development

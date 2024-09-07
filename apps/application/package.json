@@ -13,6 +13,9 @@
     "lint:fix": "biome lint . --fix",
     "format-and-lint": "biome check .",
     "format-and-lint:fix": "biome check . --fix",
+    "pages:build": "pnpx @cloudflare/next-on-pages",
+    "preview": "pnpm run pages:build && wrangler pages dev",
+    "deploy": "pnpm run pages:build && wrangler pages deploy",
     "start": "pnpm with-env next start",
     "typecheck": "tsc --noEmit",
     "with-env": "dotenv -e ../../.env --"
@@ -36,6 +39,7 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@cloudflare/next-on-pages": "^1.13.2",
     "@memoize/tailwind-config": "workspace:*",
     "@memoize/tsconfig": "workspace:*",
     "@types/node": "^20.14.15",
