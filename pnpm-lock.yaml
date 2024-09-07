@@ -500,12 +500,6 @@ importers:
       '@memoize/tsconfig':
         specifier: workspace:*
         version: link:../typescript
-      eslint:
-        specifier: 'catalog:'
-        version: 9.9.0(jiti@1.21.6)
-      prettier:
-        specifier: 'catalog:'
-        version: 3.3.3
       typescript:
         specifier: 'catalog:'
         version: 5.5.4
