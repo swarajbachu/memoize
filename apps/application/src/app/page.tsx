@@ -1,14 +1,10 @@
-import { Suspense } from 'react'
+import { HydrateClient } from "~/trpc/server";
+import { AuthShowcase } from "./_components/auth-showcase";
 
-import { HydrateClient, api } from '~/trpc/server'
-import { AuthShowcase } from './_components/auth-showcase'
-import { CreatePostForm, PostCardSkeleton, PostList } from './_components/posts'
-
-export const runtime = 'edge'
+export const runtime = "edge";
 
 export default function HomePage() {
   // You can await this here if you don't want to show Suspense fallback below
-  void api.post.all.prefetch()
 
   return (
     <HydrateClient>
@@ -19,22 +15,9 @@ export default function HomePage() {
           </h1>
           <AuthShowcase />
 
-          <CreatePostForm />
-          <div className="w-full max-w-2xl overflow-y-scroll">
-            <Suspense
-              fallback={
-                <div className="flex w-full flex-col gap-4">
-                  <PostCardSkeleton />
-                  <PostCardSkeleton />
-                  <PostCardSkeleton />
-                </div>
-              }
-            >
-              <PostList />
-            </Suspense>
-          </div>
+          <div className="w-full max-w-2xl overflow-y-scroll">cool</div>
         </div>
       </main>
     </HydrateClient>
-  )
+  );
 }

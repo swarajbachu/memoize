@@ -8,14 +8,7 @@
       "types": "./dist/index.d.ts",
       "default": "./src/index.ts"
     },
-    "./client": {
-      "types": "./dist/client.d.ts",
-      "default": "./src/client.ts"
-    },
-    "./schema": {
-      "types": "./dist/schema.d.ts",
-      "default": "./src/schema.ts"
-    }
+    "./schema/*": "./src/schema/*"
   },
   "license": "MIT",
   "scripts": {
@@ -34,13 +27,14 @@
     "with-env": "dotenv -e ../../.env --"
   },
   "dependencies": {
-    "@vercel/postgres": "^0.9.0",
     "drizzle-orm": "^0.33.0",
     "drizzle-zod": "^0.5.1",
+    "nano": "^10.1.4",
     "zod": "catalog:"
   },
   "devDependencies": {
     "@memoize/tsconfig": "workspace:*",
+    "@memoize/validators": "workspace:*",
     "dotenv-cli": "^7.4.2",
     "drizzle-kit": "^0.24.2",
     "eslint": "catalog:",

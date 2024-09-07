@@ -23,6 +23,7 @@
     "typecheck": "tsc --noEmit --emitDeclarationOnly false"
   },
   "dependencies": {
+    "@cloudflare/workers-types": "^4.20240903.0",
     "zod": "catalog:"
   },
   "devDependencies": {
