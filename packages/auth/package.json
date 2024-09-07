@@ -1,5 +1,5 @@
 {
-  "name": "@acme/auth",
+  "name": "@memoize/auth",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -18,9 +18,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@acme/db": "workspace:*",
     "@auth/core": "0.34.2",
     "@auth/drizzle-adapter": "^1.4.2",
+    "@memoize/db": "workspace:*",
     "@t3-oss/env-nextjs": "^0.11.0",
     "next": "^14.2.5",
     "next-auth": "5.0.0-beta.20",
@@ -29,12 +29,12 @@
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@acme/eslint-config": "workspace:*",
-    "@acme/prettier-config": "workspace:*",
-    "@acme/tsconfig": "workspace:*",
+    "@memoize/eslint-config": "workspace:*",
+    "@memoize/prettier-config": "workspace:*",
+    "@memoize/tsconfig": "workspace:*",
     "eslint": "catalog:",
     "prettier": "catalog:",
     "typescript": "catalog:"
   },
-  "prettier": "@acme/prettier-config"
+  "prettier": "@memoize/prettier-config"
 }

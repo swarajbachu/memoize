@@ -1,10 +1,9 @@
+import type { AppRouter } from "@memoize/api";
 import { cache } from "react";
 import { headers } from "next/headers";
+import { createCaller, createTRPCContext } from "@memoize/api";
+import { auth } from "@memoize/auth";
 import { createHydrationHelpers } from "@trpc/react-query/rsc";
-
-import type { AppRouter } from "@acme/api";
-import { createCaller, createTRPCContext } from "@acme/api";
-import { auth } from "@acme/auth";
 
 import { createQueryClient } from "./query-client";
 

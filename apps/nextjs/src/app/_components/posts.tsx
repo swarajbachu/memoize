@@ -1,9 +1,9 @@
 "use client";
 
-import type { RouterOutputs } from "@acme/api";
-import { CreatePostSchema } from "@acme/db/schema";
-import { cn } from "@acme/ui";
-import { Button } from "@acme/ui/button";
+import type { RouterOutputs } from "@memoize/api";
+import { CreatePostSchema } from "@memoize/db/schema";
+import { cn } from "@memoize/ui";
+import { Button } from "@memoize/ui/button";
 import {
   Form,
   FormControl,
@@ -11,9 +11,9 @@ import {
   FormItem,
   FormMessage,
   useForm,
-} from "@acme/ui/form";
-import { Input } from "@acme/ui/input";
-import { toast } from "@acme/ui/toast";
+} from "@memoize/ui/form";
+import { Input } from "@memoize/ui/input";
+import { toast } from "@memoize/ui/toast";
 
 import { api } from "~/trpc/react";
 

@@ -6,13 +6,12 @@
  * tl;dr - this is where all the tRPC server stuff is created and plugged in.
  * The pieces you will need to use are documented accordingly near the end
  */
+import type { Session } from "@memoize/auth";
+import { auth, validateToken } from "@memoize/auth";
+import { db } from "@memoize/db/client";
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import { ZodError } from "zod";
-
-import type { Session } from "@acme/auth";
-import { auth, validateToken } from "@acme/auth";
-import { db } from "@acme/db/client";
 
 /**
  * Isomorphic Session getter for API requests

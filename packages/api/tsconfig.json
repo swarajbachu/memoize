@@ -1,5 +1,5 @@
 {
-  "extends": "@acme/tsconfig/internal-package.json",
+  "extends": "@memoize/tsconfig/internal-package.json",
   "include": ["src"],
   "exclude": ["node_modules"]
 }

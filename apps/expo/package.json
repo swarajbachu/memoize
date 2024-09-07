@@ -1,5 +1,5 @@
 {
-  "name": "@acme/expo",
+  "name": "@memoize/expo",
   "version": "0.1.0",
   "private": true,
   "main": "index.ts",
@@ -43,14 +43,14 @@
     "superjson": "2.2.1"
   },
   "devDependencies": {
-    "@acme/api": "workspace:*",
-    "@acme/eslint-config": "workspace:*",
-    "@acme/prettier-config": "workspace:*",
-    "@acme/tailwind-config": "workspace:*",
-    "@acme/tsconfig": "workspace:*",
     "@babel/core": "^7.25.2",
     "@babel/preset-env": "^7.25.3",
     "@babel/runtime": "^7.25.0",
+    "@memoize/api": "workspace:*",
+    "@memoize/eslint-config": "workspace:*",
+    "@memoize/prettier-config": "workspace:*",
+    "@memoize/tailwind-config": "workspace:*",
+    "@memoize/tsconfig": "workspace:*",
     "@types/babel__core": "^7.20.5",
     "@types/react": "catalog:react18",
     "eslint": "catalog:",
@@ -58,5 +58,5 @@
     "tailwindcss": "catalog:",
     "typescript": "catalog:"
   },
-  "prettier": "@acme/prettier-config"
+  "prettier": "@memoize/prettier-config"
 }

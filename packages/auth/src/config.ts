@@ -7,8 +7,8 @@ import { skipCSRFCheck } from "@auth/core";
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import Discord from "next-auth/providers/discord";
 
-import { db } from "@acme/db/client";
-import { Account, Session, User } from "@acme/db/schema";
+import { db } from "@memoize/db/client";
+import { Account, Session, User } from "@memoize/db/schema";
 
 import { env } from "../env";
 
