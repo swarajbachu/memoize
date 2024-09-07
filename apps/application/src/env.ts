@@ -1,14 +1,14 @@
-import { env as authEnv } from "@memoize/auth/env";
-import { createEnv } from "@t3-oss/env-nextjs";
-import { vercel } from "@t3-oss/env-nextjs/presets";
-import { z } from "zod";
+import { env as authEnv } from '@memoize/auth/env'
+import { createEnv } from '@t3-oss/env-nextjs'
+import { vercel } from '@t3-oss/env-nextjs/presets'
+import { z } from 'zod'
 
 export const env = createEnv({
   extends: [authEnv, vercel()],
   shared: {
     NODE_ENV: z
-      .enum(["development", "production", "test"])
-      .default("development"),
+      .enum(['development', 'production', 'test'])
+      .default('development'),
   },
   /**
    * Specify your server-side environment variables schema here.
@@ -34,5 +34,5 @@ export const env = createEnv({
     // NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
   },
   skipValidation:
-    !!process.env.CI || process.env.npm_lifecycle_event === "lint",
-});
+    !!process.env.CI || process.env.npm_lifecycle_event === 'lint',
+})

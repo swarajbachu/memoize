@@ -16,7 +16,7 @@ export default function RootLayout() {
     <TRPCProvider>
       {/*
           The Stack component displays the current page.
-          It also allows you to configure your screens 
+          It also allows you to configure your screens
         */}
       <Stack
         screenOptions={{
@@ -24,7 +24,7 @@ export default function RootLayout() {
             backgroundColor: "#f472b6",
           },
           contentStyle: {
-            backgroundColor: colorScheme == "dark" ? "#09090B" : "#FFFFFF",
+            backgroundColor: colorScheme === "dark" ? "#09090B" : "#FFFFFF",
           },
         }}
       />

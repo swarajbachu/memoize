@@ -1,16 +1,16 @@
-import { useState } from "react";
-import { Button, Pressable, Text, TextInput, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { Link, Stack } from "expo-router";
-import { FlashList } from "@shopify/flash-list";
+import { FlashList } from '@shopify/flash-list'
+import { Link, Stack } from 'expo-router'
+import { useState } from 'react'
+import { Button, Pressable, Text, TextInput, View } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
 
-import type { RouterOutputs } from "~/utils/api";
-import { api } from "~/utils/api";
-import { useSignIn, useSignOut, useUser } from "~/utils/auth";
+import type { RouterOutputs } from '~/utils/api'
+import { api } from '~/utils/api'
+import { useSignIn, useSignOut, useUser } from '~/utils/auth'
 
 function PostCard(props: {
-  post: RouterOutputs["post"]["all"][number];
-  onDelete: () => void;
+  post: RouterOutputs['post']['all'][number]
+  onDelete: () => void
 }) {
   return (
     <View className="flex flex-row rounded-lg bg-muted p-4">
@@ -18,7 +18,7 @@ function PostCard(props: {
         <Link
           asChild
           href={{
-            pathname: "/post/[id]",
+            pathname: '/post/[id]',
             params: { id: props.post.id },
           }}
         >
@@ -34,22 +34,22 @@ function PostCard(props: {
         <Text className="font-bold uppercase text-primary">Delete</Text>
       </Pressable>
     </View>
-  );
+  )
 }
 
 function CreatePost() {
-  const utils = api.useUtils();
+  const utils = api.useUtils()
 
-  const [title, setTitle] = useState("");
-  const [content, setContent] = useState("");
+  const [title, setTitle] = useState('')
+  const [content, setContent] = useState('')
 
   const { mutate, error } = api.post.create.useMutation({
     async onSuccess() {
-      setTitle("");
-      setContent("");
-      await utils.post.all.invalidate();
+      setTitle('')
+      setContent('')
+      await utils.post.all.invalidate()
     },
-  });
+  })
 
   return (
     <View className="mt-4 flex gap-2">
@@ -81,52 +81,52 @@ function CreatePost() {
           mutate({
             title,
             content,
-          });
+          })
         }}
       >
         <Text className="text-foreground">Create</Text>
       </Pressable>
-      {error?.data?.code === "UNAUTHORIZED" && (
+      {error?.data?.code === 'UNAUTHORIZED' && (
         <Text className="mt-2 text-destructive">
           You need to be logged in to create a post
         </Text>
       )}
     </View>
-  );
+  )
 }
 
 function MobileAuth() {
-  const user = useUser();
-  const signIn = useSignIn();
-  const signOut = useSignOut();
+  const user = useUser()
+  const signIn = useSignIn()
+  const signOut = useSignOut()
 
   return (
     <>
       <Text className="pb-2 text-center text-xl font-semibold text-white">
-        {user?.name ?? "Not logged in"}
+        {user?.name ?? 'Not logged in'}
       </Text>
       <Button
         onPress={() => (user ? signOut() : signIn())}
-        title={user ? "Sign Out" : "Sign In With Discord"}
-        color={"#5B65E9"}
+        title={user ? 'Sign Out' : 'Sign In With Discord'}
+        color={'#5B65E9'}
       />
     </>
-  );
+  )
 }
 
 export default function Index() {
-  const utils = api.useUtils();
+  const utils = api.useUtils()
 
-  const postQuery = api.post.all.useQuery();
+  const postQuery = api.post.all.useQuery()
 
   const deletePostMutation = api.post.delete.useMutation({
     onSettled: () => utils.post.all.invalidate(),
-  });
+  })
 
   return (
     <SafeAreaView className="bg-background">
       {/* Changes page title visible on the header */}
-      <Stack.Screen options={{ title: "Home Page" }} />
+      <Stack.Screen options={{ title: 'Home Page' }} />
       <View className="h-full w-full bg-background p-4">
         <Text className="pb-2 text-center text-5xl font-bold text-foreground">
           Create <Text className="text-primary">T3</Text> Turbo
@@ -155,5 +155,5 @@ export default function Index() {
         <CreatePost />
       </View>
     </SafeAreaView>
-  );
+  )
 }

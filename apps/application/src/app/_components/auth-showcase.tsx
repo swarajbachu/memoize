@@ -1,8 +1,8 @@
-import { auth, signIn, signOut } from "@memoize/auth";
-import { Button } from "@memoize/ui/button";
+import { auth, signIn, signOut } from '@memoize/auth'
+import { Button } from '@memoize/ui/button'
 
 export async function AuthShowcase() {
-  const session = await auth();
+  const session = await auth()
 
   if (!session) {
     return (
@@ -10,14 +10,14 @@ export async function AuthShowcase() {
         <Button
           size="lg"
           formAction={async () => {
-            "use server";
-            await signIn("discord");
+            'use server'
+            await signIn('discord')
           }}
         >
           Sign in with Discord
         </Button>
       </form>
-    );
+    )
   }
 
   return (
@@ -30,13 +30,13 @@ export async function AuthShowcase() {
         <Button
           size="lg"
           formAction={async () => {
-            "use server";
-            await signOut();
+            'use server'
+            await signOut()
           }}
         >
           Sign out
         </Button>
       </form>
     </div>
-  );
+  )
 }
