@@ -4,7 +4,6 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { useSignIn, useSignOut, useUser } from '~/utils/auth'
 
-
 function MobileAuth() {
   const user = useUser()
   const signIn = useSignIn()
