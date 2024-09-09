@@ -27,6 +27,7 @@
     "@memoize/db": "workspace:*",
     "@memoize/validators": "workspace:*",
     "@trpc/server": "catalog:",
+    "hono": "^4.5.11",
     "superjson": "2.2.1",
     "zod": "catalog:"
   },
