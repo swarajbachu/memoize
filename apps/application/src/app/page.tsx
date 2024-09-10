@@ -1,10 +1,13 @@
 import { HydrateClient } from '~/trpc/server'
 import { AuthShowcase } from './_components/auth-showcase'
+import { client } from '~/trpc/hono'
 
 export const runtime = 'edge'
 
-export default function HomePage() {
+export default async function HomePage() {
   // You can await this here if you don't want to show Suspense fallback below
+  const res = await client.test.testRoute.$get()
+  const test = await res.json()
 
   return (
     <HydrateClient>
@@ -14,7 +17,7 @@ export default function HomePage() {
             Create <span className="text-primary">T3</span> Turbo
           </h1>
           <AuthShowcase />
-
+          {test.message}
           <div className="w-full max-w-2xl overflow-y-scroll">cool</div>
         </div>
       </main>

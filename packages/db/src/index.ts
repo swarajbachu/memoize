@@ -19,5 +19,5 @@ export const schema = {
 
 export const db = drizzle(
   process.env.DATABASE as any as cloudflareWorkerTypes.D1Database,
-  { schema },
+  { schema, logger: true },
 )
