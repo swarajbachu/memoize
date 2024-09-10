@@ -18,4 +18,3 @@ export const authRouter = {
     return { success: true }
   }),
 } satisfies TRPCRouterRecord
-

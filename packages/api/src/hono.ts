@@ -1,10 +1,10 @@
-import { Hono } from "hono";
-import { cors } from "hono/cors";
-import { handle } from "hono/vercel";
-import { honoAuthRouter } from "./router/hono-auth";
-import { honoTestRouter } from "./router/test";
+import { Hono } from 'hono'
+import { cors } from 'hono/cors'
+import { handle } from 'hono/vercel'
+import { honoAuthRouter } from './router/hono-auth'
+import { honoTestRouter } from './router/test'
 
-const app = new Hono().basePath("/api/hono/").use(cors());
+const app = new Hono().basePath('/api/hono/').use(cors())
 
 /**
  * This is the primary router for your server.
@@ -13,11 +13,11 @@ const app = new Hono().basePath("/api/hono/").use(cors());
  */
 
 const appRouter = app
-  .route("/auth", honoAuthRouter)
-  .route("/test", honoTestRouter);
+  .route('/auth', honoAuthRouter)
+  .route('/test', honoTestRouter)
 
 // The handler Next.js uses to answer API requests
-export const httpHandler = handle(app);
+export const httpHandler = handle(app)
 
 /**
  * (Optional)
@@ -25,7 +25,7 @@ export const httpHandler = handle(app);
  *
  * Run `npm run deploy` for one-click API deployment to Cloudflare's edge network
  */
-export default app;
+export default app
 
 // export type definition of API
-export type AppType = typeof appRouter;
+export type AppType = typeof appRouter
