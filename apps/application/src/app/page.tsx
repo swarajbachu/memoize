@@ -1,6 +1,6 @@
+import { client } from '~/trpc/hono'
 import { HydrateClient } from '~/trpc/server'
 import { AuthShowcase } from './_components/auth-showcase'
-import { client } from '~/trpc/hono'
 
 export const runtime = 'edge'
 
