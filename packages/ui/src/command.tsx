@@ -6,7 +6,7 @@ import { Command as CommandPrimitive } from 'cmdk'
 import * as React from 'react'
 
 import { cn } from '@memoize/ui'
-import { Dialog, DialogContent } from 'src//dialog'
+import { Dialog, DialogContent } from './dialog'
 
 const Command = React.forwardRef<
   React.ElementRef<typeof CommandPrimitive>,

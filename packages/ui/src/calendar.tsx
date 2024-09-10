@@ -5,7 +5,7 @@ import type * as React from 'react'
 import { DayPicker } from 'react-day-picker'
 
 import { cn } from '@memoize/ui'
-import { buttonVariants } from 'src//button'
+import { buttonVariants } from './button'
 
 export type CalendarProps = React.ComponentProps<typeof DayPicker>
 

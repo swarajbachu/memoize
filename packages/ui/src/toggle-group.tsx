@@ -5,7 +5,7 @@ import type { VariantProps } from 'class-variance-authority'
 import * as React from 'react'
 
 import { cn } from '@memoize/ui'
-import { toggleVariants } from 'src//toggle'
+import { toggleVariants } from './toggle'
 
 const ToggleGroupContext = React.createContext<
   VariantProps<typeof toggleVariants>
