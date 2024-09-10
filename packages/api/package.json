@@ -7,6 +7,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./src/index.ts"
+    },
+    "./hono": {
+      "types": "./dist/hono.d.ts",
+      "default": "./src/hono.ts"
     }
   },
   "license": "MIT",

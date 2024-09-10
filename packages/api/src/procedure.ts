@@ -1,6 +1,6 @@
-import { auth, validateToken } from '@memoize/auth'
-import { db } from '@memoize/db'
-import { j } from './__internals/j'
+import { auth, validateToken } from "@memoize/auth";
+import { db } from "@memoize/db";
+import { j } from "./__internals/j";
 
 /**
  * Middleware for providing a built-in cache with your Prisma database
@@ -9,20 +9,20 @@ import { j } from './__internals/j'
  */
 
 const timingMiddleware = j.middleware(async ({ next, c }) => {
-  const start = Date.now()
+  const start = Date.now();
 
-  if (c.env.ENVIRONMENT === 'development') {
+  if (c.env.ENVIRONMENT === "development") {
     // artificial delay in dev 100-500ms
-    const waitMs = Math.floor(Math.random() * 400) + 100
-    await new Promise((resolve) => setTimeout(resolve, waitMs))
+    const waitMs = Math.floor(Math.random() * 400) + 100;
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
   }
 
-  const result = await next({ db })
+  const result = await next({ db });
 
-  const end = Date.now()
-  console.log(`[HONO] took ${end - start}ms to execute`)
-  return result
-})
+  const end = Date.now();
+  console.log(`[HONO] took ${end - start}ms to execute`);
+  return result;
+});
 
 /**
  * Public (unauthenticated) procedures
@@ -30,9 +30,9 @@ const timingMiddleware = j.middleware(async ({ next, c }) => {
  * This is the base piece you use to build new queries and mutations on your API.
  */
 
-export const baseProcedure = j.procedure
+export const baseProcedure = j.procedure;
 
-export const publicProcedure = baseProcedure.use(timingMiddleware)
+export const publicProcedure = baseProcedure.use(timingMiddleware);
 
 /**
  * Isomorphic Session getter for API requests
@@ -40,9 +40,9 @@ export const publicProcedure = baseProcedure.use(timingMiddleware)
  * - Next.js requests will have a session token in cookies
  */
 const isomorphicGetSession = async (authToken: string | undefined) => {
-  if (authToken) return validateToken(authToken)
-  return auth()
-}
+  if (authToken) return validateToken(authToken);
+  return auth();
+};
 
 /**
  * Authenticated procedures
@@ -51,14 +51,17 @@ const isomorphicGetSession = async (authToken: string | undefined) => {
  */
 
 const authMiddleware = j.middleware(async ({ c, next }) => {
-  const authToken = c.req.header('Authorization')
-  const session = await isomorphicGetSession(authToken)
-  if (!session) {
-    throw new Error('Unauthorized')
+  const authToken = c.req.header("Authorization");
+  if (!authToken) {
+    throw new Error("Unauthorized");
   }
-  return next({ session, db })
-})
+  const session = await isomorphicGetSession(authToken);
+  if (!session) {
+    throw new Error("Unauthorized");
+  }
+  return next({ session, db, token: authToken });
+});
 
 export const protectedProcedure = baseProcedure
   .use(authMiddleware)
-  .use(timingMiddleware)
+  .use(timingMiddleware);
