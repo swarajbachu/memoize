@@ -33,7 +33,7 @@ export default function LoginForm() {
   const [formStatus, setFormStatus] = useState<{
     type: 'error' | 'success' | null
     message: string | null
-  }>({ type: null, message: null })
+  }>({ type: 'error', message: 'testing styff' })
 
   const form = useForm<LoginType>({
     resolver: zodResolver(loginSchema),
@@ -169,8 +169,7 @@ export default function LoginForm() {
             variant={formStatus.type === 'error' ? 'destructive' : 'default'}
             className={cn(
               'mt-4',
-              formStatus.type === 'success' &&
-                'border-green-500 text-green-700',
+              formStatus.type === 'success' && 'bg-green-700/20 text-green-700',
             )}
           >
             <AlertTitle>
