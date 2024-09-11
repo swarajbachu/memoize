@@ -22,29 +22,30 @@ import {
 } from '@memoize/ui/form'
 import { Input } from '@memoize/ui/input'
 import { Separator } from '@memoize/ui/separator'
-import { type LoginType, loginSchema } from '@memoize/validators/auth'
+import { type RegisterType, registerSchema } from '@memoize/validators/auth'
 import { Github, Loader } from 'lucide-react'
-import Link from 'next/link'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { PasswordInput } from './password-input'
+import Link from 'next/link'
 
-export default function LoginForm() {
+export default function RegisterForm() {
   const [isLoading, setIsLoading] = useState(false)
   const [formStatus, setFormStatus] = useState<{
     type: 'error' | 'success' | null
     message: string | null
   }>({ type: null, message: null })
 
-  const form = useForm<LoginType>({
-    resolver: zodResolver(loginSchema),
+  const form = useForm<RegisterType>({
+    resolver: zodResolver(registerSchema),
     defaultValues: {
       email: '',
       password: '',
+      name: '',
     },
   })
 
-  async function onSubmit(data: LoginType) {
+  async function onSubmit(data: RegisterType) {
     setIsLoading(true)
     setFormStatus({ type: null, message: null })
 
@@ -120,6 +121,24 @@ export default function LoginForm() {
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <FormField
               control={form.control}
+              name="name"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Name</FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      type="name"
+                      placeholder="whizzy"
+                      disabled={isLoading}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
               name="email"
               render={({ field }) => (
                 <FormItem>
@@ -157,10 +176,10 @@ export default function LoginForm() {
               {isLoading ? (
                 <>
                   <Loader className="mr-2 h-4 w-4 animate-spin" />
-                  Logging in...
+                  Registering...
                 </>
               ) : (
-                'Login'
+                'Register'
               )}
             </Button>
           </form>
@@ -182,9 +201,9 @@ export default function LoginForm() {
       </CardContent>
       <CardFooter>
         <p className="text-sm text-center w-full text-muted-foreground">
-          Don't have an account?{' '}
-          <Link href="/sign-up" className="text-primary hover:underline">
-            Sign up
+          Already have an account?{' '}
+          <Link href="/sign-in" className="text-primary hover:underline">
+            Sign In
           </Link>
         </p>
       </CardFooter>
