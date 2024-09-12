@@ -12,4 +12,5 @@ export {
   invalidateSessionToken,
   validateToken,
   isSecureContext,
+  saltAndHashPassword,
 } from './config'

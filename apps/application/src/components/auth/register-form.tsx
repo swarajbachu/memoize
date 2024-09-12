@@ -1,6 +1,7 @@
 'use client'
 
 import { zodResolver } from '@hookform/resolvers/zod'
+import { signIn } from '@memoize/auth'
 import { cn } from '@memoize/ui'
 import { Alert, AlertDescription, AlertTitle } from '@memoize/ui/alert'
 import { Button } from '@memoize/ui/button'
@@ -23,11 +24,14 @@ import {
 import { Input } from '@memoize/ui/input'
 import { Separator } from '@memoize/ui/separator'
 import { type RegisterType, registerSchema } from '@memoize/validators/auth'
+import { useMutation } from '@tanstack/react-query'
 import { Github, Loader } from 'lucide-react'
+import Link from 'next/link'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
+import { client } from '~/trpc/hono'
+import { signInActionWithCredentials, signInActionWithGoogle } from './actions'
 import { PasswordInput } from './password-input'
-import Link from 'next/link'
 
 export default function RegisterForm() {
   const [isLoading, setIsLoading] = useState(false)
@@ -45,20 +49,42 @@ export default function RegisterForm() {
     },
   })
 
+  const createUser = useMutation({
+    mutationFn: async ({
+      name,
+      password,
+      email,
+    }: {
+      name: string
+      password: string
+      email: string
+    }) => {
+      await client.auth.registerUser.$post({ name, password, email })
+    },
+    onSuccess: async () => {
+      form.reset()
+    },
+  })
+
   async function onSubmit(data: RegisterType) {
     setIsLoading(true)
     setFormStatus({ type: null, message: null })
 
     try {
       // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 2000))
-
+      // await new Promise((resolve) => setTimeout(resolve, 2000))
+      await createUser.mutateAsync({
+        email: data.email,
+        password: data.password,
+        name: data.name,
+      })
       // Simulated success
       setFormStatus({
         type: 'success',
         message: 'Login successful! Redirecting...',
       })
     } catch (error) {
+      console.log(error)
       setFormStatus({
         type: 'error',
         message: 'Invalid credentials. Please try again.',
@@ -80,7 +106,13 @@ export default function RegisterForm() {
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-2 gap-1">
-          <Button variant="outline" disabled={isLoading} onClick={() => {}}>
+          <Button
+            variant="outline"
+            disabled={isLoading}
+            onClick={() => {
+              signInActionWithGoogle().catch(console.error)
+            }}
+          >
             {/* biome-ignore lint/a11y/noSvgWithoutTitle: <explanation> */}
             <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
               <path
@@ -103,7 +135,10 @@ export default function RegisterForm() {
             </svg>
             Google
           </Button>
-          <Button variant="outline" disabled={isLoading} onClick={() => {}}>
+          <Button
+            variant="outline"
+            onClick={() => signIn('google').catch(console.error)}
+          >
             <Github className="mr-2 h-4 w-4" /> Github
           </Button>
         </div>

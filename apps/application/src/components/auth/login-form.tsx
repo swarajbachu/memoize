@@ -28,6 +28,7 @@ import Link from 'next/link'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { PasswordInput } from './password-input'
+import { signIn } from '@memoize/auth'
 
 export default function LoginForm() {
   const [isLoading, setIsLoading] = useState(false)
@@ -52,6 +53,7 @@ export default function LoginForm() {
       // Simulate API call
       await new Promise((resolve) => setTimeout(resolve, 2000))
 
+      await signIn('credentials', data)
       // Simulated success
       setFormStatus({
         type: 'success',

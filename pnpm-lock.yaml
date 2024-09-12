@@ -359,6 +359,9 @@ importers:
       '@t3-oss/env-nextjs':
         specifier: ^0.11.0
         version: 0.11.0(typescript@5.5.4)(zod@3.23.8)
+      bcrypt-edge:
+        specifier: ^0.0.6
+        version: 0.0.6
       next:
         specifier: ^14.2.5
         version: 14.2.5(@opentelemetry/api@1.9.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -4254,6 +4257,9 @@ packages:
   basic-ftp@5.0.5:
     resolution: {integrity: sha512-4Bcg1P8xhUuqcii/S0Z9wiHIrQVPMermM1any+MX5GeGD7faD3/msQUDGLol9wOcz4/jbg/WJnGqoJF6LiBdtg==}
     engines: {node: '>=10.0.0'}
+
+  bcrypt-edge@0.0.6:
+    resolution: {integrity: sha512-lL5Y2V6RCwGvfY/6lIUGM8N1XfRwU0ncIr3dZO6d64KfaDQERcv/9TMWtUkiANxawg1BPvLlfjvanFOXmUIZwA==}
 
   better-opn@3.0.2:
     resolution: {integrity: sha512-aVNobHnJqLiUelTaHat9DZ1qM2w0C0Eym4LPI/3JxOnSokGVdsl1T1kN7TFvsEAD8G47A6VKQ0TVHqbBnYMJlQ==}
@@ -13611,6 +13617,8 @@ snapshots:
   base64-js@1.5.1: {}
 
   basic-ftp@5.0.5: {}
+
+  bcrypt-edge@0.0.6: {}
 
   better-opn@3.0.2:
     dependencies:
