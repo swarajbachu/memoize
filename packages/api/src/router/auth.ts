@@ -1,8 +1,6 @@
 import { invalidateSessionToken, saltAndHashPassword } from '@memoize/auth'
 import type { TRPCRouterRecord } from '@trpc/server'
 
-import { users } from '@memoize/db'
-import { z } from 'zod'
 import { protectedProcedure, publicProcedure } from '../trpc'
 
 export const authRouter = {

@@ -5,7 +5,7 @@ import path from 'node:path'
 
 function getLocalD1DB() {
   try {
-    const basePath = path.resolve('../../apps/application/.wrangler')
+    const basePath = path.resolve('../../.wrangler')
     const dbFile = fs
       .readdirSync(basePath, { encoding: 'utf-8', recursive: true })
       .find((f) => f.endsWith('.sqlite'))
@@ -20,6 +20,8 @@ function getLocalD1DB() {
     console.log(`Error  ${err}`)
   }
 }
+
+console.log(getLocalD1DB(), process.env.NODE_ENV, 'local path')
 
 // if (
 //   !process.env.CLOUDFLARE_ACCOUNT_ID ||

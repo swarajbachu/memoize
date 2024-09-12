@@ -1,6 +1,9 @@
 'use client'
 
+export const runtime = 'edge'
+
 import { zodResolver } from '@hookform/resolvers/zod'
+import { signIn } from '@memoize/auth'
 import { cn } from '@memoize/ui'
 import { Alert, AlertDescription, AlertTitle } from '@memoize/ui/alert'
 import { Button } from '@memoize/ui/button'
@@ -27,8 +30,8 @@ import { Github, Loader } from 'lucide-react'
 import Link from 'next/link'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
+import { signInActionWithCredentials } from './actions'
 import { PasswordInput } from './password-input'
-import { signIn } from '@memoize/auth'
 
 export default function LoginForm() {
   const [isLoading, setIsLoading] = useState(false)
@@ -51,15 +54,17 @@ export default function LoginForm() {
 
     try {
       // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 2000))
-
-      await signIn('credentials', data)
+      await signInActionWithCredentials(data).catch((error) => {
+        console.log(error)
+        throw error
+      })
       // Simulated success
       setFormStatus({
         type: 'success',
         message: 'Login successful! Redirecting...',
       })
     } catch (error) {
+      console.log(error)
       setFormStatus({
         type: 'error',
         message: 'Invalid credentials. Please try again.',

@@ -62,7 +62,7 @@ export default function RegisterForm() {
       await client.auth.registerUser.$post({ name, password, email })
     },
     onSuccess: async () => {
-      form.reset()
+      // form.reset()
     },
   })
 

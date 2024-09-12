@@ -49,11 +49,12 @@ export const authConfig = {
         const pass = credentials.password as string
 
         // logic to salt and hash password
-        const pwHash = await saltAndHashPassword(pass)
         const email = credentials.email as string
 
         // logic to verify if the user exists
         user = await getUserFromDb(email)
+
+        console.log(user, 'user found')
 
         if (!user) {
           // No user found, so this is their first attempt to login
@@ -61,8 +62,11 @@ export const authConfig = {
           throw new Error('User not found.')
         }
 
+        if (!user.password) return null
+
+        const isPasswordValid = bcrypt.compareSync(pass, user.password)
         // Check if the password matches
-        if (user.password !== pwHash) {
+        if (!isPasswordValid) {
           throw new Error('Incorrect password.')
         }
 

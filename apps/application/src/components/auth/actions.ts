@@ -3,11 +3,13 @@
 import { signIn } from '@memoize/auth'
 
 export const signInActionWithCredentials = async (data: {
-  name?: string
   email: string
   password: string
 }) => {
-  const session = await signIn('credentials', data)
+  const session = await signIn('credentials', data).catch((error) => {
+    console.log(error)
+    throw error
+  })
   return session
 }
 
