@@ -1,7 +1,7 @@
 name = "memoize"
 compatibility_date = "2024-08-22"
 compatibility_flags = ["nodejs_compat"]
-pages_build_output_dir = "./apps/application/.vercel/output/static"
+pages_build_output_dir = ".vercel/output/static"
 
 [placement]
 mode = "smart"
