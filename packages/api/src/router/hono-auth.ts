@@ -81,6 +81,7 @@ export const honoAuthRouter = router({
         return c.superjson({
           success: true,
           message: 'confirmation email sent, please check your email',
+          redirect: false,
         })
       }
       await signIn('credentials', {
@@ -92,7 +93,11 @@ export const honoAuthRouter = router({
         throw error
       })
 
-      return c.superjson({ success: true, message: 'login successful' })
+      return c.superjson({
+        success: true,
+        message: 'login successful',
+        redirect: true,
+      })
     }),
   verifyEmail: publicProcedure
     .input(z.object({ token: z.string() }))

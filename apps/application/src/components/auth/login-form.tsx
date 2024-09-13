@@ -21,15 +21,15 @@ import {
   FormMessage,
 } from '@memoize/ui/form'
 import { Input } from '@memoize/ui/input'
-import { Separator } from '@memoize/ui/separator'
 import { type LoginType, loginSchema } from '@memoize/validators/auth'
 import { useMutation } from '@tanstack/react-query'
 import { Github, Loader } from 'lucide-react'
 import Link from 'next/link'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { client } from '~/trpc/hono'
-import { signInActionWithCredentials, signInActionWithGoogle } from './actions'
+import { signInActionWithGoogle } from './actions'
 import { PasswordInput } from './password-input'
 
 export default function LoginForm() {
@@ -38,6 +38,9 @@ export default function LoginForm() {
     type: 'error' | 'success' | null
     message: string | null
   }>({ type: null, message: null })
+
+  const router = useRouter()
+  const searchParams = useSearchParams()
 
   const form = useForm<LoginType>({
     resolver: zodResolver(loginSchema),
@@ -72,6 +75,15 @@ export default function LoginForm() {
       })
       const json = await res.json()
       // Simulated success
+
+      if (json.redirect === true) {
+        const redirectUrl = searchParams.get('redirectTo')
+        if (redirectUrl) {
+          router.push(redirectUrl)
+        } else {
+          router.push('/')
+        }
+      }
       setFormStatus({
         type: json.success ? 'success' : 'error',
         message: json.message,
