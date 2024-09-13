@@ -1,6 +1,5 @@
 {
   "editor.formatOnSave": true,
-  "cSpell.words": ["Hono", "NEXTAUTH"],
   "editor.defaultFormatter": "biomejs.biome",
   "editor.codeActionsOnSave": {
     "quickfix.biome": "explicit",

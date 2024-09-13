@@ -1,9 +1,6 @@
 'use client'
 
-export const runtime = 'edge'
-
 import { zodResolver } from '@hookform/resolvers/zod'
-import { signIn } from '@memoize/auth'
 import { cn } from '@memoize/ui'
 import { Alert, AlertDescription, AlertTitle } from '@memoize/ui/alert'
 import { Button } from '@memoize/ui/button'

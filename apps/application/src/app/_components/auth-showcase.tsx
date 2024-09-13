@@ -24,6 +24,7 @@ export async function AuthShowcase() {
     <div className="flex flex-col items-center justify-center gap-4">
       <p className="text-center text-2xl">
         <span>Logged in as {session.user.name}</span>
+        <span className="p-1">users-id: {session.user.id}</span>
       </p>
 
       <form>

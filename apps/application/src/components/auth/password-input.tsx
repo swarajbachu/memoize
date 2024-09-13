@@ -1,11 +1,11 @@
 'use client'
 
-import * as React from 'react'
 import { EyeIcon, EyeOffIcon } from 'lucide-react'
+import * as React from 'react'
 
+import { cn } from '@memoize/ui'
 import { Button } from '@memoize/ui/button'
 import { Input, type InputProps } from '@memoize/ui/input'
-import { cn } from '@memoize/ui'
 
 type PasswordInputProps = Omit<InputProps, 'type'>
 

@@ -6,7 +6,11 @@ export const signInActionWithCredentials = async (data: {
   email: string
   password: string
 }) => {
-  const session = await signIn('credentials', data).catch((error) => {
+  const session = await signIn('credentials', {
+    email: data.email,
+    password: data.password,
+    redirectTo: '/',
+  }).catch((error) => {
     console.log(error)
     throw error
   })

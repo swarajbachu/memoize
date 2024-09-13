@@ -75,16 +75,22 @@ export const authConfig = {
       },
     }),
   ],
+  session: {
+    strategy: 'jwt',
+  },
   callbacks: {
-    session: (opts) => {
-      if (!('user' in opts))
-        throw new Error('unreachable with session strategy')
-
+    async jwt({ token }) {
+      return token
+    },
+    session: ({ token, session }) => {
+      if (token.sub && session.user) {
+        session.user.id = token.sub
+      }
       return {
-        ...opts.session,
+        ...session,
         user: {
-          ...opts.session.user,
-          id: opts.user.id,
+          ...session.user,
+          id: session.user.id,
         },
       }
     },

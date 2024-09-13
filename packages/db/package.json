@@ -26,11 +26,15 @@
     "generate": "pnpm  drizzle-kit generate",
     "migrate:local": "wrangler d1 migrations apply memoize-db --local",
     "migrate:prod": "wrangler d1 migrations apply memoize-db --remote",
-    "studio": "pnpm with-env drizzle-kit studio",
+    "studio": "pnpm drizzle-kit studio",
+    "studio:local": "pnpm with-env pnpm with-local-db pnpm drizzle-kit studio ",
     "typecheck": "tsc --noEmit --emitDeclarationOnly false",
-    "with-env": "dotenv -e ../../.env --"
+    "with-env": "dotenv -e ../../apps/application/.dev.vars --",
+    "with-local-db": "cross-env LOCAL_DB_PATH=$(find ../../apps/application/.wrangler/state/v3/d1/miniflare-D1DatabaseObject -type f -name '*.sqlite' -print -quit)"
   },
   "dependencies": {
+    "better-sqlite3": "^11.3.0",
+    "cross-env": "^7.0.3",
     "drizzle-orm": "^0.33.0",
     "drizzle-zod": "^0.5.1",
     "nano": "^10.1.4",

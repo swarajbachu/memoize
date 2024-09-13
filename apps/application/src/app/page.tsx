@@ -1,3 +1,4 @@
+import { auth } from '@memoize/auth'
 import { client } from '~/trpc/hono'
 import { HydrateClient } from '~/trpc/server'
 import { AuthShowcase } from './_components/auth-showcase'
