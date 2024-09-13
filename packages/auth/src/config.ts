@@ -41,8 +41,13 @@ export const authConfig = {
       }
     : {}),
   secret: process.env.AUTH_SECRET,
+  pages: {
+    signIn: '/sign-in',
+  },
   providers: [
-    Google,
+    Google({
+      allowDangerousEmailAccountLinking: true,
+    }),
     Credentials({
       authorize: async (credentials) => {
         let user = null
@@ -77,6 +82,16 @@ export const authConfig = {
   ],
   session: {
     strategy: 'jwt',
+  },
+  events: {
+    async linkAccount({ user }) {
+      await db
+        .update(users.User)
+        .set({
+          emailVerified: new Date(),
+        })
+        .where(eq(users.User.id, user.id as string))
+    },
   },
   callbacks: {
     async jwt({ token }) {
