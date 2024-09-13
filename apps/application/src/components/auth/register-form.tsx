@@ -59,10 +59,10 @@ export default function RegisterForm() {
       password: string
       email: string
     }) => {
-      await client.auth.registerUser.$post({ name, password, email })
+      return await client.auth.registerUser.$post({ name, password, email })
     },
     onSuccess: async () => {
-      // form.reset()
+      form.reset()
     },
   })
 
@@ -71,9 +71,7 @@ export default function RegisterForm() {
     setFormStatus({ type: null, message: null })
 
     try {
-      // Simulate API call
-      // await new Promise((resolve) => setTimeout(resolve, 2000))
-      await createUser.mutateAsync({
+      const register = await createUser.mutateAsync({
         email: data.email,
         password: data.password,
         name: data.name,
@@ -81,7 +79,7 @@ export default function RegisterForm() {
       // Simulated success
       setFormStatus({
         type: 'success',
-        message: 'Login successful! Redirecting...',
+        message: 'Verification token sent',
       })
     } catch (error) {
       console.log(error)

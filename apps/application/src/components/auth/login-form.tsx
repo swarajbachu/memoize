@@ -23,10 +23,12 @@ import {
 import { Input } from '@memoize/ui/input'
 import { Separator } from '@memoize/ui/separator'
 import { type LoginType, loginSchema } from '@memoize/validators/auth'
+import { useMutation } from '@tanstack/react-query'
 import { Github, Loader } from 'lucide-react'
 import Link from 'next/link'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
+import { client } from '~/trpc/hono'
 import { signInActionWithCredentials, signInActionWithGoogle } from './actions'
 import { PasswordInput } from './password-input'
 
@@ -45,20 +47,34 @@ export default function LoginForm() {
     },
   })
 
+  const signInWithCredentials = useMutation({
+    mutationFn: async ({
+      password,
+      email,
+    }: {
+      password: string
+      email: string
+    }) => {
+      const test = await client.auth.signInUser.$post({ password, email })
+      return test
+    },
+  })
+
   async function onSubmit(data: LoginType) {
     setIsLoading(true)
     setFormStatus({ type: null, message: null })
 
     try {
       // Simulate API call
-      await signInActionWithCredentials(data).catch((error) => {
-        console.log(error)
-        throw error
+      const res = await signInWithCredentials.mutateAsync({
+        email: data.email,
+        password: data.password,
       })
+      const json = await res.json()
       // Simulated success
       setFormStatus({
-        type: 'success',
-        message: 'Login successful! Redirecting...',
+        type: json.success ? 'success' : 'error',
+        message: json.message,
       })
     } catch (error) {
       console.log(error)
