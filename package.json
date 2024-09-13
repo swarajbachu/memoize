@@ -1,5 +1,5 @@
 {
-  "name": "create-t3-turbo",
+  "name": "memoize",
   "private": true,
   "engines": {
     "node": ">=20.16.0"

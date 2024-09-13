@@ -1,9 +1,9 @@
 import type { Context, TypedResponse } from 'hono'
 import type { z } from 'zod'
 
-import { httpHandler } from '../hono'
 import type { Variables } from 'hono/types'
 import type { Bindings } from '../env'
+import { httpHandler } from '../hono'
 
 export type Middleware<I> = ({
   ctx,

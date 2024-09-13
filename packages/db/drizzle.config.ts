@@ -21,13 +21,15 @@ function getLocalD1DB() {
   }
 }
 
-if (
-  !process.env.CLOUDFLARE_ACCOUNT_ID ||
-  !process.env.CLOUDFLARE_DATABASE_ID ||
-  !process.env.CLOUDFLARE_API_TOKEN
-) {
-  throw new Error('database config variables are required in the environment')
-}
+console.log(getLocalD1DB(), process.env.NODE_ENV, 'local path')
+
+// if (
+//   !process.env.CLOUDFLARE_ACCOUNT_ID ||
+//   !process.env.CLOUDFLARE_DATABASE_ID ||
+//   !process.env.CLOUDFLARE_API_TOKEN
+// ) {
+//   throw new Error('database config variables are required in the environment')
+// }
 
 export default {
   schema: './src/schema/*',

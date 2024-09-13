@@ -1,4 +1,4 @@
-import { invalidateSessionToken } from '@memoize/auth'
+import { invalidateSessionToken, saltAndHashPassword } from '@memoize/auth'
 import type { TRPCRouterRecord } from '@trpc/server'
 
 import { protectedProcedure, publicProcedure } from '../trpc'

@@ -29,9 +29,10 @@
   "dependencies": {
     "@memoize/auth": "workspace:*",
     "@memoize/db": "workspace:*",
+    "@memoize/emailing": "workspace:*",
     "@memoize/validators": "workspace:*",
     "@trpc/server": "catalog:",
-    "hono": "^4.5.11",
+    "hono": "catalog:",
     "superjson": "2.2.1",
     "zod": "catalog:"
   },

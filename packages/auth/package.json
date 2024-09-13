@@ -26,6 +26,7 @@
     "@auth/drizzle-adapter": "^1.4.2",
     "@memoize/db": "workspace:*",
     "@t3-oss/env-nextjs": "^0.11.0",
+    "bcrypt-edge": "^0.0.6",
     "next": "^14.2.5",
     "next-auth": "5.0.0-beta.20",
     "react": "catalog:react18",

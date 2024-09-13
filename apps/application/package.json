@@ -13,12 +13,15 @@
     "lint:fix": "biome lint . --fix",
     "format-and-lint": "biome check .",
     "format-and-lint:fix": "biome check . --fix",
+    "migrate:local": "wrangler d1 execute memoize-db --local",
+    "migrate:prod": "wrangler d1 migrations apply memoize-db --remote",
     "pages:build": "pnpx @cloudflare/next-on-pages",
     "preview": "pnpm run pages:build && wrangler pages dev",
     "deploy": "pnpm run pages:build && wrangler pages deploy",
+    "direct-deploy": "wrangler pages deploy",
     "start": "pnpm with-env next start",
     "typecheck": "tsc --noEmit",
-    "with-env": "dotenv -e ../../.env --"
+    "with-env": "dotenv -e .dev.vars --"
   },
   "dependencies": {
     "@memoize/api": "workspace:*",
@@ -32,6 +35,7 @@
     "@trpc/react-query": "catalog:",
     "@trpc/server": "catalog:",
     "geist": "^1.3.1",
+    "lucide-react": "^0.439.0",
     "next": "^14.2.5",
     "react": "catalog:react18",
     "react-dom": "catalog:react18",

@@ -12,6 +12,7 @@ export const User = sqliteTable('user', {
   emailVerified: integer('emailVerified', {
     mode: 'timestamp_ms',
   }),
+  password: text('password', { length: 255 }),
   image: text('image', { length: 255 }),
   createdAt: integer('created', {
     mode: 'timestamp_ms',
@@ -72,3 +73,40 @@ export const Session = sqliteTable('session', {
 export const SessionRelations = relations(Session, ({ one }) => ({
   user: one(User, { fields: [Session.userId], references: [User.id] }),
 }))
+
+export const verificationTokens = sqliteTable(
+  'verificationToken',
+  {
+    identifier: text('identifier').notNull(),
+    token: text('token').notNull(),
+    expires: integer('expires', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (verificationToken) => ({
+    compositePk: primaryKey({
+      columns: [verificationToken.identifier, verificationToken.token],
+    }),
+  }),
+)
+
+export const authenticators = sqliteTable(
+  'authenticator',
+  {
+    credentialID: text('credentialID').notNull().unique(),
+    userId: text('userId')
+      .notNull()
+      .references(() => User.id, { onDelete: 'cascade' }),
+    providerAccountId: text('providerAccountId').notNull(),
+    credentialPublicKey: text('credentialPublicKey').notNull(),
+    counter: integer('counter').notNull(),
+    credentialDeviceType: text('credentialDeviceType').notNull(),
+    credentialBackedUp: integer('credentialBackedUp', {
+      mode: 'boolean',
+    }).notNull(),
+    transports: text('transports'),
+  },
+  (authenticator) => ({
+    compositePK: primaryKey({
+      columns: [authenticator.userId, authenticator.credentialID],
+    }),
+  }),
+)
