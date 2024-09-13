@@ -10,4 +10,5 @@ mode = "smart"
 binding = "DATABASE"
 database_name = "memoize-db"
 database_id = "89db89cf-3073-4f6f-a2db-09e1003c9f9c"
-preview_database_id = "DATABASE"               # Required for Pages local development
+preview_database_id = "DATABASE"
+migrations_dir = "../../packages/db/migrations"

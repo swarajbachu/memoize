@@ -13,14 +13,15 @@
     "lint:fix": "biome lint . --fix",
     "format-and-lint": "biome check .",
     "format-and-lint:fix": "biome check . --fix",
-    "setup:db": "wrangler d1 execute memoize-db --local --file=$(find ../../packages/db/migrations -type f -name '*.sql' | head -n 1)",
+    "migrate:local": "wrangler d1 execute memoize-db --local",
+    "migrate:prod": "wrangler d1 migrations apply memoize-db --remote",
     "pages:build": "pnpx @cloudflare/next-on-pages",
     "preview": "pnpm run pages:build && wrangler pages dev",
     "deploy": "pnpm run pages:build && wrangler pages deploy",
     "direct-deploy": "wrangler pages deploy",
     "start": "pnpm with-env next start",
     "typecheck": "tsc --noEmit",
-    "with-env": "dotenv -e ../../.env --"
+    "with-env": "dotenv -e .dev.vars --"
   },
   "dependencies": {
     "@memoize/api": "workspace:*",
