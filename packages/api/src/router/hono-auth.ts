@@ -17,13 +17,23 @@ export const honoAuthRouter = router({
       z.object({ name: z.string(), password: z.string(), email: z.string() }),
     )
     .mutation(async ({ c, ctx, input }) => {
-      const checkUser = await ctx.db.query.User.findFirst({
+      const user = await ctx.db.query.User.findFirst({
         where: eq(users.User.email, input.email),
       })
-      if (checkUser) {
+      const hashedPassword = await saltAndHashPassword(input.password)
+      // biome-ignore lint/complexity/useOptionalChain: <explanation>
+      if (user && user.password) {
         return c.superjson({ success: false, message: 'User already exists' })
       }
-      const hashedPassword = await saltAndHashPassword(input.password)
+      if (user && !user.password) {
+        await ctx.db
+          .update(users.User)
+          .set({
+            password: hashedPassword,
+          })
+          .where(eq(users.User.email, input.email))
+        return c.superjson({ success: true })
+      }
       await ctx.db
         .insert(users.User)
         .values({

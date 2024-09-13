@@ -105,10 +105,11 @@ export default function RegisterForm() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid grid-cols-2 gap-1">
+        <div className="flex gap-1">
           <Button
             variant="outline"
             disabled={isLoading}
+            className="w-full"
             onClick={() => {
               signInActionWithGoogle().catch(console.error)
             }}
@@ -135,12 +136,12 @@ export default function RegisterForm() {
             </svg>
             Google
           </Button>
-          <Button
+          {/* <Button
             variant="outline"
             onClick={() => signIn('google').catch(console.error)}
           >
             <Github className="mr-2 h-4 w-4" /> Github
-          </Button>
+          </Button> */}
         </div>
         <div className="relative">
           <div className="absolute inset-0 flex items-center">

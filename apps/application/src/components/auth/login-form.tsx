@@ -27,7 +27,7 @@ import { Github, Loader } from 'lucide-react'
 import Link from 'next/link'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
-import { signInActionWithCredentials } from './actions'
+import { signInActionWithCredentials, signInActionWithGoogle } from './actions'
 import { PasswordInput } from './password-input'
 
 export default function LoginForm() {
@@ -82,8 +82,15 @@ export default function LoginForm() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid grid-cols-2 gap-1">
-          <Button variant="outline" disabled={isLoading} onClick={() => {}}>
+        <div className="flex gap-1">
+          <Button
+            variant="outline"
+            disabled={isLoading}
+            className="w-full"
+            onClick={() => {
+              signInActionWithGoogle()
+            }}
+          >
             {/* biome-ignore lint/a11y/noSvgWithoutTitle: <explanation> */}
             <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
               <path
@@ -106,9 +113,9 @@ export default function LoginForm() {
             </svg>
             Google
           </Button>
-          <Button variant="outline" disabled={isLoading} onClick={() => {}}>
+          {/* <Button variant="outline" disabled={isLoading} onClick={() => {}}>
             <Github className="mr-2 h-4 w-4" /> Github
-          </Button>
+          </Button> */}
         </div>
         <div className="relative">
           <div className="absolute inset-0 flex items-center">
