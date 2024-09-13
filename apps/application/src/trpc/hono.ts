@@ -5,14 +5,14 @@ import type { StatusCode } from 'hono/utils/http-status'
 import superjson from 'superjson'
 
 const getBaseUrl = () => {
-  return process.env.NODE_ENV === 'development'
-    ? 'http://localhost:3000/'
-    : 'https://<YOUR_DEPLOYED_WORKER_URL>/'
+  return process.env.NEXT_PUBLIC_NEXT_URL ?? 'https://app.memoize.co'
 }
+
+console.log(getBaseUrl(), 'getBaseUrl')
 
 export const baseClient = hc<AppType>(getBaseUrl(), {
   fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
-    const response = await fetch(input, { ...init, cache: 'no-store' })
+    const response = await fetch(input, { ...init })
 
     if (!response.ok) {
       throw new HTTPException(response.status as StatusCode, {
