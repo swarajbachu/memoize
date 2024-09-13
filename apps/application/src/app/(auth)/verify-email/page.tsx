@@ -6,7 +6,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@memoize/ui/card'
 import { useMutation } from '@tanstack/react-query'
 import { Loader } from 'lucide-react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import React, { useEffect } from 'react'
 import { client } from '~/trpc/hono'
 
