@@ -1,9 +1,14 @@
 import { invalidateSessionToken, signIn } from '@memoize/auth'
 import { eq, users } from '@memoize/db'
+import bcrypt from 'bcrypt-edge'
 import { nanoid } from 'nanoid'
 import { z } from 'zod'
 import { router } from '../__internals/router'
-import { generateVerificationToken } from '../handlers/auth/tokens'
+import {
+  generateVerificationToken,
+  getVerificationTokenByToken,
+} from '../handlers/auth/tokens'
+import { sendVerificationToken } from '../handlers/mail/auth'
 import { protectedProcedure, publicProcedure } from '../procedure'
 import { saltAndHashPassword } from '../utils/password'
 
@@ -56,7 +61,8 @@ export const honoAuthRouter = router({
           return c.superjson({ success: false })
         })
 
-      await generateVerificationToken(input.email)
+      const token = await generateVerificationToken(input.email)
+      await sendVerificationToken(input.email, token)
       return c.superjson({ success: true, message: 'verification token sent' })
     }),
   signInUser: publicProcedure
@@ -70,10 +76,11 @@ export const honoAuthRouter = router({
       }
 
       if (!user.emailVerified) {
-        await generateVerificationToken(input.email)
+        const token = await generateVerificationToken(input.email)
+        await sendVerificationToken(input.email, token)
         return c.superjson({
-          success: false,
-          message: 'verification token sent',
+          success: true,
+          message: 'confirmation email sent, please check your email',
         })
       }
       await signIn('credentials', {
@@ -86,6 +93,23 @@ export const honoAuthRouter = router({
       })
 
       return c.superjson({ success: true, message: 'login successful' })
+    }),
+  verifyEmail: publicProcedure
+    .input(z.object({ token: z.string() }))
+    .mutation(async ({ ctx, input, c }) => {
+      const token = await getVerificationTokenByToken(input.token)
+      if (!token) {
+        return c.superjson({ success: false, message: 'invalid token' })
+      }
+      const isTokenExpired = token.expires < new Date()
+      if (isTokenExpired) {
+        return c.superjson({ success: false, message: 'token expired' })
+      }
+      await ctx.db
+        .update(users.User)
+        .set({ emailVerified: new Date() })
+        .where(eq(users.User.email, token.identifier))
+      return c.superjson({ success: true, message: 'email verified' })
     }),
   checkUser: publicProcedure
     .input(z.object({ email: z.string() }))
@@ -105,11 +129,17 @@ export const honoAuthRouter = router({
         where: eq(users.User.email, input.email),
       })
       if (!user) {
-        return c.superjson({ success: false })
+        return c.superjson({ success: false, message: 'user not found' })
+      }
+      if (!user.password) {
+        return c.superjson({
+          success: false,
+          message: 'Please sign in with oauth',
+        })
       }
       const hashedPassword = await saltAndHashPassword(input.password)
-      const passwordMatch = hashedPassword === user.password
-      return c.superjson({ success: passwordMatch })
+      const passwordMatch = bcrypt.compareSync(hashedPassword, user.password)
+      return c.superjson({ success: passwordMatch, message: 'success' })
     }),
   signOut: protectedProcedure.mutation(async ({ ctx, c }) => {
     if (ctx.session) {

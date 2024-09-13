@@ -17,8 +17,6 @@ export const schema = {
 // const pool = new Pool({ connectionString: env.POSTGRES_URL });
 // export const db = drizzle(pool, { schema });
 
-console.log(process.env.DATABASE, 'database')
-
 export const db = drizzle(
   process.env.DATABASE as any as cloudflareWorkerTypes.D1Database,
   { schema, logger: true },

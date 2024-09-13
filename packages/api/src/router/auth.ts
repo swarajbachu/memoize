@@ -10,18 +10,6 @@ export const authRouter = {
   getSecretMessage: protectedProcedure.query(() => {
     return 'you can see this secret message!'
   }),
-  // registerUser: publicProcedure
-  //   .input(
-  //     z.object({ name: z.string(), password: z.string(), email: z.string() })
-  //   )
-  //   .mutation(async ({ ctx, input }) => {
-  //     const hashedPassword = await saltAndHashPassword(input.password);
-  //     await ctx.db.insert(users.User).values({
-  //       name: input.name,
-  //       email: input.email,
-  //       password: hashedPassword,
-  //     });
-  //   }),
   signOut: protectedProcedure.mutation(async (opts) => {
     if (!opts.ctx.token) {
       return { success: false }

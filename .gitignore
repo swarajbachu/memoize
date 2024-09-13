@@ -54,3 +54,5 @@ dist/
 
 #cloudflare
 .wrangler
+
+.react-email

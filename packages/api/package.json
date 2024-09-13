@@ -29,6 +29,7 @@
   "dependencies": {
     "@memoize/auth": "workspace:*",
     "@memoize/db": "workspace:*",
+    "@memoize/emailing": "workspace:*",
     "@memoize/validators": "workspace:*",
     "@trpc/server": "catalog:",
     "hono": "catalog:",

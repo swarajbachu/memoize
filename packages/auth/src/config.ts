@@ -94,6 +94,14 @@ export const authConfig = {
     },
   },
   callbacks: {
+    async signIn({ account, user }) {
+      if (account?.provider !== 'credentials') return true
+      if (!user.email) return false
+      const existingUser = await getUserFromDb(user.email)
+      if (!existingUser?.emailVerified) return false
+      // TODO: Later add 2FA check here after getting some users on board
+      return true
+    },
     async jwt({ token }) {
       return token
     },
