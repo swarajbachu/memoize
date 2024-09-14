@@ -1,10 +1,10 @@
 import { GeistMono } from 'geist/font/mono'
 import { GeistSans } from 'geist/font/sans'
 import type { Metadata, Viewport } from 'next'
+import { Toaster } from 'sonner'
 
 import { cn } from '@memoize/ui'
 import { ThemeProvider, ThemeToggle } from '@memoize/ui/theme'
-import { Toaster } from '@memoize/ui/toast'
 
 import { TRPCReactProvider } from '~/trpc/react'
 
@@ -77,11 +77,8 @@ export default function RootLayout(props: { children: React.ReactNode }) {
         )}
       >
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-          <TRPCReactProvider>{props.children}</TRPCReactProvider>
-          <div className="absolute bottom-4 right-4">
-            <ThemeToggle />
-          </div>
           <Toaster />
+          <TRPCReactProvider>{props.children}</TRPCReactProvider>
         </ThemeProvider>
       </body>
     </html>
