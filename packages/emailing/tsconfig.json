@@ -1,0 +1,12 @@
+{
+  "extends": "@memoize/tsconfig/base.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "dom", "dom.iterable"],
+    "jsx": "preserve",
+    "baseUrl": ".",
+    "plugins": [{ "name": "next" }],
+    "module": "esnext"
+  },
+  "include": ["*.ts", "src"],
+  "exclude": ["node_modules"]
+}

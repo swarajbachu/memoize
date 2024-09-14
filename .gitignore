@@ -52,6 +52,7 @@ dist/
 # turbo
 .turbo
 
+#cloudflare
+.wrangler
 
 .react-email
-.wrangler

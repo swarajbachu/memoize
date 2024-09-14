@@ -7,6 +7,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./src/index.ts"
+    },
+    "./hono": {
+      "types": "./dist/hono.d.ts",
+      "default": "./src/hono.ts"
     }
   },
   "license": "MIT",
@@ -25,8 +29,10 @@
   "dependencies": {
     "@memoize/auth": "workspace:*",
     "@memoize/db": "workspace:*",
+    "@memoize/emailing": "workspace:*",
     "@memoize/validators": "workspace:*",
     "@trpc/server": "catalog:",
+    "hono": "catalog:",
     "superjson": "2.2.1",
     "zod": "catalog:"
   },
