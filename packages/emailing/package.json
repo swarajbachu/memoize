@@ -8,7 +8,6 @@
   },
   "scripts": {
     "build": "email build",
-    "dev": "email build",
     "dev:watch": "email dev",
     "export": "email export",
     "format": "biome format .",
