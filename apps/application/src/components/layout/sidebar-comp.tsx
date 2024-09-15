@@ -10,19 +10,25 @@ import { MdSpaceDashboard } from 'react-icons/md'
 import { signOut } from '@memoize/auth'
 import { ThemeToggle } from '@memoize/ui/theme'
 import { Home, LogOut } from 'lucide-react'
+import { IoCalendarClear, IoJournal } from 'react-icons/io5'
 import { toast } from 'sonner'
 import { Sidebar, SidebarBody, SidebarLink } from './sidebar-ui'
 
 const AccordanceMenuList = [
   {
     open: 1,
-    text: 'Dashboard',
-    icon: <MdSpaceDashboard className="h-5 w-5" />,
+    text: 'Journals',
+    icon: <IoCalendarClear className="h-5 w-5" />,
     items: [
       {
-        subText: 'Home',
-        subIcon: <Home />,
-        url: '/dashboard',
+        subText: 'All Journals',
+        subIcon: <IoJournal />,
+        url: '/',
+      },
+      {
+        subText: 'Calendar',
+        subIcon: <IoCalendarClear />,
+        url: '/calendar',
       },
     ],
   },
@@ -122,7 +128,7 @@ export const Logo = () => {
         animate={{ opacity: 1 }}
         className="flex-grow whitespace-pre font-medium text-primary"
       >
-        Aperturs
+        Memoize
       </motion.span>
       <ThemeToggle />
       <span className="w-6" />
@@ -138,7 +144,7 @@ export const LogoIcon = () => {
       <Image
         src="/favicon.svg"
         alt="brand"
-        className="h-8 w-8 invert"
+        className="h-8 w-8 invert dark:invert-0"
         width={8}
         height={8}
       />

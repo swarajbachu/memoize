@@ -1,7 +1,7 @@
 import { customAlphabet, nanoid } from 'nanoid'
 import { z } from 'zod'
 
-export const uniqueIds = z.enum(['user', 'account', 'session'])
+export const uniqueIds = z.enum(['user', 'account', 'session', 'entry', 'mood'])
 export type UniqueIdsType = z.infer<typeof uniqueIds>
 export function createUniqueIds(
   id: UniqueIdsType,

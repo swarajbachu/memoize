@@ -13,7 +13,7 @@
     "lint:fix": "biome lint . --fix",
     "format-and-lint": "biome check .",
     "format-and-lint:fix": "biome check . --fix",
-    "migrate:local": "wrangler d1 execute memoize-db --local",
+    "migrate:local": "wrangler d1 migrations apply memoize-db --local ",
     "migrate:prod": "wrangler d1 migrations apply memoize-db --remote",
     "pages:build": "pnpx @cloudflare/next-on-pages",
     "preview": "pnpm run pages:build && wrangler pages dev",

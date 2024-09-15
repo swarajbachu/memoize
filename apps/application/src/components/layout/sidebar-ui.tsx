@@ -1,7 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { ArrowRight, Menu, MenuIcon } from 'lucide-react'
+import { Menu } from 'lucide-react'
 import Image from 'next/image'
 import type { LinkProps } from 'next/link'
 import Link from 'next/link'
@@ -12,6 +12,7 @@ import { cn } from '@memoize/ui'
 import { Button } from '@memoize/ui/button'
 import { Sheet, SheetContent, SheetTrigger } from '@memoize/ui/sheet'
 import ToolTipSimple from '@memoize/ui/tooltip-simple'
+import { FaArrowRightLong } from 'react-icons/fa6'
 
 interface Links {
   label: string
@@ -127,7 +128,7 @@ export const DesktopSidebar = ({
               },
             }}
           >
-            <ArrowRight />
+            <FaArrowRightLong />
           </motion.span>
         </Button>
         {children as React.ReactNode}
@@ -154,7 +155,7 @@ export const MobileSidebar = ({
           <Image
             src="/favicon.svg"
             alt="brand"
-            className="h-8 w-8 dark:brightness-0 dark:invert"
+            className="h-8 w-8  dark:invert-0 invert"
             width={8}
             height={8}
           />
