@@ -34,29 +34,6 @@ const AccordanceMenuList = [
   },
 ];
 
-// const bottomMenu = [
-//   {
-//     text: "Details",
-//     icon: <PluraCategory />,
-//     url: "/details",
-//   },
-//   {
-//     text: "Profile",
-//     icon: <Person />,
-//     url: "/profile",
-//   },
-//   {
-//     text: "Billing",
-//     icon: <Payment />,
-//     url: "/billing",
-//   },
-//   {
-//     text: "Socials",
-//     icon: <Network />,
-//     url: "/socials",
-//   },
-// ];
-
 export function SidebarComponent() {
   const [open, setOpen] = useState(false);
   const currentPath = usePathname();

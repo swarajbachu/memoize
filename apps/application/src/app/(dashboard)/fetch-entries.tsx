@@ -2,7 +2,7 @@ import React from "react";
 import { api } from "~/trpc/server";
 
 export default async function FetchEntries() {
-  const entries = await api.auth.findAllEntires();
+  const entries = await api.entries.findAllEntires();
 
   return (
     <>
