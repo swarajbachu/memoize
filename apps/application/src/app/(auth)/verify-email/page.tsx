@@ -7,7 +7,7 @@ import { useMutation } from "@tanstack/react-query";
 import { Loader } from "lucide-react";
 import Link from "next/link";
 import React, { useEffect } from "react";
-import { client } from "~/trpc/hono";
+import { api } from "~/trpc/react";
 
 export default function VerifyEmail({
   searchParams,
@@ -16,12 +16,7 @@ export default function VerifyEmail({
 }) {
   const { token } = searchParams;
 
-  const verifyEmail = useMutation({
-    mutationFn: async ({ token }: { token: string }) => {
-      const response = await client.auth.verifyEmail.$post({ token });
-      return response;
-    },
-  });
+  const verifyEmail = api.auth.verifyEmail.useMutation();
 
   useEffect(() => {
     verifyEmail.mutateAsync({ token });

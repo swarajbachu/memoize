@@ -12,7 +12,9 @@
       ".output",
       ".react-email",
       "dist",
-      ".nitro"
+      ".nitro",
+      ".cache",
+      ".turbo"
     ]
   },
   "formatter": { "enabled": true, "indentStyle": "space" },
