@@ -1,4 +1,4 @@
-import Constants from 'expo-constants'
+import Constants from "expo-constants";
 
 /**
  * Extend this function when going to production by
@@ -13,14 +13,14 @@ export const getBaseUrl = () => {
    * **NOTE**: This is only for development. In production, you'll want to set the
    * baseUrl to your production API URL.
    */
-  const debuggerHost = Constants.expoConfig?.hostUri
-  const localhost = debuggerHost?.split(':')[0]
+  const debuggerHost = Constants.expoConfig?.hostUri;
+  const localhost = debuggerHost?.split(":")[0];
 
   if (!localhost) {
     // return "https://turbo.t3.gg";
     throw new Error(
-      'Failed to get localhost. Please point to your production server.',
-    )
+      "Failed to get localhost. Please point to your production server.",
+    );
   }
-  return `http://${localhost}:3000`
-}
+  return `http://${localhost}:3000`;
+};

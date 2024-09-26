@@ -7,10 +7,6 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./src/index.ts"
-    },
-    "./hono": {
-      "types": "./dist/hono.d.ts",
-      "default": "./src/hono.ts"
     }
   },
   "license": "MIT",
@@ -27,6 +23,7 @@
     "typecheck": "tsc --noEmit --emitDeclarationOnly false"
   },
   "dependencies": {
+    "@hono/auth-js": "^1.0.10",
     "@memoize/auth": "workspace:*",
     "@memoize/db": "workspace:*",
     "@memoize/emailing": "workspace:*",

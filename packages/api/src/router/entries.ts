@@ -1,10 +1,9 @@
-import { db, eq } from '@memoize/db'
-import { entries } from '@memoize/db/schema/entries.js'
-import { z } from 'zod'
-import { router } from '../__internals/router'
-import { protectedProcedure } from '../procedure'
+import { entries, eq } from "@memoize/db";
+import type { TRPCRouterRecord } from "@trpc/server";
+import { z } from "zod";
+import { protectedProcedure } from "../trpc";
 
-export const honoAuthRouter = router({
+export const entryRouter = {
   createEntry: protectedProcedure
     .input(
       z.object({
@@ -12,22 +11,29 @@ export const honoAuthRouter = router({
         content: z.string(),
       }),
     )
-    .mutation(async ({ c, ctx, input }) => {
+    .mutation(async ({ ctx, input }) => {
       if (input.id) {
         const entry = await ctx.db
-          .update(entries)
+          .update(entries.entries)
           .set({ content: input.content })
-          .where(eq(entries.id, input.id))
-          .returning()
-        return c.superjson(entry[0])
+          .where(eq(entries.entries.id, input.id))
+          .returning();
+        return entry[0];
       }
       const entry = await ctx.db
-        .insert(entries)
+        .insert(entries.entries)
         .values({
           content: input.content,
-          userId: ctx.session.user.id,
+          userId: "testing",
         })
-        .returning()
-      return c.superjson(entry[0])
+        .returning();
+      return entry[0];
     }),
-})
+
+  findAllEntires: protectedProcedure.query(async ({ ctx }) => {
+    const allEntries = await ctx.db.query.entries.findMany({
+      where: eq(entries.entries.userId, "testing"),
+    });
+    return allEntries;
+  }),
+} satisfies TRPCRouterRecord;

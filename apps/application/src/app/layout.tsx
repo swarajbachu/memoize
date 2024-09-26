@@ -1,46 +1,46 @@
-import { GeistMono } from 'geist/font/mono'
-import { GeistSans } from 'geist/font/sans'
-import type { Metadata, Viewport } from 'next'
-import { Toaster } from 'sonner'
+import { GeistMono } from "geist/font/mono";
+import { GeistSans } from "geist/font/sans";
+import type { Metadata, Viewport } from "next";
+import { Toaster } from "sonner";
 
-import { cn } from '@memoize/ui'
-import { ThemeProvider, ThemeToggle } from '@memoize/ui/theme'
+import { cn } from "@memoize/ui";
+import { ThemeProvider, ThemeToggle } from "@memoize/ui/theme";
 
-import { TRPCReactProvider } from '~/trpc/react'
+import { TRPCReactProvider } from "~/trpc/react";
 
-import '~/app/globals.css'
+import "~/app/globals.css";
 
-import { env } from '~/env'
+import { env } from "~/env";
 
 export const metadata: Metadata = {
   metadataBase: new URL(
-    env.VERCEL_ENV === 'production'
-      ? 'https://app.memoize.co'
-      : 'http://localhost:3000',
+    env.VERCEL_ENV === "production"
+      ? "https://app.memoize.co"
+      : "http://localhost:3000",
   ),
-  title: 'Memoize - Your Personal Journaling Platform',
+  title: "Memoize - Your Personal Journaling Platform",
   description:
-    'Capture your thoughts, memories, and ideas with Memoize, the intelligent journaling platform.',
+    "Capture your thoughts, memories, and ideas with Memoize, the intelligent journaling platform.",
   openGraph: {
-    title: 'Memoize - Your Personal Journaling Platform',
+    title: "Memoize - Your Personal Journaling Platform",
     description:
-      'Capture your thoughts, memories, and ideas with Memoize, the intelligent journaling platform.',
-    url: 'https://app.memoize.co',
-    siteName: 'Memoize',
+      "Capture your thoughts, memories, and ideas with Memoize, the intelligent journaling platform.",
+    url: "https://app.memoize.co",
+    siteName: "Memoize",
   },
   twitter: {
-    card: 'summary_large_image',
-    site: '@swarajbachu',
-    creator: '@swarajbachu',
+    card: "summary_large_image",
+    site: "@swarajbachu",
+    creator: "@swarajbachu",
   },
-}
+};
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: 'white' },
-    { media: '(prefers-color-scheme: dark)', color: 'black' },
+    { media: "(prefers-color-scheme: light)", color: "white" },
+    { media: "(prefers-color-scheme: dark)", color: "black" },
   ],
-}
+};
 
 export default function RootLayout(props: { children: React.ReactNode }) {
   return (
@@ -71,7 +71,7 @@ export default function RootLayout(props: { children: React.ReactNode }) {
       </head>
       <body
         className={cn(
-          'min-h-screen bg-background font-sans text-foreground antialiased',
+          "min-h-screen bg-background font-sans text-foreground antialiased",
           GeistSans.variable,
           GeistMono.variable,
         )}
@@ -82,5 +82,5 @@ export default function RootLayout(props: { children: React.ReactNode }) {
         </ThemeProvider>
       </body>
     </html>
-  )
+  );
 }

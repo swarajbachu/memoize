@@ -3,14 +3,14 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from './tooltip'
+} from "./tooltip";
 
 interface ToolTipSimpleProps {
-  children: React.ReactNode
-  content: string
-  className?: string
-  duration?: number
-  position?: 'top' | 'right' | 'bottom' | 'left'
+  children: React.ReactNode;
+  content: string;
+  className?: string;
+  duration?: number;
+  position?: "top" | "right" | "bottom" | "left";
 }
 
 export default function ToolTipSimple({
@@ -18,7 +18,7 @@ export default function ToolTipSimple({
   content,
   className,
   duration = 0,
-  position = 'top',
+  position = "top",
 }: ToolTipSimpleProps) {
   return (
     <TooltipProvider delayDuration={duration}>
@@ -29,5 +29,5 @@ export default function ToolTipSimple({
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
-  )
+  );
 }

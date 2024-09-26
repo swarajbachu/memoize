@@ -1,4 +1,4 @@
-import { fileURLToPath } from "url";
+import { fileURLToPath } from "node:url";
 import { setupDevPlatform } from "@cloudflare/next-on-pages/next-dev";
 import createJiti from "jiti";
 

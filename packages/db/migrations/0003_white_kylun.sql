@@ -1,6 +1,6 @@
 CREATE TABLE `entries` (
 	`id` text PRIMARY KEY NOT NULL,
-	`user_id` integer NOT NULL,
+	`user_id` text NOT NULL,
 	`content` text NOT NULL,
 	`sentiment_score` integer,
 	`word_count` integer,

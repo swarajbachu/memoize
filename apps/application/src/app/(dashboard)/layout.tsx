@@ -1,4 +1,4 @@
-import { SidebarComponent } from '~/components/layout/sidebar-comp'
+import { SidebarComponent } from "~/components/layout/sidebar-comp";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   return (
@@ -8,5 +8,5 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         {children}
       </div>
     </section>
-  )
+  );
 }

@@ -1,25 +1,25 @@
-'use client'
+"use client";
 
-import { EyeIcon, EyeOffIcon } from 'lucide-react'
-import * as React from 'react'
+import { EyeIcon, EyeOffIcon } from "lucide-react";
+import * as React from "react";
 
-import { cn } from '@memoize/ui'
-import { Button } from '@memoize/ui/button'
-import { Input, type InputProps } from '@memoize/ui/input'
+import { cn } from "@memoize/ui";
+import { Button } from "@memoize/ui/button";
+import { Input, type InputProps } from "@memoize/ui/input";
 
-type PasswordInputProps = Omit<InputProps, 'type'>
+type PasswordInputProps = Omit<InputProps, "type">;
 
 const PasswordInput = React.forwardRef<HTMLInputElement, PasswordInputProps>(
   ({ className, ...props }, ref) => {
-    const [showPassword, setShowPassword] = React.useState(false)
+    const [showPassword, setShowPassword] = React.useState(false);
     const disabled =
-      props.value === '' || props.value === undefined || props.disabled
+      props.value === "" || props.value === undefined || props.disabled;
 
     return (
       <div className="relative">
         <Input
-          type={showPassword ? 'text' : 'password'}
-          className={cn('hide-password-toggle pr-10 ', className)}
+          type={showPassword ? "text" : "password"}
+          className={cn("hide-password-toggle pr-10 ", className)}
           ref={ref}
           {...props}
         />
@@ -37,7 +37,7 @@ const PasswordInput = React.forwardRef<HTMLInputElement, PasswordInputProps>(
             <EyeOffIcon className="h-4 w-4" aria-hidden="true" />
           )}
           <span className="sr-only">
-            {showPassword ? 'Hide password' : 'Show password'}
+            {showPassword ? "Hide password" : "Show password"}
           </span>
         </Button>
 
@@ -51,9 +51,9 @@ const PasswordInput = React.forwardRef<HTMLInputElement, PasswordInputProps>(
 					}
 				`}</style>
       </div>
-    )
+    );
   },
-)
-PasswordInput.displayName = 'PasswordInput'
+);
+PasswordInput.displayName = "PasswordInput";
 
-export { PasswordInput }
+export { PasswordInput };

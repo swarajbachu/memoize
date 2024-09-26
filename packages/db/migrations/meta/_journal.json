@@ -15,6 +15,20 @@
       "when": 1726375898512,
       "tag": "0001_slimy_captain_stacy",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1727242409061,
+      "tag": "0002_low_miss_america",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1727242663289,
+      "tag": "0003_white_kylun",
+      "breakpoints": true
     }
   ]
 }

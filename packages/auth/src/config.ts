@@ -1,23 +1,23 @@
-import { skipCSRFCheck } from '@auth/core'
-import { DrizzleAdapter } from '@auth/drizzle-adapter'
-import bcrypt from 'bcrypt-edge'
+import { skipCSRFCheck } from "@auth/core";
+import { DrizzleAdapter } from "@auth/drizzle-adapter";
+import bcrypt from "bcrypt-edge";
 import type {
   DefaultSession,
   NextAuthConfig,
   Session as NextAuthSession,
-} from 'next-auth'
+} from "next-auth";
 
-import { and, db, eq, users } from '@memoize/db'
+import { and, db, eq, users } from "@memoize/db";
 
-import Credentials from '@auth/core/providers/credentials'
-import Google from '@auth/core/providers/google'
-import { env } from '../env'
+import Credentials from "@auth/core/providers/credentials";
+import Google from "@auth/core/providers/google";
+import { env } from "../env";
 
-declare module 'next-auth' {
+declare module "next-auth" {
   interface Session {
     user: {
-      id: string
-    } & DefaultSession['user']
+      id: string;
+    } & DefaultSession["user"];
   }
 }
 
@@ -27,9 +27,9 @@ const adapter = DrizzleAdapter(db, {
   sessionsTable: users.Session,
   verificationTokensTable: users.verificationTokens,
   authenticatorsTable: users.authenticators,
-})
+});
 
-export const isSecureContext = env.NEXT_PUBLIC_ENVIRONMENT !== 'development'
+export const isSecureContext = env.NEXT_PUBLIC_ENVIRONMENT !== "development";
 
 export const authConfig = {
   adapter,
@@ -42,7 +42,7 @@ export const authConfig = {
     : {}),
   secret: process.env.AUTH_SECRET,
   pages: {
-    signIn: '/sign-in',
+    signIn: "/sign-in",
   },
   providers: [
     Google({
@@ -50,38 +50,38 @@ export const authConfig = {
     }),
     Credentials({
       authorize: async (credentials) => {
-        let user = null
-        const pass = credentials.password as string
+        let user = null;
+        const pass = credentials.password as string;
 
         // logic to salt and hash password
-        const email = credentials.email as string
+        const email = credentials.email as string;
 
         // logic to verify if the user exists
-        user = await getUserFromDb(email)
+        user = await getUserFromDb(email);
 
-        console.log(user, 'user found')
+        console.log(user, "user found");
 
         if (!user) {
           // No user found, so this is their first attempt to login
           // meaning this is also the place you could do registration
-          throw new Error('User not found.')
+          throw new Error("User not found.");
         }
 
-        if (!user.password) return null
+        if (!user.password) return null;
 
-        const isPasswordValid = bcrypt.compareSync(pass, user.password)
+        const isPasswordValid = bcrypt.compareSync(pass, user.password);
         // Check if the password matches
         if (!isPasswordValid) {
-          throw new Error('Incorrect password.')
+          throw new Error("Incorrect password.");
         }
 
         // return user object with their profile data
-        return user
+        return user;
       },
     }),
   ],
   session: {
-    strategy: 'jwt',
+    strategy: "jwt",
   },
   events: {
     async linkAccount({ user }) {
@@ -90,24 +90,24 @@ export const authConfig = {
         .set({
           emailVerified: new Date(),
         })
-        .where(eq(users.User.id, user.id as string))
+        .where(eq(users.User.id, user.id as string));
     },
   },
   callbacks: {
     async signIn({ account, user }) {
-      if (account?.provider !== 'credentials') return true
-      if (!user.email) return false
-      const existingUser = await getUserFromDb(user.email)
-      if (!existingUser?.emailVerified) return false
+      if (account?.provider !== "credentials") return true;
+      if (!user.email) return false;
+      const existingUser = await getUserFromDb(user.email);
+      if (!existingUser?.emailVerified) return false;
       // TODO: Later add 2FA check here after getting some users on board
-      return true
+      return true;
     },
     async jwt({ token }) {
-      return token
+      return token;
     },
     session: ({ token, session }) => {
       if (token.sub && session.user) {
-        session.user.id = token.sub
+        session.user.id = token.sub;
       }
       return {
         ...session,
@@ -115,16 +115,16 @@ export const authConfig = {
           ...session.user,
           id: session.user.id,
         },
-      }
+      };
     },
   },
-} satisfies NextAuthConfig
+} satisfies NextAuthConfig;
 
 export const validateToken = async (
   token: string,
 ): Promise<NextAuthSession | null> => {
-  const sessionToken = token.slice('Bearer '.length)
-  const session = await adapter.getSessionAndUser?.(sessionToken)
+  const sessionToken = token.slice("Bearer ".length);
+  const session = await adapter.getSessionAndUser?.(sessionToken);
   return session
     ? {
         user: {
@@ -132,30 +132,30 @@ export const validateToken = async (
         },
         expires: session.session.expires.toISOString(),
       }
-    : null
-}
+    : null;
+};
 
 export const invalidateSessionToken = async (token: string) => {
-  const sessionToken = token.slice('Bearer '.length)
-  await adapter.deleteSession?.(sessionToken)
-}
+  const sessionToken = token.slice("Bearer ".length);
+  await adapter.deleteSession?.(sessionToken);
+};
 
 export async function saltAndHashPassword(password: string) {
   // Define the number of salt rounds (higher is more secure but slower)
-  const saltRounds = 10
+  const saltRounds = 10;
 
   // Generate the salt and hash the password
-  const salt = bcrypt.genSaltSync(saltRounds)
-  const hashedPassword = bcrypt.hashSync(password, salt)
+  const salt = bcrypt.genSaltSync(saltRounds);
+  const hashedPassword = bcrypt.hashSync(password, salt);
 
-  return hashedPassword
+  return hashedPassword;
 }
 
 async function getUserFromDb(email: string) {
   // Logic to get user from database based on email and password hash
   const user = await db.query.User.findFirst({
     where: eq(users.User.email, email),
-  })
+  });
 
-  return user
+  return user;
 }
