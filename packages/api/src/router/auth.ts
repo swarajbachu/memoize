@@ -1,8 +1,4 @@
-import {
-  invalidateSessionToken,
-  saltAndHashPassword,
-  signIn,
-} from "@memoize/auth";
+import { invalidateSessionToken, signIn } from "@memoize/auth";
 import type { TRPCRouterRecord } from "@trpc/server";
 
 import { protectedProcedure, publicProcedure } from "../trpc";
@@ -14,6 +10,7 @@ import {
 } from "../handlers/auth/tokens";
 import { sendVerificationToken } from "../handlers/mail/auth";
 import bcrypt from "bcrypt-edge";
+import { saltAndHashPassword } from "../utils/password";
 
 export const authRouter = {
   getSession: publicProcedure.query(({ ctx }) => {

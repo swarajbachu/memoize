@@ -18,35 +18,15 @@ const entries = [
 
 export default async function HomePage() {
   return (
-    <main className="flex h-screen">
+    <main className="flex flex-1">
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-        <div className="w-full lg:w-64 border-r">
-          <div className="p-4 border-b">
-            <Input placeholder="Search entries..." />
-          </div>
-          <ScrollArea className="h-[calc(100vh-9rem)]">
-            <Suspense fallback={<div>Loading...</div>}>
-              <FetchEntries />
-            </Suspense>
-          </ScrollArea>
-        </div>
-
-        <div className="flex-1 flex flex-col p-4">
-          <div className="mb-4 flex justify-between items-center">
-            <Input
-              placeholder="Entry title"
-              className="text-2xl font-bold bg-transparent border-none"
-            />
-            <Button>
-              <PlusIcon className="mr-2 h-4 w-4" />
-              New Entry
-            </Button>
-          </div>
+        {/* <div className="flex-1 flex flex-col p-4">
           <Textarea
             placeholder="Start writing your journal entry here..."
-            className="flex-1 resize-none"
+            className="flex-1 resize-none focus:outline-none"
           />
-        </div>
+        </div> */}
+        hello
       </div>
     </main>
   );

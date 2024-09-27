@@ -29,6 +29,13 @@
       "when": 1727242663289,
       "tag": "0003_white_kylun",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1727453176953,
+      "tag": "0004_strong_black_tarantula",
+      "breakpoints": true
     }
   ]
 }

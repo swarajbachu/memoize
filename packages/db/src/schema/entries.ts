@@ -14,6 +14,7 @@ export const entries = sqliteTable("entries", {
     .notNull(),
   content: text("content").notNull(),
   sentimentScore: integer("sentiment_score"),
+  emotions: text("emotions"),
   wordCount: integer("word_count"),
   analyzed: integer("analyzed", { mode: "boolean" }).default(false),
   createdAt: integer("created", {
