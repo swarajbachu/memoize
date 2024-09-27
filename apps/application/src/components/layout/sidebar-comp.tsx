@@ -1,59 +1,42 @@
-'use client'
+"use client";
 
-import { motion } from 'framer-motion'
-import Image from 'next/image'
-import Link from 'next/link'
-import { usePathname } from 'next/navigation'
-import { useState } from 'react'
-import { MdSpaceDashboard } from 'react-icons/md'
+import { motion } from "framer-motion";
+import Image from "next/image";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useState } from "react";
+import { MdSpaceDashboard } from "react-icons/md";
 
-import { signOut } from '@memoize/auth'
-import { ThemeToggle } from '@memoize/ui/theme'
-import { Home, LogOut } from 'lucide-react'
-import { toast } from 'sonner'
-import { Sidebar, SidebarBody, SidebarLink } from './sidebar-ui'
+import { signOut } from "@memoize/auth";
+import { ThemeToggle } from "@memoize/ui/theme";
+import { Home, LogOut } from "lucide-react";
+import { IoCalendarClear, IoJournal } from "react-icons/io5";
+import { toast } from "sonner";
+import { Sidebar, SidebarBody, SidebarLink } from "./sidebar-ui";
 
 const AccordanceMenuList = [
   {
     open: 1,
-    text: 'Dashboard',
-    icon: <MdSpaceDashboard className="h-5 w-5" />,
+    text: "Journals",
+    icon: <IoCalendarClear className="h-5 w-5" />,
     items: [
       {
-        subText: 'Home',
-        subIcon: <Home />,
-        url: '/dashboard',
+        subText: "All Journals",
+        subIcon: <IoJournal />,
+        url: "/",
+      },
+      {
+        subText: "Calendar",
+        subIcon: <IoCalendarClear />,
+        url: "/calendar",
       },
     ],
   },
-]
-
-// const bottomMenu = [
-//   {
-//     text: "Details",
-//     icon: <PluraCategory />,
-//     url: "/details",
-//   },
-//   {
-//     text: "Profile",
-//     icon: <Person />,
-//     url: "/profile",
-//   },
-//   {
-//     text: "Billing",
-//     icon: <Payment />,
-//     url: "/billing",
-//   },
-//   {
-//     text: "Socials",
-//     icon: <Network />,
-//     url: "/socials",
-//   },
-// ];
+];
 
 export function SidebarComponent() {
-  const [open, setOpen] = useState(false)
-  const currentPath = usePathname()
+  const [open, setOpen] = useState(false);
+  const currentPath = usePathname();
 
   return (
     <Sidebar open={open} setOpen={setOpen}>
@@ -63,11 +46,11 @@ export function SidebarComponent() {
           <div className="mt-8 flex flex-col gap-2">
             {AccordanceMenuList.map((link) => (
               <div key={link.text}>
-                <h2 className="mb-3 flex text-xs">{open ? link.text : ''}</h2>
+                <h2 className="mb-3 flex text-xs">{open ? link.text : ""}</h2>
                 <div className="flex flex-col gap-3">
                   {link.items.map((item) => (
                     <SidebarLink
-                      className={`${currentPath.includes(item.url) ? 'bg-secondary ' : ''} group my-1 cursor-pointer`}
+                      className={`${currentPath.includes(item.url) ? "bg-secondary " : ""} group my-1 cursor-pointer`}
                       key={item.url}
                       link={{
                         label: item.subText,
@@ -93,22 +76,22 @@ export function SidebarComponent() {
           ))} */}
           <SidebarLink
             link={{
-              label: 'Logout',
-              href: '#',
+              label: "Logout",
+              href: "#",
               icon: <LogOut />,
               onClick: () => {
                 toast.promise(signOut(), {
-                  loading: 'Logging out',
-                  success: 'Logged out',
-                  error: 'Error logging out',
-                })
+                  loading: "Logging out",
+                  success: "Logged out",
+                  error: "Error logging out",
+                });
               },
             }}
           />
         </div>
       </SidebarBody>
     </Sidebar>
-  )
+  );
 }
 export const Logo = () => {
   return (
@@ -122,13 +105,13 @@ export const Logo = () => {
         animate={{ opacity: 1 }}
         className="flex-grow whitespace-pre font-medium text-primary"
       >
-        Aperturs
+        Memoize
       </motion.span>
       <ThemeToggle />
       <span className="w-6" />
     </Link>
-  )
-}
+  );
+};
 export const LogoIcon = () => {
   return (
     <Link
@@ -138,10 +121,10 @@ export const LogoIcon = () => {
       <Image
         src="/favicon.svg"
         alt="brand"
-        className="h-8 w-8 invert"
+        className="h-8 w-8 invert dark:invert-0"
         width={8}
         height={8}
       />
     </Link>
-  )
-}
+  );
+};

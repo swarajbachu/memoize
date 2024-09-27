@@ -1,10 +1,10 @@
-'use client'
+"use client";
 
-import { zodResolver } from '@hookform/resolvers/zod'
-import { signIn } from '@memoize/auth'
-import { cn } from '@memoize/ui'
-import { Alert, AlertDescription, AlertTitle } from '@memoize/ui/alert'
-import { Button } from '@memoize/ui/button'
+import { zodResolver } from "@hookform/resolvers/zod";
+import { signIn } from "@memoize/auth";
+import { cn } from "@memoize/ui";
+import { Alert, AlertDescription, AlertTitle } from "@memoize/ui/alert";
+import { Button } from "@memoize/ui/button";
 import {
   Card,
   CardContent,
@@ -12,7 +12,7 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from '@memoize/ui/card'
+} from "@memoize/ui/card";
 import {
   Form,
   FormControl,
@@ -20,75 +20,60 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from '@memoize/ui/form'
-import { Input } from '@memoize/ui/input'
-import { Separator } from '@memoize/ui/separator'
-import { type RegisterType, registerSchema } from '@memoize/validators/auth'
-import { useMutation } from '@tanstack/react-query'
-import { Github, Loader } from 'lucide-react'
-import Link from 'next/link'
-import { useState } from 'react'
-import { useForm } from 'react-hook-form'
-import { client } from '~/trpc/hono'
-import { signInActionWithCredentials, signInActionWithGoogle } from './actions'
-import { PasswordInput } from './password-input'
+} from "@memoize/ui/form";
+import { Input } from "@memoize/ui/input";
+import { Separator } from "@memoize/ui/separator";
+import { type RegisterType, registerSchema } from "@memoize/validators/auth";
+import { useMutation } from "@tanstack/react-query";
+import { Github, Loader } from "lucide-react";
+import Link from "next/link";
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { signInActionWithCredentials, signInActionWithGoogle } from "./actions";
+import { PasswordInput } from "./password-input";
+import { api } from "~/trpc/react";
 
 export default function RegisterForm() {
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(false);
   const [formStatus, setFormStatus] = useState<{
-    type: 'error' | 'success' | null
-    message: string | null
-  }>({ type: null, message: null })
+    type: "error" | "success" | null;
+    message: string | null;
+  }>({ type: null, message: null });
 
   const form = useForm<RegisterType>({
     resolver: zodResolver(registerSchema),
     defaultValues: {
-      email: '',
-      password: '',
-      name: '',
+      email: "",
+      password: "",
+      name: "",
     },
-  })
+  });
 
-  const createUser = useMutation({
-    mutationFn: async ({
-      name,
-      password,
-      email,
-    }: {
-      name: string
-      password: string
-      email: string
-    }) => {
-      return await client.auth.registerUser.$post({ name, password, email })
-    },
-    onSuccess: async () => {
-      form.reset()
-    },
-  })
+  const createUser = api.auth.registerUser.useMutation();
 
   async function onSubmit(data: RegisterType) {
-    setIsLoading(true)
-    setFormStatus({ type: null, message: null })
+    setIsLoading(true);
+    setFormStatus({ type: null, message: null });
 
     try {
       const register = await createUser.mutateAsync({
         email: data.email,
         password: data.password,
         name: data.name,
-      })
+      });
       // Simulated success
       setFormStatus({
-        type: 'success',
-        message: 'Verification token sent',
-      })
+        type: "success",
+        message: "Verification token sent",
+      });
     } catch (error) {
-      console.log(error)
+      console.log(error);
       setFormStatus({
-        type: 'error',
-        message: 'Invalid credentials. Please try again.',
-      })
+        type: "error",
+        message: "Invalid credentials. Please try again.",
+      });
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
   }
 
@@ -109,10 +94,9 @@ export default function RegisterForm() {
             disabled={isLoading}
             className="w-full"
             onClick={() => {
-              signInActionWithGoogle().catch(console.error)
+              signInActionWithGoogle().catch(console.error);
             }}
           >
-            {/* biome-ignore lint/a11y/noSvgWithoutTitle: <explanation> */}
             <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
               <path
                 d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
@@ -213,21 +197,21 @@ export default function RegisterForm() {
                   Registering...
                 </>
               ) : (
-                'Register'
+                "Register"
               )}
             </Button>
           </form>
         </Form>
         {formStatus.type && (
           <Alert
-            variant={formStatus.type === 'error' ? 'destructive' : 'default'}
+            variant={formStatus.type === "error" ? "destructive" : "default"}
             className={cn(
-              'mt-4',
-              formStatus.type === 'success' && 'bg-green-700/20 text-green-700',
+              "mt-4",
+              formStatus.type === "success" && "bg-green-700/20 text-green-700",
             )}
           >
             <AlertTitle>
-              {formStatus.type === 'error' ? 'Error' : 'Success'}
+              {formStatus.type === "error" ? "Error" : "Success"}
             </AlertTitle>
             <AlertDescription>{formStatus.message}</AlertDescription>
           </Alert>
@@ -235,12 +219,12 @@ export default function RegisterForm() {
       </CardContent>
       <CardFooter>
         <p className="text-sm text-center w-full text-muted-foreground">
-          Already have an account?{' '}
+          Already have an account?{" "}
           <Link href="/sign-in" className="text-primary hover:underline">
             Sign In
           </Link>
         </p>
       </CardFooter>
     </Card>
-  )
+  );
 }

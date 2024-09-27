@@ -1,10 +1,10 @@
 // @ts-expect-error - no types
-import nativewind from 'nativewind/preset'
-import type { Config } from 'tailwindcss'
+import nativewind from "nativewind/preset";
+import type { Config } from "tailwindcss";
 
-import baseConfig from '@memoize/tailwind-config/native'
+import baseConfig from "@memoize/tailwind-config/native";
 
 export default {
-  content: ['./src/**/*.{ts,tsx}'],
+  content: ["./src/**/*.{ts,tsx}"],
   presets: [baseConfig, nativewind],
-} satisfies Config
+} satisfies Config;

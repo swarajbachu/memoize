@@ -322,6 +322,9 @@ importers:
 
   packages/api:
     dependencies:
+      '@hono/auth-js':
+        specifier: ^1.0.10
+        version: 1.0.10(@auth/core@0.34.2)(hono@4.5.11)(react@18.3.1)
       '@memoize/auth':
         specifier: workspace:*
         version: link:../auth
@@ -2454,6 +2457,14 @@ packages:
 
   '@hapi/topo@5.1.0':
     resolution: {integrity: sha512-foQZKJig7Ob0BMAYBfcJk8d77QtOe7Wo4ox7ff1lQYoNNAb6jwcY1ncdoy2e9wQZzvNy7ODZCYJkK8kzmcAnAg==}
+
+  '@hono/auth-js@1.0.10':
+    resolution: {integrity: sha512-hnkZzPMHveX2GzX/zS53uP6OqzB6SCtJCaimXdjewCWWiNi4FFtv1jcsca3PV7haiaLKict5JPZWzfMq+t3Bzw==}
+    engines: {node: '>=18.4.0'}
+    peerDependencies:
+      '@auth/core': 0.*
+      hono: '>=3.*'
+      react: '>=18'
 
   '@hookform/resolvers@3.9.0':
     resolution: {integrity: sha512-bU0Gr4EepJ/EQsH/IwEzYLsT/PEj5C0ynLQ4m+GSHS+xKH4TfSelhluTgOaoc4kA5s7eCsQbM4wvZLzELmWzUg==}
@@ -11997,6 +12008,12 @@ snapshots:
   '@hapi/topo@5.1.0':
     dependencies:
       '@hapi/hoek': 9.3.0
+
+  '@hono/auth-js@1.0.10(@auth/core@0.34.2)(hono@4.5.11)(react@18.3.1)':
+    dependencies:
+      '@auth/core': 0.34.2
+      hono: 4.5.11
+      react: 18.3.1
 
   '@hookform/resolvers@3.9.0(react-hook-form@7.52.2(react@18.3.1))':
     dependencies:

@@ -1,9 +1,9 @@
-'use client'
+"use client";
 
-import { zodResolver } from '@hookform/resolvers/zod'
-import { cn } from '@memoize/ui'
-import { Alert, AlertDescription, AlertTitle } from '@memoize/ui/alert'
-import { Button } from '@memoize/ui/button'
+import { zodResolver } from "@hookform/resolvers/zod";
+import { cn } from "@memoize/ui";
+import { Alert, AlertDescription, AlertTitle } from "@memoize/ui/alert";
+import { Button } from "@memoize/ui/button";
 import {
   Card,
   CardContent,
@@ -11,7 +11,7 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from '@memoize/ui/card'
+} from "@memoize/ui/card";
 import {
   Form,
   FormControl,
@@ -19,83 +19,72 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from '@memoize/ui/form'
-import { Input } from '@memoize/ui/input'
-import { type LoginType, loginSchema } from '@memoize/validators/auth'
-import { useMutation } from '@tanstack/react-query'
-import { Github, Loader } from 'lucide-react'
-import Link from 'next/link'
-import { useRouter, useSearchParams } from 'next/navigation'
-import { useState } from 'react'
-import { useForm } from 'react-hook-form'
-import { client } from '~/trpc/hono'
-import { signInActionWithGoogle } from './actions'
-import { PasswordInput } from './password-input'
+} from "@memoize/ui/form";
+import { Input } from "@memoize/ui/input";
+import { type LoginType, loginSchema } from "@memoize/validators/auth";
+import { useMutation } from "@tanstack/react-query";
+import { Github, Loader } from "lucide-react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { signInActionWithGoogle } from "./actions";
+import { PasswordInput } from "./password-input";
+import { api } from "~/trpc/react";
 
 export default function LoginForm() {
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(false);
   const [formStatus, setFormStatus] = useState<{
-    type: 'error' | 'success' | null
-    message: string | null
-  }>({ type: null, message: null })
+    type: "error" | "success" | null;
+    message: string | null;
+  }>({ type: null, message: null });
 
-  const router = useRouter()
-  const searchParams = useSearchParams()
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
   const form = useForm<LoginType>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      email: '',
-      password: '',
+      email: "",
+      password: "",
     },
-  })
+  });
 
-  const signInWithCredentials = useMutation({
-    mutationFn: async ({
-      password,
-      email,
-    }: {
-      password: string
-      email: string
-    }) => {
-      const test = await client.auth.signInUser.$post({ password, email })
-      return test
-    },
-  })
+  const signInWithCredentials = api.auth.signInUser.useMutation();
 
   async function onSubmit(data: LoginType) {
-    setIsLoading(true)
-    setFormStatus({ type: null, message: null })
+    setIsLoading(true);
+    setFormStatus({ type: null, message: null });
 
     try {
       // Simulate API call
       const res = await signInWithCredentials.mutateAsync({
         email: data.email,
         password: data.password,
-      })
-      const json = await res.json()
+      });
+      const json = res;
       // Simulated success
 
       if (json.redirect === true) {
-        const redirectUrl = searchParams.get('redirectTo')
+        const redirectUrl = searchParams.get("redirectTo");
         if (redirectUrl) {
-          router.push(redirectUrl)
+          router.push(redirectUrl);
         } else {
-          router.push('/')
+          router.push("/");
         }
       }
       setFormStatus({
-        type: json.success ? 'success' : 'error',
+        type: json.success ? "success" : "error",
         message: json.message,
-      })
+      });
     } catch (error) {
-      console.log(error)
+      console.log(error);
       setFormStatus({
-        type: 'error',
-        message: 'Invalid credentials. Please try again.',
-      })
+        type: "error",
+        message: "Invalid credentials. Please try again.",
+      });
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
   }
 
@@ -116,10 +105,9 @@ export default function LoginForm() {
             disabled={isLoading}
             className="w-full"
             onClick={() => {
-              signInActionWithGoogle()
+              signInActionWithGoogle();
             }}
           >
-            {/* biome-ignore lint/a11y/noSvgWithoutTitle: <explanation> */}
             <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
               <path
                 d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
@@ -199,21 +187,21 @@ export default function LoginForm() {
                   Logging in...
                 </>
               ) : (
-                'Login'
+                "Login"
               )}
             </Button>
           </form>
         </Form>
         {formStatus.type && (
           <Alert
-            variant={formStatus.type === 'error' ? 'destructive' : 'default'}
+            variant={formStatus.type === "error" ? "destructive" : "default"}
             className={cn(
-              'mt-4',
-              formStatus.type === 'success' && 'bg-green-700/20 text-green-700',
+              "mt-4",
+              formStatus.type === "success" && "bg-green-700/20 text-green-700",
             )}
           >
             <AlertTitle>
-              {formStatus.type === 'error' ? 'Error' : 'Success'}
+              {formStatus.type === "error" ? "Error" : "Success"}
             </AlertTitle>
             <AlertDescription>{formStatus.message}</AlertDescription>
           </Alert>
@@ -221,12 +209,12 @@ export default function LoginForm() {
       </CardContent>
       <CardFooter>
         <p className="text-sm text-center w-full text-muted-foreground">
-          Don't have an account?{' '}
+          Don't have an account?{" "}
           <Link href="/sign-up" className="text-primary hover:underline">
             Sign up
           </Link>
         </p>
       </CardFooter>
     </Card>
-  )
+  );
 }

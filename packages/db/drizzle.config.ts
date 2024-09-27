@@ -1,27 +1,27 @@
-import type { Config } from 'drizzle-kit'
+import type { Config } from "drizzle-kit";
 
-import fs from 'node:fs'
-import path from 'node:path'
+import fs from "node:fs";
+import path from "node:path";
 
 function getLocalD1DB() {
   try {
-    const basePath = path.resolve('../../apps/application/.wrangler')
+    const basePath = path.resolve("../../apps/application/.wrangler");
     const dbFile = fs
-      .readdirSync(basePath, { encoding: 'utf-8', recursive: true })
-      .find((f) => f.endsWith('.sqlite'))
+      .readdirSync(basePath, { encoding: "utf-8", recursive: true })
+      .find((f) => f.endsWith(".sqlite"));
 
     if (!dbFile) {
-      throw new Error(`.sqlite file not found in ${basePath}`)
+      throw new Error(`.sqlite file not found in ${basePath}`);
     }
 
-    const url = path.resolve(basePath, dbFile)
-    return url
+    const url = path.resolve(basePath, dbFile);
+    return url;
   } catch (err) {
-    console.log(`Error  ${err}`)
+    console.log(`Error  ${err}`);
   }
 }
 
-console.log(getLocalD1DB(), process.env.NODE_ENV, 'local path')
+console.log(getLocalD1DB(), process.env.NODE_ENV, "local path");
 
 // if (
 //   !process.env.CLOUDFLARE_ACCOUNT_ID ||
@@ -32,11 +32,11 @@ console.log(getLocalD1DB(), process.env.NODE_ENV, 'local path')
 // }
 
 export default {
-  schema: './src/schema/*',
-  dialect: 'sqlite',
-  ...(process.env.NODE_ENV === 'production'
+  schema: "./src/schema/*",
+  dialect: "sqlite",
+  ...(process.env.NODE_ENV === "production"
     ? {
-        driver: 'd1-http',
+        driver: "d1-http",
         dbCredentials: {
           accountId: process.env.CLOUDFLARE_ACCOUNT_ID,
           databaseId: process.env.CLOUDFLARE_DATABASE_ID,
@@ -48,5 +48,5 @@ export default {
           url: getLocalD1DB(),
         },
       }),
-  out: 'migrations',
-} satisfies Config
+  out: "migrations",
+} satisfies Config;
