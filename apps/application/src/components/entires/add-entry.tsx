@@ -31,7 +31,7 @@ export default function Component() {
 
   const { mutateAsync: addEntry } = api.entries.addEntry.useMutation();
 
-  const debouncedText = useDebounce(text, 300);
+  const debouncedText = useDebounce(text, 2000);
 
   const saveEntry = useCallback(
     async (content: string) => {
