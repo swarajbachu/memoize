@@ -1,5 +1,6 @@
 import { Card } from "@memoize/ui/card";
 import { Textarea } from "@memoize/ui/textarea";
+import EntryEditor from "~/components/entires/entry-editor";
 import { api } from "~/trpc/server";
 
 export const runtime = "edge";
@@ -11,9 +12,8 @@ export default async function EntryPage({
 }) {
   const entry = await api.entries.findEntryById(params.id);
   return (
-    <Textarea
-      className="h-full border-none  ring-transparent shadow-none resize-none focus-visible:ring-none"
-      defaultValue={entry?.content}
-    />
+    <section className="h-[90vh]">
+      <EntryEditor id={params.id} defaultText={entry?.content} />
+    </section>
   );
 }
