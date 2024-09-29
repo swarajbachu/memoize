@@ -6,6 +6,7 @@ import type React from "react";
 import { useCallback, useEffect, useState } from "react";
 import { useDebounce } from "~/hooks/debounce";
 import { api } from "~/trpc/react";
+import { revalidateTag } from "next/cache";
 
 type SaveStatus = "saved" | "saving" | "error";
 
@@ -21,8 +22,13 @@ const EntryEditor: React.FC<EntryEditorProps> = ({
   const [text, setText] = useState(defaultText);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
   const [entryId, setId] = useState<string | null>(id);
+  const utils = api.useUtils();
 
-  const { mutateAsync: addEntry } = api.entries.addEntry.useMutation();
+  const { mutateAsync: addEntry } = api.entries.addEntry.useMutation({
+    onSuccess: () => {
+      utils.entries.findAllEntires.invalidate();
+    },
+  });
   const debouncedText = useDebounce(text, 1000);
 
   const saveEntry = useCallback(

@@ -36,7 +36,7 @@ export default function AddEntry() {
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
-      <DrawerContent className="z-50 h-[90vh]">
+      <DrawerContent className="z-50 sm:h-[90vh]">
         <div className="mx-auto w-full h-full">
           <DrawerHeader className="flex justify-between items-center">
             <DrawerTitle>Add New</DrawerTitle>
