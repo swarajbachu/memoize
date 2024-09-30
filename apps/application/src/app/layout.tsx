@@ -42,6 +42,8 @@ export const viewport: Viewport = {
   ],
 };
 
+export const runtime = "edge";
+
 export default function RootLayout(props: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning className="dark">
