@@ -1,22 +1,33 @@
-import { Input } from "@memoize/ui/input";
+"use client";
+
 import { ScrollArea } from "@memoize/ui/scroll-area";
-import { Suspense } from "react";
-import { SidebarComponent } from "~/components/layout/sidebar-comp";
+import { Suspense, useEffect } from "react";
 import FetchEntries from "./fetch-entries";
-import { Card, CardHeader } from "@memoize/ui/card";
+import { Card } from "@memoize/ui/card";
 import Search from "~/components/layout/search";
 import AddEntry from "~/components/entires/add-entry";
-import { headers } from "next/headers";
 import { cn } from "@memoize/ui";
+import { usePathname } from "next/navigation";
+import { useEntrySync } from "~/hooks/use-entry-sync";
+import useStore from "~/store/entries";
+import { api } from "~/trpc/react";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
-  const head = headers();
-  const domain = head.get("host") || "";
-  const fullUrl = head.get("referer") || "";
+  const pathName = usePathname();
+  const pathNameIsNotDashboard = pathName.includes("/entry");
+  const setEntries = useStore((state) => state.setEntries);
+  const { data, isLoading, error, refetch } =
+    api.entries.findAllEntires.useQuery(undefined, {
+      refetchOnWindowFocus: false, // Disable automatic refetching
+      enabled: false, // We'll control when to fetch
+    });
+  useEntrySync();
 
-  const pathName = fullUrl.replace(`https://${domain}`, "");
-  const pathNameIsDashboard =
-    pathName === "/dashboard" || pathName === "/dashboard/";
+  useEffect(() => {
+    if (!isLoading && !error && data) {
+      setEntries(data);
+    }
+  }, [data]);
 
   return (
     <section className="relative flex-1 gap-0 md:flex p-5">
@@ -24,7 +35,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <Card
         className={cn(
           "w-full p-2  sm:w-96 border-r shadow-sm",
-          pathNameIsDashboard ? "block" : "md:block hidden",
+          !pathNameIsNotDashboard ? "block" : "md:block hidden",
         )}
       >
         <Search />

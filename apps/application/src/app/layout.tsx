@@ -66,7 +66,7 @@ export default function RootLayout(props: { children: React.ReactNode }) {
         />
         <link rel="manifest" href="/site.webmanifest" />
         <link rel="mask-icon" href="/safari-pinned-tab.svg" color="#000000" />
-        <meta name="msapplication-TileColor" content="#ffffff" />
+        <meta name="memoize" content="#ffffff" />
         <meta name="theme-color" content="#ffffff" />
       </head>
       <body

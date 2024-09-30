@@ -74,4 +74,13 @@ export const entryRouter = {
         });
       return entry[0];
     }),
+  deleteEntry: protectedProcedure
+    .input(z.string())
+    .mutation(async ({ ctx, input }) => {
+      const entry = await ctx.db
+        .delete(entries.entries)
+        .where(eq(entries.entries.id, input))
+        .returning();
+      return entry[0];
+    }),
 } satisfies TRPCRouterRecord;

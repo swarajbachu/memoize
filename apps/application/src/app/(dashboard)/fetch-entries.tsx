@@ -1,11 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import React, { Suspense } from "react";
-import { api } from "~/trpc/react";
+import React from "react";
+import { useEntries } from "~/hooks/fetch-entries";
 
 export default function FetchEntries() {
-  const { data: entries } = api.entries.findAllEntires.useQuery();
+  const { entries } = useEntries();
 
   return (
     <>
@@ -16,7 +16,9 @@ export default function FetchEntries() {
               {entry.content.split(" ").slice(0, 10).join(" ")}
             </h3>
             <p className="text-sm text-muted-foreground">
-              {entry.createdAt.toTimeString()}
+              {entry.updatedAt
+                ? entry.updatedAt.toLocaleString()
+                : new Date().toLocaleString()}
             </p>
           </div>
         </Link>

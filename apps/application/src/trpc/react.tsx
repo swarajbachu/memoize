@@ -41,7 +41,6 @@ export function TRPCReactProvider(props: { children: React.ReactNode }) {
         }),
         unstable_httpBatchStreamLink({
           transformer: SuperJSON,
-          // biome-ignore lint/style/useTemplate: <explanation>
           url: getBaseUrl() + "/api/trpc",
           headers() {
             const headers = new Headers();
