@@ -89,8 +89,8 @@ const EntryEditor: React.FC<EntryEditorProps> = ({
   }, [debounceText, entryId, entry, userId]);
 
   return (
-    <div className="p-4 relative h-full">
-      <Badge className="absolute top-2 right-2">Editing</Badge>
+    <div className="sm:p-4 relative h-full">
+      {/* <Badge className="absolute top-2 right-2">Editing</Badge> */}
       <Textarea
         value={text}
         onChange={handleTextChange}

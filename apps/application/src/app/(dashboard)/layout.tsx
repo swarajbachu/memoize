@@ -12,7 +12,8 @@ import { useEntrySync } from "~/hooks/use-entry-sync";
 import FetchEntries from "./fetch-entries";
 import { Drawer, DrawerContent, DrawerTrigger } from "@memoize/ui/drawer";
 import { Button } from "@memoize/ui/button";
-import { Menu } from "lucide-react";
+import { ArrowLeft, Menu } from "lucide-react";
+import Link from "next/link";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const pathName = usePathname();
@@ -28,8 +29,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("resize", checkIfMobile);
   }, []);
   return (
-    <section className="relative flex-1 gap-0 md:flex p-5">
-      {isMobile ? (
+    <section className="relative flex-1 gap-0 sm:flex p-5">
+      {/* {isMobile ? (
         <div className="sticky top-0 z-10 bg-background border-b p-2 flex justify-between items-center">
           <h1 className="text-lg font-semibold">Your App Name</h1>
           <Drawer>
@@ -43,14 +44,36 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             </DrawerContent>
           </Drawer>
         </div>
-      ) : (
-        <Card className={cn("w-full p-2  sm:w-96 border-r shadow-sm")}>
-          <SidebarContent />
-        </Card>
-      )}
+      ) : ( */}
+      <Card
+        className={cn(
+          "w-full p-2  sm:w-96 border-r shadow-sm sm:block",
+          pathNameIsNotDashboard ? "hidden" : "block",
+        )}
+      >
+        <SidebarContent />
+      </Card>
+      {/* )} */}
       <AddEntry />
-      <div className="relative grid w-full items-center px-2 md:block  md:p-0 mx-2">
-        <ScrollArea className="h-[calc(100vh-6rem)]">{children}</ScrollArea>
+      <div
+        className={cn(
+          "relative grid w-full  px-2  sm:p-0 mx-2",
+          !pathNameIsNotDashboard && "hidden",
+        )}
+      >
+        <ScrollArea className="h-[calc(90vh)]">
+          <Button
+            className={cn("ml-2 block sm:hidden w-fit")}
+            size="md"
+            asChild
+          >
+            <Link href="/" className="flex">
+              <ArrowLeft />
+              <span className="ml-2">Back To Entires</span>
+            </Link>
+          </Button>
+          {children}
+        </ScrollArea>
       </div>
     </section>
   );
