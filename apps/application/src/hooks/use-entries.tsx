@@ -1,12 +1,10 @@
-// Filename: useEntries.ts
-
 import { useEffect } from "react";
 import useStore, { type Entry } from "~/store/entries";
 import { api } from "~/trpc/react";
 
 export function useEntries() {
   const entries = useStore((state) => state.entries);
-  const setEntries = useStore((state) => state.setEntries);
+  const addEntries = useStore((state) => state.addEntries);
 
   const { data, isLoading, error, refetch } =
     api.entries.findAllEntires.useQuery(undefined, {
@@ -23,10 +21,10 @@ export function useEntries() {
         updatedEntry: false,
         deleted: false,
       }));
-      setEntries(processedEntries);
-      console.log("Entries set to store:", processedEntries);
+      console.log("Entries fetched:", processedEntries);
+      addEntries(processedEntries); // This will update existing entries
     }
-  }, [data, setEntries]);
+  }, [data, addEntries]);
 
   // Periodic sync every 5 minutes
   useEffect(() => {
@@ -41,6 +39,7 @@ export function useEntries() {
   }, [refetch]);
 
   const getEntryById = (id: string) => entries.find((entry) => entry.id === id);
+  console.log("Entries:", entries);
 
   const descEntries = [...entries].sort((a, b) => {
     if (b.updatedAt && a.updatedAt) {

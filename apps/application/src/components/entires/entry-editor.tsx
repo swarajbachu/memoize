@@ -11,18 +11,24 @@ import { api } from "~/trpc/react";
 
 type EntryEditorProps = Partial<entries.EntrySelect>;
 
-const EntryEditor: React.FC<EntryEditorProps> = ({ id, content, userId }) => {
+const EntryEditor: React.FC<EntryEditorProps> = ({
+  id,
+  content,
+  userId,
+  ...props
+}) => {
   const [text, setText] = useState(content ?? "");
   const [entryId, setEntryId] = useState<string | undefined>(id);
   const debounceText = useDebounce(text, 500);
   const isAdding = useRef(false); // Prevent multiple addEntry calls
+  const [entry, setEntry] = useState<entries.EntrySelect | null>();
 
   // Zustand store actions
   const addEntryToStore = useStore((state) => state.addEntry);
   const updateEntryInStore = useStore((state) => state.updateEntry);
 
   // TRPC mutations
-  const utils = api.useContext();
+  const utils = api.useUtils();
   const addEntryMutation = api.entries.addEntry.useMutation({
     onSuccess: (data) => {
       if (data) {
@@ -33,6 +39,7 @@ const EntryEditor: React.FC<EntryEditorProps> = ({ id, content, userId }) => {
           deleted: false,
         });
         setEntryId(data.id); // Set the actual ID
+        setEntry(data); // Set the entry for further updates
       }
       // Invalidate queries to refresh cache
       utils.entries.findAllEntires.invalidate();
@@ -50,30 +57,29 @@ const EntryEditor: React.FC<EntryEditorProps> = ({ id, content, userId }) => {
   };
 
   // Effect to create entry when user starts typing
-  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
     if (!entryId && text.trim().length > 0 && !isAdding.current) {
       isAdding.current = true;
       addEntryMutation.mutate({
         content: text.trim(),
+        // Include other necessary fields if any
       });
     }
   }, [entryId, text]);
 
   // Effect to update entry in the store when debounced text changes
-  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
-    if (entryId && debounceText.trim().length > 0) {
+    console.log("Debounced text:", debounceText, userId || entry, entryId);
+    if ((entry || userId) && entryId && debounceText.trim().length > 0) {
       updateEntryInStore({
+        userId: entry?.userId || userId || "",
         id: entryId,
         content: debounceText.trim(),
         updatedAt: new Date(),
-        updatedEntry: true, // Mark as updated for synchronization
-        userId: userId ?? "test",
-        // Include other necessary fields if any
+        updatedEntry: true,
       });
     }
-  }, [debounceText]);
+  }, [debounceText, entryId]);
 
   return (
     <div className="p-4 relative h-full">

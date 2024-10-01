@@ -6,15 +6,16 @@ import { produce } from "immer";
 import type { entries } from "@memoize/db";
 
 export type Entry = entries.EntryInsert & {
-  id: string;
-  updatedEntry?: boolean; // Indicates an entry that has been modified
-  deleted?: boolean; // Indicates an entry marked for deletion
+  newEntry?: boolean;
+  updatedEntry?: boolean;
+  deleted?: boolean;
 };
 
 type State = {
   entries: Entry[];
   setEntries: (entries: Entry[]) => void;
   addEntry: (entry: Entry) => void;
+  addEntries: (entries: Entry[]) => void;
   updateEntry: (entry: Entry) => void;
   removeEntry: (id: string) => void;
 };
@@ -28,6 +29,21 @@ const useStore = create<State>()(
         set(
           produce((state: State) => {
             state.entries.push(entry);
+          }),
+        ),
+      addEntries: (newEntries: Entry[]) =>
+        set(
+          produce((state: State) => {
+            newEntries.forEach((entry) => {
+              const index = state.entries.findIndex((en) => en.id === entry.id);
+              if (index !== -1) {
+                // Update existing entry
+                state.entries[index] = { ...state.entries[index], ...entry };
+              } else {
+                // Add new entry
+                state.entries.push(entry);
+              }
+            });
           }),
         ),
       updateEntry: (entry: Entry) =>
