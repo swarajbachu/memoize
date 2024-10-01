@@ -1,5 +1,3 @@
-"use client";
-
 import type { entries } from "@memoize/db";
 import { Badge } from "@memoize/ui/badge";
 import { Textarea } from "@memoize/ui/textarea";
@@ -21,7 +19,10 @@ const EntryEditor: React.FC<EntryEditorProps> = ({
   const [entryId, setEntryId] = useState<string | undefined>(id);
   const debounceText = useDebounce(text, 500);
   const isAdding = useRef(false); // Prevent multiple addEntry calls
-  const [entry, setEntry] = useState<entries.EntrySelect | null>();
+  const [entry, setEntry] = useState<entries.EntrySelect | null>(null);
+
+  // Keep track of the initial content
+  const initialContentRef = useRef(content ?? "");
 
   // Zustand store actions
   const addEntryToStore = useStore((state) => state.addEntry);
@@ -69,8 +70,12 @@ const EntryEditor: React.FC<EntryEditorProps> = ({
 
   // Effect to update entry in the store when debounced text changes
   useEffect(() => {
-    console.log("Debounced text:", debounceText, userId || entry, entryId);
-    if ((entry || userId) && entryId && debounceText.trim().length > 0) {
+    if (
+      (entry || userId) &&
+      entryId &&
+      debounceText.trim().length > 0 &&
+      debounceText.trim() !== initialContentRef.current.trim()
+    ) {
       updateEntryInStore({
         userId: entry?.userId || userId || "",
         id: entryId,
@@ -78,8 +83,10 @@ const EntryEditor: React.FC<EntryEditorProps> = ({
         updatedAt: new Date(),
         updatedEntry: true,
       });
+      // Update the initial content reference
+      initialContentRef.current = debounceText.trim();
     }
-  }, [debounceText, entryId]);
+  }, [debounceText, entryId, entry, userId]);
 
   return (
     <div className="p-4 relative h-full">

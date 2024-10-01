@@ -30,6 +30,7 @@ export const useEntrySync = () => {
       // Handle deleted entries (if applicable)
       const deletedEntries = entries.filter((entry) => entry.deleted);
       for (const entry of deletedEntries) {
+        if (!entry.id) continue;
         await deleteEntryMutation.mutateAsync(entry.id);
         removeEntry(entry.id);
       }

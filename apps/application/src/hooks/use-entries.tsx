@@ -39,7 +39,6 @@ export function useEntries() {
   }, [refetch]);
 
   const getEntryById = (id: string) => entries.find((entry) => entry.id === id);
-  console.log("Entries:", entries);
 
   const descEntries = [...entries].sort((a, b) => {
     if (b.updatedAt && a.updatedAt) {
