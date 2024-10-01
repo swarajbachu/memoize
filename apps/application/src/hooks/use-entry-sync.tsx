@@ -42,6 +42,7 @@ export const useEntrySync = () => {
   };
 
   // Sync when the user leaves the website or moves to another tab
+  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === "hidden") {
@@ -59,6 +60,7 @@ export const useEntrySync = () => {
   }, [entries]);
 
   // Sync every two minutes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
     const intervalId = setInterval(
       () => {

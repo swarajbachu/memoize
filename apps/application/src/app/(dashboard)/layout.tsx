@@ -9,25 +9,14 @@ import AddEntry from "~/components/entires/add-entry";
 import { cn } from "@memoize/ui";
 import { usePathname } from "next/navigation";
 import { useEntrySync } from "~/hooks/use-entry-sync";
-import useStore from "~/store/entries";
-import { api } from "~/trpc/react";
+import { useEntries } from "~/hooks/use-entries";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const pathName = usePathname();
   const pathNameIsNotDashboard = pathName.includes("/entry");
-  const setEntries = useStore((state) => state.setEntries);
-  const { data, isLoading, error, refetch } =
-    api.entries.findAllEntires.useQuery(undefined, {
-      refetchOnWindowFocus: false, // Disable automatic refetching
-      enabled: false, // We'll control when to fetch
-    });
-  useEntrySync();
 
-  useEffect(() => {
-    if (!isLoading && !error && data) {
-      setEntries(data);
-    }
-  }, [data]);
+  useEntrySync();
+  useEntries();
 
   return (
     <section className="relative flex-1 gap-0 md:flex p-5">

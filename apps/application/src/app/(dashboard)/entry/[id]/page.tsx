@@ -1,7 +1,7 @@
 "use client";
 
 import EntryEditor from "~/components/entires/entry-editor";
-import { useEntries } from "~/hooks/fetch-entries";
+import { useEntries } from "~/hooks/use-entries";
 
 export default function EntryPage({ params }: { params: { id: string } }) {
   const { getEntryById } = useEntries();

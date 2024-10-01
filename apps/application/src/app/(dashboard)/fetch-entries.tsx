@@ -2,14 +2,14 @@
 
 import Link from "next/link";
 import React from "react";
-import { useEntries } from "~/hooks/fetch-entries";
+import { useEntries } from "~/hooks/use-entries";
 
 export default function FetchEntries() {
-  const { entries } = useEntries();
+  const { descEntries } = useEntries();
 
   return (
     <>
-      {entries?.map((entry) => (
+      {descEntries?.map((entry) => (
         <Link href={`/entry/${entry.id}`} key={entry.id}>
           <div className="p-4 cursor-pointer hover:bg-accent rounded-md">
             <h3 className="font-medium">

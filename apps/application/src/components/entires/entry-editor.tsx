@@ -4,39 +4,43 @@ import type { entries } from "@memoize/db";
 import { Badge } from "@memoize/ui/badge";
 import { Textarea } from "@memoize/ui/textarea";
 import type React from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useDebounce } from "~/hooks/debounce";
 import useStore from "~/store/entries";
 import { api } from "~/trpc/react";
 
 type EntryEditorProps = Partial<entries.EntrySelect>;
-const EntryEditor: React.FC<EntryEditorProps> = ({
-  content = "",
-  id,
-  userId,
-}) => {
-  const [text, setText] = useState(content);
-  const debounceText = useDebounce(text, 500);
-  const [entryId, setEntryId] = useState<string | undefined>(id);
 
+const EntryEditor: React.FC<EntryEditorProps> = ({ id, content, userId }) => {
+  const [text, setText] = useState(content ?? "");
+  const [entryId, setEntryId] = useState<string | undefined>(id);
+  const debounceText = useDebounce(text, 500);
+  const isAdding = useRef(false); // Prevent multiple addEntry calls
+
+  // Zustand store actions
   const addEntryToStore = useStore((state) => state.addEntry);
   const updateEntryInStore = useStore((state) => state.updateEntry);
 
   // TRPC mutations
-  const utils = api.useUtils();
+  const utils = api.useContext();
   const addEntryMutation = api.entries.addEntry.useMutation({
     onSuccess: (data) => {
-      // Update the entry in the store with the new ID from the server
       if (data) {
+        // Add the newly created entry to the store
         addEntryToStore({
           ...data,
           updatedEntry: false,
           deleted: false,
         });
-        setEntryId(data.id);
+        setEntryId(data.id); // Set the actual ID
       }
       // Invalidate queries to refresh cache
       utils.entries.findAllEntires.invalidate();
+      isAdding.current = false; // Reset the adding flag
+    },
+    onError: (error) => {
+      console.error("Error adding entry:", error);
+      isAdding.current = false; // Reset the adding flag on error
     },
   });
 
@@ -45,33 +49,30 @@ const EntryEditor: React.FC<EntryEditorProps> = ({
     setText(e.target.value);
   };
 
-  const saveEntry = useCallback(
-    async (content: string) => {
-      if (entryId && userId) {
-        // Update existing entry in the store
-        updateEntryInStore({
-          id: entryId,
-          content: content,
-          updatedAt: new Date(),
-          updatedEntry: true,
-          userId,
-        });
-      } else {
-        // Create a new entry with a temporary ID
-        const newEntry = await addEntryMutation.mutateAsync({
-          content: debounceText,
-        });
-        if (!newEntry) {
-          return;
-        }
-        setEntryId(newEntry?.id);
-      }
-    },
-    [entryId],
-  );
-
+  // Effect to create entry when user starts typing
+  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
-    saveEntry(debounceText);
+    if (!entryId && text.trim().length > 0 && !isAdding.current) {
+      isAdding.current = true;
+      addEntryMutation.mutate({
+        content: text.trim(),
+      });
+    }
+  }, [entryId, text]);
+
+  // Effect to update entry in the store when debounced text changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
+  useEffect(() => {
+    if (entryId && debounceText.trim().length > 0) {
+      updateEntryInStore({
+        id: entryId,
+        content: debounceText.trim(),
+        updatedAt: new Date(),
+        updatedEntry: true, // Mark as updated for synchronization
+        userId: userId ?? "test",
+        // Include other necessary fields if any
+      });
+    }
   }, [debounceText]);
 
   return (
