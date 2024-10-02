@@ -47,7 +47,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       ) : ( */}
       <Card
         className={cn(
-          "w-full p-2  sm:w-96 border-r shadow-sm sm:block",
+          "w-full p-2  sm:w-96 border-r shadow-sm sm:block bg-transparent sm:bg-card border-none  sm:border-[0.5px]",
           pathNameIsNotDashboard ? "hidden" : "block",
         )}
       >
@@ -61,7 +61,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           !pathNameIsNotDashboard && "hidden",
         )}
       >
-        <ScrollArea className="h-[calc(90vh)]">
+        <ScrollArea className="h-[calc(97dvh)]">
           <Button
             className={cn("ml-2 block sm:hidden w-fit")}
             size="md"

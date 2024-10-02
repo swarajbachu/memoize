@@ -41,13 +41,36 @@ export function useEntries() {
   const getEntryById = (id: string) => entries.find((entry) => entry.id === id);
 
   const descEntries = [...entries].sort((a, b) => {
-    if (b.updatedAt && a.updatedAt) {
-      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    if (b.createdAt && a.createdAt) {
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     }
-    if (b.updatedAt) return 1;
-    if (a.updatedAt) return -1;
+    if (b.createdAt) return 1;
+    if (a.createdAt) return -1;
     return 0;
   });
 
-  return { descEntries, entries, isLoading, error, getEntryById };
+  const groupedEntriesByMonth = descEntries.reduce(
+    (acc: Record<string, Entry[]>, entry) => {
+      const date = entry.createdAt ? new Date(entry.createdAt) : new Date();
+      const monthKey = date.toLocaleString("default", {
+        month: "long",
+        year: "numeric",
+      });
+      if (!acc[monthKey]) {
+        acc[monthKey] = [];
+      }
+      acc[monthKey].push(entry);
+      return acc;
+    },
+    {},
+  );
+
+  return {
+    descEntries,
+    entries,
+    isLoading,
+    error,
+    getEntryById,
+    groupedEntriesByMonth,
+  };
 }
