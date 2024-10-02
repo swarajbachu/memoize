@@ -28,6 +28,9 @@ const handler = auth(async (req) => {
     endpoint: "/api/trpc",
     router: appRouter,
     req,
+    batching: {
+      enabled: false,
+    },
     createContext: () =>
       createTRPCContext({
         session: req.auth,
