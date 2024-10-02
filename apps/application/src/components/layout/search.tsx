@@ -3,7 +3,6 @@
 import React from "react";
 
 import {
-  Command,
   CommandDialog,
   CommandEmpty,
   CommandGroup,
@@ -12,10 +11,45 @@ import {
   CommandList,
 } from "@memoize/ui/command";
 
+import { DialogTitle } from "@memoize/ui/dialog";
+
 import { CiSearch } from "react-icons/ci";
+import useStore from "~/store/entries";
 
 export default function Search() {
   const [open, setOpen] = React.useState(false);
+  const entries = useStore((state) => state.entries);
+  const [searchValue, setSearchValue] = React.useState("");
+
+  const highlightText = (text: string, search: string) => {
+    if (!search.trim()) return text;
+
+    const searchWords = search
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((word) => word.toLowerCase());
+
+    const regex = new RegExp(`(${searchWords.join("|")})`, "gi");
+
+    return text.split(regex).map((part, index) => {
+      if (searchWords.includes(part.toLowerCase())) {
+        return (
+          // biome-ignore lint/suspicious/noArrayIndexKey: <explanation>
+          <span key={index} className="bg-sky-300 dark:bg-sky-800">
+            {part}
+          </span>
+        );
+      }
+      return part;
+    });
+  };
+
+  const filteredNotes = entries.filter((note) =>
+    searchValue
+      .split(/\s+/)
+      .filter(Boolean)
+      .every((word) => note.content.toLowerCase().includes(word.toLowerCase())),
+  );
 
   React.useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -44,13 +78,24 @@ export default function Search() {
       </button>
 
       <CommandDialog open={open} onOpenChange={setOpen}>
-        <CommandInput placeholder="Type a command or search..." />
+        <DialogTitle> </DialogTitle>
+        <CommandInput
+          placeholder="Type a command or search..."
+          value={searchValue}
+          onValueChange={setSearchValue}
+        />
         <CommandList>
           <CommandEmpty>No results found.</CommandEmpty>
-          <CommandGroup heading="Suggestions">
-            <CommandItem>Just test item for now</CommandItem>
-            <CommandItem>Search Emoji</CommandItem>
-            <CommandItem>Calculator</CommandItem>
+          <CommandGroup heading="search">
+            {filteredNotes.map((note) => (
+              <CommandItem key={note.id} value={note.content}>
+                <div className="w-full">
+                  <p className="text-sm">
+                    {highlightText(note.content, searchValue)}
+                  </p>
+                </div>
+              </CommandItem>
+            ))}
           </CommandGroup>
         </CommandList>
       </CommandDialog>
