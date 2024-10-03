@@ -27,7 +27,7 @@
     "@memoize/db": "workspace:*",
     "@t3-oss/env-nextjs": "^0.11.0",
     "bcrypt-edge": "^0.0.6",
-    "next": "^14.2.8",
+    "next": "14.2.14",
     "next-auth": "5.0.0-beta.20",
     "react": "catalog:react18",
     "react-dom": "catalog:react18",

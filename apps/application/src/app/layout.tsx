@@ -9,6 +9,7 @@ import { ThemeProvider, ThemeToggle } from "@memoize/ui/theme";
 import { TRPCReactProvider } from "~/trpc/react";
 
 import "~/app/globals.css";
+import "@memoize/ui/globals"
 
 import { env } from "~/env";
 

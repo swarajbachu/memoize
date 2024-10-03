@@ -13,6 +13,7 @@
     "db:studio": "turbo -F @memoize/db studio",
     "dev": "turbo watch dev",
     "dev:app": "turbo watch dev -F @memoize/application...",
+    "dev:landing": "turbo watch dev -F @memoize/landing...",
     "format": "biome format .",
     "format:fix": "biome format . --write ",
     "lint": "biome lint .",
