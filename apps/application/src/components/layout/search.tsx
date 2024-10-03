@@ -13,6 +13,8 @@ import {
 
 import { DialogTitle } from "@memoize/ui/dialog";
 
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { CiSearch } from "react-icons/ci";
 import useStore from "~/store/entries";
 
@@ -20,6 +22,7 @@ export default function Search() {
   const [open, setOpen] = React.useState(false);
   const entries = useStore((state) => state.entries);
   const [searchValue, setSearchValue] = React.useState("");
+  const router = useRouter();
 
   const highlightText = (text: string, search: string) => {
     if (!search.trim()) return text;
@@ -62,6 +65,11 @@ export default function Search() {
     return () => document.removeEventListener("keydown", down);
   }, []);
 
+  const runCommand = React.useCallback((command: () => unknown) => {
+    setOpen(false);
+    command();
+  }, []);
+
   return (
     <div>
       <button
@@ -88,7 +96,13 @@ export default function Search() {
           <CommandEmpty>No results found.</CommandEmpty>
           <CommandGroup heading="search">
             {filteredNotes.map((note) => (
-              <CommandItem key={note.id} value={note.content}>
+              <CommandItem
+                key={note.id}
+                value={note.content}
+                onSelect={() => {
+                  runCommand(() => router.push(`/entry/${note.id}`));
+                }}
+              >
                 <div className="w-full">
                   <p className="text-sm">
                     {highlightText(note.content, searchValue)}
