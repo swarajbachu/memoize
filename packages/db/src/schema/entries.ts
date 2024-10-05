@@ -5,14 +5,13 @@ import type { z } from "zod";
 import { createUniqueIds } from "../utilts";
 import { User } from "./users";
 
-// Entries table
 export const entries = sqliteTable("entries", {
   id: text("id")
     .notNull()
     .primaryKey()
     .$defaultFn(() => createUniqueIds("entry")),
   userId: text("user_id")
-    .references(() => User.id)
+    .references(() => User.clerkUserId)
     .notNull(),
   content: text("content").notNull(),
   sentimentScore: integer("sentiment_score"),
@@ -39,6 +38,6 @@ export type EntrySelect = z.infer<typeof entriesSelectSchema>;
 export const entriesRelations = relations(entries, ({ one }) => ({
   user: one(User, {
     fields: [entries.userId],
-    references: [User.id],
+    references: [User.clerkUserId],
   }),
 }));

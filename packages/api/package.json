@@ -24,18 +24,15 @@
   },
   "dependencies": {
     "@clerk/nextjs": "^5.7.1",
-    "@hono/auth-js": "^1.0.10",
-    "@memoize/auth": "workspace:*",
-    "@memoize/db": "workspace:*",
-    "@memoize/emailing": "workspace:*",
-    "@memoize/validators": "workspace:*",
     "@trpc/server": "catalog:",
-    "hono": "catalog:",
     "superjson": "2.2.1",
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@memoize/db": "workspace:*",
+    "@memoize/emailing": "workspace:*",
     "@memoize/tsconfig": "workspace:*",
+    "@memoize/validators": "workspace:*",
     "eslint": "catalog:",
     "prettier": "catalog:",
     "typescript": "catalog:"
