@@ -18,7 +18,7 @@ export default function InteractiveGrayParticleMemoize() {
 
     const updateCanvasSize = () => {
       canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
+      canvas.height = window.innerHeight / 2;
     };
 
     updateCanvasSize();
@@ -204,10 +204,10 @@ export default function InteractiveGrayParticleMemoize() {
   }, []);
 
   return (
-    <div className="relative w-full h-dvh bg-background">
+    <div className="relative w-full h-[50dvh] bg-background">
       <canvas
         ref={canvasRef}
-        className="w-full h-screen touch-none"
+        className="w-full h-[50dvh] touch-none"
         aria-label="Interactive particle effect displaying the word MEMOIZE"
       />
     </div>
