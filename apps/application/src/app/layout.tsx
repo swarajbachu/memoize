@@ -5,6 +5,7 @@ import { Toaster } from "sonner";
 
 import { cn } from "@memoize/ui";
 import { ThemeProvider, ThemeToggle } from "@memoize/ui/theme";
+import { ClerkProvider } from "@clerk/nextjs";
 
 import { TRPCReactProvider } from "~/trpc/react";
 
@@ -47,43 +48,45 @@ export const runtime = "edge";
 
 export default function RootLayout(props: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning className="dark">
-      <head>
-        <link rel="icon" href="/favicon.ico" sizes="48x48" />
-        <link
-          rel="apple-touch-icon"
-          sizes="180x180"
-          href="/apple-touch-icon.png"
-        />
-        <link
-          rel="icon"
-          type="image/png"
-          sizes="32x32"
-          href="/favicon-32x32.png"
-        />
-        <link
-          rel="icon"
-          type="image/png"
-          sizes="16x16"
-          href="/favicon-16x16.png"
-        />
-        <link rel="manifest" href="/site.webmanifest" />
-        <link rel="mask-icon" href="/safari-pinned-tab.svg" color="#000000" />
-        <meta name="memoize" content="#ffffff" />
-        <meta name="theme-color" content="#ffffff" />
-      </head>
-      <body
-        className={cn(
-          "min-h-screen bg-background font-sans text-foreground antialiased",
-          GeistSans.variable,
-          GeistMono.variable,
-        )}
-      >
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-          <Toaster />
-          <TRPCReactProvider>{props.children}</TRPCReactProvider>
-        </ThemeProvider>
-      </body>
-    </html>
+    <ClerkProvider>
+      <html lang="en" suppressHydrationWarning className="dark">
+        <head>
+          <link rel="icon" href="/favicon.ico" sizes="48x48" />
+          <link
+            rel="apple-touch-icon"
+            sizes="180x180"
+            href="/apple-touch-icon.png"
+          />
+          <link
+            rel="icon"
+            type="image/png"
+            sizes="32x32"
+            href="/favicon-32x32.png"
+          />
+          <link
+            rel="icon"
+            type="image/png"
+            sizes="16x16"
+            href="/favicon-16x16.png"
+          />
+          <link rel="manifest" href="/site.webmanifest" />
+          <link rel="mask-icon" href="/safari-pinned-tab.svg" color="#000000" />
+          <meta name="memoize" content="#ffffff" />
+          <meta name="theme-color" content="#ffffff" />
+        </head>
+        <body
+          className={cn(
+            "min-h-screen bg-background font-sans text-foreground antialiased",
+            GeistSans.variable,
+            GeistMono.variable,
+          )}
+        >
+          <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+            <Toaster />
+            <TRPCReactProvider>{props.children}</TRPCReactProvider>
+          </ThemeProvider>
+        </body>
+      </html>
+    </ClerkProvider>
   );
 }

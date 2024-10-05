@@ -1,10 +1,10 @@
+import { SignUp } from "@clerk/nextjs";
 import React from "react";
-import RegisterForm from "~/components/auth/register-form";
 
-export default function SignUpPage() {
+export default function Page() {
   return (
     <div className="flex flex-col items-center justify-center gap-4 h-screen">
-      <RegisterForm />
+      <SignUp />
     </div>
   );
 }

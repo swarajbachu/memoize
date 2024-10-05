@@ -1,15 +1,15 @@
 import { invalidateSessionToken, signIn } from "@memoize/auth";
 import type { TRPCRouterRecord } from "@trpc/server";
 
-import { protectedProcedure, publicProcedure } from "../trpc";
-import { z } from "zod";
 import { entries, eq, users } from "@memoize/db";
+import bcrypt from "bcrypt-edge";
+import { z } from "zod";
 import {
   generateVerificationToken,
   getVerificationTokenByToken,
 } from "../handlers/auth/tokens";
 import { sendVerificationToken } from "../handlers/mail/auth";
-import bcrypt from "bcrypt-edge";
+import { protectedProcedure, publicProcedure } from "../trpc";
 import { saltAndHashPassword } from "../utils/password";
 
 export const authRouter = {

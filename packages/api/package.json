@@ -23,6 +23,7 @@
     "typecheck": "tsc --noEmit --emitDeclarationOnly false"
   },
   "dependencies": {
+    "@clerk/nextjs": "^5.7.1",
     "@hono/auth-js": "^1.0.10",
     "@memoize/auth": "workspace:*",
     "@memoize/db": "workspace:*",
