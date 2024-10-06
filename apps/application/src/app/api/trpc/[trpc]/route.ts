@@ -1,6 +1,6 @@
 import { appRouter, createTRPCContext } from "@memoize/api";
-import { auth } from "@memoize/auth";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
+import type { NextRequest } from "next/server";
 
 export const runtime = "edge";
 
@@ -23,14 +23,13 @@ export const OPTIONS = () => {
   return response;
 };
 
-const handler = auth(async (req) => {
+const handler = async (req: NextRequest) => {
   const response = await fetchRequestHandler({
     endpoint: "/api/trpc",
     router: appRouter,
     req,
     createContext: () =>
       createTRPCContext({
-        session: req.auth,
         headers: req.headers,
       }),
     onError({ error, path }) {
@@ -40,6 +39,6 @@ const handler = auth(async (req) => {
 
   setCorsHeaders(response);
   return response;
-});
+};
 
 export { handler as GET, handler as POST };

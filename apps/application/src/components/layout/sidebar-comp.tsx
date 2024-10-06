@@ -5,14 +5,13 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { MdSpaceDashboard } from "react-icons/md";
 
-import { signOut } from "@memoize/auth";
 import { ThemeToggle } from "@memoize/ui/theme";
 import { Home, LogOut } from "lucide-react";
 import { IoCalendarClear, IoJournal } from "react-icons/io5";
 import { toast } from "sonner";
 import { Sidebar, SidebarBody, SidebarLink } from "./sidebar-ui";
+import { useClerk } from "@clerk/nextjs";
 
 const AccordanceMenuList = [
   {
@@ -37,6 +36,7 @@ const AccordanceMenuList = [
 export function SidebarComponent() {
   const [open, setOpen] = useState(false);
   const currentPath = usePathname();
+  const { signOut } = useClerk();
 
   return (
     <Sidebar open={open} setOpen={setOpen}>

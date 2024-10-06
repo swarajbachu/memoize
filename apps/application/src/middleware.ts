@@ -1,36 +1,37 @@
-import { auth } from "@memoize/auth";
 import { NextResponse } from "next/server";
+import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
-// Define arrays for different types of routes
-const authRoutes = ["/sign-in", "/sign-up", "/verify-email"];
-const publicRoutes = ["/test"];
+const publicRoutes = createRouteMatcher([
+  "/sign-in(.*)",
+  "/sign-up(.*)",
+  "/api/webhooks(.*)",
+  "/verify-email(.*)",
+]);
 
-export default auth((req) => {
-  const { nextUrl, auth: session } = req;
-  const isApiRoute = nextUrl.pathname.startsWith("/api");
-  const isAuthRoute = authRoutes.includes(nextUrl.pathname);
-  const isPublicRoute = publicRoutes.includes(nextUrl.pathname);
+const authRoutes = createRouteMatcher([
+  "/sign-in(.*)",
+  "/sign-up(.*)",
+  "/verify-email(.*)",
+]);
 
-  // Allow API routes to pass through
-  if (isApiRoute) {
+export default clerkMiddleware((auth, req) => {
+  const { userId, redirectToSignIn } = auth();
+  const { nextUrl } = req;
+
+  // Allow access to public routes regardless of auth status
+  if (publicRoutes(req)) {
     return NextResponse.next();
+  }
+
+  // If the user isn't signed in and the route is private, redirect to sign-in
+  if (!userId && !publicRoutes(req)) {
+    return redirectToSignIn({ returnBackUrl: req.url });
   }
 
   // Redirect logged-in users away from auth routes
-  if (session && isAuthRoute) {
-    return NextResponse.redirect(new URL("/", nextUrl.origin));
-  }
-
-  // Allow access to public routes regardless of auth status
-  if (isPublicRoute) {
-    return NextResponse.next();
-  }
-
-  // Redirect non-authenticated users to sign-in for private routes
-  if (!session && !isAuthRoute) {
-    const signInUrl = new URL("/sign-in", nextUrl.origin);
-    signInUrl.searchParams.set("redirectTo", nextUrl.pathname + nextUrl.search);
-    return NextResponse.redirect(signInUrl);
+  if (userId && authRoutes(req)) {
+    const homeUrl = new URL("/", nextUrl.origin);
+    return NextResponse.redirect(homeUrl);
   }
 
   // Allow access to all other routes for authenticated users

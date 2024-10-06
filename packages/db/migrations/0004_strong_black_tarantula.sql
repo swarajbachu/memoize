@@ -1,1 +1,0 @@
-ALTER TABLE `entries` ADD `emotions` text;

@@ -1,6 +1,5 @@
 import type { AppRouter } from "@memoize/api";
 import { createCaller, createTRPCContext } from "@memoize/api";
-import { auth } from "@memoize/auth";
 import { createHydrationHelpers } from "@trpc/react-query/rsc";
 import { headers } from "next/headers";
 import { cache } from "react";
@@ -16,7 +15,6 @@ const createContext = cache(async () => {
   heads.set("x-trpc-source", "rsc");
 
   return createTRPCContext({
-    session: await auth(),
     headers: heads,
   });
 });
