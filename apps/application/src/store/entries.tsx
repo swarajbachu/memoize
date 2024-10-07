@@ -1,9 +1,9 @@
 // Filename: entries.tsx
 
+import type { entries } from "@memoize/db";
+import { produce } from "immer";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { produce } from "immer";
-import type { entries } from "@memoize/db";
 
 export type Entry = entries.EntryInsert & {
   newEntry?: boolean;

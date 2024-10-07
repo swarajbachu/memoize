@@ -1,5 +1,5 @@
-import type { TRPCRouterRecord } from "@trpc/server";
 import { eq, users } from "@memoize/db";
+import type { TRPCRouterRecord } from "@trpc/server";
 import { z } from "zod";
 
 import { publicProcedure } from "../trpc";

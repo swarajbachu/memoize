@@ -1,6 +1,6 @@
 import type { User } from "@clerk/nextjs/server";
-import type { WebhookRequiredHeaders } from "svix";
 import { NextResponse } from "next/server";
+import type { WebhookRequiredHeaders } from "svix";
 import { Webhook } from "svix";
 
 import { db, eq, schema } from "@memoize/db";

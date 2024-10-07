@@ -3,9 +3,9 @@ import { GeistSans } from "geist/font/sans";
 import type { Metadata, Viewport } from "next";
 import { Toaster } from "sonner";
 
+import { ClerkProvider } from "@clerk/nextjs";
 import { cn } from "@memoize/ui";
 import { ThemeProvider, ThemeToggle } from "@memoize/ui/theme";
-import { ClerkProvider } from "@clerk/nextjs";
 
 import { TRPCReactProvider } from "~/trpc/react";
 

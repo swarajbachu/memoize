@@ -3,8 +3,8 @@ export { alias } from "drizzle-orm/sqlite-core";
 
 import { drizzle } from "drizzle-orm/d1";
 
-import * as users from "./schema/users";
 import * as entries from "./schema/entries";
+import * as users from "./schema/users";
 
 export * from "drizzle-orm/sql";
 import type { cloudflareWorkerTypes } from "@memoize/validators/";

@@ -31,9 +31,7 @@ export default function RootLayout() {
         <TRPCProvider>
           <Stack
             screenOptions={{
-              headerStyle: {
-                backgroundColor: "#474DEB",
-              },
+              headerShown: false,
               contentStyle: {
                 backgroundColor: colorScheme === "dark" ? "#09090B" : "#F8FAFC",
               },

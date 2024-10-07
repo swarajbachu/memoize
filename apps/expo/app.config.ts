@@ -7,12 +7,12 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   scheme: "expo",
   version: "0.1.0",
   orientation: "portrait",
-  icon: "./assets/icon.png",
+  icon: "./assets/logo.png",
   userInterfaceStyle: "automatic",
   splash: {
     image: "./assets/logo.png",
     resizeMode: "contain",
-    backgroundColor: "#1F104A",
+    backgroundColor: "#F8FAFC",
   },
   updates: {
     fallbackToCacheTimeout: 0,
@@ -25,7 +25,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   android: {
     package: "your.bundle.identifier",
     adaptiveIcon: {
-      foregroundImage: "./assets/icon.png",
+      foregroundImage: "./assets/logo.png",
       backgroundColor: "#F8FAFC",
     },
   },
@@ -38,5 +38,13 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     tsconfigPaths: true,
     typedRoutes: true,
   },
-  plugins: ["expo-router"],
+  plugins: [
+    "expo-router",
+    [
+      "expo-asset",
+      {
+        assets: ["./assets/auth-background.jpg"],
+      },
+    ],
+  ],
 });

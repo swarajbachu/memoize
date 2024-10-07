@@ -6,12 +6,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 
+import { useClerk } from "@clerk/nextjs";
 import { ThemeToggle } from "@memoize/ui/theme";
 import { Home, LogOut } from "lucide-react";
 import { IoCalendarClear, IoJournal } from "react-icons/io5";
 import { toast } from "sonner";
 import { Sidebar, SidebarBody, SidebarLink } from "./sidebar-ui";
-import { useClerk } from "@clerk/nextjs";
 
 const AccordanceMenuList = [
   {
