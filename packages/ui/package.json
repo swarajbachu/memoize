@@ -76,8 +76,6 @@
   "devDependencies": {
     "@memoize/tsconfig": "workspace:*",
     "@types/react": "catalog:react18",
-    "eslint": "catalog:",
-    "prettier": "catalog:",
     "react": "catalog:react18",
     "typescript": "catalog:",
     "zod": "catalog:"

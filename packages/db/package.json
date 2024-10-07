@@ -45,8 +45,6 @@
     "@memoize/validators": "workspace:*",
     "dotenv-cli": "^7.4.2",
     "drizzle-kit": "^0.24.2",
-    "eslint": "catalog:",
-    "prettier": "catalog:",
     "typescript": "catalog:"
   }
 }

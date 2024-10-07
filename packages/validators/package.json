@@ -32,8 +32,6 @@
   },
   "devDependencies": {
     "@memoize/tsconfig": "workspace:*",
-    "eslint": "catalog:",
-    "prettier": "catalog:",
     "typescript": "catalog:"
   }
 }

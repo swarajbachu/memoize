@@ -33,8 +33,6 @@
     "@memoize/emailing": "workspace:*",
     "@memoize/tsconfig": "workspace:*",
     "@memoize/validators": "workspace:*",
-    "eslint": "catalog:",
-    "prettier": "catalog:",
     "typescript": "catalog:"
   }
 }
