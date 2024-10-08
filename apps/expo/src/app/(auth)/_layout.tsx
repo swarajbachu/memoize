@@ -8,6 +8,7 @@ const Layout = () => {
     <Stack
       screenOptions={{
         headerShown: false,
+        gestureEnabled: false,
         contentStyle: {
           backgroundColor: colorScheme === "dark" ? "#09090B" : "#F8FAFC",
         },

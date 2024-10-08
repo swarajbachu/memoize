@@ -3,7 +3,7 @@ import { useRef, useState } from "react";
 import { Image, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-const Home = () => {
+const Onboard = () => {
   const [activeIndex, setActiveIndex] = useState(0);
 
   return (
@@ -21,4 +21,4 @@ const Home = () => {
   );
 };
 
-export default Home;
+export default Onboard;

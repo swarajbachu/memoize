@@ -65,9 +65,6 @@ async function handler(request: Request) {
   const wh = new Webhook(webhookSecret);
   let evt: Event | null = null;
 
-  console.log("Payload:", payload);
-  console.log("Headers:", heads);
-
   try {
     // Verify the webhook signature
     evt = wh.verify(JSON.stringify(payload), heads) as Event;
@@ -91,6 +88,7 @@ async function handler(request: Request) {
         const emailObject = email_addresses?.find(
           (email) => email.id === primary_email_address_id,
         );
+        console.log(emailObject, "emailObject");
 
         if (!emailObject) {
           return NextResponse.json(
@@ -112,13 +110,19 @@ async function handler(request: Request) {
           profileImageUrl: evt.data.profile_image_url,
         };
 
-        await api.auth.addUserToDatabase({
-          clerkUserId: id,
-          email: details.primaryEmail,
-          image: details.profileImageUrl,
-          name: `${details.firstName} ${details.lastName}`,
-          backendSecret: env.BACKEND_SECRET,
-        });
+        console.log(details, "details");
+
+        await api.auth
+          .addUserToDatabase({
+            clerkUserId: id,
+            email: details.primaryEmail,
+            image: details.profileImageUrl,
+            name: `${details.firstName} ${details.lastName}`,
+            backendSecret: env.BACKEND_SECRET,
+          })
+          .then((res) => {
+            console.log(res, "res");
+          });
 
         break;
       }

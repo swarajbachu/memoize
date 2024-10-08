@@ -1,4 +1,5 @@
 import { useClerk } from "@clerk/clerk-expo";
+import { router } from "expo-router";
 import React from "react";
 import { SafeAreaView, View } from "react-native";
 import { Button } from "~/components/ui/button";
@@ -18,7 +19,9 @@ const Home = () => {
         onPress={() => {
           console.log("Signing out");
           signOut({
-            redirectUrl: "/(auth)/sign-in",
+            redirectUrl: "/(auth)/sign-up",
+          }).then(() => {
+            router.push("/(auth)/sign-up");
           });
         }}
       >

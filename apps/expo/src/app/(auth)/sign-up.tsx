@@ -3,7 +3,6 @@ import { Link, router } from "expo-router";
 import { useState } from "react";
 import {
   Alert,
-  Image,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -11,15 +10,17 @@ import {
   TouchableWithoutFeedback,
   View,
 } from "react-native";
-// import {  } from "expo-image";
 import { ReactNativeModal } from "react-native-modal";
 import InputField from "~/components/input-field";
+import { Image } from "expo-image";
+import * as Haptics from "expo-haptics";
 
-import { Check, Eye, EyeOffIcon, Lock } from "lucide-react-native";
+import { Check, Lock } from "lucide-react-native";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Text } from "~/components/ui/text";
 import { assets } from "~/lib/constants";
+import OAuth from "~/components/OAuth";
 
 const SignUp = () => {
   const { isLoaded, signUp, setActive } = useSignUp();
@@ -51,12 +52,13 @@ const SignUp = () => {
       });
       // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     } catch (err: any) {
-      // See https://clerk.com/docs/custom-flows/error-handling
+      //TODO: See https://clerk.com/docs/custom-flows/error-handling
       // for more info on error handling
       console.log(JSON.stringify(err, null, 2));
       Alert.alert("Error", err.errors[0].longMessage);
     }
   };
+
   const onPressVerify = async () => {
     if (!isLoaded) return;
     try {
@@ -69,6 +71,8 @@ const SignUp = () => {
           ...verification,
           state: "success",
         });
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        router.push("/(auth)/welcome");
       } else {
         setVerification({
           ...verification,
@@ -98,7 +102,7 @@ const SignUp = () => {
             <View className="flex justify-between items-center w-full mb-14">
               <Image
                 source={assets.logo}
-                className="w-[100px] h-[100px] mx-auto invert"
+                style={{ width: 100, height: 100, resizeMode: "contain" }}
               />
               <Text className="text-3xl font-bold">Welcome to Memoize</Text>
             </View>
@@ -115,7 +119,6 @@ const SignUp = () => {
                 value={form.email}
                 onChangeText={(value) => setForm({ ...form, email: value })}
               />
-
               <Input
                 placeholder="Password"
                 secureTextEntry={!showPassword}
@@ -126,13 +129,20 @@ const SignUp = () => {
               <Button onPress={onSignUpPress}>
                 <Text>Sign Up</Text>
               </Button>
-              {/* <OAuth /> */}
+              <View className="flex flex-row justify-center items-center  gap-x-3">
+                <View className="flex-1 h-[1px] bg-muted-foreground/60" />
+                <Text className="text-lg">Or</Text>
+                <View className="flex-1 h-[1px] bg-muted-foreground/60" />
+              </View>
+              <OAuth />
+            </View>
+            <View className="p-5 flex f gap-2 justify-center w-full">
               <Link
                 href="/(auth)/sign-in"
-                className="text-lg text-center text-general-200 mt-10"
+                className="text-lg text-center  mt-10"
               >
                 Already have an account?{" "}
-                <Text className="text-primary-500">Log In</Text>
+                <Text className="text-primary">Log In</Text>
               </Link>
             </View>
             <ReactNativeModal

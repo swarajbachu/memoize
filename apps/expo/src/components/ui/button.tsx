@@ -1,8 +1,9 @@
 import { cn } from "@memoize/ui";
 import { type VariantProps, cva } from "class-variance-authority";
 import * as React from "react";
-import { Pressable } from "react-native";
+import { type GestureResponderEvent, Pressable } from "react-native";
 import { TextClassContext } from "~/components/ui/text";
+import * as Haptics from "expo-haptics";
 
 const buttonVariants = cva(
   "group flex items-center justify-center rounded-xl web:ring-offset-background web:transition-colors web:focus-visible:outline-none web:focus-visible:ring-2 web:focus-visible:ring-ring web:focus-visible:ring-offset-2",
@@ -13,7 +14,7 @@ const buttonVariants = cva(
         destructive: "bg-destructive web:hover:opacity-90 active:opacity-90",
         outline:
           "border border-input bg-background web:hover:bg-accent web:hover:text-accent-foreground active:bg-accent",
-        secondary: "bg-secondary web:hover:opacity-80 active:opacity-80",
+        secondary: "bg-secondary  active:opacity-90",
         ghost:
           "web:hover:bg-accent web:hover:text-accent-foreground active:bg-accent",
         link: "web:underline-offset-4 web:hover:underline web:focus:underline ",
@@ -65,7 +66,17 @@ type ButtonProps = React.ComponentPropsWithoutRef<typeof Pressable> &
 const Button = React.forwardRef<
   React.ElementRef<typeof Pressable>,
   ButtonProps
->(({ className, variant, size, ...props }, ref) => {
+>(({ className, variant, onPress, size, ...props }, ref) => {
+  const handlePress = (event: GestureResponderEvent) => {
+    // Trigger haptic feedback
+    // trigger("impactLight");
+    Haptics.selectionAsync();
+    // Call the original onPress function if it exists
+    if (onPress) {
+      onPress(event); // Pass the event to onPress
+    }
+  };
+
   return (
     <TextClassContext.Provider
       value={buttonTextVariants({
@@ -79,6 +90,7 @@ const Button = React.forwardRef<
           props.disabled && "opacity-50 web:pointer-events-none",
           buttonVariants({ variant, size, className }),
         )}
+        onPress={handlePress}
         ref={ref}
         role="button"
         {...props}
