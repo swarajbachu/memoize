@@ -12,8 +12,8 @@ export default function EntryCard({ ...props }: Entry) {
     <Link href={`/entries/${props.id}`}>
       <div
         className={cn(
-          " cursor-pointer hover:bg-accent border-[0.5px] bg-card sm:bg-background rounded-md shadow-md my-3",
-          pathName.includes(props.id ?? "test") && "bg-background/80",
+          "cursor-pointer hover:bg-accent border-[0.5px] bg-card  rounded-md shadow-md my-3",
+          pathName.includes(props.id ?? "test") && "bg-background",
         )}
       >
         <h3 className="text-sm p-4">

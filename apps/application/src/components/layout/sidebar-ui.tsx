@@ -1,8 +1,6 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Menu } from "lucide-react";
-import Image from "next/image";
 import type { LinkProps } from "next/link";
 import Link from "next/link";
 import type React from "react";
@@ -10,7 +8,6 @@ import { createContext, useContext, useState } from "react";
 
 import { cn } from "@memoize/ui";
 import { Button } from "@memoize/ui/button";
-import { Sheet, SheetContent, SheetTrigger } from "@memoize/ui/sheet";
 import ToolTipSimple from "@memoize/ui/tooltip-simple";
 import { FaArrowRightLong } from "react-icons/fa6";
 
@@ -143,52 +140,12 @@ export const MobileSidebar = ({
   children,
   ...props
 }: React.ComponentProps<"div">) => {
-  const { open, setOpen } = useSidebar();
   return (
-    <Sheet>
-      <div
-        className={cn(
-          "flex  w-full flex-row items-center justify-between  bg-card px-4 py-3  md:hidden",
-        )}
-        {...props}
-      >
-        <div className="z-20 flex w-full items-center justify-start gap-2">
-          <Image
-            src="/favicon.svg"
-            alt="brand"
-            className="h-8 w-8  dark:invert-0 invert"
-            width={8}
-            height={8}
-          />
-          <h5>memoize</h5>
-        </div>
-        <SheetTrigger asChild>
-          <Button
-            size="icon"
-            onClick={() => setOpen(true)}
-            className="p-0 lg:hidden"
-          >
-            <Menu className="h-6 w-6" />
-          </Button>
-        </SheetTrigger>
-      </div>
-      <SheetContent
-        className={cn(
-          "w-[90dvw] border-r-[1px] bg-card p-6 backdrop-blur-xl xs:w-[440px]",
-        )}
-      >
-        <div>
-          {/* {metadata?.currentPlan !== "FREE" && ( */}
-          {/* <div className="flex w-full justify-center">
-            <ProfileButton />
-          </div> */}
-          {children}
-        </div>
-      </SheetContent>
-    </Sheet>
+    <div className="fixed z-50 bottom-0 left-0 right-0 bg-background border-t border-border md:hidden">
+      {children}
+    </div>
   );
 };
-
 interface SidebarLinkProps extends Omit<LinkProps, "href"> {
   link: Links;
   className?: string;

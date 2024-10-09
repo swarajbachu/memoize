@@ -1,14 +1,13 @@
 "use client";
-
-import { cn } from "@memoize/ui";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import React from "react";
 import EntryCard from "~/components/entires/entry-card";
 import { useEntries } from "~/hooks/use-entries";
 
 export default function FetchEntries() {
-  const { groupedEntriesByMonth } = useEntries();
+  const { groupedEntriesByMonth, isLoading } = useEntries();
+
+  if (isLoading) {
+    return <div>Loading...</div>;
+  }
 
   return (
     <>

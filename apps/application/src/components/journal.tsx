@@ -78,13 +78,13 @@ export default function JournalingUI(): JSX.Element {
   };
 
   return (
-    <div className="h-[97dvh] flex flex-col bg-background text-foreground">
+    <div className="h-screen flex flex-col bg-background text-foreground">
       <div className="flex-grow overflow-auto" ref={containerRef}>
         <div className="max-w-2xl mx-auto p-6 flex flex-col">
           {/* Previous Entries */}
           {entries.map((entry, index) => (
             <div
-              key={entry.question}
+              key={index}
               className={cn(
                 "mb-8 transition-opacity duration-500",
                 index === 0 ? "opacity-50" : "opacity-30",
@@ -99,7 +99,7 @@ export default function JournalingUI(): JSX.Element {
           {/* Current Question and Text Editor */}
           <div
             ref={currentQuestionRef}
-            className="min-h-[calc(100vh-28rem)] flex flex-col justify-start"
+            className="min-h-[calc(100vh-8rem)] flex flex-col justify-start"
           >
             <p className="font-bold text-2xl mb-4">
               {questions[currentQuestionIndex]}
@@ -116,8 +116,8 @@ export default function JournalingUI(): JSX.Element {
           </div>
         </div>
       </div>
-      <div className="p-6 flex justify-between items-center border-t">
-        <p className="text-sm text-muted-foreground">
+      <div className="p-6 flex justify-between items-center border-t sm:mb-0 mb-[100px]">
+        <p className="text-sm text-muted-foreground hidden sm:block">
           Press Ctrl + Enter for next question
         </p>
         <div className="space-x-4">

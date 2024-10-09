@@ -5,7 +5,7 @@ import { Toaster } from "sonner";
 
 import { ClerkProvider } from "@clerk/nextjs";
 import { cn } from "@memoize/ui";
-import { ThemeProvider, ThemeToggle } from "@memoize/ui/theme";
+import { ThemeProvider } from "@memoize/ui/theme";
 
 import { TRPCReactProvider } from "~/trpc/react";
 
