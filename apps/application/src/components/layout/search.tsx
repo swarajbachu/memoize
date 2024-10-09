@@ -13,7 +13,6 @@ import {
 
 import { DialogTitle } from "@memoize/ui/dialog";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CiSearch } from "react-icons/ci";
 import useStore from "~/store/entries";
@@ -71,11 +70,11 @@ export default function Search() {
   }, []);
 
   return (
-    <div>
+    <div className="px-3">
       <button
         onClick={() => setOpen(true)}
         type="button"
-        className="inline-flex my-4 w-full items-center whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input hover:bg-accent hover:text-accent-foreground px-4 py-2 relative h-8 justify-start rounded-[0.5rem] bg-muted/50 text-sm font-normal text-muted-foreground shadow-none sm:pr-12 flex-1"
+        className="inline-flex mb-4 mt-1 w-full items-center whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input hover:bg-accent hover:text-accent-foreground px-4 py-2 relative h-8 justify-start rounded-[0.5rem] bg-muted/50 text-sm font-normal text-muted-foreground shadow-none sm:pr-12 flex-1"
       >
         <CiSearch className="mr-3 stroke-[1.5px]" />
         <span className="hidden lg:inline-flex">Search journal...</span>

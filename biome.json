@@ -39,7 +39,8 @@
         "noChildrenProp": "error",
         "useExhaustiveDependencies": "warn",
         "useHookAtTopLevel": "error",
-        "useJsxKeyInIterable": "error"
+        "useJsxKeyInIterable": "error",
+        "noUnusedImports": "warn"
       },
       "complexity": {
         "noBannedTypes": "off",

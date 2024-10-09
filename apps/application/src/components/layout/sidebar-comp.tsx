@@ -22,7 +22,7 @@ const AccordanceMenuList = [
       {
         subText: "All Journals",
         subIcon: <IoJournal />,
-        url: "/",
+        url: "/entries",
       },
       {
         subText: "Calendar",
@@ -40,7 +40,7 @@ export function SidebarComponent() {
 
   return (
     <Sidebar open={open} setOpen={setOpen}>
-      <SidebarBody className="justify-between sticky top-3  gap-10 bg-card">
+      <SidebarBody className="justify-between sticky top-3  gap-10 bg-card z-50">
         <div className="flex flex-1 flex-col overflow-y-auto overflow-x-hidden">
           {open ? <Logo /> : <LogoIcon />}
           <div className="mt-8 flex flex-col gap-2">
@@ -50,7 +50,9 @@ export function SidebarComponent() {
                 <div className="flex flex-col gap-3">
                   {link.items.map((item) => (
                     <SidebarLink
-                      className={`${currentPath.includes(item.url) ? "bg-secondary " : ""} group my-1 cursor-pointer`}
+                      className={`${
+                        currentPath.includes(item.url) ? "bg-secondary " : ""
+                      } group my-1 cursor-pointer`}
                       key={item.url}
                       link={{
                         label: item.subText,
@@ -103,7 +105,7 @@ export const Logo = () => {
       <motion.span
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        className="flex-grow whitespace-pre font-medium text-primary"
+        className="flex-grow whitespace-pre font-medium"
       >
         Memoize
       </motion.span>

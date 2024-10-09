@@ -9,7 +9,7 @@ export default function EntryCard({ ...props }: Entry) {
   const pathName = usePathname();
 
   return (
-    <Link href={`/entry/${props.id}`}>
+    <Link href={`/entries/${props.id}`}>
       <div
         className={cn(
           " cursor-pointer hover:bg-accent border-[0.5px] bg-card sm:bg-background rounded-md shadow-md my-3",
