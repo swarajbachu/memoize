@@ -1,7 +1,6 @@
+import React from "react";
 import JournalingUI from "~/components/journal";
 
-export const runtime = "edge";
-
-export default async function HomePage() {
+export default function NewEntry() {
   return <JournalingUI />;
 }
