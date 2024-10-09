@@ -5,7 +5,7 @@ import { Button } from "@memoize/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@memoize/ui/card";
 import { Loader } from "lucide-react";
 import Link from "next/link";
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 import { api } from "~/trpc/react";
 
 export default function VerifyEmail({

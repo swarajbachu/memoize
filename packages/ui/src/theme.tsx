@@ -2,7 +2,6 @@
 
 import { MoonIcon, SunIcon } from "@radix-ui/react-icons";
 import { ThemeProvider, useTheme } from "next-themes";
-import * as React from "react";
 
 import { Button } from "./button";
 import {

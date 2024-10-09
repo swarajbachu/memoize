@@ -1,9 +1,9 @@
 "use client";
 
+import { cn } from "@memoize/ui";
 import { Button } from "@memoize/ui/button";
 import { ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { cn } from "@memoize/ui";
 
 interface Entry {
   question: string;
@@ -84,7 +84,7 @@ export default function JournalingUI(): JSX.Element {
           {/* Previous Entries */}
           {entries.map((entry, index) => (
             <div
-              key={index}
+              key={entry.question}
               className={cn(
                 "mb-8 transition-opacity duration-500",
                 index === 0 ? "opacity-50" : "opacity-30",

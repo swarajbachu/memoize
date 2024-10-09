@@ -2,7 +2,6 @@ import { cn } from "@memoize/ui";
 import { Separator } from "@memoize/ui/separator";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import React from "react";
 import type { Entry } from "~/store/entries";
 
 export default function EntryCard({ ...props }: Entry) {

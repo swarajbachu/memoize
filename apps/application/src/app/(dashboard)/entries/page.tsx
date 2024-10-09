@@ -1,7 +1,6 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
 import useDeviceType from "~/hooks/use-device-type";
 import { useEntries } from "~/hooks/use-entries";
 

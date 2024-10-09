@@ -1,4 +1,6 @@
 import { useSignUp } from "@clerk/clerk-expo";
+import * as Haptics from "expo-haptics";
+import { Image } from "expo-image";
 import { Link, router } from "expo-router";
 import { useState } from "react";
 import {
@@ -12,15 +14,13 @@ import {
 } from "react-native";
 import { ReactNativeModal } from "react-native-modal";
 import InputField from "~/components/input-field";
-import { Image } from "expo-image";
-import * as Haptics from "expo-haptics";
 
 import { Check, Lock } from "lucide-react-native";
+import OAuth from "~/components/OAuth";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Text } from "~/components/ui/text";
 import { assets } from "~/lib/constants";
-import OAuth from "~/components/OAuth";
 
 const SignUp = () => {
   const { isLoaded, signUp, setActive } = useSignUp();

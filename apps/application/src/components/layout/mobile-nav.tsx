@@ -1,6 +1,6 @@
-import { Home, Clock, Calendar, BarChart, Plus } from "lucide-react";
 import { cn } from "@memoize/ui";
 import { Button } from "@memoize/ui/button";
+import { BarChart, Calendar, Clock, Home, Plus } from "lucide-react";
 import Link from "next/link";
 
 export default function MobileNav() {

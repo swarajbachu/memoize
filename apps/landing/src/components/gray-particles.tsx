@@ -2,7 +2,7 @@
 
 "use client";
 
-import React, { useRef, useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 export default function InteractiveGrayParticleMemoize() {
   const canvasRef = useRef<HTMLCanvasElement>(null);

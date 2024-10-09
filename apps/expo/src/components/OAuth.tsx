@@ -1,11 +1,11 @@
 import { useOAuth, useSession } from "@clerk/clerk-expo";
-import { View, Alert } from "react-native";
+import * as Haptics from "expo-haptics";
+import { Image } from "expo-image";
+import * as Linking from "expo-linking";
+import { router } from "expo-router";
+import { Alert, View } from "react-native";
 import { Button } from "~/components/ui/button";
 import { Text } from "~/components/ui/text";
-import * as Linking from "expo-linking";
-import * as Haptics from "expo-haptics";
-import { router } from "expo-router";
-import { Image } from "expo-image";
 import { assets } from "~/lib/constants";
 
 const OAuth = () => {

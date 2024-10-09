@@ -1,13 +1,7 @@
 import { relations } from "drizzle-orm";
-import {
-  integer,
-  primaryKey,
-  sqliteTable,
-  text,
-} from "drizzle-orm/sqlite-core";
+import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import type { z } from "zod";
-import { createUniqueIds } from "../utilts";
 import { entries } from "./entries";
 
 export const User = sqliteTable("user", {

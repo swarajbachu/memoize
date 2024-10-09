@@ -1,6 +1,5 @@
 import { useClerk } from "@clerk/clerk-expo";
 import { router } from "expo-router";
-import React from "react";
 import { SafeAreaView, View } from "react-native";
 import { Button } from "~/components/ui/button";
 import { Text } from "~/components/ui/text";

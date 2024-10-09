@@ -2,10 +2,10 @@
 
 import { cn } from "@memoize/ui";
 import { ScrollArea } from "@memoize/ui/scroll-area";
+import { usePathname } from "next/navigation";
 import { Suspense } from "react";
 import Search from "~/components/layout/search";
 import FetchEntries from "../fetch-entries";
-import { usePathname } from "next/navigation";
 
 export default function EntiresLayout({
   children,

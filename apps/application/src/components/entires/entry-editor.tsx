@@ -1,5 +1,4 @@
 import type { entries } from "@memoize/db";
-import { Badge } from "@memoize/ui/badge";
 import { Textarea } from "@memoize/ui/textarea";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";

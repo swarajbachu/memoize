@@ -1,6 +1,7 @@
 import { useSignIn } from "@clerk/clerk-expo";
-import { useOAuth } from "@clerk/clerk-expo";
-import { Link, router } from "expo-router";
+import * as Haptics from "expo-haptics";
+import { Image } from "expo-image";
+import { Link } from "expo-router";
 import { useState } from "react";
 import {
   Alert,
@@ -11,14 +12,11 @@ import {
   TouchableWithoutFeedback,
   View,
 } from "react-native";
-import * as Linking from "expo-linking";
-import { Image } from "expo-image";
-import * as Haptics from "expo-haptics";
+import OAuth from "~/components/OAuth";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Text } from "~/components/ui/text";
 import { assets } from "~/lib/constants";
-import OAuth from "~/components/OAuth";
 
 const SignIn = () => {
   const { isLoaded, signIn } = useSignIn();
