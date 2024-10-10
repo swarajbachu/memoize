@@ -2,29 +2,49 @@
 
 import { cn } from "@memoize/ui";
 import { Button } from "@memoize/ui/button";
+import { Skeleton } from "@memoize/ui/skeleton";
 import { ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { api } from "~/trpc/react";
 
 interface Entry {
   question: string;
   answer: string;
 }
 
-const questions: string[] = [
-  "How are you feeling today?",
-  "What's one thing you're grateful for?",
-  "What's your main goal for today?",
-  "Describe a recent challenge you overcame.",
-  "What's something you're looking forward to?",
-];
-
-export default function JournalingUI(): JSX.Element {
+export default function JournalingUI() {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [currentAnswer, setCurrentAnswer] = useState<string>("");
+  const [currentQuestion, setCurrentQuestion] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const currentQuestionRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  const { mutate: getNextQuestion, isPending: isLoadingQuestion } =
+    api.entries.getNextQuestion.useMutation({
+      onSuccess: (data) => {
+        setCurrentQuestion(data);
+        setIsLoading(false);
+      },
+      onError: (error) => {
+        console.error("Failed to fetch question:", error);
+        setIsLoading(false);
+      },
+    });
+
+  useEffect(() => {
+    if (currentQuestion === null && !isLoading) {
+      setIsLoading(true);
+      getNextQuestion({
+        currentConversation: entries.flatMap((entry) => [
+          entry.question,
+          entry.answer,
+        ]),
+      });
+    }
+  }, [currentQuestion, entries, getNextQuestion]);
 
   useEffect(() => {
     if (inputRef.current) {
@@ -50,18 +70,24 @@ export default function JournalingUI(): JSX.Element {
   };
 
   const handleNextQuestion = () => {
-    if (currentAnswer.trim() !== "") {
+    if (currentAnswer.trim() !== "" && currentQuestion) {
       setEntries([
         {
-          question: questions[currentQuestionIndex] ?? "",
+          question: currentQuestion,
           answer: currentAnswer,
         },
         ...entries,
       ]);
       setCurrentAnswer("");
-      setCurrentQuestionIndex((prev) =>
-        Math.min(prev + 1, questions.length - 1),
-      );
+      setCurrentQuestionIndex((prev) => prev + 1);
+      setCurrentQuestion(null);
+      setIsLoading(true);
+      getNextQuestion({
+        currentConversation: [
+          ...entries,
+          { question: currentQuestion, answer: currentAnswer },
+        ].flatMap((e) => [e.question, e.answer]),
+      });
     }
   };
 
@@ -90,7 +116,9 @@ export default function JournalingUI(): JSX.Element {
                 index === 0 ? "opacity-50" : "opacity-30",
               )}
             >
-              <p className="font-semibold text-lg mb-2">{entry.question}</p>
+              <p className="font-semibold text-lg mb-2 whitespace-pre-line">
+                {entry.question}
+              </p>
               <p className="whitespace-pre-wrap text-muted-foreground">
                 {entry.answer}
               </p>
@@ -99,11 +127,13 @@ export default function JournalingUI(): JSX.Element {
           {/* Current Question and Text Editor */}
           <div
             ref={currentQuestionRef}
-            className="min-h-[calc(100vh-8rem)] flex flex-col justify-start"
+            className="min-h-[calc(100vh-8rem)] flex flex-col justify-start whitespace-pre-line"
           >
-            <p className="font-bold text-2xl mb-4">
-              {questions[currentQuestionIndex]}
-            </p>
+            {isLoading || isLoadingQuestion ? (
+              <Skeleton className="h-8 w-1/2 mb-4" />
+            ) : (
+              <p className="text-lg font-semibold  mb-4">{currentQuestion}</p>
+            )}
             <textarea
               ref={inputRef}
               value={currentAnswer}
@@ -112,6 +142,7 @@ export default function JournalingUI(): JSX.Element {
               className="w-full bg-transparent resize-none outline-none overflow-hidden text-lg"
               rows={1}
               placeholder="Start typing your answer here..."
+              disabled={isLoading || isLoadingQuestion}
             />
           </div>
         </div>
@@ -123,7 +154,9 @@ export default function JournalingUI(): JSX.Element {
         <div className="space-x-4">
           <Button
             onClick={handleNextQuestion}
-            disabled={currentAnswer.trim() === ""}
+            disabled={
+              currentAnswer.trim() === "" || isLoading || isLoadingQuestion
+            }
             className="px-6"
           >
             Next <ChevronRight className="ml-2 h-4 w-4" />
