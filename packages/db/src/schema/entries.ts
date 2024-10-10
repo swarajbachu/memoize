@@ -11,7 +11,9 @@ export const entries = sqliteTable("entries", {
     .primaryKey()
     .$defaultFn(() => createUniqueIds("entry")),
   userId: text("user_id")
-    .references(() => User.clerkUserId)
+    .references(() => User.id, {
+      onDelete: "cascade",
+    })
     .notNull(),
   content: text("content").notNull(),
   sentimentScore: integer("sentiment_score"),
@@ -38,6 +40,6 @@ export type EntrySelect = z.infer<typeof entriesSelectSchema>;
 export const entriesRelations = relations(entries, ({ one }) => ({
   user: one(User, {
     fields: [entries.userId],
-    references: [User.clerkUserId],
+    references: [User.id],
   }),
 }));

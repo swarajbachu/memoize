@@ -2,7 +2,10 @@
   "extends": "@memoize/tsconfig/internal-package.json",
   "include": ["src"],
   "compilerOptions": {
-    "jsx": "react" // Add this line
+    "jsx": "react", // Add this line
+    "paths": {
+      "@/*": ["./src/*"]
+    }
   },
   "exclude": ["node_modules"]
 }

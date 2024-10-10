@@ -25,8 +25,10 @@
   "dependencies": {
     "@ai-sdk/openai": "^0.0.66",
     "@clerk/nextjs": "^5.7.1",
+    "@lucia-auth/adapter-drizzle": "^1.1.0",
     "@trpc/server": "catalog:",
     "ai": "^3.4.9",
+    "arctic": "^1.9.2",
     "openai": "^4.67.3",
     "superjson": "2.2.1",
     "zod": "catalog:"
