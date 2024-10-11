@@ -11,8 +11,10 @@ import { cn } from "@memoize/ui";
 import { Button } from "@memoize/ui/button";
 import { ThemeToggle } from "@memoize/ui/theme";
 import { BarChart, Calendar, Clock, Home, LogOut, Plus } from "lucide-react";
+import { GoHomeFill } from "react-icons/go";
 import { IoCalendarClear, IoJournal } from "react-icons/io5";
 import { toast } from "sonner";
+import useDeviceType from "~/hooks/use-device-type";
 import { Sidebar, SidebarBody, SidebarLink } from "./sidebar-ui";
 
 const AccordanceMenuList = [
@@ -21,6 +23,11 @@ const AccordanceMenuList = [
     text: "Journals",
     icon: <IoCalendarClear className="h-5 w-5" />,
     items: [
+      {
+        subText: "Home",
+        subIcon: <GoHomeFill />,
+        url: "/",
+      },
       {
         subText: "All Journals",
         subIcon: <IoJournal />,
@@ -36,7 +43,8 @@ const AccordanceMenuList = [
 ];
 
 export function SidebarComponent() {
-  const [open, setOpen] = useState(false);
+  const device = useDeviceType();
+  const [open, setOpen] = useState(device === "desktop");
   const currentPath = usePathname();
   const { signOut } = useClerk();
 
