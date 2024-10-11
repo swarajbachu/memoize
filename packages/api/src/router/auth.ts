@@ -1,13 +1,12 @@
-import { EmailTemplate, sendMail } from "@/lib/email";
+import { protectedProcedure, publicProcedure } from "@/trpc";
+import { users } from "@memoize/db";
+import { db } from "@memoize/db";
 import {
   forgotPasswordSchema,
   loginSchema,
   resetPasswordSchema,
   signupSchema,
-} from "@/lib/validators/auth";
-import { protectedProcedure, publicProcedure } from "@/trpc";
-import { users } from "@memoize/db";
-import { db } from "@memoize/db";
+} from "@memoize/validators/auth";
 import { TRPCError, type TRPCRouterRecord } from "@trpc/server";
 import { eq } from "drizzle-orm";
 import { Scrypt, generateId } from "lucia";
@@ -20,7 +19,7 @@ export const authRouter = {
   login: publicProcedure.input(loginSchema).mutation(async ({ input, ctx }) => {
     const { email, password } = input;
 
-    const existingUser = await db.query.users.findFirst({
+    const existingUser = await db.query.User.findFirst({
       where: (table, { eq }) => eq(table.email, email),
     });
 
@@ -44,9 +43,9 @@ export const authRouter = {
 
     const session = await lucia.createSession(existingUser.id, {});
     const sessionCookie = lucia.createSessionCookie(session.id);
-    ctx.res.setHeader("Set-Cookie", sessionCookie.serialize());
+    ctx.resHeaders.set("Set-Cookie", sessionCookie.serialize());
 
-    return { success: true };
+    return { success: true, sessionCookie };
   }),
 
   signup: publicProcedure
@@ -54,7 +53,7 @@ export const authRouter = {
     .mutation(async ({ input, ctx }) => {
       const { email, password } = input;
 
-      const existingUser = await db.query.users.findFirst({
+      const existingUser = await db.query.User.findFirst({
         where: (table, { eq }) => eq(table.email, email),
         columns: { email: true },
       });
@@ -68,7 +67,7 @@ export const authRouter = {
 
       const userId = generateId(21);
       const hashedPassword = await new Scrypt().hash(password);
-      await db.insert(users).values({
+      await db.insert(users.User).values({
         id: userId,
         email,
         hashedPassword,
@@ -78,22 +77,22 @@ export const authRouter = {
         userId,
         email
       );
-      await sendMail(email, EmailTemplate.EmailVerification, {
-        code: verificationCode,
-      });
+      // await sendMail(email, EmailVerificationTemplate, {
+      //   code: verificationCode,
+      // });
 
       const session = await lucia.createSession(userId, {});
       const sessionCookie = lucia.createSessionCookie(session.id);
-      ctx.res.setHeader("Set-Cookie", sessionCookie.serialize());
+      // ctx.res.setHeader("Set-Cookie", sessionCookie.serialize());
 
-      return { success: true };
+      return { success: true, sessionCookie };
     }),
 
   logout: protectedProcedure.mutation(async ({ ctx }) => {
     await lucia.invalidateSession(ctx.session.id);
     const sessionCookie = lucia.createBlankSessionCookie();
-    ctx.res.setHeader("Set-Cookie", sessionCookie.serialize());
-    return { success: true };
+    ctx.resHeaders.set("Set-Cookie", sessionCookie.serialize());
+    return { success: true, sessionCookie };
   }),
 
   resendVerificationEmail: protectedProcedure.mutation(async ({ ctx }) => {
@@ -115,9 +114,9 @@ export const authRouter = {
       ctx.user.id,
       ctx.user.email
     );
-    await sendMail(ctx.user.email, EmailTemplate.EmailVerification, {
-      code: verificationCode,
-    });
+    // await sendMail(ctx.user.email, EmailTemplate.EmailVerification, {
+    //   code: verificationCode,
+    // });
 
     return { success: true };
   }),
@@ -131,8 +130,8 @@ export const authRouter = {
         });
         if (item) {
           await tx
-            .delete(emailVerificationCodes)
-            .where(eq(emailVerificationCodes.id, item.id));
+            .delete(users.emailVerificationCodes)
+            .where(eq(users.emailVerificationCodes.id, item.id));
         }
         return item;
       });
@@ -160,20 +159,20 @@ export const authRouter = {
 
       await lucia.invalidateUserSessions(ctx.user.id);
       await db
-        .update(users)
+        .update(users.User)
         .set({ emailVerified: true })
-        .where(eq(users.id, ctx.user.id));
+        .where(eq(users.User.id, ctx.user.id));
       const session = await lucia.createSession(ctx.user.id, {});
       const sessionCookie = lucia.createSessionCookie(session.id);
-      ctx.res.setHeader("Set-Cookie", sessionCookie.serialize());
+      ctx.resHeaders.set("Set-Cookie", sessionCookie.serialize());
 
-      return { success: true };
+      return { success: true, sessionCookie };
     }),
 
   sendPasswordResetLink: publicProcedure
     .input(forgotPasswordSchema)
     .mutation(async ({ input }) => {
-      const user = await db.query.users.findFirst({
+      const user = await db.query.User.findFirst({
         where: (table, { eq }) => eq(table.email, input.email),
       });
 
@@ -185,11 +184,11 @@ export const authRouter = {
       }
 
       const verificationToken = await generatePasswordResetToken(user.id);
-      const verificationLink = `${env.NEXT_PUBLIC_APP_URL}/reset-password/${verificationToken}`;
+      const verificationLink = `${process.env.NEXT_PUBLIC_APP_URL}/reset-password/${verificationToken}`;
 
-      await sendMail(user.email, EmailTemplate.PasswordReset, {
-        link: verificationLink,
-      });
+      // await sendMail(user.email, EmailTemplate.PasswordReset, {
+      //   link: verificationLink,
+      // });
 
       return { success: true };
     }),
@@ -205,8 +204,8 @@ export const authRouter = {
         });
         if (item) {
           await tx
-            .delete(passwordResetTokens)
-            .where(eq(passwordResetTokens.id, item.id));
+            .delete(users.passwordResetTokens)
+            .where(eq(users.passwordResetTokens.id, item.id));
         }
         return item;
       });
@@ -228,9 +227,9 @@ export const authRouter = {
       await lucia.invalidateUserSessions(dbToken.userId);
       const hashedPassword = await new Scrypt().hash(password);
       await db
-        .update(users)
+        .update(users.User)
         .set({ hashedPassword })
-        .where(eq(users.id, dbToken.userId));
+        .where(eq(users.User.id, dbToken.userId));
       const session = await lucia.createSession(dbToken.userId, {});
       const sessionCookie = lucia.createSessionCookie(session.id);
 
@@ -252,10 +251,10 @@ async function generateEmailVerificationCode(
   email: string
 ): Promise<string> {
   await db
-    .delete(emailVerificationCodes)
-    .where(eq(emailVerificationCodes.userId, userId));
+    .delete(users.emailVerificationCodes)
+    .where(eq(users.emailVerificationCodes.userId, userId));
   const code = generateRandomString(8, alphabet("0-9")); // 8 digit code
-  await db.insert(emailVerificationCodes).values({
+  await db.insert(users.emailVerificationCodes).values({
     userId,
     email,
     code,
@@ -266,10 +265,10 @@ async function generateEmailVerificationCode(
 
 async function generatePasswordResetToken(userId: string): Promise<string> {
   await db
-    .delete(passwordResetTokens)
-    .where(eq(passwordResetTokens.userId, userId));
+    .delete(users.passwordResetTokens)
+    .where(eq(users.passwordResetTokens.userId, userId));
   const tokenId = generateId(40);
-  await db.insert(passwordResetTokens).values({
+  await db.insert(users.passwordResetTokens).values({
     id: tokenId,
     userId,
     expiresAt: createDate(new TimeSpan(2, "h")),

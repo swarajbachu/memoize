@@ -11,6 +11,7 @@ import { db } from "@memoize/db";
 import { TRPCError, initTRPC } from "@trpc/server";
 import superjson from "superjson";
 import { ZodError } from "zod";
+import type { FetchCreateContextFnOptions } from "@trpc/server/adapters/fetch";
 
 /**
  * 1. CONTEXT
@@ -24,14 +25,19 @@ import { ZodError } from "zod";
  *
  * @see https://trpc.io/docs/server/context
  */
-export const createTRPCContext = async (opts: { headers: Headers }) => {
+export const createTRPCContext = async ({
+  req,
+  resHeaders,
+}: FetchCreateContextFnOptions) => {
   const user = auth();
   const clerkId = user.userId;
 
-  const source = opts.headers.get("x-trpc-source") ?? "unknown";
+  const source = resHeaders.get("x-trpc-source") ?? "unknown";
   console.log(">>> tRPC Request from", source, "by", clerkId);
 
   return {
+    resHeaders,
+    req,
     db,
     userId: clerkId,
   };

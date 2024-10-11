@@ -12,6 +12,7 @@ export const User = sqliteTable("user", {
   name: text("name", { length: 255 }),
   email: text("email", { length: 255 }).notNull(),
   emailVerified: integer("email_verified", { mode: "boolean" }).default(false),
+  hashedPassword: text("hashed_password"),
   avatar: text("image", { length: 255 }),
   createdAt: integer("created", {
     mode: "timestamp_ms",

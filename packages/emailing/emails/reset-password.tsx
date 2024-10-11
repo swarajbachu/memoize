@@ -1,27 +1,44 @@
 // biome-ignore lint/correctness/noUnusedImports: <explanation>
 import React from "react";
-import { Body, Container, Head, Html, Preview, Section, Text } from "@react-email/components";
+import {
+  Body,
+  Button,
+  Container,
+  Head,
+  Html,
+  Preview,
+  Section,
+  Text,
+} from "@react-email/components";
 
-export interface EmailVerificationTemplateProps {
-  code: string;
+export interface ResetPasswordTemplateProps {
+  link: string;
 }
 
-export const EmailVerificationTemplate = ({ code }: EmailVerificationTemplateProps) => {
+export const ResetPasswordTemplate = ({ link }: ResetPasswordTemplateProps) => {
   return (
     <Html>
       <Head />
-      <Preview>Verify your email address to complete your Memoize registration</Preview>
+      <Preview>Reset your password</Preview>
       <Body style={main}>
         <Container style={container}>
           <Section>
             <Text style={title}>Memoize</Text>
             <Text style={text}>Hi,</Text>
             <Text style={text}>
-              Thank you for registering for an account on Memoize. To complete your
-              registration, please verify your your account by using the following code:
+              Someone recently requested a password change for your Memoize account. If this was
+              you, you can set a new password here:
             </Text>
-            <Text style={codePlaceholder}>{code}</Text>
-
+            <Button style={button} href={link}>
+              Reset password
+            </Button>
+            <Text style={text}>
+              If you don&apos;t want to change your password or didn&apos;t request this, just
+              ignore and delete this message.
+            </Text>
+            <Text style={text}>
+              To keep your account secure, please don&apos;t forward this email to anyone.
+            </Text>
             <Text style={text}>Have a nice day!</Text>
           </Section>
         </Container>
@@ -57,11 +74,10 @@ const title = {
   lineHeight: "32px",
 };
 
-const codePlaceholder = {
-  backgroundColor: "#fbfbfb",
-  border: "1px solid #f0f0f0",
+const button = {
+  backgroundColor: "#09090b",
   borderRadius: "4px",
-  color: "#1c1c1c",
+  color: "#fafafa",
   fontFamily: "'Open Sans', 'Helvetica Neue', Arial",
   fontSize: "15px",
   textDecoration: "none",
@@ -71,3 +87,6 @@ const codePlaceholder = {
   padding: "14px 7px",
 };
 
+// const anchor = {
+//   textDecoration: "underline",
+// };
