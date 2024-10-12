@@ -61,7 +61,10 @@ export function SidebarComponent() {
                   {link.items.map((item) => (
                     <SidebarLink
                       className={`${
-                        currentPath.includes(item.url) ? "bg-secondary " : ""
+                        currentPath === item.url ||
+                        (item.url !== "/" && currentPath.startsWith(item.url))
+                          ? "bg-secondary "
+                          : ""
                       } group my-1 cursor-pointer`}
                       key={item.url}
                       link={{

@@ -33,13 +33,13 @@ const EntryEditor: React.FC<EntryEditorProps> = ({
     onSuccess: (data) => {
       if (data) {
         // Add the newly created entry to the store
-        addEntryToStore({
-          ...data,
-          updatedEntry: false,
-          deleted: false,
-        });
+        // addEntryToStore({
+        //   ...data,
+        //   updatedEntry: false,
+        //   deleted: false,
+        // });
         setEntryId(data.id); // Set the actual ID
-        setEntry(data); // Set the entry for further updates
+        // setEntry(data); // Set the entry for further updates
       }
       // Invalidate queries to refresh cache
       utils.entries.findAllEntires.invalidate();
@@ -61,7 +61,8 @@ const EntryEditor: React.FC<EntryEditorProps> = ({
     if (!entryId && text.trim().length > 0 && !isAdding.current) {
       isAdding.current = true;
       addEntryMutation.mutate({
-        content: text.trim(),
+        // content: text.trim(),
+        currentConversation: [text.trim()],
         // Include other necessary fields if any
       });
     }

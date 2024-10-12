@@ -63,7 +63,7 @@ export async function createInDepthResponse(
   5. Balance emotional support with practical inquiry.
   6. Encourage reflection and self-discovery.
   7. Keep your entire response concise (4-5 sentences max)
-  8. Format your response with proper line breaks for readability add '\n' at the end of each sentence. 
+  8. Format your response with proper line breaks for readability add \n at the end of each sentence. 
   
   Based on the following conversation history, provide a response following the above guidelines:
   

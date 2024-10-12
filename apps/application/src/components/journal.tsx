@@ -6,46 +6,75 @@ import { Skeleton } from "@memoize/ui/skeleton";
 import { ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "~/trpc/react";
+import { z } from "zod";
 
-interface Entry {
-  question: string;
-  answer: string;
+// Define the MessageSchema as per backend requirements
+export const MessageSchema = z.object({
+  content: z.string(),
+  createdAt: z.string(),
+  role: z.enum(["assistant", "user"]),
+  type: z.string(),
+});
+
+// Type for a single message
+type Message = z.infer<typeof MessageSchema>;
+
+// Props for the JournalingUI component
+interface JournalingUIProps {
+  journalId?: string;
 }
 
-export default function JournalingUI() {
+export default function JournalingUI({ journalId }: JournalingUIProps) {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
-  const [entries, setEntries] = useState<Entry[]>([]);
+  const [entries, setEntries] = useState<Message[]>([]);
   const [currentAnswer, setCurrentAnswer] = useState<string>("");
   const [currentQuestion, setCurrentQuestion] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [entryId, setEntryId] = useState<string | undefined>(undefined);
+
   const containerRef = useRef<HTMLDivElement>(null);
   const currentQuestionRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const isInitialSave = useRef(true);
 
-  const { mutate: getNextQuestion, isPending: isLoadingQuestion } =
-    api.entries.getNextQuestion.useMutation({
-      onSuccess: (data) => {
-        setCurrentQuestion(data);
-        setIsLoading(false);
-      },
-      onError: (error) => {
-        console.error("Failed to fetch question:", error);
-        setIsLoading(false);
-      },
-    });
+  // Mutation to fetch the next question
+  const { mutate: getNextQuestion } = api.entries.getNextQuestion.useMutation({
+    onSuccess: (data) => {
+      setCurrentQuestion(data);
+      setIsLoading(false);
+    },
+    onError: (error) => {
+      console.error("Failed to fetch question:", error);
+      setIsLoading(false);
+    },
+  });
 
+  // Mutation to add/update journal entry
+  const { mutate: addEntry } = api.entries.addEntry.useMutation({
+    onSuccess: (data) => {
+      if (data && isInitialSave.current) {
+        setEntryId(data.id);
+        isInitialSave.current = false;
+      }
+    },
+    onError: (error) => {
+      console.error("Error saving entry:", error);
+    },
+  });
+
+  // Fetch the initial question when the component mounts
   useEffect(() => {
-    if (currentQuestion === null && !isLoading) {
+    if (currentQuestion === null && !isLoading && journalId) {
       setIsLoading(true);
       getNextQuestion({
-        currentConversation: entries.flatMap((entry) => [
-          entry.question,
-          entry.answer,
-        ]),
+        journalId: journalId,
+        currentConversation: entries.map((entry) => entry.content),
       });
     }
-  }, [currentQuestion, entries, getNextQuestion]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentQuestion, entries, getNextQuestion, journalId]);
 
+  // Focus and adjust textarea height when the current question or loading state changes
   useEffect(() => {
     if (inputRef.current) {
       inputRef.current.focus();
@@ -57,45 +86,82 @@ export default function JournalingUI() {
         block: "start",
       });
     }
-  }, [currentQuestionIndex]);
+  }, [currentQuestionIndex, isLoading]);
 
+  // Function to adjust the textarea height
   const adjustTextareaHeight = (element: HTMLTextAreaElement) => {
     element.style.height = "auto";
     element.style.height = `${element.scrollHeight}px`;
   };
 
+  // Handle input change in the textarea
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setCurrentAnswer(e.target.value);
     adjustTextareaHeight(e.target);
   };
 
+  // Handle moving to the next question
   const handleNextQuestion = () => {
     if (currentAnswer.trim() !== "" && currentQuestion) {
-      setEntries([
-        {
-          question: currentQuestion,
-          answer: currentAnswer,
-        },
-        ...entries,
-      ]);
+      const now = new Date().toISOString();
+
+      const questionMessage: Message = {
+        content: currentQuestion,
+        createdAt: now,
+        role: "assistant",
+        type: "text",
+      };
+
+      const answerMessage: Message = {
+        content: currentAnswer,
+        createdAt: now,
+        role: "user",
+        type: "text",
+      };
+
+      const updatedEntries = [...entries, questionMessage, answerMessage];
+      setEntries(updatedEntries);
+
       setCurrentAnswer("");
       setCurrentQuestionIndex((prev) => prev + 1);
-      setCurrentQuestion(null);
+      setCurrentQuestion("");
       setIsLoading(true);
-      getNextQuestion({
-        currentConversation: [
-          ...entries,
-          { question: currentQuestion, answer: currentAnswer },
-        ].flatMap((e) => [e.question, e.answer]),
+
+      // Fetch the next question without waiting for it to update the UI
+      const qestuons = getNextQuestion({
+        journalId: journalId,
+        currentConversation: updatedEntries.map((entry) => entry.content),
       });
+
+      console.log(qestuons, "quest");
+
+      // Save the entry
+      const entryData = {
+        messages: updatedEntries,
+        ...(entryId && { id: entryId }),
+      };
+
+      addEntry(entryData);
     }
   };
 
+  // Handle finishing the journaling session
   const handleFinish = () => {
+    if (entries.length > 0) {
+      const entryData = {
+        messages: entries,
+        ...(entryId && { id: entryId }),
+      };
+
+      addEntry(entryData);
+    }
+
+    // Perform any final actions, such as navigation or showing a summary
     console.log("Journaling session finished", entries);
-    // Here you would typically save the entries or perform any final actions
+    // You might want to redirect the user or show a confirmation message here
   };
 
+  // Handle keyboard shortcuts
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && e.ctrlKey) {
       e.preventDefault();
@@ -104,46 +170,75 @@ export default function JournalingUI() {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-background text-foreground">
+    <div className="h-[98vh] flex flex-col bg-background text-foreground">
       <div className="flex-grow overflow-auto" ref={containerRef}>
         <div className="max-w-2xl mx-auto p-6 flex flex-col">
           {/* Previous Entries */}
-          {entries.map((entry, index) => (
+          {entries.slice(0, -2).map((entry, index) => (
             <div
-              key={entry.question}
+              key={`${entry.role}-${index}-${entry.createdAt}`}
               className={cn(
-                "mb-8 transition-opacity duration-500",
-                index === 0 ? "opacity-50" : "opacity-30",
+                "mb-4 transition-opacity duration-500",
+                "opacity-50",
               )}
             >
-              <p className="font-semibold text-lg mb-2 whitespace-pre-line">
-                {entry.question}
-              </p>
-              <p className="whitespace-pre-wrap text-muted-foreground">
-                {entry.answer}
-              </p>
+              {entry.role === "assistant" && (
+                <p className="font-semibold text-lg mb-1 whitespace-pre-wrap">
+                  {entry.content}
+                </p>
+              )}
+              {entry.role === "user" && (
+                <p className="whitespace-pre-wrap text-muted-foreground">
+                  {entry.content}
+                </p>
+              )}
             </div>
           ))}
-          {/* Current Question and Text Editor */}
+
+          {/* Current Question and Answer */}
+          {entries.slice(-2).map((entry, index) => (
+            <div
+              key={`${entry.role}-current-${index}-${entry.createdAt}`}
+              className="mb-8"
+            >
+              {entry.role === "assistant" && (
+                <p className="font-semibold text-lg mb-4 whitespace-pre-wrap">
+                  {entry.content}
+                </p>
+              )}
+              {entry.role === "user" && (
+                <p className="whitespace-pre-wrap text-muted-foreground">
+                  {entry.content}
+                </p>
+              )}
+            </div>
+          ))}
+
+          {/* Skeleton Loader or New Question */}
           <div
             ref={currentQuestionRef}
-            className="min-h-[calc(100vh-8rem)] flex flex-col justify-start whitespace-pre-line"
+            className="min-h-[calc(100vh-8rem)] flex flex-col justify-start"
           >
-            {isLoading || isLoadingQuestion ? (
+            {isLoading ? (
               <Skeleton className="h-8 w-1/2 mb-4" />
-            ) : (
-              <p className="text-lg font-semibold  mb-4">{currentQuestion}</p>
+            ) : currentQuestion ? (
+              <p className="text-lg font-semibold mb-4 whitespace-pre-wrap">
+                {currentQuestion}
+              </p>
+            ) : null}
+
+            {!isLoading && (
+              <textarea
+                ref={inputRef}
+                value={currentAnswer}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                className="w-full bg-transparent resize-none outline-none overflow-hidden text-lg"
+                rows={1}
+                placeholder="Start typing your answer here..."
+                disabled={isLoading}
+              />
             )}
-            <textarea
-              ref={inputRef}
-              value={currentAnswer}
-              onChange={handleInputChange}
-              onKeyDown={handleKeyDown}
-              className="w-full bg-transparent resize-none outline-none overflow-hidden text-lg"
-              rows={1}
-              placeholder="Start typing your answer here..."
-              disabled={isLoading || isLoadingQuestion}
-            />
           </div>
         </div>
       </div>
@@ -154,9 +249,7 @@ export default function JournalingUI() {
         <div className="space-x-4">
           <Button
             onClick={handleNextQuestion}
-            disabled={
-              currentAnswer.trim() === "" || isLoading || isLoadingQuestion
-            }
+            disabled={currentAnswer.trim() === "" || isLoading}
             className="px-6"
           >
             Next <ChevronRight className="ml-2 h-4 w-4" />

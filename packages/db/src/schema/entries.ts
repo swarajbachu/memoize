@@ -1,3 +1,4 @@
+import type { MessageType } from "@memoize/validators/entries";
 import { relations } from "drizzle-orm/relations";
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
@@ -13,11 +14,15 @@ export const entries = sqliteTable("entries", {
   userId: text("user_id")
     .references(() => User.clerkUserId)
     .notNull(),
-  content: text("content").notNull(),
+  content: text("content", {
+    mode: "json",
+  })
+    .$type<MessageType[]>()
+    .notNull(),
   sentimentScore: integer("sentiment_score"),
   emotions: text("emotions"),
   wordCount: integer("word_count"),
-  analyzed: integer("analyzed", { mode: "boolean" }).default(false),
+  analyzed: integer("analyzed", { mode: "boolean" }).notNull().default(false),
   createdAt: integer("created", {
     mode: "timestamp_ms",
   })

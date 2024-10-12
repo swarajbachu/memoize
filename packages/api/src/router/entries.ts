@@ -1,4 +1,6 @@
 import { desc, entries, eq } from "@memoize/db";
+import { MessageSchema } from "@memoize/validators/entries";
+import { journals } from "@memoize/validators/journal-constants";
 import type { TRPCRouterRecord } from "@trpc/server";
 import { z } from "zod";
 import {
@@ -11,12 +13,23 @@ export const entryRouter = {
   getNextQuestion: protectedProcedure
     .input(
       z.object({
+        journalId: z.string().optional(),
         currentConversation: z.array(z.string()),
       }),
     )
     .mutation(async ({ input }) => {
       if (input.currentConversation.length < 6) {
         // 3 pairs of user-AI interactions
+        console.log(input.journalId, "id");
+        if (input.journalId) {
+          console.log(input.journalId, "prompting");
+
+          return (
+            journals.find((j) => j.value === input.journalId)?.prompts[
+              input.currentConversation.length / 2
+            ] ?? "what do you want to talk about today?"
+          );
+        }
         const { question, proceedToNext } = await createInitialQuestion(
           input.currentConversation.join("\n\n"),
         );
@@ -48,29 +61,24 @@ export const entryRouter = {
     .input(
       z.object({
         id: z.string().optional(),
-        content: z.string(),
+        messages: z.array(MessageSchema),
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      if (input.id) {
-        const entry = await ctx.db
-          .update(entries.entries)
-          .set({ content: input.content })
-          .where(eq(entries.entries.id, input.id))
-          .returning();
-        return entry[0];
-      }
       const entry = await ctx.db
         .insert(entries.entries)
         .values({
-          content: input.content,
+          id: input.id,
+          content: input.messages,
           userId: ctx.userId,
         })
-        .returning()
-        .catch((err) => {
-          console.log(err);
-          throw err;
-        });
+        .onConflictDoUpdate({
+          target: entries.entries.id,
+          set: {
+            content: input.messages,
+          },
+        })
+        .returning();
       return entry[0];
     }),
   deleteEntry: protectedProcedure
