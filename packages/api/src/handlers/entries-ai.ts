@@ -75,7 +75,7 @@ export async function createInDepthResponse(
   console.log(prompt, "prompt");
 
   const response = await openAi.chat.completions.create({
-    model: "gpt-4-1106-preview",
+    model: "gpt-4o-mini-2024-07-18",
     messages: [
       {
         role: "system",

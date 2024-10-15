@@ -5,8 +5,8 @@ import { Button } from "@memoize/ui/button";
 import { Skeleton } from "@memoize/ui/skeleton";
 import { ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { api } from "~/trpc/react";
 import { z } from "zod";
+import { api } from "~/trpc/react";
 
 // Define the MessageSchema as per backend requirements
 export const MessageSchema = z.object({

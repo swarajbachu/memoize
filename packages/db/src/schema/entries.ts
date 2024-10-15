@@ -1,8 +1,8 @@
-import type { MessageType } from "@memoize/validators/entries";
+import { MessageSchema, type MessageType } from "@memoize/validators/entries";
 import { relations } from "drizzle-orm/relations";
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
-import type { z } from "zod";
+import z from "zod";
 import { createUniqueIds } from "../utilts";
 import { User } from "./users";
 
@@ -35,9 +35,13 @@ export const entries = sqliteTable("entries", {
     .$defaultFn(() => new Date()),
 });
 
-export const entriesInsertSchema = createInsertSchema(entries);
+export const entriesInsertSchema = createInsertSchema(entries, {
+  content: z.array(MessageSchema),
+});
 export type EntryInsert = z.infer<typeof entriesInsertSchema>;
-export const entriesSelectSchema = createSelectSchema(entries);
+export const entriesSelectSchema = createSelectSchema(entries, {
+  content: z.array(MessageSchema),
+});
 export type EntrySelect = z.infer<typeof entriesSelectSchema>;
 
 export const entriesRelations = relations(entries, ({ one }) => ({

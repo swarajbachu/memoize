@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@memoize/ui/card";
-import { Flame, BookOpen, PenTool } from "lucide-react";
+import { BookOpen, Flame, PenTool } from "lucide-react";
 
 export default function SummaryCards({
   streak,

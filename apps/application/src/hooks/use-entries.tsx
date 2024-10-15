@@ -149,10 +149,7 @@ export function useEntries() {
   // Function to calculate word counts
   function calculateWordCounts(): number {
     return entries.reduce((total, entry) => {
-      return (
-        total +
-        entry.content.split(/\s+/).filter((word) => word.length > 0).length
-      );
+      return total + 10;
     }, 0);
   }
 

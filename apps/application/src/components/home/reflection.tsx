@@ -4,8 +4,8 @@ import { Button } from "@memoize/ui/button";
 import { Card, CardContent, CardFooter } from "@memoize/ui/card";
 import { CheckCircle2, Circle } from "lucide-react";
 import Image from "next/image";
-import TodoList from "./todo-list";
 import Link from "next/link";
+import TodoList from "./todo-list";
 
 const initialTodos = [
   {
