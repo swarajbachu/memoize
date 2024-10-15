@@ -115,11 +115,11 @@ export const DesktopSidebar = ({
             setOpen(!open);
           }}
           variant="secondary"
-          className="absolute -right-3 top-2 size-7 p-1 hover:bg-secondary"
+          className="absolute -right-3 top-2 size-7 p-1 hover:bg-secondary lg:inline-flex hidden"
         >
           <motion.span
             animate={{
-              rotate: animate ? (open ? 180 : 0) : 0,
+              rotate: open ? 180 : 0,
               transition: {
                 duration: 0.3,
                 ease: "easeInOut",
@@ -185,5 +185,35 @@ export const SidebarLink = ({
         {link.label}
       </motion.span>
     </Link>
+  );
+};
+
+export const SidebarButton = ({
+  link,
+  className,
+  ...props
+}: SidebarLinkProps) => {
+  const { open, animate } = useSidebar();
+  return (
+    <Button asChild className={cn("group/sidebar", className)}>
+      <Link onClick={link.onClick} href={link.href} {...props}>
+        <motion.span
+          animate={{
+            display: open ? "inline-block" : "none",
+            opacity: animate ? (open ? 1 : 0) : 1,
+          }}
+          className=" inline-block whitespace-pre text-sm  transition duration-150 group-hover/sidebar:translate-x-1 mr-2"
+        >
+          {link.label}
+        </motion.span>
+        {!open ? (
+          <ToolTipSimple position="right" content={link.label}>
+            <span className="text-xl">{link.icon}</span>
+          </ToolTipSimple>
+        ) : (
+          link.icon
+        )}
+      </Link>
+    </Button>
   );
 };

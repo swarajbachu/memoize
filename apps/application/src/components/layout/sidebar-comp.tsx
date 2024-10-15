@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { useClerk } from "@clerk/nextjs";
 import { cn } from "@memoize/ui";
@@ -12,10 +12,10 @@ import { Button } from "@memoize/ui/button";
 import { ThemeToggle } from "@memoize/ui/theme";
 import { BarChart, Calendar, Clock, Home, LogOut, Plus } from "lucide-react";
 import { GoHomeFill } from "react-icons/go";
-import { IoCalendarClear, IoJournal } from "react-icons/io5";
+import { IoCalendarClear, IoJournal, IoPencilSharp } from "react-icons/io5";
 import { toast } from "sonner";
 import useDeviceType from "~/hooks/use-device-type";
-import { Sidebar, SidebarBody, SidebarLink } from "./sidebar-ui";
+import { Sidebar, SidebarBody, SidebarButton, SidebarLink } from "./sidebar-ui";
 
 const AccordanceMenuList = [
   {
@@ -48,12 +48,35 @@ export function SidebarComponent() {
   const currentPath = usePathname();
   const { signOut } = useClerk();
 
+  useEffect(() => {
+    setOpen(device === "desktop");
+  }, [device]);
+
   return (
     <Sidebar open={open} setOpen={setOpen}>
       <SidebarBody className="justify-between sticky top-3  gap-10 bg-card z-50">
         <div className=" flex-1 flex-col overflow-y-auto overflow-x-hidden hidden md:flex">
           {open ? <Logo /> : <LogoIcon />}
+
           <div className="mt-8 flex flex-col gap-2">
+            {/* <Button
+              asChild
+              size={open ? "md" : "icon"}
+              className="w-full text-left group cursor-pointer"
+              onClick={() => setOpen(!open)}
+            >
+              <Link href="/entry">
+                <PlusIcon className="" />{" "}
+                {open && <span className="ml-3">New Entry</span>}
+              </Link>
+            </Button> */}
+            <SidebarButton
+              link={{
+                label: "Compose",
+                href: "/entry",
+                icon: <IoPencilSharp className="text-xl" />,
+              }}
+            />
             {AccordanceMenuList.map((link) => (
               <div key={link.text}>
                 <h2 className="mb-3 flex text-xs">{open ? link.text : ""}</h2>
@@ -123,10 +146,7 @@ export function SidebarComponent() {
 }
 export const Logo = () => {
   return (
-    <Link
-      href="#"
-      className="relative z-20 hidden items-center space-x-2 py-1 text-sm font-normal md:flex"
-    >
+    <div className="relative z-20 hidden items-center space-x-2 py-1 text-sm font-normal md:flex">
       <LogoIcon />
       <motion.span
         initial={{ opacity: 0 }}
@@ -137,7 +157,7 @@ export const Logo = () => {
       </motion.span>
       <ThemeToggle />
       <span className="w-6" />
-    </Link>
+    </div>
   );
 };
 export const LogoIcon = () => {

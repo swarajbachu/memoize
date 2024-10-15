@@ -5,6 +5,7 @@ import { Button } from "@memoize/ui/button";
 import { Card, CardContent, CardFooter, CardHeader } from "@memoize/ui/card";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -12,12 +13,11 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@memoize/ui/dialog";
-import { Separator } from "@memoize/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@memoize/ui/tabs";
 import type { MessageType } from "@memoize/validators/entries";
 import { format } from "date-fns";
 import { Download, Trash2 } from "lucide-react";
-import { useState } from "react";
+import React from "react";
 
 type JournalEntryProps = {
   messages: MessageType[];
@@ -41,29 +41,22 @@ export default function JournalEntry({
   onExport,
   onDelete,
 }: JournalEntryProps) {
-  const [activeTab, setActiveTab] = useState("journal");
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-
   const handleDelete = () => {
     onDelete();
-    setIsDeleteDialogOpen(false);
   };
 
   return (
-    <Card className="w-full max-w-3xl mx-auto my-8 shadow-lg">
+    <Card className="w-full max-w-3xl h-full mx-auto">
       <CardHeader className="flex flex-col space-y-4 pb-2">
         <div className="flex justify-between items-center">
           <span className="text-sm text-muted-foreground">
-            {format(timestamp, "EEEE, MMMM do '@' h:mm a")}
+            {format(timestamp, "EEEE, MMMM do h:mm a")}
           </span>
           <div className="flex space-x-2">
-            <Button variant="ghost" size="sm" onClick={onExport}>
+            <Button variant="ghost" size="sm">
               <Download className="w-4 h-4" />
             </Button>
-            <Dialog
-              open={isDeleteDialogOpen}
-              onOpenChange={setIsDeleteDialogOpen}
-            >
+            <Dialog>
               <DialogTrigger asChild>
                 <Button variant="ghost" size="sm">
                   <Trash2 className="w-4 h-4" />
@@ -80,15 +73,10 @@ export default function JournalEntry({
                   </DialogDescription>
                 </DialogHeader>
                 <DialogFooter>
-                  <Button
-                    variant="outline"
-                    onClick={() => setIsDeleteDialogOpen(false)}
-                  >
-                    Cancel
-                  </Button>
-                  <Button variant="destructive" onClick={handleDelete}>
-                    Delete
-                  </Button>
+                  <DialogClose asChild>
+                    <Button variant="outline">Cancel</Button>
+                  </DialogClose>
+                  <Button variant="destructive">Delete</Button>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
@@ -97,24 +85,26 @@ export default function JournalEntry({
         <h2 className="text-2xl font-semibold">{aiAnalysis.title}</h2>
       </CardHeader>
       <CardContent className="pt-0">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <Tabs className="w-full" defaultValue="analysis">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="journal">Journal</TabsTrigger>
             <TabsTrigger value="analysis">Analysis</TabsTrigger>
           </TabsList>
-          <TabsContent value="journal" className="mt-4 space-y-4">
+          <TabsContent value="journal" className="mt-4 ">
             {messages.map((message, index) => (
-              <div key={message.content} className="space-y-1">
+              <React.Fragment key={message.content}>
                 <p
                   className={cn(
-                    "text-sm whitespace-pre-wrap",
-                    message.role === "assistant" && "text-primary",
+                    "text-sm  my-0 mb-1",
+                    message.role === "assistant" &&
+                      "text-primary whitespace-pre-wrap font-semibold",
                   )}
                 >
                   {message.content}
                 </p>
-                {index < messages.length - 1 && <Separator className="my-2" />}
-              </div>
+                {index < messages.length - 1}
+                {message.role === "user" && <hr className="my-4" />}
+              </React.Fragment>
             ))}
           </TabsContent>
           <TabsContent value="analysis" className="mt-4">

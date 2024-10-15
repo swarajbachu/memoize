@@ -3,6 +3,7 @@ import { MessageSchema } from "@memoize/validators/entries";
 import { journals } from "@memoize/validators/journal-constants";
 import type { TRPCRouterRecord } from "@trpc/server";
 import { z } from "zod";
+import type { EntrySelect } from "../../../db/dist/schema/entries";
 import {
   createInDepthResponse,
   createInitialQuestion,
@@ -47,7 +48,22 @@ export const entryRouter = {
       where: eq(entries.entries.userId, ctx.userId),
       orderBy: desc(entries.entries.createdAt),
     });
-    return allEntries;
+    const groupedEntriesByMonth = allEntries.reduce(
+      (acc: Record<string, EntrySelect[]>, entry) => {
+        const date = entry.createdAt ? new Date(entry.createdAt) : new Date();
+        const monthKey = date.toLocaleString("default", {
+          month: "long",
+          year: "numeric",
+        });
+        if (!acc[monthKey]) {
+          acc[monthKey] = [];
+        }
+        acc[monthKey].push(entry);
+        return acc;
+      },
+      {},
+    );
+    return groupedEntriesByMonth;
   }),
   findEntryById: protectedProcedure
     .input(z.string())

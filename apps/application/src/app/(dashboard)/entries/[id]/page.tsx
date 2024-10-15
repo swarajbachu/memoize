@@ -1,13 +1,12 @@
-"use client";
-
 import JournalEntry from "~/components/entires/entries-view";
-import useStore from "~/store/entries"; // Directly use the store
+import { api } from "~/trpc/server";
 
-export default function EntryPage({ params }: { params: { id: string } }) {
-  const entry = useStore((state) =>
-    state.entries.find((en) => en.id === params.id),
-  );
-  console.log("Entry:", entry);
+export default async function EntryPage({
+  params,
+}: {
+  params: { id: string };
+}) {
+  const entry = await api.entries.findEntryById(params.id);
 
   if (!entry) {
     return <div>Entry not found</div>;
@@ -29,8 +28,7 @@ export default function EntryPage({ params }: { params: { id: string } }) {
   };
 
   return (
-    <section className="h-[90vh]">
-      {/* <EntryEditor {...entry} /> */}
+    <section className="h-[calc(100vh-3rem)]">
       <JournalEntry
         messages={entry.content}
         aiAnalysis={demoAiAnalysis}

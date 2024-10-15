@@ -1,17 +1,11 @@
-"use client";
 import EntryCard from "~/components/entires/entry-card";
-import { useEntries } from "~/hooks/use-entries";
+import { api } from "~/trpc/server";
 
-export default function FetchEntries() {
-  const { groupedEntriesByMonth, isLoading } = useEntries();
-
-  if (isLoading) {
-    return <div>Loading...</div>;
-  }
-
+export default async function FetchEntries() {
+  const allEntries = await api.entries.findAllEntires();
   return (
     <>
-      {Object.entries(groupedEntriesByMonth).map(([month, entries]) => (
+      {Object.entries(allEntries).map(([month, entries]) => (
         <div key={month} className="px-3">
           <h2 className="text-lg font-bold my-4 ml-1">{month}</h2>
           {entries.map((entry) => (
