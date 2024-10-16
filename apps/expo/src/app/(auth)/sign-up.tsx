@@ -72,7 +72,7 @@ const SignUp = () => {
           state: "success",
         });
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        router.push("/(auth)/welcome");
+        router.push("/(auth)/onboard");
       } else {
         setVerification({
           ...verification,
