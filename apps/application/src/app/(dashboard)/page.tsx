@@ -1,14 +1,14 @@
-"use client";
-
 import { Button } from "@memoize/ui/button";
 import { Calendar, Plus } from "lucide-react";
 import Link from "next/link";
 import Reflections from "~/components/home/reflection";
 import SummaryCards from "~/components/home/summary";
-import { useEntries } from "~/hooks/use-entries";
+import { api } from "~/trpc/server";
 
-export default function HomePage() {
-  const { calculateStreaks, calculateWordCounts } = useEntries();
+export default async function HomePage() {
+  // const { calculateStreaks, calculateWordCounts } = useEntries();
+  const streaks = await api.entries.getStreak();
+  const count = await api.entries.getEntriesCount();
   return (
     <section className="sm:px-6 space-y-6">
       <header className="flex justify-between sm:flex-row flex-col gap-2 sm:items-center mb-6">
@@ -27,9 +27,9 @@ export default function HomePage() {
         </div>
       </header>
       <SummaryCards
-        streak={calculateStreaks().currentStreak.count}
-        words={calculateWordCounts()}
-        entries={10}
+        streak={streaks.currentStreak.count}
+        words={Number.parseInt(count.words)}
+        entries={count.count ?? 0}
       />
       <Reflections />
       {/* <Analytics /> */}

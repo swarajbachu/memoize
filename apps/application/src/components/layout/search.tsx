@@ -13,46 +13,87 @@ import {
 
 import { DialogTitle } from "@memoize/ui/dialog";
 
+import type { MessageType } from "@memoize/validators/entries";
 import { useRouter } from "next/navigation";
 import { CiSearch } from "react-icons/ci";
-import useStore from "~/store/entries";
+import { api } from "~/trpc/react";
 
 export default function Search() {
   const [open, setOpen] = React.useState(false);
-  const entries = useStore((state) => state.entries);
+  const { data } = api.entries.allEntries.useQuery();
   const [searchValue, setSearchValue] = React.useState("");
   const router = useRouter();
 
-  const highlightText = (text: string, search: string) => {
-    if (!search.trim()) return text;
+  // Filter notes based on search input
+  const filteredNotes = React.useMemo(() => {
+    if (!data || !searchValue.trim()) return [];
 
-    const searchWords = search
-      .split(/\s+/)
-      .filter(Boolean)
-      .map((word) => word.toLowerCase());
+    const searchWords = searchValue.toLowerCase().split(/\s+/).filter(Boolean);
 
-    const regex = new RegExp(`(${searchWords.join("|")})`, "gi");
+    return data
+      .map((note) => {
+        const combinedContent = note.content
+          .map((message: MessageType) => message.content)
+          .join(" ");
 
-    return text.split(regex).map((part, index) => {
-      if (searchWords.includes(part.toLowerCase())) {
-        return (
+        const lowerCombinedContent = combinedContent.toLowerCase();
+
+        // Check if all search words are present in the combined content (partial matches)
+        const matchesAllSearchWords = searchWords.every((word) =>
+          lowerCombinedContent.includes(word),
+        );
+
+        if (matchesAllSearchWords) {
+          return { note, combinedContent };
+        }
+        return null;
+      })
+      .filter(Boolean) as Array<{
+      note: (typeof data)[0];
+      combinedContent: string;
+    }>;
+  }, [data, searchValue]);
+
+  // Function to generate a snippet around the first occurrence of any search term
+  const generateSnippet = (
+    text: string,
+    searchWords: string[],
+    snippetLength = 20,
+  ) => {
+    const textWords = text.split(/\s+/);
+    const lowerTextWords = textWords.map((word) => word.toLowerCase());
+
+    // Find the index of the first occurrence of any search word
+    const firstMatchIndex = lowerTextWords.findIndex((word) =>
+      searchWords.some((sw) => word.includes(sw)),
+    );
+
+    let start = 0;
+    if (firstMatchIndex !== -1) {
+      start = Math.max(0, firstMatchIndex - Math.floor(snippetLength / 2));
+    }
+
+    const snippetWords = textWords.slice(start, start + snippetLength);
+    return snippetWords.join(" ");
+  };
+
+  // Function to highlight search terms in the text
+  const highlightText = (text: string, searchWords: string[]) => {
+    return text
+      .split(new RegExp(`(${searchWords.join("|")})`, "gi"))
+      .map((part, index) =>
+        searchWords.some((word) => part.toLowerCase().includes(word)) ? (
           // biome-ignore lint/suspicious/noArrayIndexKey: <explanation>
           <span key={index} className="bg-sky-300 dark:bg-sky-800">
             {part}
           </span>
-        );
-      }
-      return part;
-    });
+        ) : (
+          part
+        ),
+      );
   };
 
-  const filteredNotes = entries.filter((note) =>
-    searchValue
-      .split(/\s+/)
-      .filter(Boolean)
-      .every((word) => note.content.toLowerCase().includes(word.toLowerCase())),
-  );
-
+  // Keyboard shortcut to open the search dialog
   React.useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
@@ -92,23 +133,32 @@ export default function Search() {
           onValueChange={setSearchValue}
         />
         <CommandList>
-          <CommandEmpty>No results found.</CommandEmpty>
           <CommandGroup heading="search">
-            {filteredNotes.map((note) => (
-              <CommandItem
-                key={note.id}
-                value={note.content}
-                onSelect={() => {
-                  runCommand(() => router.push(`/entry/${note.id}`));
-                }}
-              >
-                <div className="w-full">
-                  <p className="text-sm">
-                    {highlightText(note.content, searchValue)}
-                  </p>
-                </div>
-              </CommandItem>
-            ))}
+            <CommandEmpty>No results found.</CommandEmpty>
+            {filteredNotes.map(({ note, combinedContent }) => {
+              const searchWords = searchValue
+                .toLowerCase()
+                .split(/\s+/)
+                .filter(Boolean);
+
+              const snippet = generateSnippet(combinedContent, searchWords, 20);
+
+              return (
+                <CommandItem
+                  key={note.id}
+                  value={combinedContent}
+                  onSelect={() => {
+                    runCommand(() => router.push(`/entry/${note.id}`));
+                  }}
+                >
+                  <div className="w-full">
+                    <p className="text-sm">
+                      {highlightText(snippet, searchWords)}
+                    </p>
+                  </div>
+                </CommandItem>
+              );
+            })}
           </CommandGroup>
         </CommandList>
       </CommandDialog>

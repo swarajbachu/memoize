@@ -64,17 +64,20 @@ export default function JournalingUI({ journalId }: JournalingUIProps) {
 
   // Fetch the initial question when the component mounts
   useEffect(() => {
-    if (currentQuestion === null && !isLoading && journalId) {
+    if (currentQuestion === null && !isLoading) {
       setIsLoading(true);
-      getNextQuestion({
-        journalId: journalId,
+      const questionParams = {
+        ...(journalId && { journalId }),
         currentConversation: entries.map((entry) => entry.content),
+      };
+      getNextQuestion({
+        ...questionParams,
       });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentQuestion, entries, getNextQuestion, journalId]);
 
   // Focus and adjust textarea height when the current question or loading state changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
     if (inputRef.current) {
       inputRef.current.focus();
@@ -128,12 +131,15 @@ export default function JournalingUI({ journalId }: JournalingUIProps) {
       setIsLoading(true);
 
       // Fetch the next question without waiting for it to update the UI
-      const qestuons = getNextQuestion({
-        journalId: journalId,
+      const questionParams = {
+        ...(journalId && { journalId }),
         currentConversation: updatedEntries.map((entry) => entry.content),
+      };
+      const questions = getNextQuestion({
+        ...questionParams,
       });
 
-      console.log(qestuons, "quest");
+      console.log(questions, "quest");
 
       // Save the entry
       const entryData = {

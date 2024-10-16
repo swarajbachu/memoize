@@ -1,14 +1,10 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import useDeviceType from "~/hooks/use-device-type";
-import { useEntries } from "~/hooks/use-entries";
-
 export default function EntryPage() {
-  const { descEntries, isLoading } = useEntries();
-  const recentEntry = descEntries[0];
-  const deviceType = useDeviceType();
-  const router = useRouter();
+  // const { descEntries, isLoading } = useEntries();
+  // const recentEntry = descEntries[0];
+  // const deviceType = useDeviceType();
+  // const router = useRouter();
 
   // useEffect(() => {
   //   if (deviceType === "desktop") {

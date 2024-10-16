@@ -2,7 +2,7 @@ import { cn } from "@memoize/ui";
 import { Avatar, AvatarFallback } from "@memoize/ui/avatar";
 import { Badge } from "@memoize/ui/badge";
 import { Button } from "@memoize/ui/button";
-import { Card, CardContent, CardFooter, CardHeader } from "@memoize/ui/card";
+import { Card, CardContent, CardHeader } from "@memoize/ui/card";
 import {
   Dialog,
   DialogClose,
@@ -97,7 +97,7 @@ export default function JournalEntry({
                   className={cn(
                     "text-sm  my-0 mb-1",
                     message.role === "assistant" &&
-                      "text-primary whitespace-pre-wrap font-semibold",
+                      "text-primary whitespace-pre-line font-semibold ",
                   )}
                 >
                   {message.content}
@@ -128,7 +128,7 @@ export default function JournalEntry({
           </TabsContent>
         </Tabs>
       </CardContent>
-      <CardFooter className="flex justify-between items-center bg-muted/50 mt-4">
+      {/* <CardFooter className="flex justify-between items-center bg-muted/50 mt-4">
         <div className="flex items-center space-x-2">
           <span className="text-sm font-medium">Feeling:</span>
           <Badge variant="outline">{aiAnalysis.feeling}</Badge>
@@ -143,7 +143,7 @@ export default function JournalEntry({
           </div>
           <span className="text-sm">{aiAnalysis.moodLevel}%</span>
         </div>
-      </CardFooter>
+      </CardFooter> */}
     </Card>
   );
 }
