@@ -1,7 +1,3 @@
-import { useEffect } from "react";
-import useStore from "~/store/entries";
-import { api } from "~/trpc/react";
-
 export const useEntrySync = () => {
   // const entries = useStore((state) => state.entries);
   // const updateEntryInStore = useStore((state) => state.updateEntry);

@@ -14,8 +14,7 @@ export default async function EntryPage({
 
   const demoAiAnalysis = {
     title: "A Day of High Productivity and Team Collaboration",
-    summary:
-      "Today was marked by significant achievements in both individual and team contexts, showcasing strong project management skills and effective leadership. The journal entry reflects a high level of job satisfaction and self-efficacy, particularly in relation to productivity.",
+    summary: (entry.entryAnalysis?.analysis as string) ?? "",
     feeling: "Accomplished",
     topics: [
       "Productivity",

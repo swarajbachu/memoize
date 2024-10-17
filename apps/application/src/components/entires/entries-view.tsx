@@ -1,5 +1,4 @@
 import { cn } from "@memoize/ui";
-import { Avatar, AvatarFallback } from "@memoize/ui/avatar";
 import { Badge } from "@memoize/ui/badge";
 import { Button } from "@memoize/ui/button";
 import { Card, CardContent, CardHeader } from "@memoize/ui/card";
@@ -46,7 +45,7 @@ export default function JournalEntry({
   };
 
   return (
-    <Card className="w-full max-w-3xl h-full mx-auto">
+    <Card className="w-full max-w-3xl h-full mx-auto flex-1">
       <CardHeader className="flex flex-col space-y-4 pb-2">
         <div className="flex justify-between items-center">
           <span className="text-sm text-muted-foreground">
@@ -85,10 +84,10 @@ export default function JournalEntry({
         <h2 className="text-2xl font-semibold">{aiAnalysis.title}</h2>
       </CardHeader>
       <CardContent className="pt-0">
-        <Tabs className="w-full" defaultValue="analysis">
+        <Tabs className="w-full" defaultValue="reflection">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="journal">Journal</TabsTrigger>
-            <TabsTrigger value="analysis">Analysis</TabsTrigger>
+            <TabsTrigger value="reflection">Reflect</TabsTrigger>
           </TabsList>
           <TabsContent value="journal" className="mt-4 ">
             {messages.map((message, index) => (
@@ -107,8 +106,10 @@ export default function JournalEntry({
               </React.Fragment>
             ))}
           </TabsContent>
-          <TabsContent value="analysis" className="mt-4">
-            <p className="text-sm mb-4">{aiAnalysis.summary}</p>
+          <TabsContent value="reflection" className="mt-4">
+            <p className="text-sm mb-4 whitespace-pre-line">
+              {aiAnalysis.summary}
+            </p>
             <div className="flex flex-wrap gap-2 mb-4">
               <span className="text-sm font-medium">Topics:</span>
               {aiAnalysis.topics.map((topic, index) => (
@@ -117,14 +118,14 @@ export default function JournalEntry({
                 </Badge>
               ))}
             </div>
-            <div className="flex items-center space-x-2 mb-4">
+            {/* <div className="flex items-center space-x-2 mb-4">
               <span className="text-sm font-medium">People:</span>
               {aiAnalysis.people.map((person, index) => (
                 <Avatar key={aiAnalysis.moodLevel} className="w-6 h-6">
                   <AvatarFallback>{person[0]}</AvatarFallback>
                 </Avatar>
               ))}
-            </div>
+            </div> */}
           </TabsContent>
         </Tabs>
       </CardContent>

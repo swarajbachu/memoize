@@ -4,6 +4,7 @@ import { cn } from "@memoize/ui";
 import { Button } from "@memoize/ui/button";
 import { Skeleton } from "@memoize/ui/skeleton";
 import { ChevronRight } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { api } from "~/trpc/react";
@@ -36,31 +37,37 @@ export default function JournalingUI({ journalId }: JournalingUIProps) {
   const currentQuestionRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const isInitialSave = useRef(true);
+  const router = useRouter();
+
+  const { mutateAsync: finishEntryAnalysis, isPending: finishingEntry } =
+    api.entries.finishEntryAnalysis.useMutation();
 
   // Mutation to fetch the next question
-  const { mutate: getNextQuestion } = api.entries.getNextQuestion.useMutation({
-    onSuccess: (data) => {
-      setCurrentQuestion(data);
-      setIsLoading(false);
-    },
-    onError: (error) => {
-      console.error("Failed to fetch question:", error);
-      setIsLoading(false);
-    },
-  });
+  const { mutate: getNextQuestion, isPending: generatingNextQuestion } =
+    api.entries.getNextQuestion.useMutation({
+      onSuccess: (data) => {
+        setCurrentQuestion(data);
+        setIsLoading(false);
+      },
+      onError: (error) => {
+        console.error("Failed to fetch question:", error);
+        setIsLoading(false);
+      },
+    });
 
   // Mutation to add/update journal entry
-  const { mutate: addEntry } = api.entries.addEntry.useMutation({
-    onSuccess: (data) => {
-      if (data && isInitialSave.current) {
-        setEntryId(data.id);
-        isInitialSave.current = false;
-      }
-    },
-    onError: (error) => {
-      console.error("Error saving entry:", error);
-    },
-  });
+  const { mutate: addEntry, isPending: addingEntry } =
+    api.entries.addEntry.useMutation({
+      onSuccess: (data) => {
+        if (data && isInitialSave.current) {
+          setEntryId(data.id);
+          isInitialSave.current = false;
+        }
+      },
+      onError: (error) => {
+        console.error("Error saving entry:", error);
+      },
+    });
 
   // Fetch the initial question when the component mounts
   useEffect(() => {
@@ -152,16 +159,47 @@ export default function JournalingUI({ journalId }: JournalingUIProps) {
   };
 
   // Handle finishing the journaling session
-  const handleFinish = () => {
-    if (entries.length > 0) {
-      const entryData = {
-        messages: entries,
-        ...(entryId && { id: entryId }),
+  const handleFinish = async () => {
+    if (
+      currentAnswer.trim() !== "" &&
+      currentQuestion &&
+      entries.length > 0 &&
+      entryId
+    ) {
+      const now = new Date().toISOString();
+
+      const questionMessage: Message = {
+        content: currentQuestion,
+        createdAt: now,
+        role: "assistant",
+        type: "text",
       };
 
+      const answerMessage: Message = {
+        content: currentAnswer,
+        createdAt: now,
+        role: "user",
+        type: "text",
+      };
+
+      const updatedEntries = [...entries, questionMessage, answerMessage];
+      setEntries(updatedEntries);
+      const entryData = {
+        messages: updatedEntries,
+        ...(entryId && { id: entryId }),
+      };
       addEntry(entryData);
     }
+    if (!entryId) {
+      return;
+    }
 
+    await finishEntryAnalysis({
+      entryId: entryId,
+      journalEntires: entries,
+    }).then(() => {
+      router.push(`/entries/${entryId}`);
+    });
     // Perform any final actions, such as navigation or showing a summary
     console.log("Journaling session finished", entries);
     // You might want to redirect the user or show a confirmation message here
@@ -255,12 +293,29 @@ export default function JournalingUI({ journalId }: JournalingUIProps) {
         <div className="space-x-4">
           <Button
             onClick={handleNextQuestion}
-            disabled={currentAnswer.trim() === "" || isLoading}
+            disabled={
+              currentAnswer.trim() === "" ||
+              isLoading ||
+              finishingEntry ||
+              generatingNextQuestion
+            }
+            loading={generatingNextQuestion}
             className="px-6"
           >
             Next <ChevronRight className="ml-2 h-4 w-4" />
           </Button>
-          <Button onClick={handleFinish} variant="outline" className="px-6">
+          <Button
+            onClick={handleFinish}
+            loading={finishingEntry}
+            disabled={
+              currentAnswer.trim() === "" ||
+              isLoading ||
+              finishingEntry ||
+              generatingNextQuestion
+            }
+            variant="outline"
+            className="px-6"
+          >
             Finish Entry
           </Button>
         </div>

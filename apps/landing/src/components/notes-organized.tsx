@@ -71,7 +71,7 @@ function StickyNote({
 
   return (
     <motion.div
-      className="aspect-square bg-yellow-200 shadow-md p-4 text-center flex items-center justify-center cursor-pointer hover:scale-105 transition-transform"
+      className="aspect-square bg-yellow-200 shadow-md p-4 text-center flex items-center justify-center cursor-pointer"
       style={{
         boxShadow: "5px 5px 15px rgba(0,0,0,0.1)",
         borderRadius: "2px 15px 2px 15px",

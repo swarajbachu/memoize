@@ -49,4 +49,41 @@ export const entriesRelations = relations(entries, ({ one }) => ({
     fields: [entries.userId],
     references: [User.clerkUserId],
   }),
+  entryAnalysis: one(entryAnalysis),
+}));
+
+export const entryAnalysis = sqliteTable("entry_analysis", {
+  id: text("id")
+    .notNull()
+    .primaryKey()
+    .$defaultFn(() => createUniqueIds("en_ai")),
+  entryId: text("entry_id")
+    .references(() => entries.id)
+    .notNull(),
+  analysis: text("analysis").notNull(),
+  feelings: text("feelings", {
+    mode: "json",
+  }),
+  createdAt: integer("created", {
+    mode: "timestamp_ms",
+  })
+    .notNull()
+    .$defaultFn(() => new Date()),
+  updatedAt: integer("updatedAt", {
+    mode: "timestamp_ms",
+  })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+export const entryAnalysisInsertSchema = createInsertSchema(entryAnalysis);
+export type EntryAnalysisInsert = z.infer<typeof entryAnalysisInsertSchema>;
+export const entryAnalysisSelectSchema = createSelectSchema(entryAnalysis);
+export type EntryAnalysisSelect = z.infer<typeof entryAnalysisSelectSchema>;
+
+export const entryAnalysisRelations = relations(entryAnalysis, ({ one }) => ({
+  entry: one(entries, {
+    fields: [entryAnalysis.entryId],
+    references: [entries.id],
+  }),
 }));

@@ -1,10 +1,13 @@
-import { count, desc, entries, eq, sum } from "@memoize/db";
+import { count, db, desc, entries, eq, sum } from "@memoize/db";
 import { MessageSchema } from "@memoize/validators/entries";
 import { journals } from "@memoize/validators/journal-constants";
 import type { TRPCRouterRecord } from "@trpc/server";
 import { z } from "zod";
 import type { EntrySelect } from "../../../db/dist/schema/entries";
-import { createInDepthResponse } from "../handlers/entries-ai";
+import {
+  createInDepthResponse,
+  generateReflection,
+} from "../handlers/entries-ai";
 import { protectedProcedure } from "../trpc";
 
 export const entryRouter = {
@@ -30,6 +33,23 @@ export const entryRouter = {
       return await createInDepthResponse(
         input.currentConversation.join("\n\n"),
       );
+    }),
+  finishEntryAnalysis: protectedProcedure
+    .input(
+      z.object({
+        journalEntires: z.array(MessageSchema),
+        entryId: z.string(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const analysis = await generateReflection({
+        journalEntry: input.journalEntires,
+      });
+      await db.insert(entries.entryAnalysis).values({
+        entryId: input.entryId,
+        analysis,
+      });
+      return analysis;
     }),
   findAllEntires: protectedProcedure.query(async ({ ctx }) => {
     const allEntries = await ctx.db.query.entries.findMany({
@@ -65,6 +85,9 @@ export const entryRouter = {
     .query(async ({ ctx, input }) => {
       const entry = await ctx.db.query.entries.findFirst({
         where: eq(entries.entries.id, input),
+        with: {
+          entryAnalysis: true,
+        },
       });
       return entry;
     }),
@@ -76,6 +99,7 @@ export const entryRouter = {
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      console.log(input.messages);
       const entry = await ctx.db
         .insert(entries.entries)
         .values({

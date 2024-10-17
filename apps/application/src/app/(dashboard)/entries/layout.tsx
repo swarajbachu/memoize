@@ -10,7 +10,7 @@ export default function EntiresLayout({
   children: React.ReactNode;
 }) {
   return (
-    <section className="flex h-full">
+    <section className="flex h-full w-full">
       <EntriesSideBarWrapper>
         <SidebarContent />
       </EntriesSideBarWrapper>

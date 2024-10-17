@@ -1,3 +1,4 @@
+import type { MessageType } from "@memoize/validators/entries";
 import OpenAI from "openai";
 
 const openAi = new OpenAI({
@@ -94,4 +95,73 @@ export async function createInDepthResponse(
   console.log(question);
 
   return question;
+}
+
+export async function generateReflection({
+  journalEntry,
+}: {
+  journalEntry: MessageType[];
+}): Promise<string> {
+  const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+
+  // Format the journal entries for the prompt
+  const formattedEntries = journalEntry
+    .map((entry) =>
+      entry.role === "assistant"
+        ? `Q: ${entry.content}`
+        : `A: ${entry.content}`,
+    )
+    .join("\n\n");
+
+  try {
+    const reflectionResponse = await openai.chat.completions.create({
+      model: "gpt-4o-mini-2024-07-18",
+      messages: [
+        {
+          role: "system",
+          content: `Generate a detailed first-person reflection that captures the complete journal entry. Write as if you are the person who wrote the journal, using natural, everyday language.
+
+          Guidelines:
+          - Write in first person ("I am", "I want", "I think")
+          - Use simple, clear language like how people naturally talk
+          - Create at least 2 paragraphs to cover different aspects
+          - Include bullet points when listing steps, features, or plans
+          - Stay grounded in what was actually written in the journal
+          - Keep the tone authentic and straightforward
+          - Avoid overly emotional or poetic language
+          
+          Example good reflection:
+          "I've been deep into planning my new app development project. I really want to improve on existing apps by making everything faster and more efficient, especially the voice features. My main focus is on reducing latency and improving the voice quality, and I'm thinking of using OpenAI's real-time API to make it work better.
+
+          The biggest challenges I'm facing are:
+          - Learning React Native since I'm completely new to it
+          - Setting up web sockets for proper connections
+          - Getting the app ready for the app store
+
+          I've decided to start with building a basic version first, focusing on the core journaling features. My plan is to make it simple but efficient – something where users can quickly make their entries. I especially like the idea of adding a communication feature that lets people journal while multitasking."
+          
+          Keep the reflection natural and honest, focusing on actual thoughts and plans expressed in the journal.`,
+        },
+        {
+          role: "user",
+          content: formattedEntries,
+        },
+      ],
+      temperature: 0.7, // Add some creativity while maintaining coherence
+      max_tokens: 200, // Limit length to ensure conciseness
+    });
+
+    const reflection = reflectionResponse?.choices[0]?.message.content || "";
+
+    if (!reflection) {
+      throw new Error("No reflection generated");
+    }
+
+    return reflection.trim();
+  } catch (error) {
+    console.error("Error generating reflection:", error);
+    throw new Error("Failed to generate reflection");
+  }
 }
