@@ -5,6 +5,7 @@ import { Card, CardContent, CardFooter } from "@memoize/ui/card";
 import { CheckCircle2, Circle } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import { api } from "~/trpc/server";
 import TodoList from "./todo-list";
 
 const initialTodos = [
@@ -25,15 +26,24 @@ const initialTodos = [
   },
 ];
 
-export default function Reflections() {
+export default async function Reflections() {
+  const reflections = await api.entries.getTodayReflectionStatus();
+  const morningReflection = reflections.morningReflection.status;
+  const eveningReflection = reflections.eveningReflection.status;
+  const morningReflectionUrl = morningReflection
+    ? `/entries/${reflections.morningReflection.entry?.id}`
+    : "/entry/morning_intention";
+  const eveningReflectionUrl = eveningReflection
+    ? `/entries/${reflections.eveningReflection.entry?.id}`
+    : "/entry/evening_reflection";
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       <ReflectionCard
         title="Morning Reflection"
         description="Reflect on yesterday's events, set goals for today, and more."
         imageSrc="/journals/morning-reflection.svg"
-        isDone={true}
-        url={""}
+        isDone={morningReflection}
+        url={morningReflectionUrl}
       />
 
       {new Date().getHours() >= 12 && (
@@ -41,8 +51,8 @@ export default function Reflections() {
           title="Evening Reflection"
           description="Reflect on today's events and plan for tomorrow."
           imageSrc="/journals/evening-reflection.svg"
-          isDone={false}
-          url={""}
+          isDone={eveningReflection}
+          url={eveningReflectionUrl}
         />
       )}
 

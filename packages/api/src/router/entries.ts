@@ -1,4 +1,4 @@
-import { count, db, desc, entries, eq, sum } from "@memoize/db";
+import { and, count, db, desc, entries, eq, gt, sum } from "@memoize/db";
 import { MessageSchema } from "@memoize/validators/entries";
 import { journals } from "@memoize/validators/journal-constants";
 import type { TRPCRouterRecord } from "@trpc/server";
@@ -11,6 +11,40 @@ import {
 import { protectedProcedure } from "../trpc";
 
 export const entryRouter = {
+  getTodayReflectionStatus: protectedProcedure.query(async ({ ctx }) => {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const todayMorningReflection = await ctx.db.query.entries.findFirst({
+      where: (entries) => {
+        return and(
+          eq(entries.userId, ctx.userId),
+          gt(entries.createdAt, startOfDay),
+          eq(entries.journalId, "morning_intention"),
+        );
+      },
+    });
+    console.log(todayMorningReflection, "morning");
+    const todayEveningReflection = await ctx.db.query.entries.findFirst({
+      where: (entries) => {
+        return and(
+          eq(entries.userId, ctx.userId),
+          eq(entries.createdAt, new Date()),
+          eq(entries.journalId, "evening_reflection"),
+        );
+      },
+    });
+    return {
+      morningReflection: {
+        status: !!todayMorningReflection,
+        entry: todayMorningReflection,
+      },
+      eveningReflection: {
+        status: !!todayEveningReflection,
+        entry: todayEveningReflection,
+      },
+    };
+  }),
   getNextQuestion: protectedProcedure
     .input(
       z.object({
@@ -95,6 +129,7 @@ export const entryRouter = {
     .input(
       z.object({
         id: z.string().optional(),
+        journalId: z.string().optional(),
         messages: z.array(MessageSchema),
       }),
     )
@@ -105,6 +140,7 @@ export const entryRouter = {
         .values({
           id: input.id,
           content: input.messages,
+          journalId: input.journalId,
           userId: ctx.userId,
         })
         .onConflictDoUpdate({

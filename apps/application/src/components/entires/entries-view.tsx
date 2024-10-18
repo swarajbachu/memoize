@@ -107,8 +107,8 @@ export default function JournalEntry({
             ))}
           </TabsContent>
           <TabsContent value="reflection" className="mt-4">
-            <p className="text-sm mb-4 whitespace-pre-line">
-              {aiAnalysis.summary}
+            <p className="text-sm mb-4 whitespace-pre-wrap">
+              {aiAnalysis.summary.replace('"', "")}
             </p>
             <div className="flex flex-wrap gap-2 mb-4">
               <span className="text-sm font-medium">Topics:</span>
