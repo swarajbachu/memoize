@@ -134,7 +134,16 @@ export const entryRouter = {
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      console.log(input.messages);
+      console.log(input, "input add entry");
+
+      // Calculate word count for messages with role 'user'
+      const wordCount = input.messages
+        .filter((message) => message.role === "user")
+        .reduce(
+          (count, message) => count + message.content.split(/\s+/).length,
+          0,
+        );
+
       const entry = await ctx.db
         .insert(entries.entries)
         .values({
@@ -142,11 +151,14 @@ export const entryRouter = {
           content: input.messages,
           journalId: input.journalId,
           userId: ctx.userId,
+          wordCount: wordCount, // Add word count to the database
         })
         .onConflictDoUpdate({
           target: entries.entries.id,
           set: {
             content: input.messages,
+            journalId: input.journalId,
+            wordCount: wordCount, // Update word count on conflict
           },
         })
         .returning();
