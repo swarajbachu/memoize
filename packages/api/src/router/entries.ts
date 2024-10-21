@@ -1,4 +1,15 @@
-import { and, count, db, desc, entries, eq, gt, sum } from "@memoize/db";
+import {
+  and,
+  count,
+  db,
+  desc,
+  entries,
+  eq,
+  gt,
+  people,
+  sum,
+  topics,
+} from "@memoize/db";
 import { MessageSchema } from "@memoize/validators/entries";
 import { journals } from "@memoize/validators/journal-constants";
 import type { TRPCRouterRecord } from "@trpc/server";
@@ -7,6 +18,7 @@ import type { EntrySelect } from "../../../db/dist/schema/entries";
 import {
   createInDepthResponse,
   generateReflection,
+  generateTopicsAndPeople,
 } from "../handlers/entries-ai";
 import { protectedProcedure } from "../trpc";
 
@@ -75,14 +87,94 @@ export const entryRouter = {
         entryId: z.string(),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const analysis = await generateReflection({
         journalEntry: input.journalEntires,
       });
       await db.insert(entries.entryAnalysis).values({
         entryId: input.entryId,
-        analysis,
+        analysis: analysis.summary,
+        feelings: analysis.feelings,
+        title: analysis.title,
       });
+      const existingTopics = await db.query.topics.findMany({
+        where: (topics) => eq(topics.userId, ctx.userId),
+      });
+      const existingPeople = await db.query.people.findMany({
+        where: (people) => eq(people.userId, ctx.userId),
+      });
+      const topicsAndPeople = await generateTopicsAndPeople({
+        summary: analysis.summary,
+        existingTopics: existingTopics.map((topic) => topic.topic),
+        existingPeople: existingPeople.map((person) => person.personName),
+      });
+      for (const topic of topicsAndPeople.topics) {
+        if (topic.isNew) {
+          const [insertedTopic] = await db
+            .insert(topics.topics)
+            .values({
+              topic: topic.name,
+              emoji: topic.emoji,
+              userId: ctx.userId,
+            })
+            .returning();
+          if (!insertedTopic) {
+            throw new Error("Failed to insert topic");
+          }
+          await db.insert(topics.topicToEntry).values({
+            entryId: input.entryId,
+            topicId: insertedTopic?.id,
+          });
+        } else {
+          const existingTopic = await db.query.topics.findFirst({
+            where: and(
+              eq(topics.topics.topic, topic.name),
+              eq(topics.topics.userId, ctx.userId),
+            ),
+          });
+          if (!existingTopic) {
+            console.log("existing topic not found", topic.name);
+            continue;
+          }
+          await db.insert(topics.topicToEntry).values({
+            entryId: input.entryId,
+            topicId: existingTopic.id,
+          });
+        }
+      }
+      for (const person of topicsAndPeople.people) {
+        if (person.isNew) {
+          const [insertedPerson] = await db
+            .insert(people.people)
+            .values({
+              personName: person.name,
+              userId: ctx.userId,
+            })
+            .returning();
+          if (!insertedPerson) {
+            throw new Error("Failed to insert person");
+          }
+          await db.insert(people.peopleToEntry).values({
+            entryId: input.entryId,
+            personId: insertedPerson?.id,
+          });
+        } else {
+          const existingPerson = await db.query.people.findFirst({
+            where: and(
+              eq(people.people.personName, person.name),
+              eq(people.people.userId, ctx.userId),
+            ),
+          });
+          if (!existingPerson) {
+            console.log("existing person not found", person.name);
+            continue;
+          }
+          await db.insert(people.peopleToEntry).values({
+            entryId: input.entryId,
+            personId: existingPerson.id,
+          });
+        }
+      }
       return analysis;
     }),
   findAllEntires: protectedProcedure.query(async ({ ctx }) => {
@@ -121,6 +213,11 @@ export const entryRouter = {
         where: eq(entries.entries.id, input),
         with: {
           entryAnalysis: true,
+          entryToTopics: {
+            with: {
+              topic: true,
+            },
+          },
         },
       });
       return entry;

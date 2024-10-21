@@ -1,3 +1,5 @@
+"use client";
+
 import { cn } from "@memoize/ui";
 import { Badge } from "@memoize/ui/badge";
 import { Button } from "@memoize/ui/button";
@@ -12,6 +14,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@memoize/ui/dialog";
+import { ScrollArea } from "@memoize/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@memoize/ui/tabs";
 import type { MessageType } from "@memoize/validators/entries";
 import { format } from "date-fns";
@@ -29,30 +32,25 @@ type JournalEntryProps = {
     moodLevel: number;
   };
   timestamp: Date;
-  onExport: () => void;
-  onDelete: () => void;
 };
 
 export default function JournalEntry({
   messages,
   aiAnalysis,
   timestamp,
-  onExport,
-  onDelete,
 }: JournalEntryProps) {
-  const handleDelete = () => {
-    onDelete();
-  };
+  const handleDelete = () => {};
+  const onExport = () => {};
 
   return (
-    <Card className="w-full max-w-3xl h-full mx-auto flex-1">
+    <Card className="w-full max-w-3xl h-full  flex-1">
       <CardHeader className="flex flex-col space-y-4 pb-2">
         <div className="flex justify-between items-center">
           <span className="text-sm text-muted-foreground">
             {format(timestamp, "EEEE, MMMM do h:mm a")}
           </span>
           <div className="flex space-x-2">
-            <Button variant="ghost" size="sm">
+            <Button variant="ghost" size="sm" onClick={onExport}>
               <Download className="w-4 h-4" />
             </Button>
             <Dialog>
@@ -75,7 +73,9 @@ export default function JournalEntry({
                   <DialogClose asChild>
                     <Button variant="outline">Cancel</Button>
                   </DialogClose>
-                  <Button variant="destructive">Delete</Button>
+                  <Button variant="destructive" onClick={handleDelete}>
+                    Delete
+                  </Button>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
@@ -83,68 +83,51 @@ export default function JournalEntry({
         </div>
         <h2 className="text-2xl font-semibold">{aiAnalysis.title}</h2>
       </CardHeader>
-      <CardContent className="pt-0">
+      <CardContent className="pt-0 w-full">
         <Tabs className="w-full" defaultValue="reflection">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="journal">Journal</TabsTrigger>
             <TabsTrigger value="reflection">Reflect</TabsTrigger>
           </TabsList>
-          <TabsContent value="journal" className="mt-4 ">
-            {messages.map((message, index) => (
-              <React.Fragment key={message.content}>
-                <p
-                  className={cn(
-                    "text-sm  my-0 mb-1",
-                    message.role === "assistant" &&
-                      "text-primary whitespace-pre-line font-semibold ",
-                  )}
-                >
-                  {message.content}
+          <div className="mt-4 h-[calc(100vh-300px)] min-h-[400px] w-full">
+            <TabsContent value="journal" className="h-full w-full">
+              <ScrollArea className="h-full pr-4">
+                {messages.map((message, index) => (
+                  <React.Fragment key={message.content}>
+                    <p
+                      className={cn(
+                        "text-sm my-0 mb-1",
+                        message.role === "assistant" &&
+                          "text-primary whitespace-pre-line font-semibold",
+                      )}
+                    >
+                      {message.content}
+                    </p>
+                    {index < messages.length - 1 && message.role === "user" && (
+                      <hr className="my-4" />
+                    )}
+                  </React.Fragment>
+                ))}
+              </ScrollArea>
+            </TabsContent>
+            <TabsContent value="reflection" className="h-full w-full">
+              <ScrollArea className="h-full pr-4">
+                <p className="text-sm mb-4 whitespace-pre-wrap">
+                  {aiAnalysis.summary.replace('"', "")}
                 </p>
-                {index < messages.length - 1}
-                {message.role === "user" && <hr className="my-4" />}
-              </React.Fragment>
-            ))}
-          </TabsContent>
-          <TabsContent value="reflection" className="mt-4">
-            <p className="text-sm mb-4 whitespace-pre-wrap">
-              {aiAnalysis.summary.replace('"', "")}
-            </p>
-            <div className="flex flex-wrap gap-2 mb-4">
-              <span className="text-sm font-medium">Topics:</span>
-              {aiAnalysis.topics.map((topic, index) => (
-                <Badge key={aiAnalysis.title} variant="secondary">
-                  {topic}
-                </Badge>
-              ))}
-            </div>
-            {/* <div className="flex items-center space-x-2 mb-4">
-              <span className="text-sm font-medium">People:</span>
-              {aiAnalysis.people.map((person, index) => (
-                <Avatar key={aiAnalysis.moodLevel} className="w-6 h-6">
-                  <AvatarFallback>{person[0]}</AvatarFallback>
-                </Avatar>
-              ))}
-            </div> */}
-          </TabsContent>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  <span className="text-sm font-medium">Topics:</span>
+                  {aiAnalysis.topics.map((topic) => (
+                    <Badge key={topic} variant="secondary">
+                      {topic}
+                    </Badge>
+                  ))}
+                </div>
+              </ScrollArea>
+            </TabsContent>
+          </div>
         </Tabs>
       </CardContent>
-      {/* <CardFooter className="flex justify-between items-center bg-muted/50 mt-4">
-        <div className="flex items-center space-x-2">
-          <span className="text-sm font-medium">Feeling:</span>
-          <Badge variant="outline">{aiAnalysis.feeling}</Badge>
-        </div>
-        <div className="flex items-center space-x-2">
-          <span className="text-sm font-medium">Mood:</span>
-          <div className="w-24 bg-secondary rounded-full h-2">
-            <div
-              className="bg-primary h-2 rounded-full"
-              style={{ width: `${aiAnalysis.moodLevel}%` }}
-            />
-          </div>
-          <span className="text-sm">{aiAnalysis.moodLevel}%</span>
-        </div>
-      </CardFooter> */}
     </Card>
   );
 }

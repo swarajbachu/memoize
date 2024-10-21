@@ -1,1 +1,0 @@
-ALTER TABLE `entries` ADD `journal_id` text;

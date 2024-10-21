@@ -3,6 +3,8 @@ import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import type { z } from "zod";
 import { entries } from "./entries";
+import { people } from "./people";
+import { topics } from "./topics";
 
 export const User = sqliteTable("user", {
   clerkUserId: text("clerk_user_id", { length: 255 }).primaryKey(),
@@ -24,6 +26,8 @@ export const User = sqliteTable("user", {
 
 export const UserRelations = relations(User, ({ many }) => ({
   entires: many(entries),
+  topics: many(topics),
+  people: many(people),
 }));
 
 export const userInsertSchema = createInsertSchema(User);

@@ -1,0 +1,1 @@
+ALTER TABLE `entry_analysis` ADD `title` text;

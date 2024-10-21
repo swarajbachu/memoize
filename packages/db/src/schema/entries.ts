@@ -4,6 +4,8 @@ import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import z from "zod";
 import { createUniqueIds } from "../utilts";
+import { peopleToEntry } from "./people";
+import { topicToEntry } from "./topics";
 import { User } from "./users";
 
 export const entries = sqliteTable("entries", {
@@ -45,11 +47,13 @@ export const entriesSelectSchema = createSelectSchema(entries, {
 });
 export type EntrySelect = z.infer<typeof entriesSelectSchema>;
 
-export const entriesRelations = relations(entries, ({ one }) => ({
+export const entriesRelations = relations(entries, ({ one, many }) => ({
   user: one(User, {
     fields: [entries.userId],
     references: [User.clerkUserId],
   }),
+  entryToTopics: many(topicToEntry),
+  entryToPeople: many(peopleToEntry),
   entryAnalysis: one(entryAnalysis),
 }));
 
@@ -62,6 +66,7 @@ export const entryAnalysis = sqliteTable("entry_analysis", {
     .references(() => entries.id)
     .notNull(),
   analysis: text("analysis").notNull(),
+  title: text("title"),
   feelings: text("feelings", {
     mode: "json",
   }),

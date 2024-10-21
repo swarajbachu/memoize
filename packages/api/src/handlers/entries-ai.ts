@@ -1,5 +1,8 @@
+import { openai } from "@ai-sdk/openai";
 import type { MessageType } from "@memoize/validators/entries";
+import { generateObject } from "ai";
 import OpenAI from "openai";
+import { z } from "zod";
 
 const openAi = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -101,12 +104,7 @@ export async function generateReflection({
   journalEntry,
 }: {
   journalEntry: MessageType[];
-}): Promise<string> {
-  const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-  });
-
-  // Format the journal entries for the prompt
+}) {
   const formattedEntries = journalEntry
     .map((entry) =>
       entry.role === "assistant"
@@ -116,12 +114,14 @@ export async function generateReflection({
     .join("\n\n");
 
   try {
-    const reflectionResponse = await openai.chat.completions.create({
-      model: "gpt-4o-mini-2024-07-18",
-      messages: [
-        {
-          role: "system",
-          content: `Generate a detailed first-person reflection that captures the complete journal entry. Write as if you are the person who wrote the journal, using natural, everyday language.
+    const { object } = await generateObject({
+      model: openai("gpt-4o-mini-2024-07-18"),
+      schema: z.object({
+        title: z.string().describe("Title of the reflection"),
+        summary: z.string().describe("Summary of the reflection"),
+        feelings: z.string().describe("Feelings expressed in the reflection"),
+      }),
+      prompt: `Generate a detailed first-person reflection that captures the complete journal entry. Write as if you are the person who wrote the journal, using natural, everyday language.
 
           Guidelines:
           - Write in first person ("I am", "I want", "I think")
@@ -142,26 +142,72 @@ export async function generateReflection({
 
           I've decided to start with building a basic version first, focusing on the core journaling features. My plan is to make it simple but efficient – something where users can quickly make their entries. I especially like the idea of adding a communication feature that lets people journal while multitasking."
           
-          Keep the reflection natural and honest, focusing on actual thoughts and plans expressed in the journal.`,
-        },
-        {
-          role: "user",
-          content: formattedEntries,
-        },
-      ],
-      temperature: 0.7, // Add some creativity while maintaining coherence
-      max_tokens: 200, // Limit length to ensure conciseness
+          Keep the reflection natural and honest, focusing on actual thoughts and plans expressed in the journal.
+          
+          here is entry content: ${formattedEntries}
+          `,
     });
-
-    const reflection = reflectionResponse?.choices[0]?.message.content || "";
+    const reflection = object;
 
     if (!reflection) {
       throw new Error("No reflection generated");
     }
 
-    return reflection.trim();
+    return reflection;
   } catch (error) {
     console.error("Error generating reflection:", error);
     throw new Error("Failed to generate reflection");
+  }
+}
+
+export async function generateTopicsAndPeople({
+  summary,
+  existingTopics,
+  existingPeople,
+}: {
+  summary: string;
+  existingTopics: string[];
+  existingPeople: string[];
+}) {
+  try {
+    const { object } = await generateObject({
+      model: openai("gpt-4o-mini-2024-07-18"),
+      prompt: `
+      here is the summary of the journal entry, and 
+      1. find what are the topics that are discussed in the journal entry
+      and also provide the emoji for the topic, if already mentioned use the topic directly and set isNew to false, 
+      here are some topics already exists <topics> ${existingTopics.join(", ")} </topics>
+      2. find names of people mentioned in the journal entry, if already mentioned use the name directly and set isNew to false,
+      here are some people already exists <people> ${existingPeople.join(", ")} </people>
+      Summary: ${summary}
+      `,
+      schema: z.object({
+        topics: z
+          .array(
+            z
+              .object({
+                emoji: z.string().describe("Emoji representing the topic"),
+                name: z.string().describe("Name of the topic"),
+                isNew: z.boolean().describe("Whether the topic is new"),
+              })
+              .describe(
+                "Topic mentioned in the journal entry, topic is not equal to feeling or emotion, it will be about a subject, if none found return empty array",
+              ),
+          )
+          .describe("List of topics generated from the journal entry"),
+        people: z
+          .array(
+            z.object({
+              name: z.string().describe("Name of the person"),
+              isNew: z.boolean().describe("Whether the person is new"),
+            }),
+          )
+          .describe("List of people mentioned in the journal entry"),
+      }),
+    });
+    return object;
+  } catch (error) {
+    console.error("Error generating topics:", error);
+    throw new Error("Failed to generate topics");
   }
 }

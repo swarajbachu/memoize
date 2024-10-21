@@ -8,6 +8,8 @@ export const uniqueIds = z.enum([
   "entry",
   "mood",
   "en_ai",
+  "en_tp",
+  "en_pe",
 ]);
 export type UniqueIdsType = z.infer<typeof uniqueIds>;
 export function createUniqueIds(

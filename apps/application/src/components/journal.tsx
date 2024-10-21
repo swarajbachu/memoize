@@ -144,7 +144,6 @@ export default function JournalingUI({ journalId }: JournalingUIProps) {
       };
       const questions = getNextQuestion({
         ...questionParams,
-        journalId: journalId,
       });
 
       console.log(questions, "quest");
@@ -153,7 +152,7 @@ export default function JournalingUI({ journalId }: JournalingUIProps) {
       const entryData = {
         messages: updatedEntries,
         ...(entryId && { id: entryId }),
-        journalId,
+        ...(journalId && { journalId }),
       };
 
       addEntry(entryData);
@@ -189,7 +188,7 @@ export default function JournalingUI({ journalId }: JournalingUIProps) {
       const entryData = {
         messages: updatedEntries,
         ...(entryId && { id: entryId }),
-        journalId,
+        ...(journalId && { journalId }),
       };
       addEntry(entryData);
     }
