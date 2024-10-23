@@ -1,5 +1,6 @@
 import {
   and,
+  asc,
   count,
   db,
   desc,
@@ -14,7 +15,6 @@ import { MessageSchema } from "@memoize/validators/entries";
 import { journals } from "@memoize/validators/journal-constants";
 import type { TRPCRouterRecord } from "@trpc/server";
 import { z } from "zod";
-import type { EntrySelect } from "../../../db/dist/schema/entries";
 import {
   createInDepthResponse,
   generateReflection,
@@ -32,7 +32,7 @@ export const entryRouter = {
         return and(
           eq(entries.userId, ctx.userId),
           gt(entries.createdAt, startOfDay),
-          eq(entries.journalId, "morning_intention"),
+          eq(entries.journalId, "morning_intention")
         );
       },
     });
@@ -42,7 +42,7 @@ export const entryRouter = {
         return and(
           eq(entries.userId, ctx.userId),
           eq(entries.createdAt, new Date()),
-          eq(entries.journalId, "evening_reflection"),
+          eq(entries.journalId, "evening_reflection")
         );
       },
     });
@@ -62,7 +62,7 @@ export const entryRouter = {
       z.object({
         journalId: z.string().optional(),
         currentConversation: z.array(z.string()),
-      }),
+      })
     )
     .mutation(async ({ input }) => {
       if (input.currentConversation.length < 6 && input.journalId) {
@@ -77,7 +77,7 @@ export const entryRouter = {
       }
 
       return await createInDepthResponse(
-        input.currentConversation.join("\n\n"),
+        input.currentConversation.join("\n\n")
       );
     }),
   finishEntryAnalysis: protectedProcedure
@@ -85,7 +85,7 @@ export const entryRouter = {
       z.object({
         journalEntires: z.array(MessageSchema),
         entryId: z.string(),
-      }),
+      })
     )
     .mutation(async ({ input, ctx }) => {
       const analysis = await generateReflection({
@@ -134,7 +134,7 @@ export const entryRouter = {
           const existingTopic = await db.query.topics.findFirst({
             where: and(
               eq(topics.topics.topic, topic.name),
-              eq(topics.topics.userId, ctx.userId),
+              eq(topics.topics.userId, ctx.userId)
             ),
           });
           if (!existingTopic) {
@@ -167,7 +167,7 @@ export const entryRouter = {
           const existingPerson = await db.query.people.findFirst({
             where: and(
               eq(people.people.personName, person.name),
-              eq(people.people.userId, ctx.userId),
+              eq(people.people.userId, ctx.userId)
             ),
           });
           if (!existingPerson) {
@@ -188,7 +188,7 @@ export const entryRouter = {
       orderBy: desc(entries.entries.createdAt),
     });
     const groupedEntriesByMonth = allEntries.reduce(
-      (acc: Record<string, EntrySelect[]>, entry) => {
+      (acc: Record<string, entries.EntrySelect[]>, entry) => {
         const date = entry.createdAt ? new Date(entry.createdAt) : new Date();
         const monthKey = date.toLocaleString("default", {
           month: "long",
@@ -200,7 +200,7 @@ export const entryRouter = {
         acc[monthKey].push(entry);
         return acc;
       },
-      {},
+      {}
     );
     return groupedEntriesByMonth;
   }),
@@ -233,7 +233,7 @@ export const entryRouter = {
         id: z.string().optional(),
         journalId: z.string().optional(),
         messages: z.array(MessageSchema),
-      }),
+      })
     )
     .mutation(async ({ ctx, input }) => {
       console.log(input, "input add entry");
@@ -243,7 +243,7 @@ export const entryRouter = {
         .filter((message) => message.role === "user")
         .reduce(
           (count, message) => count + message.content.split(/\s+/).length,
-          0,
+          0
         );
 
       const entry = await ctx.db
@@ -269,72 +269,130 @@ export const entryRouter = {
   getStreak: protectedProcedure.query(async ({ ctx }) => {
     type Streak = {
       count: number;
-      start: Date | null;
-      end: Date | null;
+      start: Date | undefined;
+      end: Date | undefined;
     };
 
-    const descEntries = await ctx.db.query.entries.findMany({
+    // Fetch all entries for the user, sorted ascending by createdAt
+    const allEntries = await ctx.db.query.entries.findMany({
       where: (entries) => eq(entries.userId, ctx.userId),
-      orderBy: desc(entries.entries.createdAt),
+      orderBy: asc(entries.entries.createdAt),
+      columns: {
+        createdAt: true,
+      },
     });
-    let currentStreak: Streak = { count: 0, start: null, end: null };
-    let longestStreak: Streak = { count: 0, start: null, end: null };
-    let streakStart: Date | null = null;
 
-    for (let i = 0; i < descEntries.length; i++) {
-      const entryDate = new Date(descEntries[i]?.createdAt || new Date());
-      const nextEntryDate =
-        i > 0 ? new Date(descEntries[i - 1]?.createdAt ?? new Date()) : null;
-
-      if (
-        i === 0 ||
-        (nextEntryDate && isConsecutiveDay(entryDate, nextEntryDate))
-      ) {
-        if (!streakStart) streakStart = entryDate;
-        currentStreak.count++;
-      } else {
-        if (currentStreak.count > longestStreak.count) {
-          longestStreak = {
-            ...currentStreak,
-            // biome-ignore lint/style/noNonNullAssertion: <explanation>
-            start: streakStart!,
-            end: entryDate,
-          };
-        }
-        currentStreak = { count: 1, start: entryDate, end: null };
-        streakStart = entryDate;
-      }
-    }
-    // Check if the current streak is the longest
-    if (currentStreak.count > longestStreak.count) {
-      longestStreak = {
-        ...currentStreak,
-        // biome-ignore lint/style/noNonNullAssertion: <explanation>
-        start: streakStart!,
-        end: new Date(
-          descEntries[descEntries.length - 1]?.createdAt ?? new Date(),
-        ),
+    if (allEntries.length === 0) {
+      return {
+        currentStreak: { count: 0, start: undefined, end: undefined },
+        longestStreak: { count: 0, start: undefined, end: undefined },
       };
     }
 
-    // Update current streak start date
-    currentStreak.start = streakStart;
+    // Helper functions to manipulate dates
+    const startOfDay = (date: Date): Date =>
+      new Date(date.getFullYear(), date.getMonth(), date.getDate());
 
-    // Update current streak end date
-    currentStreak.end = new Date(descEntries[0]?.createdAt || new Date());
+    const isSameDay = (d1: Date, d2: Date): boolean =>
+      d1.getFullYear() === d2.getFullYear() &&
+      d1.getMonth() === d2.getMonth() &&
+      d1.getDate() === d2.getDate();
 
-    // Reset current streak if the last entry is not from today or yesterday
-    const lastEntryDate = new Date(descEntries[0]?.createdAt || new Date());
-    const today = new Date();
-    if (
-      !isConsecutiveDay(lastEntryDate, today) &&
-      !isSameDay(lastEntryDate, today)
-    ) {
-      currentStreak = { count: 0, start: null, end: null };
+    const isConsecutiveDay = (d1: Date, d2: Date): boolean => {
+      const diffTime = startOfDay(d2).getTime() - startOfDay(d1).getTime();
+      const diffDays = diffTime / (1000 * 60 * 60 * 24);
+      return diffDays === 1;
+    };
+
+    // Remove multiple entries on the same day by using a Set of date strings
+    const uniqueDateStrings = Array.from(
+      new Set(
+        allEntries.map((entry) =>
+          startOfDay(new Date(entry.createdAt)).toISOString()
+        )
+      )
+    );
+
+    const uniqueDates: Date[] = uniqueDateStrings.map(
+      (dateStr) => new Date(dateStr)
+    );
+
+    // Sort the unique dates in ascending order (oldest to newest)
+    uniqueDates.sort((a, b) => a.getTime() - b.getTime());
+
+    if (uniqueDates.length === 0) {
+      // Should not happen, but handle it to satisfy TypeScript
+      return {
+        currentStreak: { count: 0, start: undefined, end: undefined },
+        longestStreak: { count: 0, start: undefined, end: undefined },
+      };
+    }
+
+    const firstDate = uniqueDates[0]; // uniqueDates[0] is defined since length > 0
+    let longestStreak: Streak = {
+      count: 1,
+      start: firstDate,
+      end: firstDate,
+    };
+    let tempStreak: Streak = {
+      count: 1,
+      start: firstDate,
+      end: firstDate,
+    };
+
+    for (let i = 1; i < uniqueDates.length; i++) {
+      const prevDate = uniqueDates[i - 1];
+      const currentDate = uniqueDates[i];
+
+      if (prevDate && currentDate && isConsecutiveDay(prevDate, currentDate)) {
+        tempStreak.count += 1;
+        tempStreak.end = currentDate;
+      } else {
+        // Update longest streak if needed
+        if (tempStreak.count > longestStreak.count) {
+          longestStreak = { ...tempStreak };
+        }
+        // Reset temp streak
+        if (currentDate) {
+          tempStreak = { count: 1, start: currentDate, end: currentDate };
+        }
+      }
+    }
+
+    // Final check after loop
+    if (tempStreak.count > longestStreak.count) {
+      longestStreak = { ...tempStreak };
+    }
+
+    // Determine the current streak
+    const today = startOfDay(new Date());
+    const lastEntryDate =
+      uniqueDates.length > 0
+        ? // biome-ignore lint/style/noNonNullAssertion: <explanation>
+          startOfDay(uniqueDates[uniqueDates.length - 1]!)
+        : undefined;
+
+    let currentStreak: Streak = { count: 0, start: undefined, end: undefined };
+
+    if (lastEntryDate && isSameDay(lastEntryDate, today)) {
+      // User has made an entry today; streak includes today
+      currentStreak = {
+        count: tempStreak.count,
+        start: tempStreak.start,
+        end: tempStreak.end,
+      };
+    } else if (lastEntryDate && isConsecutiveDay(lastEntryDate, today)) {
+      // User has not made an entry today but did yesterday; streak counts up to yesterday
+      currentStreak = {
+        count: tempStreak.count,
+        start: tempStreak.start,
+        end: tempStreak.end,
+      };
     }
 
     return { currentStreak, longestStreak };
   }),
+
   getEntriesCount: protectedProcedure.query(async ({ ctx }) => {
     const entriesCount = await ctx.db
       .select({ count: count() })
@@ -373,7 +431,7 @@ export const entryRouter = {
 function isConsecutiveDay(date1: Date, date2: Date): boolean {
   const oneDayInMs = 24 * 60 * 60 * 1000;
   const diffInDays = Math.round(
-    (date2.getTime() - date1.getTime()) / oneDayInMs,
+    (date2.getTime() - date1.getTime()) / oneDayInMs
   );
   return diffInDays === 1;
 }

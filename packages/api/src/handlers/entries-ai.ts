@@ -204,7 +204,7 @@ export async function generateTopicsAndPeople({
               isNew: z.boolean().describe("Whether the topic is new"),
             }),
           )
-          .describe("List of topics generated from the journal entry"),
+          .describe("these are topics discussed in the journal entry"),
         people: z
           .array(
             z.object({
