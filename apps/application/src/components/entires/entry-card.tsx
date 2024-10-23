@@ -17,7 +17,7 @@ export default function EntryCard({ ...props }: Entry) {
           pathName.includes(props.id ?? "test") && "bg-background",
         )}
       >
-        <h3 className="text-sm p-4">{props.content?.[1]?.content ?? "test"}</h3>
+        <h3 className="text-base  p-4 ">{props.title}</h3>
         <Separator className="" />
         <p className="text-sm text-muted-foreground px-4 py-2">
           {props.createdAt

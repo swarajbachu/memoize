@@ -14,7 +14,9 @@ export const entries = sqliteTable("entries", {
     .primaryKey()
     .$defaultFn(() => createUniqueIds("entry")),
   userId: text("user_id")
-    .references(() => User.clerkUserId)
+    .references(() => User.clerkUserId, {
+      onDelete: "cascade",
+    })
     .notNull(),
   content: text("content", {
     mode: "json",
@@ -22,7 +24,7 @@ export const entries = sqliteTable("entries", {
     .$type<MessageType[]>()
     .notNull(),
   sentimentScore: integer("sentiment_score"),
-  emotions: text("emotions"),
+  title: text("title"),
   wordCount: integer("word_count"),
   journalId: text("journal_id"),
   analyzed: integer("analyzed", { mode: "boolean" }).notNull().default(false),
@@ -63,13 +65,14 @@ export const entryAnalysis = sqliteTable("entry_analysis", {
     .primaryKey()
     .$defaultFn(() => createUniqueIds("en_ai")),
   entryId: text("entry_id")
-    .references(() => entries.id)
+    .references(() => entries.id, {
+      onDelete: "cascade",
+    })
     .notNull(),
   analysis: text("analysis").notNull(),
-  title: text("title"),
   feelings: text("feelings", {
     mode: "json",
-  }),
+  }).$type<string[]>(),
   createdAt: integer("created", {
     mode: "timestamp_ms",
   })

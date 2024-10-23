@@ -91,11 +91,16 @@ export const entryRouter = {
       const analysis = await generateReflection({
         journalEntry: input.journalEntires,
       });
+      await db
+        .update(entries.entries)
+        .set({
+          title: analysis.title,
+        })
+        .where(eq(entries.entries.id, input.entryId));
       await db.insert(entries.entryAnalysis).values({
         entryId: input.entryId,
         analysis: analysis.summary,
         feelings: analysis.feelings,
-        title: analysis.title,
       });
       const existingTopics = await db.query.topics.findMany({
         where: (topics) => eq(topics.userId, ctx.userId),

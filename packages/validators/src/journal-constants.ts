@@ -129,3 +129,37 @@ export const JournalingPromptsSchema = z.object({
 });
 
 export type JournalingPrompts = z.infer<typeof JournalingPromptsSchema>;
+
+export const emotions = [
+  { label: "Happy", value: "happy", emoji: "😊" },
+  { label: "Sad", value: "sad", emoji: "😢" },
+  { label: "Angry", value: "angry", emoji: "😠" },
+  { label: "Surprised", value: "surprised", emoji: "😮" },
+  { label: "Fearful", value: "fearful", emoji: "😱" },
+  { label: "Disgusted", value: "disgusted", emoji: "🤢" },
+  { label: "Excited", value: "excited", emoji: "🤩" },
+  { label: "Anxious", value: "anxious", emoji: "😰" },
+  { label: "Content", value: "content", emoji: "😌" },
+  { label: "Confused", value: "confused", emoji: "😕" },
+  { label: "Bored", value: "bored", emoji: "😐" },
+  { label: "Hopeful", value: "hopeful", emoji: "🤞" },
+  { label: "Lonely", value: "lonely", emoji: "🥺" },
+  { label: "Frustrated", value: "frustrated", emoji: "😤" },
+  { label: "Grateful", value: "grateful", emoji: "🙏" },
+  { label: "Guilty", value: "guilty", emoji: "😔" },
+  { label: "Proud", value: "proud", emoji: "🥳" },
+  { label: "Jealous", value: "jealous", emoji: "😒" },
+  { label: "Relieved", value: "relieved", emoji: "😌" },
+  { label: "Nervous", value: "nervous", emoji: "😬" },
+  { label: "Inspired", value: "inspired", emoji: "💡" },
+  { label: "Ashamed", value: "ashamed", emoji: "😳" },
+  { label: "Envious", value: "envious", emoji: "😟" },
+  { label: "Motivated", value: "motivated", emoji: "🔥" },
+  { label: "Overwhelmed", value: "overwhelmed", emoji: "😵" },
+  { label: "Sympathetic", value: "sympathetic", emoji: "🤗" },
+  { label: "Tired", value: "tired", emoji: "😴" },
+  { label: "Curious", value: "curious", emoji: "🧐" },
+  { label: "Hopeful", value: "hopeful", emoji: "🌟" },
+  { label: "Embarrassed", value: "embarrassed", emoji: "😳" },
+  { label: "Determined", value: "determined", emoji: "💪" },
+];

@@ -15,7 +15,9 @@ export const topics = sqliteTable("entry_topics", {
     .primaryKey()
     .$defaultFn(() => createUniqueIds("en_tp")),
   userId: text("user_id")
-    .references(() => User.clerkUserId)
+    .references(() => User.clerkUserId, {
+      onDelete: "cascade",
+    })
     .notNull(),
   topic: text("topic").notNull(),
   emoji: text("emoji").notNull(),
@@ -43,10 +45,14 @@ export const topicToEntry = sqliteTable(
   "topic_to_entry",
   {
     topicId: text("topic_id")
-      .references(() => topics.id)
+      .references(() => topics.id, {
+        onDelete: "cascade",
+      })
       .notNull(),
     entryId: text("entry_id")
-      .references(() => entries.id)
+      .references(() => entries.id, {
+        onDelete: "cascade",
+      })
       .notNull(),
     createdAt: integer("created", {
       mode: "timestamp_ms",

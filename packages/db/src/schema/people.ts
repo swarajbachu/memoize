@@ -15,7 +15,9 @@ export const people = sqliteTable("entry_persons", {
     .primaryKey()
     .$defaultFn(() => createUniqueIds("en_pe")),
   userId: text("user_id")
-    .references(() => User.clerkUserId)
+    .references(() => User.clerkUserId, {
+      onDelete: "cascade",
+    })
     .notNull(),
   personName: text("person").notNull(),
   createdAt: integer("created", {
@@ -42,10 +44,14 @@ export const peopleToEntry = sqliteTable(
   "person_to_entry",
   {
     personId: text("person_id")
-      .references(() => people.id)
+      .references(() => people.id, {
+        onDelete: "cascade",
+      })
       .notNull(),
     entryId: text("entry_id")
-      .references(() => entries.id)
+      .references(() => entries.id, {
+        onDelete: "cascade",
+      })
       .notNull(),
     createdAt: integer("created", {
       mode: "timestamp_ms",
