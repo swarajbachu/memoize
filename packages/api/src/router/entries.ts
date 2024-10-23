@@ -32,7 +32,7 @@ export const entryRouter = {
         return and(
           eq(entries.userId, ctx.userId),
           gt(entries.createdAt, startOfDay),
-          eq(entries.journalId, "morning_intention")
+          eq(entries.journalId, "morning_intention"),
         );
       },
     });
@@ -42,7 +42,7 @@ export const entryRouter = {
         return and(
           eq(entries.userId, ctx.userId),
           eq(entries.createdAt, new Date()),
-          eq(entries.journalId, "evening_reflection")
+          eq(entries.journalId, "evening_reflection"),
         );
       },
     });
@@ -62,7 +62,7 @@ export const entryRouter = {
       z.object({
         journalId: z.string().optional(),
         currentConversation: z.array(z.string()),
-      })
+      }),
     )
     .mutation(async ({ input }) => {
       if (input.currentConversation.length < 6 && input.journalId) {
@@ -77,7 +77,7 @@ export const entryRouter = {
       }
 
       return await createInDepthResponse(
-        input.currentConversation.join("\n\n")
+        input.currentConversation.join("\n\n"),
       );
     }),
   finishEntryAnalysis: protectedProcedure
@@ -85,7 +85,7 @@ export const entryRouter = {
       z.object({
         journalEntires: z.array(MessageSchema),
         entryId: z.string(),
-      })
+      }),
     )
     .mutation(async ({ input, ctx }) => {
       const analysis = await generateReflection({
@@ -134,7 +134,7 @@ export const entryRouter = {
           const existingTopic = await db.query.topics.findFirst({
             where: and(
               eq(topics.topics.topic, topic.name),
-              eq(topics.topics.userId, ctx.userId)
+              eq(topics.topics.userId, ctx.userId),
             ),
           });
           if (!existingTopic) {
@@ -167,7 +167,7 @@ export const entryRouter = {
           const existingPerson = await db.query.people.findFirst({
             where: and(
               eq(people.people.personName, person.name),
-              eq(people.people.userId, ctx.userId)
+              eq(people.people.userId, ctx.userId),
             ),
           });
           if (!existingPerson) {
@@ -200,7 +200,7 @@ export const entryRouter = {
         acc[monthKey].push(entry);
         return acc;
       },
-      {}
+      {},
     );
     return groupedEntriesByMonth;
   }),
@@ -233,7 +233,7 @@ export const entryRouter = {
         id: z.string().optional(),
         journalId: z.string().optional(),
         messages: z.array(MessageSchema),
-      })
+      }),
     )
     .mutation(async ({ ctx, input }) => {
       console.log(input, "input add entry");
@@ -243,7 +243,7 @@ export const entryRouter = {
         .filter((message) => message.role === "user")
         .reduce(
           (count, message) => count + message.content.split(/\s+/).length,
-          0
+          0,
         );
 
       const entry = await ctx.db
@@ -308,13 +308,13 @@ export const entryRouter = {
     const uniqueDateStrings = Array.from(
       new Set(
         allEntries.map((entry) =>
-          startOfDay(new Date(entry.createdAt)).toISOString()
-        )
-      )
+          startOfDay(new Date(entry.createdAt)).toISOString(),
+        ),
+      ),
     );
 
     const uniqueDates: Date[] = uniqueDateStrings.map(
-      (dateStr) => new Date(dateStr)
+      (dateStr) => new Date(dateStr),
     );
 
     // Sort the unique dates in ascending order (oldest to newest)
@@ -431,7 +431,7 @@ export const entryRouter = {
 function isConsecutiveDay(date1: Date, date2: Date): boolean {
   const oneDayInMs = 24 * 60 * 60 * 1000;
   const diffInDays = Math.round(
-    (date2.getTime() - date1.getTime()) / oneDayInMs
+    (date2.getTime() - date1.getTime()) / oneDayInMs,
   );
   return diffInDays === 1;
 }

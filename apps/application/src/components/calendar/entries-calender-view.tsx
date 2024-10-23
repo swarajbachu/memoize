@@ -111,7 +111,7 @@ export default function ImprovedJournalCalendar() {
 
   const years = Array.from(
     { length: 10 },
-    (_, i) => currentDate.getFullYear() - 5 + i
+    (_, i) => currentDate.getFullYear() - 5 + i,
   );
 
   const EntryDetails = () => (
@@ -182,7 +182,7 @@ export default function ImprovedJournalCalendar() {
         ))}
         {monthDays.map((day, dayIdx) => {
           const dayEntries = journalEntries.filter((entry) =>
-            isSameDay(entry.date, day)
+            isSameDay(entry.date, day),
           );
           return (
             // biome-ignore lint/a11y/useKeyWithClickEvents: <explanation>
