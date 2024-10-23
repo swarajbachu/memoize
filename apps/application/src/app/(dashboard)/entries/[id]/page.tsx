@@ -13,7 +13,7 @@ export default async function EntryPage({
   }
 
   const demoAiAnalysis = {
-    title: entry.entryAnalysis?.title ?? "",
+    title: entry.title ?? "",
     summary: (entry.entryAnalysis?.analysis as string) ?? "",
     feeling: "Accomplished",
     topics: entry.entryToTopics.map(

@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "da84178c-d7c9-4cfe-aca1-8bfffdeca18a",
-  "prevId": "ac34f676-c458-4752-ad95-0aa372fae8ac",
+  "id": "f01d28fe-5bde-43cb-a37c-99dc4c9dad3c",
+  "prevId": "3e95d5f3-7825-42c1-a2f9-7f58587c3605",
   "tables": {
     "entries": {
       "name": "entries",
@@ -35,8 +35,8 @@
           "notNull": false,
           "autoincrement": false
         },
-        "emotions": {
-          "name": "emotions",
+        "title": {
+          "name": "title",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -87,7 +87,7 @@
           "tableTo": "user",
           "columnsFrom": ["user_id"],
           "columnsTo": ["clerk_user_id"],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
@@ -116,13 +116,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "autoincrement": false
-        },
-        "title": {
-          "name": "title",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
           "autoincrement": false
         },
         "feelings": {
@@ -155,7 +148,7 @@
           "tableTo": "entries",
           "columnsFrom": ["entry_id"],
           "columnsTo": ["id"],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
@@ -209,7 +202,7 @@
           "tableTo": "user",
           "columnsFrom": ["user_id"],
           "columnsTo": ["clerk_user_id"],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
@@ -256,7 +249,7 @@
           "tableTo": "entry_persons",
           "columnsFrom": ["person_id"],
           "columnsTo": ["id"],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "person_to_entry_entry_id_entries_id_fk": {
@@ -265,7 +258,7 @@
           "tableTo": "entries",
           "columnsFrom": ["entry_id"],
           "columnsTo": ["id"],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
@@ -317,7 +310,7 @@
           "tableTo": "entry_topics",
           "columnsFrom": ["topic_id"],
           "columnsTo": ["id"],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "topic_to_entry_entry_id_entries_id_fk": {
@@ -326,7 +319,7 @@
           "tableTo": "entries",
           "columnsFrom": ["entry_id"],
           "columnsTo": ["id"],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
@@ -392,7 +385,7 @@
           "tableTo": "user",
           "columnsFrom": ["user_id"],
           "columnsTo": ["clerk_user_id"],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },

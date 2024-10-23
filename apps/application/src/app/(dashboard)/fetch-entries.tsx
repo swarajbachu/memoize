@@ -3,6 +3,7 @@ import { api } from "~/trpc/server";
 
 export default async function FetchEntries() {
   const allEntries = await api.entries.findAllEntires();
+  console.log(Object.entries(allEntries).length, "allEntries");
   return (
     <>
       {Object.entries(allEntries).map(([month, entries]) => (
@@ -13,6 +14,9 @@ export default async function FetchEntries() {
           ))}
         </div>
       ))}
+      {Object.entries(allEntries).length === 0 && (
+        <p className="text-foreground">No entries found</p>
+      )}
     </>
   );
 }

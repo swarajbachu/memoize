@@ -6,7 +6,7 @@
   "scripts": {
     "build": "pnpm with-env next build",
     "clean": "git clean -xdf .cache .next .turbo node_modules",
-    "dev": "pnpm with-env next dev --turbo",
+    "dev": "pnpm with-env next dev",
     "format": "biome format .",
     "format:fix": "biome format . --write ",
     "lint": "biome lint .",
