@@ -10,7 +10,7 @@ import { useClerk } from "@clerk/nextjs";
 import { cn } from "@memoize/ui";
 import { Button } from "@memoize/ui/button";
 import { ThemeToggle } from "@memoize/ui/theme";
-import { BarChart, Calendar, Clock, Home, LogOut, Plus } from "lucide-react";
+import { Calendar, Clock, Home, LogOut, Plus } from "lucide-react";
 import { GoHomeFill } from "react-icons/go";
 import { IoCalendarClear, IoJournal, IoPencilSharp } from "react-icons/io5";
 import { toast } from "sonner";
@@ -135,9 +135,9 @@ export function SidebarComponent() {
             href="/calendar"
           />
           <TabButton
-            icon={<BarChart className="w-6 h-6" />}
-            label="Analytics"
-            href="/analytics"
+            icon={<LogOut className="w-6 h-6" />}
+            label="Logout"
+            onClick={() => signOut()}
           />
         </nav>
       </SidebarBody>
@@ -182,23 +182,36 @@ function TabButton({
   label,
   isActive = false,
   href,
+  onClick,
 }: {
   icon: React.ReactNode;
   label: string;
   isActive?: boolean;
-  href: string;
+  href?: string;
+  onClick?: () => void;
 }) {
   return (
-    <Link
-      href={href}
+    <Button
+      asChild={!!href}
+      variant="ghost"
       className={cn(
         "flex flex-col items-center justify-center w-16 h-16 text-muted-foreground",
         isActive && "text-primary",
       )}
+      onClick={onClick}
     >
-      {icon}
-      <span className="text-xs mt-1">{label}</span>
-    </Link>
+      {href ? (
+        <Link href={href}>
+          {icon}
+          <span className="text-xs mt-1">{label}</span>
+        </Link>
+      ) : (
+        <>
+          {icon}
+          <span className="text-xs mt-1">{label}</span>
+        </>
+      )}
+    </Button>
   );
 }
 

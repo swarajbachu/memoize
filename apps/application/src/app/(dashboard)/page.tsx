@@ -14,9 +14,11 @@ export default async function HomePage() {
       <header className="flex justify-between sm:flex-row flex-col gap-2 sm:items-center mb-6">
         <h1 className="text-xl sm:text-3xl font-bold">{getCurrentTime()}</h1>
         <div className="flex space-x-2 w-full sm:w-fit">
-          <Button variant="outline" className="w-full">
-            <Calendar className="mr-2 h-4 w-4" />
-            View Calendar
+          <Button variant="outline" className="w-full" asChild>
+            <Link href="/calendar">
+              <Calendar className="mr-2 h-4 w-4" />
+              View Calendar
+            </Link>
           </Button>
           <Button className="w-full" asChild>
             <Link href="/entry">

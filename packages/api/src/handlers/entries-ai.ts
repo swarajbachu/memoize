@@ -117,10 +117,10 @@ export async function generateReflection({
   try {
     const { object } = await generateObject({
       model: openai("gpt-4o-mini-2024-07-18"),
-      temperature: 0.5,
+      temperature: 0.2,
       schema: z.object({
         title: z.string().describe(`
-          Give a title to the summary and use an emoji in front of the title
+          Give a title to the summary and use an emoji in front of the title that best represents the summary
           `),
         summary: z
           .string()
@@ -204,7 +204,9 @@ export async function generateTopicsAndPeople({
               isNew: z.boolean().describe("Whether the topic is new"),
             }),
           )
-          .describe("these are topics discussed in the journal entry"),
+          .describe(
+            "topics done include emotions or abstract things, they are subjects that are discussed in the journal entry",
+          ),
         people: z
           .array(
             z.object({

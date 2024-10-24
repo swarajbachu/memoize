@@ -161,12 +161,7 @@ export default function JournalingUI({ journalId }: JournalingUIProps) {
 
   // Handle finishing the journaling session
   const handleFinish = async () => {
-    if (
-      currentAnswer.trim() !== "" &&
-      currentQuestion &&
-      entries.length > 0 &&
-      entryId
-    ) {
+    if (currentAnswer.trim() !== "" && currentQuestion && entries.length > 0) {
       const now = new Date().toISOString();
 
       const questionMessage: Message = {
