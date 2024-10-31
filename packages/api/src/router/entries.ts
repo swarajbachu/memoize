@@ -1,3 +1,4 @@
+// entryRouter.ts
 import {
   and,
   asc,
@@ -20,32 +21,50 @@ import {
   generateReflection,
   generateTopicsAndPeople,
 } from "../handlers/entries-ai";
+import { withCache } from "../lib/cache";
 import { protectedProcedure } from "../trpc";
 
 export const entryRouter = {
   getTodayReflectionStatus: protectedProcedure.query(async ({ ctx }) => {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
-
-    const todayMorningReflection = await ctx.db.query.entries.findFirst({
-      where: (entries) => {
-        return and(
-          eq(entries.userId, ctx.userId),
-          gt(entries.createdAt, startOfDay),
-          eq(entries.journalId, "morning_intention"),
-        );
+    const timeLeftToday = Math.floor(
+      (new Date().setHours(24, 0, 0, 0) - new Date().getTime()) / 1000,
+    );
+    const todayMorningReflection = await withCache(
+      ctx,
+      ctx.cacheTagManager.morningReflection(),
+      async () =>
+        await ctx.db.query.entries.findFirst({
+          where: (entries) => {
+            return and(
+              eq(entries.userId, ctx.userId),
+              gt(entries.createdAt, startOfDay),
+              eq(entries.journalId, "morning_intention"),
+            );
+          },
+        }),
+      {
+        expirationTtl: timeLeftToday,
       },
-    });
-    console.log(todayMorningReflection, "morning");
-    const todayEveningReflection = await ctx.db.query.entries.findFirst({
-      where: (entries) => {
-        return and(
-          eq(entries.userId, ctx.userId),
-          eq(entries.createdAt, new Date()),
-          eq(entries.journalId, "evening_reflection"),
-        );
+    );
+    const todayEveningReflection = await withCache(
+      ctx,
+      ctx.cacheTagManager.eveningReflection(),
+      async () =>
+        await ctx.db.query.entries.findFirst({
+          where: (entries) => {
+            return and(
+              eq(entries.userId, ctx.userId),
+              eq(entries.createdAt, new Date()),
+              eq(entries.journalId, "evening_reflection"),
+            );
+          },
+        }),
+      {
+        expirationTtl: calculateSecondsUntilEndOfDay(),
       },
-    });
+    );
     return {
       morningReflection: {
         status: !!todayMorningReflection,
@@ -182,50 +201,79 @@ export const entryRouter = {
       }
       return analysis;
     }),
-  findAllEntires: protectedProcedure.query(async ({ ctx }) => {
-    const allEntries = await ctx.db.query.entries.findMany({
-      where: eq(entries.entries.userId, ctx.userId),
-      orderBy: desc(entries.entries.createdAt),
-    });
-    const groupedEntriesByMonth = allEntries.reduce(
-      (acc: Record<string, entries.EntrySelect[]>, entry) => {
-        const date = entry.createdAt ? new Date(entry.createdAt) : new Date();
-        const monthKey = date.toLocaleString("default", {
-          month: "long",
-          year: "numeric",
+  findAllEntries: protectedProcedure.query(async ({ ctx }) => {
+    const cacheKey = ctx.cacheTagManager.findAllEntries();
+    const result = await withCache(
+      ctx,
+      cacheKey,
+      async () => {
+        const allEntries = await ctx.db.query.entries.findMany({
+          where: eq(entries.entries.userId, ctx.userId),
+          orderBy: desc(entries.entries.createdAt),
         });
-        if (!acc[monthKey]) {
-          acc[monthKey] = [];
-        }
-        acc[monthKey].push(entry);
-        return acc;
+        const groupedEntriesByMonth = allEntries.reduce(
+          (acc: Record<string, entries.EntrySelect[]>, entry) => {
+            const date = entry.createdAt
+              ? new Date(entry.createdAt)
+              : new Date();
+            const monthKey = date.toLocaleString("default", {
+              month: "long",
+              year: "numeric",
+            });
+            if (!acc[monthKey]) {
+              acc[monthKey] = [];
+            }
+            acc[monthKey].push(entry);
+            return acc;
+          },
+          {},
+        );
+        return groupedEntriesByMonth;
       },
-      {},
+      { expirationTtl: 60 * 60 }, // Cache for 1 hour
     );
-    return groupedEntriesByMonth;
+    return result;
   }),
   allEntries: protectedProcedure.query(async ({ ctx }) => {
-    const allEntries = await ctx.db.query.entries.findMany({
-      where: eq(entries.entries.userId, ctx.userId),
-      orderBy: desc(entries.entries.createdAt),
-    });
-    return allEntries;
+    const cacheKey = ctx.cacheTagManager.allEntries();
+    const result = await withCache(
+      ctx,
+      cacheKey,
+      async () => {
+        const allEntries = await ctx.db.query.entries.findMany({
+          where: eq(entries.entries.userId, ctx.userId),
+          orderBy: desc(entries.entries.createdAt),
+        });
+        return allEntries;
+      },
+      { expirationTtl: 60 * 60 }, // Cache for 1 hour
+    );
+    return result;
   }),
   findEntryById: protectedProcedure
     .input(z.string())
     .query(async ({ ctx, input }) => {
-      const entry = await ctx.db.query.entries.findFirst({
-        where: eq(entries.entries.id, input),
-        with: {
-          entryAnalysis: true,
-          entryToTopics: {
+      const cacheKey = ctx.cacheTagManager.findEntryById(input);
+      const result = await withCache(
+        ctx,
+        cacheKey,
+        async () => {
+          const entry = await ctx.db.query.entries.findFirst({
+            where: eq(entries.entries.id, input),
             with: {
-              topic: true,
+              entryAnalysis: true,
+              entryToTopics: {
+                with: {
+                  topic: true,
+                },
+              },
             },
-          },
+          });
+          return entry;
         },
-      });
-      return entry;
+        { expirationTtl: 60 * 60 }, // Cache for 1 hour
+      );
+      return result;
     }),
   addEntry: protectedProcedure
     .input(
@@ -264,149 +312,181 @@ export const entryRouter = {
           },
         })
         .returning();
+      // Invalidate cache for entries
+      await ctx.cache.delete(ctx.cacheTagManager.allEntries());
+      await ctx.cache.delete(ctx.cacheTagManager.findAllEntries());
+      await ctx.cache.delete(ctx.cacheTagManager.getEntriesCount());
+      await ctx.cache.delete(ctx.cacheTagManager.getStreak());
       return entry[0];
     }),
   getStreak: protectedProcedure.query(async ({ ctx }) => {
-    type Streak = {
-      count: number;
-      start: Date | undefined;
-      end: Date | undefined;
-    };
+    const cacheKey = ctx.cacheTagManager.getStreak();
+    const result = await withCache(
+      ctx,
+      cacheKey,
+      async () => {
+        // existing code of getStreak
+        type Streak = {
+          count: number;
+          start: Date | undefined;
+          end: Date | undefined;
+        };
 
-    // Fetch all entries for the user, sorted ascending by createdAt
-    const allEntries = await ctx.db.query.entries.findMany({
-      where: (entries) => eq(entries.userId, ctx.userId),
-      orderBy: asc(entries.entries.createdAt),
-      columns: {
-        createdAt: true,
-      },
-    });
+        // Fetch all entries for the user, sorted ascending by createdAt
+        const allEntries = await ctx.db.query.entries.findMany({
+          where: (entries) => eq(entries.userId, ctx.userId),
+          orderBy: asc(entries.entries.createdAt),
+          columns: {
+            createdAt: true,
+          },
+        });
 
-    if (allEntries.length === 0) {
-      return {
-        currentStreak: { count: 0, start: undefined, end: undefined },
-        longestStreak: { count: 0, start: undefined, end: undefined },
-      };
-    }
+        if (allEntries.length === 0) {
+          return {
+            currentStreak: { count: 0, start: undefined, end: undefined },
+            longestStreak: { count: 0, start: undefined, end: undefined },
+          };
+        }
 
-    // Helper functions to manipulate dates
-    const startOfDay = (date: Date): Date =>
-      new Date(date.getFullYear(), date.getMonth(), date.getDate());
+        // Helper functions to manipulate dates
+        const startOfDay = (date: Date): Date =>
+          new Date(date.getFullYear(), date.getMonth(), date.getDate());
 
-    const isSameDay = (d1: Date, d2: Date): boolean =>
-      d1.getFullYear() === d2.getFullYear() &&
-      d1.getMonth() === d2.getMonth() &&
-      d1.getDate() === d2.getDate();
+        const isSameDay = (d1: Date, d2: Date): boolean =>
+          d1.getFullYear() === d2.getFullYear() &&
+          d1.getMonth() === d2.getMonth() &&
+          d1.getDate() === d2.getDate();
 
-    const isConsecutiveDay = (d1: Date, d2: Date): boolean => {
-      const diffTime = startOfDay(d2).getTime() - startOfDay(d1).getTime();
-      const diffDays = diffTime / (1000 * 60 * 60 * 24);
-      return diffDays === 1;
-    };
+        const isConsecutiveDay = (d1: Date, d2: Date): boolean => {
+          const diffTime = startOfDay(d2).getTime() - startOfDay(d1).getTime();
+          const diffDays = diffTime / (1000 * 60 * 60 * 24);
+          return diffDays === 1;
+        };
 
-    // Remove multiple entries on the same day by using a Set of date strings
-    const uniqueDateStrings = Array.from(
-      new Set(
-        allEntries.map((entry) =>
-          startOfDay(new Date(entry.createdAt)).toISOString(),
-        ),
-      ),
-    );
+        // Remove multiple entries on the same day by using a Set of date strings
+        const uniqueDateStrings = Array.from(
+          new Set(
+            allEntries.map((entry) =>
+              startOfDay(new Date(entry.createdAt)).toISOString(),
+            ),
+          ),
+        );
 
-    const uniqueDates: Date[] = uniqueDateStrings.map(
-      (dateStr) => new Date(dateStr),
-    );
+        const uniqueDates: Date[] = uniqueDateStrings.map(
+          (dateStr) => new Date(dateStr),
+        );
 
-    // Sort the unique dates in ascending order (oldest to newest)
-    uniqueDates.sort((a, b) => a.getTime() - b.getTime());
+        // Sort the unique dates in ascending order (oldest to newest)
+        uniqueDates.sort((a, b) => a.getTime() - b.getTime());
 
-    if (uniqueDates.length === 0) {
-      // Should not happen, but handle it to satisfy TypeScript
-      return {
-        currentStreak: { count: 0, start: undefined, end: undefined },
-        longestStreak: { count: 0, start: undefined, end: undefined },
-      };
-    }
+        if (uniqueDates.length === 0) {
+          // Should not happen, but handle it to satisfy TypeScript
+          return {
+            currentStreak: { count: 0, start: undefined, end: undefined },
+            longestStreak: { count: 0, start: undefined, end: undefined },
+          };
+        }
 
-    const firstDate = uniqueDates[0]; // uniqueDates[0] is defined since length > 0
-    let longestStreak: Streak = {
-      count: 1,
-      start: firstDate,
-      end: firstDate,
-    };
-    let tempStreak: Streak = {
-      count: 1,
-      start: firstDate,
-      end: firstDate,
-    };
+        const firstDate = uniqueDates[0]; // uniqueDates[0] is defined since length > 0
+        let longestStreak: Streak = {
+          count: 1,
+          start: firstDate,
+          end: firstDate,
+        };
+        let tempStreak: Streak = {
+          count: 1,
+          start: firstDate,
+          end: firstDate,
+        };
 
-    for (let i = 1; i < uniqueDates.length; i++) {
-      const prevDate = uniqueDates[i - 1];
-      const currentDate = uniqueDates[i];
+        for (let i = 1; i < uniqueDates.length; i++) {
+          const prevDate = uniqueDates[i - 1];
+          const currentDate = uniqueDates[i];
 
-      if (prevDate && currentDate && isConsecutiveDay(prevDate, currentDate)) {
-        tempStreak.count += 1;
-        tempStreak.end = currentDate;
-      } else {
-        // Update longest streak if needed
+          if (
+            prevDate &&
+            currentDate &&
+            isConsecutiveDay(prevDate, currentDate)
+          ) {
+            tempStreak.count += 1;
+            tempStreak.end = currentDate;
+          } else {
+            // Update longest streak if needed
+            if (tempStreak.count > longestStreak.count) {
+              longestStreak = { ...tempStreak };
+            }
+            // Reset temp streak
+            if (currentDate) {
+              tempStreak = { count: 1, start: currentDate, end: currentDate };
+            }
+          }
+        }
+
+        // Final check after loop
         if (tempStreak.count > longestStreak.count) {
           longestStreak = { ...tempStreak };
         }
-        // Reset temp streak
-        if (currentDate) {
-          tempStreak = { count: 1, start: currentDate, end: currentDate };
+
+        // Determine the current streak
+        const today = startOfDay(new Date());
+        const lastEntryDate =
+          uniqueDates.length > 0
+            ? // biome-ignore lint/style/noNonNullAssertion: <explanation>
+              startOfDay(uniqueDates[uniqueDates.length - 1]!)
+            : undefined;
+
+        let currentStreak: Streak = {
+          count: 0,
+          start: undefined,
+          end: undefined,
+        };
+
+        if (lastEntryDate && isSameDay(lastEntryDate, today)) {
+          // User has made an entry today; streak includes today
+          currentStreak = {
+            count: tempStreak.count,
+            start: tempStreak.start,
+            end: tempStreak.end,
+          };
+        } else if (lastEntryDate && isConsecutiveDay(lastEntryDate, today)) {
+          // User has not made an entry today but did yesterday; streak counts up to yesterday
+          currentStreak = {
+            count: tempStreak.count,
+            start: tempStreak.start,
+            end: tempStreak.end,
+          };
         }
-      }
-    }
 
-    // Final check after loop
-    if (tempStreak.count > longestStreak.count) {
-      longestStreak = { ...tempStreak };
-    }
-
-    // Determine the current streak
-    const today = startOfDay(new Date());
-    const lastEntryDate =
-      uniqueDates.length > 0
-        ? // biome-ignore lint/style/noNonNullAssertion: <explanation>
-          startOfDay(uniqueDates[uniqueDates.length - 1]!)
-        : undefined;
-
-    let currentStreak: Streak = { count: 0, start: undefined, end: undefined };
-
-    if (lastEntryDate && isSameDay(lastEntryDate, today)) {
-      // User has made an entry today; streak includes today
-      currentStreak = {
-        count: tempStreak.count,
-        start: tempStreak.start,
-        end: tempStreak.end,
-      };
-    } else if (lastEntryDate && isConsecutiveDay(lastEntryDate, today)) {
-      // User has not made an entry today but did yesterday; streak counts up to yesterday
-      currentStreak = {
-        count: tempStreak.count,
-        start: tempStreak.start,
-        end: tempStreak.end,
-      };
-    }
-
-    return { currentStreak, longestStreak };
+        return { currentStreak, longestStreak };
+      },
+      { expirationTtl: calculateSecondsUntilEndOfDay() }, // Cache for 1 hour
+    );
+    return result;
   }),
 
   getEntriesCount: protectedProcedure.query(async ({ ctx }) => {
-    const entriesCount = await ctx.db
-      .select({ count: count() })
-      .from(entries.entries)
-      .where(eq(entries.entries.userId, ctx.userId));
-    const wordsCount = await ctx.db
-      .select({ value: sum(entries.entries.wordCount) })
-      .from(entries.entries)
-      .where(eq(entries.entries.userId, ctx.userId));
-    console.log(entriesCount, wordsCount);
-    return {
-      count: entriesCount[0]?.count ?? 0,
-      words: wordsCount[0]?.value ?? "0",
-    };
+    const cacheKey = ctx.cacheTagManager.getEntriesCount();
+    const result = await withCache(
+      ctx,
+      cacheKey,
+      async () => {
+        const entriesCount = await ctx.db
+          .select({ count: count() })
+          .from(entries.entries)
+          .where(eq(entries.entries.userId, ctx.userId));
+        const wordsCount = await ctx.db
+          .select({ value: sum(entries.entries.wordCount) })
+          .from(entries.entries)
+          .where(eq(entries.entries.userId, ctx.userId));
+        console.log(entriesCount, wordsCount);
+        return {
+          count: entriesCount[0]?.count ?? 0,
+          words: wordsCount[0]?.value ?? "0",
+        };
+      },
+      { expirationTtl: 60 * 60 }, // Cache for 1 hour
+    );
+    return result;
   }),
   deleteEntry: protectedProcedure
     .input(z.string())
@@ -424,22 +504,19 @@ export const entryRouter = {
         .delete(entries.entries)
         .where(eq(entries.entries.id, input))
         .returning();
+      // Invalidate cache for entries
+      await ctx.cache.delete(ctx.cacheTagManager.allEntries());
+      await ctx.cache.delete(ctx.cacheTagManager.findAllEntries());
+      await ctx.cache.delete(ctx.cacheTagManager.findEntryById(input));
+      await ctx.cache.delete(ctx.cacheTagManager.getEntriesCount());
+      await ctx.cache.delete(ctx.cacheTagManager.getStreak());
       return entry[0];
     }),
 } satisfies TRPCRouterRecord;
 
-function isConsecutiveDay(date1: Date, date2: Date): boolean {
-  const oneDayInMs = 24 * 60 * 60 * 1000;
-  const diffInDays = Math.round(
-    (date2.getTime() - date1.getTime()) / oneDayInMs,
-  );
-  return diffInDays === 1;
-}
-
-function isSameDay(date1: Date, date2: Date): boolean {
-  return (
-    date1.getFullYear() === date2.getFullYear() &&
-    date1.getMonth() === date2.getMonth() &&
-    date1.getDate() === date2.getDate()
-  );
+function calculateSecondsUntilEndOfDay(): number {
+  const now = new Date();
+  const endOfDay = new Date(now);
+  endOfDay.setHours(23, 59, 59, 999);
+  return Math.floor((endOfDay.getTime() - now.getTime()) / 1000);
 }

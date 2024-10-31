@@ -8,9 +8,12 @@
  */
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@memoize/db";
+import type { CloudflareEnv } from "@memoize/validators/env";
 import { TRPCError, initTRPC } from "@trpc/server";
 import superjson from "superjson";
 import { ZodError } from "zod";
+import { createCacheTagManager } from "./lib/cache";
+import { cacheTags } from "./lib/cache-tags";
 
 /**
  * 1. CONTEXT
@@ -24,16 +27,27 @@ import { ZodError } from "zod";
  *
  * @see https://trpc.io/docs/server/context
  */
-export const createTRPCContext = async (opts: { headers: Headers }) => {
+
+interface TRPCContext {
+  env: CloudflareEnv;
+  headers: Headers;
+}
+
+export const createTRPCContext = async (opts: TRPCContext) => {
   const user = auth();
   const clerkId = user.userId;
+  const cache = opts.env["memoize-cache"];
 
   const source = opts.headers.get("x-trpc-source") ?? "unknown";
   console.log(">>> tRPC Request from", source, "by", clerkId);
+  const cacheTagManager = createCacheTagManager(cacheTags, clerkId);
 
   return {
+    env: opts.env,
     db,
     userId: clerkId,
+    cache,
+    cacheTagManager,
   };
 };
 

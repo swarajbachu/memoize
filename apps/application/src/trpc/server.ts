@@ -6,6 +6,7 @@ import { cache } from "react";
 
 import { type AppRouter, createCaller } from "@memoize/api";
 import { createTRPCContext } from "@memoize/api";
+import type { CloudflareEnv } from "@memoize/validators/env";
 import { createQueryClient } from "./query-client";
 
 /**
@@ -14,9 +15,11 @@ import { createQueryClient } from "./query-client";
  */
 const createContext = cache(() => {
   const heads = new Headers(headers());
+  const env = process.env as unknown as CloudflareEnv;
   heads.set("x-trpc-source", "rsc");
   return createTRPCContext({
     headers: heads,
+    env,
   });
 });
 

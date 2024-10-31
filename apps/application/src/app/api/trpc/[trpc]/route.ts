@@ -1,4 +1,6 @@
+import { getRequestContext } from "@cloudflare/next-on-pages";
 import { appRouter, createTRPCContext } from "@memoize/api";
+import type { CloudflareEnv } from "@memoize/validators/env";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import type { NextRequest } from "next/server";
 
@@ -24,6 +26,7 @@ export const OPTIONS = () => {
 };
 
 const handler = async (req: NextRequest) => {
+  const env = getRequestContext().env as CloudflareEnv;
   const response = await fetchRequestHandler({
     endpoint: "/api/trpc",
     router: appRouter,
@@ -31,6 +34,7 @@ const handler = async (req: NextRequest) => {
     createContext: () =>
       createTRPCContext({
         headers: req.headers,
+        env,
       }),
     onError({ error, path }) {
       console.error(`>>> tRPC Error on '${path}'`, error);
