@@ -2,15 +2,15 @@
 export const cacheTags = {
   eveningReflection: {
     value: "evening_reflection",
-    requiresSuffix: false as const,
+    requiresSuffix: false,
   },
   morningReflection: {
     value: "morning_reflection",
-    requiresSuffix: false as const,
+    requiresSuffix: false,
   },
   allEntries: {
     value: "all_entries",
-    requiresSuffix: false as const,
+    requiresSuffix: false,
   },
   findAllEntries: {
     value: "find_all_entries",

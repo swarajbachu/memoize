@@ -29,9 +29,9 @@ export default async function HomePage() {
         </div>
       </header>
       <SummaryCards
-        streak={streaks.currentStreak.count}
-        words={Number.parseInt(count.words)}
-        entries={count.count ?? 0}
+        streak={streaks?.currentStreak.count ?? 0}
+        words={Number.parseInt(count?.words ?? "0")}
+        entries={count?.count ?? 0}
       />
       <Reflections />
       {/* <Analytics /> */}

@@ -2,8 +2,10 @@ import EntryCard from "~/components/entires/entry-card";
 import { api } from "~/trpc/server";
 
 export default async function FetchEntries() {
-  const allEntries = await api.entries.findAllEntires();
-  console.log(Object.entries(allEntries).length, "allEntries");
+  const allEntries = await api.entries.findAllEntries();
+  if (!allEntries) {
+    return <p className="text-foreground">No entries found</p>;
+  }
   return (
     <>
       {Object.entries(allEntries).map(([month, entries]) => (

@@ -36,7 +36,9 @@ export async function withCache<T>(
   const result = await cacheAbleFunction();
   //   console.log(result, JSON.stringify(result), "result", tag);
   if (result && result !== null) {
-    const res = await ctx.cache.put(tag, JSON.stringify(result));
+    await ctx.cache.put(tag, JSON.stringify(result), {
+      ...cachePutOptions,
+    });
   }
   return result;
 }
@@ -67,15 +69,14 @@ export function createCacheTagManager<
     const cacheTag = cacheTags[tag];
     if (cacheTag?.requiresSuffix) {
       manager[tag] = ((suffix?: string) => {
-        const actualSuffix = suffix ?? userId;
-        if (!actualSuffix) {
+        if (!suffix) {
           throw new Error(`Suffix is required for '${tag}' tag`);
         }
-        return `${cacheTag.value}:${actualSuffix}`;
+        return `${cacheTag.value}:${suffix}:${userId}`;
       }) as CacheTagMethods<T, UserId>[typeof tag];
     } else {
       manager[tag] = (() => {
-        return cacheTag?.value;
+        return `${cacheTag?.value}:${userId}`;
       }) as CacheTagMethods<T, UserId>[typeof tag];
     }
   }
