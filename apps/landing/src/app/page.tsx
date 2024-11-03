@@ -1,9 +1,10 @@
-import Component from "~/components/notes-organized";
+import ImprovedConfusionToClarityAnimation from "~/components/test";
 
 export default function Home() {
   return (
     <div>
-      <Component />
+      {/* <Component /> */}
+      <ImprovedConfusionToClarityAnimation />
       {/* <InteractiveGrayParticleMemoize /> */}
     </div>
   );

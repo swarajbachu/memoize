@@ -27,10 +27,6 @@ export const entryRouter = {
   getTodayReflectionStatus: protectedProcedure.query(async ({ ctx }) => {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
-    console.log(
-      ctx.cacheTagManager.morningReflection(),
-      "morningReflectioncacheTag",
-    );
     const todayMorningReflection = await withCache(
       ctx,
       ctx.cacheTagManager.morningReflection(),
@@ -199,6 +195,12 @@ export const entryRouter = {
           });
         }
       }
+
+      // Invalidate cache for entries
+      await ctx.cache.delete(ctx.cacheTagManager.allEntries());
+      await ctx.cache.delete(ctx.cacheTagManager.findAllEntries());
+      await ctx.cache.delete(ctx.cacheTagManager.getEntriesCount());
+      await ctx.cache.delete(ctx.cacheTagManager.getStreak());
       return analysis;
     }),
   findAllEntries: protectedProcedure.query(async ({ ctx }) => {
@@ -267,8 +269,6 @@ export const entryRouter = {
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      console.log(input, "input add entry");
-
       // Calculate word count for messages with role 'user'
       const wordCount = input.messages
         .filter((message) => message.role === "user")
@@ -295,11 +295,7 @@ export const entryRouter = {
           },
         })
         .returning();
-      // Invalidate cache for entries
-      await ctx.cache.delete(ctx.cacheTagManager.allEntries());
-      await ctx.cache.delete(ctx.cacheTagManager.findAllEntries());
-      await ctx.cache.delete(ctx.cacheTagManager.getEntriesCount());
-      await ctx.cache.delete(ctx.cacheTagManager.getStreak());
+
       return entry[0];
     }),
   getStreak: protectedProcedure.query(async ({ ctx }) => {

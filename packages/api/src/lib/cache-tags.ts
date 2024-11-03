@@ -14,19 +14,19 @@ export const cacheTags = {
   },
   findAllEntries: {
     value: "find_all_entries",
-    requiresSuffix: false as const,
+    requiresSuffix: false,
   },
   findEntryById: {
     value: "find_entry_by_id",
-    requiresSuffix: true as const,
+    requiresSuffix: true,
   },
   getStreak: {
     value: "get_streak",
-    requiresSuffix: false as const,
+    requiresSuffix: false,
   },
   getEntriesCount: {
     value: "get_entries_count",
-    requiresSuffix: false as const,
+    requiresSuffix: false,
   },
 } as const;
 
