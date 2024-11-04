@@ -1,11 +1,11 @@
-import ImprovedConfusionToClarityAnimation from "~/components/test";
+import HeroSection from "~/page/home/hero";
 
 export default function Home() {
   return (
-    <div>
+    <main>
       {/* <Component /> */}
-      <ImprovedConfusionToClarityAnimation />
+      <HeroSection />
       {/* <InteractiveGrayParticleMemoize /> */}
-    </div>
+    </main>
   );
 }
