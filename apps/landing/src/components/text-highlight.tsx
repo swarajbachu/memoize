@@ -8,12 +8,12 @@ export default function TextHighlighter({
   text?: string;
 }) {
   return (
-    <div className="relative inline-block  font-medium">
+    <div className="relative inline-flex h-14 font-medium items-center">
       <h2 className="max-w-2xl  text-2xl md:text-3xl lg:text-5xl font-bold text-center">
         {text}
       </h2>
       <motion.div
-        className="absolute bottom-0 -left-[5%] h-14 bg-primary/25 rounded-sm opacity-70"
+        className="absolute bottom-0 -left-[5%] h-full bg-primary/25 rounded-sm opacity-70"
         initial={{ width: "0%" }}
         animate={{
           width: "110%",

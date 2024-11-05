@@ -2,6 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import Image from "next/image";
+import React from "react";
 import { useCallback, useEffect, useState } from "react";
 
 const AnalysisComponent = ({ text }: { text: string }) => (
@@ -44,6 +45,8 @@ export default function ConfusionToClarity() {
     Array<{ id: number; type: string; content: string; emoji?: string }>
   >([]);
   const [idCounter, setIdCounter] = useState(0);
+  const sectionRef = React.useRef<HTMLDivElement>(null);
+  const [isActive, setIsActive] = useState(false);
 
   const thoughts = [
     "What's really bothering me today?",
@@ -99,6 +102,7 @@ export default function ConfusionToClarity() {
   }, [idCounter]);
 
   const addThought = useCallback(() => {
+    if (!isActive) return;
     const newThought = thoughts[Math.floor(Math.random() * thoughts.length)];
     if (!newThought) return;
     setActiveThoughts((prev) => [
@@ -115,15 +119,34 @@ export default function ConfusionToClarity() {
         { id: generateId(), ...newReflection },
       ]);
     }
-  }, [generateId]);
+  }, [generateId, isActive]);
 
   useEffect(() => {
-    const interval = setInterval(addThought, 1500);
+    const interval = setInterval(addThought, 2000);
     return () => clearInterval(interval);
   }, [addThought]);
 
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setIsActive(entry?.isIntersecting ?? false);
+      },
+      { threshold: 0.1 }, // Trigger when 10% of the section is visible
+    );
+
+    if (sectionRef.current) {
+      observer.observe(sectionRef.current);
+    }
+
+    return () => {
+      if (sectionRef.current) {
+        observer.unobserve(sectionRef.current);
+      }
+    };
+  }, []);
+
   return (
-    <div className="relative w-full h-[30vh] overflow-hidden">
+    <div ref={sectionRef} className="relative w-full h-[30vh] overflow-hidden">
       <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-20">
         <motion.div
           animate={{
@@ -158,7 +181,7 @@ export default function ConfusionToClarity() {
             className="absolute top-1/2 z-10"
             initial={{
               x: "-10vw",
-              y: Math.random() * 300 - 150,
+              y: Math.random() * 200 - 150,
               opacity: 0,
               scale: 1,
             }}
@@ -170,19 +193,19 @@ export default function ConfusionToClarity() {
             }}
             exit={{ opacity: 0, scale: 0 }}
             transition={{
-              type: "spring",
-              stiffness: 50,
-              damping: 20,
               duration: 4,
               y: {
-                delay: 1,
-                duration: 2.5,
+                delay: 3,
+                duration: 3,
               },
               x: {
-                duration: 4,
+                duration: 6,
               },
               scale: {
-                delay: 3,
+                type: "spring",
+                stiffness: 50,
+                damping: 20,
+                delay: 5,
                 duration: 0.5,
               },
               opacity: {
@@ -190,9 +213,8 @@ export default function ConfusionToClarity() {
               },
             }}
             onAnimationComplete={(definition) => {
-              if (definition === "animate") {
-                setActiveThoughts((prev) => prev.filter((q) => q.id !== id));
-              }
+              setActiveThoughts((prev) => prev.filter((q) => q.id !== id));
+              console.log(activeThoughts, "active");
             }}
           >
             <div className="relative max-w-[255px] bg-[#e5e5ea] text-black p-[10px_20px] rounded-[25px] leading-6 word-wrap-break-word">

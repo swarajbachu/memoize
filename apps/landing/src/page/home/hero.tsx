@@ -7,10 +7,10 @@ import TextHighlighter from "~/components/text-highlight";
 export default function HeroSection() {
   return (
     <section className="min-h-screen flex flex-col gap-2 items-center justify-center">
-      <Badge className="py-1 px-5 rounded-full bg-black hover:bg-zinc-800 text-base font-medium">
+      <Badge className="bg-foreground hover:bg-card-foreground py-1 px-5 rounded-xl text-sm">
         Mini Therapist
       </Badge>
-      <h1 className="max-w-2xl text-2xl my-2 md:text-3xl lg:text-5xl font-bold text-center">
+      <h1 className="max-w-2xl text-2xl mb09 md:text-3xl lg:text-5xl font-bold text-center">
         Start Your Path to
       </h1>
       <TextHighlighter text="Self-Discovery" />
