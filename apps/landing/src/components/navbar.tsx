@@ -43,18 +43,18 @@ export default function NavBar() {
   return (
     <motion.nav
       // biome-ignore lint/style/noUnusedTemplateLiteral: <explanation>
-      className={`fixed top-0 sm:top-3 z-[90]  left-1/2 -translate-x-1/2 max-w-screen-2xl   rounded-md border bg-background/90 py-3 backdrop-blur-[10px] `}
+      className={`fixed top-0 sm:top-3 z-[90]  left-1/2 -translate-x-1/2 max-w-screen-lg   rounded-full border bg-background/90 py-3 backdrop-blur-[10px] `}
       animate={{
-        width: isScrolled && !isMobile ? "70%" : "100%",
+        width: isScrolled && !isMobile ? "50%" : "100%",
         transition: {
-          duration: 0.3,
+          duration: 1,
           type: "spring",
-          stiffness: 100,
+          stiffness: 60,
           damping: 20,
         },
       }}
     >
-      <div className="container">
+      <div className="px-6">
         <div className="flex items-center justify-between">
           <Link href="/" className="text-2xl font-bold text-primary">
             <Image src="/logo.png" alt="Memoize" width={40} height={40} />
@@ -86,7 +86,7 @@ export default function NavBar() {
               style={{
                 overflow: "hidden",
               }}
-              className="group relative  rounded-md bg-primary px-6 py-3  text-sm font-semibold text-white"
+              className="group relative  rounded-full bg-primary px-6 py-3  text-sm font-semibold text-white"
             >
               <Link
                 href="https://app.memoize.com/sign-up"

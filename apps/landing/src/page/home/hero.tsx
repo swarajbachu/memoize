@@ -1,19 +1,23 @@
 import { Badge } from "@memoize/ui/badge";
 import { Button } from "@memoize/ui/button";
+import { BsArrowRight } from "react-icons/bs";
 import { RiVerifiedBadgeFill } from "react-icons/ri";
 import ConfusionToClarity from "~/components/confusion-to-clarity";
-import TextHighlighter from "~/components/text-highlight";
+import { GridPattern } from "~/components/grid-pattern";
 
 export default function HeroSection() {
   return (
-    <section className="min-h-[50vh] sm:min-h-[90vh] lg:min-h-[80vh] flex flex-col gap-2 items-center justify-center">
-      <Badge className="bg-foreground hover:bg-card-foreground py-1 px-5 rounded-xl text-sm">
-        Mini Therapist
+    <section className="py-40 flex flex-col gap-2 items-center justify-center">
+      <Badge className="bg-foreground hover:bg-card-foreground py-1 px-5 rounded-full text-sm">
+        Mini Therapist <BsArrowRight className="ml-3 h-4 w-4 rotate-360" />
       </Badge>
-      <h1 className="max-w-2xl text-2xl mb09 md:text-3xl lg:text-5xl font-bold text-center">
-        Start Your Path to
+      <div className="absolute -z-10 inset-0 [mask-image:radial-gradient(ellipse_at_center,white,transparent)]">
+        <GridPattern />
+      </div>
+      <h1 className="max-w-2xl my-4 text-balance text-2xl mb09 md:text-3xl lg:text-6xl font-bold text-center">
+        Start Your Path to Self-Discovery
       </h1>
-      <TextHighlighter text="Self-Discovery" />
+      {/* <TextHighlighter text="" /> */}
       <div className="flex items-center gap-3">
         <span className="flex items-center gap-1">
           <RiVerifiedBadgeFill
