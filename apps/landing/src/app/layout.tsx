@@ -4,6 +4,8 @@ import "./globals.css";
 import "@memoize/ui/globals";
 import NavBar from "~/components/navbar";
 
+export const runtime = "edge";
+
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
   variable: "--font-geist-sans",
