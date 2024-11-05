@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import Image from "next/image";
 import React from "react";
 import { useCallback, useEffect, useState } from "react";
+import useDeviceType from "~/hooks/use-device";
 
 const AnalysisComponent = ({ text }: { text: string }) => (
   <div className="bg-blue-100 p-4 rounded-lg shadow-md">
@@ -47,6 +48,8 @@ export default function ConfusionToClarity() {
   const [idCounter, setIdCounter] = useState(0);
   const sectionRef = React.useRef<HTMLDivElement>(null);
   const [isActive, setIsActive] = useState(false);
+  const device = useDeviceType();
+  const smallerDevice = device === "mobile";
 
   const thoughts = [
     "What's really bothering me today?",
@@ -145,6 +148,8 @@ export default function ConfusionToClarity() {
     };
   }, []);
 
+  if (smallerDevice) return null;
+
   return (
     <div ref={sectionRef} className="relative w-full h-[30vh] overflow-hidden">
       <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-20">
@@ -162,14 +167,14 @@ export default function ConfusionToClarity() {
             stiffness: 50,
             damping: 20,
           }}
-          className="bg-primary w-40 h-40 rounded-full flex items-center justify-center z-20"
+          className="bg-primary md:size-40 size-20 rounded-full flex items-center justify-center z-20"
         >
           <Image
             src="/logo.png"
             alt="logo"
             width={100}
             height={100}
-            className="invert"
+            className="invert size-16 md:size-36"
           />
         </motion.div>
       </div>

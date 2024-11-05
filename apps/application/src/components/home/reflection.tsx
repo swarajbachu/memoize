@@ -6,7 +6,6 @@ import { CheckCircle2, Circle } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { api } from "~/trpc/server";
-import TodoList from "./todo-list";
 
 const initialTodos = [
   {
@@ -56,7 +55,7 @@ export default async function Reflections() {
         />
       )}
 
-      <TodoList initialTodos={initialTodos} />
+      {/* <TodoList initialTodos={initialTodos} /> */}
     </div>
   );
 }

@@ -6,7 +6,7 @@ import TextHighlighter from "~/components/text-highlight";
 
 export default function HeroSection() {
   return (
-    <section className="min-h-screen flex flex-col gap-2 items-center justify-center">
+    <section className="min-h-[50vh] sm:min-h-[90vh] lg:min-h-[80vh] flex flex-col gap-2 items-center justify-center">
       <Badge className="bg-foreground hover:bg-card-foreground py-1 px-5 rounded-xl text-sm">
         Mini Therapist
       </Badge>
@@ -41,9 +41,9 @@ export default function HeroSection() {
         <Button size="lg" className="w-48 h-11">
           Get Started
         </Button>
-        <Button variant="outline" className="w-48 h-11" size="lg">
+        {/* <Button variant="outline" className="w-48 h-11" size="lg">
           Try Demo
-        </Button>
+        </Button> */}
       </div>
       <ConfusionToClarity />
     </section>
