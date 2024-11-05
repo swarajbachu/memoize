@@ -113,7 +113,7 @@ export default function ConfusionToClarity() {
       { id: generateId(), text: newThought },
     ]);
 
-    if (Math.random() < 0.4) {
+    if (Math.random() < 0.7) {
       const newReflection =
         reflectionOptions[Math.floor(Math.random() * reflectionOptions.length)];
       if (!newReflection) return;
@@ -174,7 +174,7 @@ export default function ConfusionToClarity() {
             alt="logo"
             width={100}
             height={100}
-            className="invert size-16 md:size-36"
+            className="invert size-16 md:size-28"
           />
         </motion.div>
       </div>

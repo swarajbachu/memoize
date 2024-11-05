@@ -45,7 +45,7 @@ export default function NavBar() {
       // biome-ignore lint/style/noUnusedTemplateLiteral: <explanation>
       className={`fixed top-0 sm:top-3 z-[90]  left-1/2 -translate-x-1/2 max-w-screen-lg   rounded-full border bg-background/90 py-3 backdrop-blur-[10px] `}
       animate={{
-        width: isScrolled && !isMobile ? "50%" : "100%",
+        width: isScrolled && !isMobile ? "40%" : "100%",
         transition: {
           duration: 1,
           type: "spring",
@@ -60,7 +60,7 @@ export default function NavBar() {
             <Image src="/logo.png" alt="Memoize" width={40} height={40} />
           </Link>
 
-          <div className="hidden space-x-8 md:flex">
+          <div className="hidden space-x-8 md:flex ml-10">
             <Link
               href="#how-it-works"
               className="text-gray-600 hover:text-primary"
@@ -78,7 +78,6 @@ export default function NavBar() {
               Pricing
             </Link> */}
           </div>
-
           <div className="hidden md:block ">
             {/* <Button>Login</Button> */}
             <button
@@ -89,7 +88,7 @@ export default function NavBar() {
               className="group relative  rounded-full bg-primary px-6 py-3  text-sm font-semibold text-white"
             >
               <Link
-                href="https://app.memoize.com/sign-up"
+                href="https://app.memoize.co/sign-up"
                 // onClick={() => {
                 //   posthog.capture("sign_up_button_clicked", {
                 //     property: "from navbar desktop",
@@ -137,15 +136,15 @@ export default function NavBar() {
             >
               Solutions
             </Link>
-            <Link
+            {/* <Link
               href="#pricing"
               className="block text-gray-600 hover:text-primary"
             >
               Pricing
-            </Link>
+            </Link> */}
             <Button asChild className="w-full">
               <Link
-                href="https://app.memoize.com/sign-up"
+                href="https://app.memoize.co/sign-up"
                 // onClick={() => {
                 //   posthog.capture("sign_up_button_clicked", {
                 //     property: "from navbar mobile",
