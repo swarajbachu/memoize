@@ -1,90 +1,52 @@
-import type { User } from "@clerk/nextjs/server";
+import type { WebhookEvent } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import type { WebhookRequiredHeaders } from "svix";
 import { Webhook } from "svix";
 
 import { db, eq, schema } from "@memoize/db";
 
+import { headers } from "next/headers";
 import { env } from "~/env";
 import { api } from "~/trpc/server";
 
 export const runtime = "edge";
 const webhookSecret = env.WEBHOOK_SECRET;
 
-type UnwantedKeys =
-  | "emailAddresses"
-  | "firstName"
-  | "lastName"
-  | "primaryEmailAddressId"
-  | "primaryPhoneNumberId"
-  | "phoneNumbers"
-  | "profileImageUrl";
+async function validateRequest(request: Request) {
+  const payloadString = await request.text();
+  const headerPayload = headers();
 
-interface UserInterface extends Omit<User, UnwantedKeys> {
-  email_addresses: {
-    email_address: string;
-    id: string;
-  }[];
-  primary_email_address_id: string;
-  first_name: string;
-  last_name: string;
-  primary_phone_number_id: string;
-  phone_numbers: {
-    phone_number: string;
-    id: string;
-  }[];
-  profile_image_url: string;
-}
-
-type EventType = "user.created" | "user.updated" | "user.deleted";
-
-interface Event {
-  data: UserInterface;
-  object: "event";
-  type: EventType;
+  const svixHeaders = {
+    // biome-ignore lint/style/noNonNullAssertion: <explanation>
+    "svix-id": headerPayload.get("svix-id")!,
+    // biome-ignore lint/style/noNonNullAssertion: <explanation>
+    "svix-timestamp": headerPayload.get("svix-timestamp")!,
+    // biome-ignore lint/style/noNonNullAssertion: <explanation>
+    "svix-signature": headerPayload.get("svix-signature")!,
+  };
+  const wh = new Webhook(webhookSecret);
+  return wh.verify(payloadString, svixHeaders) as WebhookEvent;
 }
 
 async function handler(request: Request) {
-  console.log("Received webhook request");
+  console.log("Received webhook request", env.WEBHOOK_SECRET);
 
-  // Parse the JSON payload
-  const payload = await request.json();
+  const payload = await validateRequest(request);
 
-  // Extract necessary headers for verification
-  const headersAll = request.headers;
-  console.log(headersAll, "headersAll");
-  const heads: WebhookRequiredHeaders = {
-    "svix-id": headersAll.get("svix-id") || "",
-    "svix-timestamp": headersAll.get("svix-timestamp") || "",
-    "svix-signature": headersAll.get("svix-signature") || "",
-  };
+  const id = payload.data.id;
 
-  console.log(heads, "heads");
-
-  // Initialize the Svix Webhook with the secret
-  const wh = new Webhook(webhookSecret);
-  let evt: Event | null = null;
-
-  try {
-    // Verify the webhook signature
-    evt = wh.verify(JSON.stringify(payload), heads) as Event;
-  } catch (err) {
-    console.error("Webhook verification failed:", err);
+  if (!id) {
     return NextResponse.json(
       {
-        message: "Error occurred while verifying webhook.",
+        message: "User ID not found.",
       },
       { status: 400 },
     );
   }
 
-  const eventType: EventType = evt.type;
-  const { id } = evt.data;
-
   try {
-    switch (eventType) {
+    switch (payload.type) {
       case "user.created": {
-        const { email_addresses, primary_email_address_id } = evt.data;
+        const { email_addresses, primary_email_address_id } = payload.data;
         const emailObject = email_addresses?.find(
           (email) => email.id === primary_email_address_id,
         );
@@ -98,23 +60,19 @@ async function handler(request: Request) {
             { status: 400 },
           );
         }
-
         const details = {
-          primaryEmail:
-            emailObject.email_address ||
-            evt.data.primaryEmailAddress?.emailAddress ||
-            "",
-          firstName: evt.data.first_name,
-          lastName: evt.data.last_name,
-          phoneNumber: evt.data.phone_numbers,
-          profileImageUrl: evt.data.profile_image_url,
+          primaryEmail: emailObject.email_address,
+          firstName: payload.data.first_name,
+          lastName: payload.data.last_name,
+          phoneNumber: payload.data.phone_numbers,
+          profileImageUrl: payload.data.image_url,
         };
 
         console.log(details, "details");
 
         await api.auth
           .addUserToDatabase({
-            clerkUserId: id,
+            clerkUserId: payload.data.id,
             email: details.primaryEmail,
             image: details.profileImageUrl,
             name: `${details.firstName} ${details.lastName}`,
@@ -128,20 +86,17 @@ async function handler(request: Request) {
       }
 
       case "user.updated": {
-        const { email_addresses, primary_email_address_id } = evt.data;
+        const { email_addresses, primary_email_address_id } = payload.data;
         const emailObject = email_addresses?.find(
           (email) => email.id === primary_email_address_id,
         );
 
         const userDetails = {
-          primaryEmail:
-            emailObject?.email_address ||
-            evt.data.primaryEmailAddress?.emailAddress ||
-            "",
-          firstName: evt.data.first_name,
-          lastName: evt.data.last_name,
-          phoneNumber: evt.data.phone_numbers,
-          profileImageUrl: evt.data.profile_image_url,
+          primaryEmail: emailObject?.email_address || "",
+          firstName: payload.data.first_name,
+          lastName: payload.data.last_name,
+          phoneNumber: payload.data.phone_numbers,
+          profileImageUrl: payload.data.image_url,
         };
 
         await db
@@ -152,7 +107,7 @@ async function handler(request: Request) {
             image: userDetails.profileImageUrl,
             updatedAt: new Date(),
           })
-          .where(eq(schema.User.clerkUserId, id));
+          .where(eq(schema.User.clerkUserId, payload.data.id));
 
         break;
       }
@@ -163,7 +118,7 @@ async function handler(request: Request) {
       }
 
       default:
-        console.warn(`Unhandled event type: ${eventType}`);
+        console.warn(`Unhandled event type: ${payload.type}`);
     }
 
     return NextResponse.json({

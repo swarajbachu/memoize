@@ -15,11 +15,11 @@ export default async function EntryPage({
   const demoAiAnalysis = {
     title: entry.title ?? "",
     summary: (entry.entryAnalysis?.analysis as string) ?? "",
-    feeling: "Accomplished",
+    feeling: entry.entryAnalysis?.feelings ?? [],
     topics: entry.entryToTopics.map(
       (et) => `${et.topic.emoji} ${et.topic.topic}`,
     ),
-    people: ["Team", "Stakeholders"],
+    people: entry.entryToPeople?.map((etp) => etp.person.personName) ?? [],
     moodLevel: 90,
   };
 

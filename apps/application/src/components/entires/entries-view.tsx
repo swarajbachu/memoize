@@ -17,6 +17,7 @@ import {
 import { ScrollArea } from "@memoize/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@memoize/ui/tabs";
 import type { MessageType } from "@memoize/validators/entries";
+import { emotions } from "@memoize/validators/journal-constants";
 import { format } from "date-fns";
 import { Download, Trash2 } from "lucide-react";
 import React from "react";
@@ -26,7 +27,7 @@ type JournalEntryProps = {
   aiAnalysis: {
     title: string;
     summary: string;
-    feeling: string;
+    feeling: string[];
     topics: string[];
     people: string[];
     moodLevel: number;
@@ -123,6 +124,25 @@ export default function JournalEntry({
                     </Badge>
                   ))}
                 </div>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  <span className="text-sm font-medium">Feeling:</span>
+                  {aiAnalysis.feeling.map((feeling) => (
+                    <Badge key={feeling} variant="secondary">
+                      {emotions.find((e) => e.value === feeling)?.emoji}{" "}
+                      {feeling}
+                    </Badge>
+                  ))}
+                </div>
+                {aiAnalysis.people.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    <span className="text-sm font-medium">People:</span>
+                    {aiAnalysis.people.map((person) => (
+                      <Badge key={person} variant="secondary">
+                        {person}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
               </ScrollArea>
             </TabsContent>
           </div>

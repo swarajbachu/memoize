@@ -254,6 +254,11 @@ export const entryRouter = {
                 topic: true,
               },
             },
+            entryToPeople: {
+              with: {
+                person: true,
+              },
+            },
           },
         });
         return entry;
