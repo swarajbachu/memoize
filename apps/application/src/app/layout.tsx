@@ -1,3 +1,4 @@
+import { Toaster as ShadToaster } from "@memoize/ui/toast";
 import { GeistMono } from "geist/font/mono";
 import { GeistSans } from "geist/font/sans";
 import type { Metadata, Viewport } from "next";
@@ -83,6 +84,7 @@ export default function RootLayout(props: { children: React.ReactNode }) {
         >
           <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
             <Toaster />
+            <ShadToaster />
             <TRPCReactProvider>{props.children}</TRPCReactProvider>
           </ThemeProvider>
         </body>

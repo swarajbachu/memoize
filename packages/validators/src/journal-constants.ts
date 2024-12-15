@@ -131,35 +131,221 @@ export const JournalingPromptsSchema = z.object({
 export type JournalingPrompts = z.infer<typeof JournalingPromptsSchema>;
 
 export const emotions = [
-  { label: "Happy", value: "happy", emoji: "😊" },
-  { label: "Sad", value: "sad", emoji: "😢" },
-  { label: "Angry", value: "angry", emoji: "😠" },
-  { label: "Surprised", value: "surprised", emoji: "😮" },
-  { label: "Fearful", value: "fearful", emoji: "😱" },
-  { label: "Disgusted", value: "disgusted", emoji: "🤢" },
-  { label: "Excited", value: "excited", emoji: "🤩" },
-  { label: "Anxious", value: "anxious", emoji: "😰" },
-  { label: "Content", value: "content", emoji: "😌" },
-  { label: "Confused", value: "confused", emoji: "😕" },
-  { label: "Bored", value: "bored", emoji: "😐" },
-  { label: "Hopeful", value: "hopeful", emoji: "🤞" },
-  { label: "Lonely", value: "lonely", emoji: "🥺" },
-  { label: "Frustrated", value: "frustrated", emoji: "😤" },
-  { label: "Grateful", value: "grateful", emoji: "🙏" },
-  { label: "Guilty", value: "guilty", emoji: "😔" },
-  { label: "Proud", value: "proud", emoji: "🥳" },
-  { label: "Jealous", value: "jealous", emoji: "😒" },
-  { label: "Relieved", value: "relieved", emoji: "😌" },
-  { label: "Nervous", value: "nervous", emoji: "😬" },
-  { label: "Inspired", value: "inspired", emoji: "💡" },
-  { label: "Ashamed", value: "ashamed", emoji: "😳" },
-  { label: "Envious", value: "envious", emoji: "😟" },
-  { label: "Motivated", value: "motivated", emoji: "🔥" },
-  { label: "Overwhelmed", value: "overwhelmed", emoji: "😵" },
-  { label: "Sympathetic", value: "sympathetic", emoji: "🤗" },
-  { label: "Tired", value: "tired", emoji: "😴" },
-  { label: "Curious", value: "curious", emoji: "🧐" },
-  { label: "Hopeful", value: "hopeful", emoji: "🌟" },
-  { label: "Embarrassed", value: "embarrassed", emoji: "😳" },
-  { label: "Determined", value: "determined", emoji: "💪" },
+  {
+    label: "Happy",
+    value: "happy",
+    emoji: "😊",
+    className:
+      "bg-green-400/10 text-green-700 hover:bg-green-400/30 dark:bg-green-400/20 dark:text-green-300",
+  },
+  {
+    label: "Sad",
+    value: "sad",
+    emoji: "😢",
+    className:
+      "bg-blue-400/10 text-blue-700 hover:bg-blue-400/30 dark:bg-blue-400/20 dark:text-blue-300",
+  },
+  {
+    label: "Angry",
+    value: "angry",
+    emoji: "😠",
+    className:
+      "bg-red-400/10 text-red-700 hover:bg-red-400/30 dark:bg-red-400/20 dark:text-red-300",
+  },
+  {
+    label: "Surprised",
+    value: "surprised",
+    emoji: "😮",
+    className:
+      "bg-yellow-400/10 text-yellow-700 hover:bg-yellow-400/30 dark:bg-yellow-400/20 dark:text-yellow-300",
+  },
+  {
+    label: "Fearful",
+    value: "fearful",
+    emoji: "😱",
+    className:
+      "bg-purple-400/10 text-purple-700 hover:bg-purple-400/30 dark:bg-purple-400/20 dark:text-purple-300",
+  },
+  {
+    label: "Disgusted",
+    value: "disgusted",
+    emoji: "🤢",
+    className:
+      "bg-emerald-400/10 text-emerald-700 hover:bg-emerald-400/30 dark:bg-emerald-400/20 dark:text-emerald-300",
+  },
+  {
+    label: "Excited",
+    value: "excited",
+    emoji: "🤩",
+    className:
+      "bg-pink-400/10 text-pink-700 hover:bg-pink-400/30 dark:bg-pink-400/20 dark:text-pink-300",
+  },
+  {
+    label: "Anxious",
+    value: "anxious",
+    emoji: "😰",
+    className:
+      "bg-violet-400/10 text-violet-700 hover:bg-violet-400/30 dark:bg-violet-400/20 dark:text-violet-300",
+  },
+  {
+    label: "Content",
+    value: "content",
+    emoji: "😌",
+    className:
+      "bg-teal-400/10 text-teal-700 hover:bg-teal-400/30 dark:bg-teal-400/20 dark:text-teal-300",
+  },
+  {
+    label: "Confused",
+    value: "confused",
+    emoji: "😕",
+    className:
+      "bg-amber-400/10 text-amber-700 hover:bg-amber-400/30 dark:bg-amber-400/20 dark:text-amber-300",
+  },
+  {
+    label: "Bored",
+    value: "bored",
+    emoji: "😐",
+    className:
+      "bg-gray-400/10 text-gray-700 hover:bg-gray-400/30 dark:bg-gray-400/20 dark:text-gray-300",
+  },
+  {
+    label: "Hopeful",
+    value: "hopeful",
+    emoji: "🤞",
+    className:
+      "bg-sky-400/10 text-sky-700 hover:bg-sky-400/30 dark:bg-sky-400/20 dark:text-sky-300",
+  },
+  {
+    label: "Lonely",
+    value: "lonely",
+    emoji: "🥺",
+    className:
+      "bg-indigo-400/10 text-indigo-700 hover:bg-indigo-400/30 dark:bg-indigo-400/20 dark:text-indigo-300",
+  },
+  {
+    label: "Frustrated",
+    value: "frustrated",
+    emoji: "😤",
+    className:
+      "bg-rose-400/10 text-rose-700 hover:bg-rose-400/30 dark:bg-rose-400/20 dark:text-rose-300",
+  },
+  {
+    label: "Grateful",
+    value: "grateful",
+    emoji: "🙏",
+    className:
+      "bg-cyan-400/10 text-cyan-700 hover:bg-cyan-400/30 dark:bg-cyan-400/20 dark:text-cyan-300",
+  },
+  {
+    label: "Guilty",
+    value: "guilty",
+    emoji: "😔",
+    className:
+      "bg-slate-400/10 text-slate-700 hover:bg-slate-400/30 dark:bg-slate-400/20 dark:text-slate-300",
+  },
+  {
+    label: "Proud",
+    value: "proud",
+    emoji: "🥳",
+    className:
+      "bg-fuchsia-400/10 text-fuchsia-700 hover:bg-fuchsia-400/30 dark:bg-fuchsia-400/20 dark:text-fuchsia-300",
+  },
+  {
+    label: "Jealous",
+    value: "jealous",
+    emoji: "😒",
+    className:
+      "bg-lime-400/10 text-lime-700 hover:bg-lime-400/30 dark:bg-lime-400/20 dark:text-lime-300",
+  },
+  {
+    label: "Relieved",
+    value: "relieved",
+    emoji: "😌",
+    className:
+      "bg-emerald-400/10 text-emerald-700 hover:bg-emerald-400/30 dark:bg-emerald-400/20 dark:text-emerald-300",
+  },
+  {
+    label: "Nervous",
+    value: "nervous",
+    emoji: "😬",
+    className:
+      "bg-violet-400/10 text-violet-700 hover:bg-violet-400/30 dark:bg-violet-400/20 dark:text-violet-300",
+  },
+  {
+    label: "Inspired",
+    value: "inspired",
+    emoji: "💡",
+    className:
+      "bg-amber-400/10 text-amber-700 hover:bg-amber-400/30 dark:bg-amber-400/20 dark:text-amber-300",
+  },
+  {
+    label: "Ashamed",
+    value: "ashamed",
+    emoji: "😳",
+    className:
+      "bg-rose-400/10 text-rose-700 hover:bg-rose-400/30 dark:bg-rose-400/20 dark:text-rose-300",
+  },
+  {
+    label: "Envious",
+    value: "envious",
+    emoji: "😟",
+    className:
+      "bg-green-400/10 text-green-700 hover:bg-green-400/30 dark:bg-green-400/20 dark:text-green-300",
+  },
+  {
+    label: "Motivated",
+    value: "motivated",
+    emoji: "🔥",
+    className:
+      "bg-orange-400/10 text-orange-700 hover:bg-orange-400/30 dark:bg-orange-400/20 dark:text-orange-300",
+  },
+  {
+    label: "Overwhelmed",
+    value: "overwhelmed",
+    emoji: "😵",
+    className:
+      "bg-purple-400/10 text-purple-700 hover:bg-purple-400/30 dark:bg-purple-400/20 dark:text-purple-300",
+  },
+  {
+    label: "Sympathetic",
+    value: "sympathetic",
+    emoji: "🤗",
+    className:
+      "bg-pink-400/10 text-pink-700 hover:bg-pink-400/30 dark:bg-pink-400/20 dark:text-pink-300",
+  },
+  {
+    label: "Tired",
+    value: "tired",
+    emoji: "😴",
+    className:
+      "bg-blue-400/10 text-blue-700 hover:bg-blue-400/30 dark:bg-blue-400/20 dark:text-blue-300",
+  },
+  {
+    label: "Curious",
+    value: "curious",
+    emoji: "🧐",
+    className:
+      "bg-yellow-400/10 text-yellow-700 hover:bg-yellow-400/30 dark:bg-yellow-400/20 dark:text-yellow-300",
+  },
+  {
+    label: "Hopeful",
+    value: "hopeful",
+    emoji: "🌟",
+    className:
+      "bg-cyan-400/10 text-cyan-700 hover:bg-cyan-400/30 dark:bg-cyan-400/20 dark:text-cyan-300",
+  },
+  {
+    label: "Embarrassed",
+    value: "embarrassed",
+    emoji: "😳",
+    className:
+      "bg-red-400/10 text-red-700 hover:bg-red-400/30 dark:bg-red-400/20 dark:text-red-300",
+  },
+  {
+    label: "Determined",
+    value: "determined",
+    emoji: "💪",
+    className:
+      "bg-indigo-400/10 text-indigo-700 hover:bg-indigo-400/30 dark:bg-indigo-400/20 dark:text-indigo-300",
+  },
 ];

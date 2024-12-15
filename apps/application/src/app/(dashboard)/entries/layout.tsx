@@ -23,7 +23,7 @@ function SidebarContent() {
   return (
     <>
       <Search />
-      <ScrollArea className="h-[calc(100vh-6rem)]">
+      <ScrollArea className="h-[calc(100vh-3rem)]">
         <Suspense fallback={<div>Loading...</div>}>
           <FetchEntries />
         </Suspense>
