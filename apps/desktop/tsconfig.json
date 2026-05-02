@@ -1,0 +1,4 @@
+{
+  "extends": "@repo/typescript-config/electron.json",
+  "include": ["src/**/*.ts"]
+}

@@ -1,0 +1,29 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #0b0b0c;
+  --color-bg-elevated: #131316;
+  --color-border: #26262b;
+  --color-fg: #e6e6e6;
+  --color-fg-muted: #8f8f95;
+  --color-accent: #7c8cf8;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.xterm-viewport::-webkit-scrollbar {
+  width: 8px;
+}
+.xterm-viewport::-webkit-scrollbar-thumb {
+  background: #2c2c33;
+  border-radius: 4px;
+}
