@@ -34,7 +34,7 @@ export function GitHistoryPane() {
 
   if (selected === null) {
     return (
-      <aside className="flex flex-col bg-[var(--color-bg-elevated)]">
+      <aside className="flex flex-col bg-background">
         <Header label="git" />
         <EmptyState>No folder selected.</EmptyState>
       </aside>
@@ -106,7 +106,7 @@ function GitPane({ folderId }: { folderId: FolderId }) {
   }, [folderId]);
 
   return (
-    <aside className="flex h-full flex-col bg-[var(--color-bg-elevated)]">
+    <aside className="flex h-full flex-col bg-background">
       <Header
         label={
           state.status === "ready" && state.summary?.branch
@@ -163,14 +163,14 @@ function CommitRow({ commit }: { commit: GitCommit }) {
         type="button"
         onClick={onClick}
         title={`Click to copy ${commit.sha}`}
-        className="flex w-full gap-2 rounded px-2 py-2 text-left text-sm hover:bg-[var(--color-border)]/40"
+        className="flex w-full gap-2 rounded px-2 py-2 text-left text-sm hover:bg-accent/60"
       >
-        <GitCommitIcon className="mt-0.5 size-3.5 shrink-0 text-[var(--color-fg-muted)]" />
+        <GitCommitIcon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[var(--color-fg)]">
+          <div className="truncate text-foreground">
             {commit.subject}
           </div>
-          <div className="mt-0.5 flex items-center gap-2 text-[11px] text-[var(--color-fg-muted)]">
+          <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
             <span className="font-mono">
               {copied ? "copied!" : commit.shortSha}
             </span>
@@ -193,7 +193,7 @@ function Header({
   right?: React.ReactNode;
 }) {
   return (
-    <header className="flex h-9 items-center justify-between px-3 text-xs uppercase tracking-wide text-[var(--color-fg-muted)]">
+    <header className="flex h-9 items-center justify-between px-3 text-xs uppercase tracking-wide text-muted-foreground">
       <span className="truncate">{label}</span>
       {right ?? null}
     </header>
@@ -202,7 +202,7 @@ function Header({
 
 function EmptyState({ children }: { children: React.ReactNode }) {
   return (
-    <div className="px-3 py-6 text-center text-xs text-[var(--color-fg-muted)]">
+    <div className="px-3 py-6 text-center text-xs text-muted-foreground">
       {children}
     </div>
   );

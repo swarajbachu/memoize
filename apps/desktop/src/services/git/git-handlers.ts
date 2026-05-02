@@ -19,4 +19,8 @@ const HeadChanged = ForkzeroRpcs.toLayerHandler(
     ),
 );
 
-export const GitHandlersLayer = Layer.mergeAll(Log, Status, HeadChanged);
+const Origin = ForkzeroRpcs.toLayerHandler("git.origin", ({ folderId }) =>
+  Effect.flatMap(GitService, (svc) => svc.origin(folderId)),
+);
+
+export const GitHandlersLayer = Layer.mergeAll(Log, Status, HeadChanged, Origin);

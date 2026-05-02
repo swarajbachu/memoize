@@ -66,3 +66,17 @@ export const GitHeadChangedRpc = Rpc.make("git.headChanged", {
   error: GitErrors,
   stream: true,
 });
+
+export class GitOriginInfo extends Schema.Class<GitOriginInfo>("GitOriginInfo")(
+  {
+    host: Schema.String,
+    owner: Schema.String,
+    repo: Schema.String,
+  },
+) {}
+
+export const GitOriginRpc = Rpc.make("git.origin", {
+  payload: Schema.Struct({ folderId: FolderId }),
+  success: Schema.NullOr(GitOriginInfo),
+  error: GitErrors,
+});

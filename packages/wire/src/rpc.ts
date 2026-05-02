@@ -1,6 +1,11 @@
 import { RpcGroup } from "@effect/rpc";
 
-import { GitHeadChangedRpc, GitLogRpc, GitStatusRpc } from "./git.ts";
+import {
+  GitHeadChangedRpc,
+  GitLogRpc,
+  GitOriginRpc,
+  GitStatusRpc,
+} from "./git.ts";
 import { PingRpc } from "./ping.ts";
 import {
   PtyCloseRpc,
@@ -40,6 +45,7 @@ export const ForkzeroRpcs = RpcGroup.make(
   GitLogRpc,
   GitStatusRpc,
   GitHeadChangedRpc,
+  GitOriginRpc,
 );
 export type ForkzeroRpcs = typeof ForkzeroRpcs;
 
