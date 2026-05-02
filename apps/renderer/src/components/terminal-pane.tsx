@@ -51,7 +51,19 @@ function PtyTerminal({ folder }: { folder: Folder }) {
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(container);
-    fit.fit();
+
+    // Don't fit synchronously — the parent grid hasn't laid out yet on first
+    // render, so xterm's renderer has no dimensions and FitAddon throws
+    // "Cannot read properties of undefined (reading 'dimensions')". The
+    // ResizeObserver below fires once after observe with real measurements.
+    const safeFit = () => {
+      if (container.clientWidth === 0 || container.clientHeight === 0) return;
+      try {
+        fit.fit();
+      } catch {
+        // ignore — happens during teardown when the container is detached
+      }
+    };
 
     let cancelled = false;
     let ptyId: PtyId | null = null;
@@ -59,13 +71,7 @@ function PtyTerminal({ folder }: { folder: Folder }) {
     let streamFiber: Fiber.RuntimeFiber<unknown, unknown> | null = null;
     let resizeTimer: number | null = null;
 
-    const observer = new ResizeObserver(() => {
-      try {
-        fit.fit();
-      } catch {
-        // ignore — happens during teardown when the container is detached
-      }
-    });
+    const observer = new ResizeObserver(safeFit);
     observer.observe(container);
 
     void (async () => {
