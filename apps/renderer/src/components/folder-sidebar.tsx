@@ -5,11 +5,13 @@ import { useWorkspaceStore } from "../store/workspace.ts";
 
 export function FolderSidebar() {
   const folders = useWorkspaceStore((s) => s.folders);
+  const selectedFolderId = useWorkspaceStore((s) => s.selectedFolderId);
   const error = useWorkspaceStore((s) => s.error);
   const loading = useWorkspaceStore((s) => s.loading);
   const load = useWorkspaceStore((s) => s.load);
   const add = useWorkspaceStore((s) => s.add);
   const remove = useWorkspaceStore((s) => s.remove);
+  const select = useWorkspaceStore((s) => s.select);
 
   useEffect(() => {
     void load();
@@ -44,30 +46,57 @@ export function FolderSidebar() {
             No folders yet. Click + to add one.
           </li>
         )}
-        {folders.map((folder) => (
-          <li key={folder.id}>
-            <div className="group flex items-center gap-2 rounded px-2 py-1.5 hover:bg-[var(--color-border)]/60">
-              <FolderIcon className="size-3.5 shrink-0 text-[var(--color-fg-muted)]" />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm">{folder.name}</div>
-                <div
-                  className="truncate text-[11px] text-[var(--color-fg-muted)]"
-                  title={folder.path}
-                >
-                  {folder.path}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => void remove(folder.id)}
-                className="rounded p-0.5 text-[var(--color-fg-muted)] opacity-0 hover:bg-[var(--color-border)] hover:text-[var(--color-fg)] group-hover:opacity-100"
-                aria-label={`Remove ${folder.name}`}
+        {folders.map((folder) => {
+          const isSelected = folder.id === selectedFolderId;
+          return (
+            <li key={folder.id}>
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => select(folder.id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    select(folder.id);
+                  }
+                }}
+                className={`group flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 ${
+                  isSelected
+                    ? "bg-[var(--color-border)]"
+                    : "hover:bg-[var(--color-border)]/60"
+                }`}
               >
-                <X className="size-3.5" />
-              </button>
-            </div>
-          </li>
-        ))}
+                <FolderIcon
+                  className={`size-3.5 shrink-0 ${
+                    isSelected
+                      ? "text-[var(--color-fg)]"
+                      : "text-[var(--color-fg-muted)]"
+                  }`}
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm">{folder.name}</div>
+                  <div
+                    className="truncate text-[11px] text-[var(--color-fg-muted)]"
+                    title={folder.path}
+                  >
+                    {folder.path}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void remove(folder.id);
+                  }}
+                  className="rounded p-0.5 text-[var(--color-fg-muted)] opacity-0 hover:bg-[var(--color-border)] hover:text-[var(--color-fg)] group-hover:opacity-100"
+                  aria-label={`Remove ${folder.name}`}
+                >
+                  <X className="size-3.5" />
+                </button>
+              </div>
+            </li>
+          );
+        })}
       </ul>
     </aside>
   );

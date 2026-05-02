@@ -5,8 +5,15 @@ import { FolderSidebar } from "./components/folder-sidebar";
 import { TerminalPane } from "./components/terminal-pane";
 import { GitHistoryPane } from "./components/git-history-pane";
 import { getRpcClient } from "./lib/rpc-client.ts";
+import { useWorkspaceStore } from "./store/workspace.ts";
 
 export function App() {
+  const folders = useWorkspaceStore((s) => s.folders);
+  const selectedFolderId = useWorkspaceStore((s) => s.selectedFolderId);
+  const selected = selectedFolderId
+    ? (folders.find((f) => f.id === selectedFolderId) ?? null)
+    : null;
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -32,7 +39,9 @@ export function App() {
       <FolderSidebar />
       <main className="flex min-w-0 flex-col border-x border-[var(--color-border)]">
         <header className="flex h-9 items-center px-3 text-xs text-[var(--color-fg-muted)] [-webkit-app-region:drag]">
-          <span className="ml-16 select-none">main · scratch session</span>
+          <span className="ml-16 select-none truncate" title={selected?.path}>
+            {selected ? selected.name : "no folder selected"}
+          </span>
         </header>
         <div className="min-h-0 flex-1">
           <TerminalPane />
