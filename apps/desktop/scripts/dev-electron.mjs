@@ -1,0 +1,175 @@
+// Dev runner: waits for the Vite dev server + bundled main/preload, then spawns
+// Electron pointing at them. Restarts Electron on rebuilds. Modeled on t3code's
+// dev-electron.mjs but slimmed down — no cross-app server checks, no macOS
+// app-bundle renaming.
+
+import { spawn, spawnSync } from "node:child_process";
+import { watch } from "node:fs";
+import { access } from "node:fs/promises";
+import { createConnection } from "node:net";
+import { createRequire } from "node:module";
+import { dirname, join, resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const desktopDir = resolve(__dirname, "..");
+const require = createRequire(import.meta.url);
+
+const devServerUrl = process.env.VITE_DEV_SERVER_URL?.trim();
+if (!devServerUrl) {
+  throw new Error("VITE_DEV_SERVER_URL is required for desktop development");
+}
+const devServer = new URL(devServerUrl);
+const devPort = Number.parseInt(devServer.port, 10);
+if (!Number.isInteger(devPort) || devPort <= 0) {
+  throw new Error(`VITE_DEV_SERVER_URL must include a port: ${devServerUrl}`);
+}
+
+const requiredFiles = ["dist-electron/main.cjs", "dist-electron/preload.cjs"];
+const restartDebounceMs = 150;
+const forcedShutdownTimeoutMs = 1500;
+
+let shuttingDown = false;
+let restartTimer = null;
+let currentApp = null;
+let restartQueue = Promise.resolve();
+const expectedExits = new WeakSet();
+
+async function fileExists(p) {
+  try {
+    await access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function tcpReady(host, port, timeoutMs = 500) {
+  return new Promise((resolveReady) => {
+    const socket = createConnection({ host, port });
+    let settled = false;
+    const finish = (ready) => {
+      if (settled) return;
+      settled = true;
+      socket.removeAllListeners();
+      socket.destroy();
+      resolveReady(ready);
+    };
+    socket.once("connect", () => finish(true));
+    socket.once("timeout", () => finish(false));
+    socket.once("error", () => finish(false));
+    socket.setTimeout(timeoutMs);
+  });
+}
+
+async function waitForResources({ timeoutMs = 120_000, intervalMs = 100 } = {}) {
+  const startedAt = Date.now();
+  while (true) {
+    const filesReady = await Promise.all(
+      requiredFiles.map((rel) => fileExists(resolve(desktopDir, rel))),
+    ).then((results) => results.every(Boolean));
+    const portReady = await tcpReady(devServer.hostname || "127.0.0.1", devPort);
+    if (filesReady && portReady) return;
+    if (Date.now() - startedAt >= timeoutMs) {
+      throw new Error(
+        `Timed out waiting for dev resources (port ${devPort}, files ${requiredFiles.join(", ")})`,
+      );
+    }
+    await delay(intervalMs);
+  }
+}
+
+function killChildTreeByPid(pid, signal) {
+  if (process.platform === "win32" || typeof pid !== "number") return;
+  spawnSync("pkill", [`-${signal}`, "-P", String(pid)], { stdio: "ignore" });
+}
+
+function startApp() {
+  if (shuttingDown || currentApp !== null) return;
+
+  const electronPath = require("electron");
+  const app = spawn(electronPath, [".", "--zurich-dev"], {
+    cwd: desktopDir,
+    env: { ...process.env },
+    stdio: "inherit",
+  });
+  currentApp = app;
+
+  app.once("error", () => {
+    if (currentApp === app) currentApp = null;
+    if (!shuttingDown) scheduleRestart();
+  });
+
+  app.once("exit", (code, signal) => {
+    if (currentApp === app) currentApp = null;
+    const abnormal = signal !== null || code !== 0;
+    if (!shuttingDown && !expectedExits.has(app) && abnormal) scheduleRestart();
+  });
+}
+
+async function stopApp() {
+  const app = currentApp;
+  if (!app) return;
+  currentApp = null;
+  expectedExits.add(app);
+
+  await new Promise((resolveStop) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      resolveStop();
+    };
+    app.once("exit", finish);
+    app.kill("SIGTERM");
+    killChildTreeByPid(app.pid, "TERM");
+    setTimeout(() => {
+      if (settled) return;
+      app.kill("SIGKILL");
+      killChildTreeByPid(app.pid, "KILL");
+      finish();
+    }, forcedShutdownTimeoutMs).unref();
+  });
+}
+
+function scheduleRestart() {
+  if (shuttingDown) return;
+  if (restartTimer) clearTimeout(restartTimer);
+  restartTimer = setTimeout(() => {
+    restartTimer = null;
+    restartQueue = restartQueue
+      .catch(() => undefined)
+      .then(async () => {
+        await stopApp();
+        if (!shuttingDown) startApp();
+      });
+  }, restartDebounceMs);
+}
+
+function startWatcher() {
+  const watchedFiles = new Set(["main.cjs", "preload.cjs"]);
+  return watch(join(desktopDir, "dist-electron"), { persistent: true }, (_event, filename) => {
+    if (typeof filename === "string" && watchedFiles.has(filename)) scheduleRestart();
+  });
+}
+
+async function shutdown(code) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  if (restartTimer) clearTimeout(restartTimer);
+  await stopApp();
+  process.exit(code);
+}
+
+await waitForResources();
+const watcher = startWatcher();
+startApp();
+
+const onSignal = (code) => () => {
+  watcher.close();
+  void shutdown(code);
+};
+process.once("SIGINT", onSignal(130));
+process.once("SIGTERM", onSignal(143));
+process.once("SIGHUP", onSignal(129));
