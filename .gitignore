@@ -38,3 +38,8 @@ yarn-error.log*
 # Misc
 .DS_Store
 *.pem
+
+# Local-only project data (Conductor workspace + private agent notes)
+.context
+.notes
+
