@@ -1,6 +1,12 @@
 import { RpcGroup } from "@effect/rpc";
 
 import { PingRpc } from "./ping.ts";
+import {
+  WorkspaceAddRpc,
+  WorkspaceListRpc,
+  WorkspacePickFolderRpc,
+  WorkspaceRemoveRpc,
+} from "./workspace.ts";
 
 /**
  * The single source of truth for every RPC method exposed by the main process.
@@ -8,7 +14,13 @@ import { PingRpc } from "./ping.ts";
  *
  * Add new RPCs by importing them here and including them in the group.
  */
-export const ForkzeroRpcs = RpcGroup.make(PingRpc);
+export const ForkzeroRpcs = RpcGroup.make(
+  PingRpc,
+  WorkspaceAddRpc,
+  WorkspaceListRpc,
+  WorkspaceRemoveRpc,
+  WorkspacePickFolderRpc,
+);
 export type ForkzeroRpcs = typeof ForkzeroRpcs;
 
 /**
