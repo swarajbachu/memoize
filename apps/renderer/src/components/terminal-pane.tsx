@@ -17,7 +17,7 @@ export function TerminalPane() {
 
   if (selected === null) {
     return (
-      <div className="flex h-full w-full items-center justify-center bg-[var(--color-bg)] text-sm text-[var(--color-fg-muted)]">
+      <div className="flex h-full w-full items-center justify-center bg-background text-sm text-muted-foreground">
         No folder selected. Add or pick a folder on the left.
       </div>
     );
@@ -25,6 +25,20 @@ export function TerminalPane() {
 
   // Force a fresh PTY when the folder changes by keying on folder.id.
   return <PtyTerminal key={selected.id} folder={selected} />;
+}
+
+// xterm's canvas/webgl renderer takes literal color strings, not CSS vars,
+// so we resolve our shadcn tokens to computed rgb() strings via a probe span.
+// `getComputedStyle().color` always returns a normalized rgb()/rgba() the
+// renderer can parse, regardless of whether the var is defined in oklch().
+function readToken(el: HTMLElement, cssVar: string, fallback: string): string {
+  const probe = document.createElement("span");
+  probe.style.color = `var(${cssVar})`;
+  probe.style.display = "none";
+  el.appendChild(probe);
+  const computed = getComputedStyle(probe).color;
+  probe.remove();
+  return computed || fallback;
 }
 
 function PtyTerminal({ folder }: { folder: Folder }) {
@@ -41,11 +55,16 @@ function PtyTerminal({ folder }: { folder: Folder }) {
       lineHeight: 1.3,
       cursorBlink: true,
       convertEol: false,
+      // Transparent canvas so the parent pane's `bg-background` shows through.
+      // This keeps the terminal in sync with theme changes without re-mounting.
+      allowTransparency: true,
       theme: {
-        background: "#0b0b0c",
-        foreground: "#e6e6e6",
-        cursor: "#7c8cf8",
-        selectionBackground: "#2c2c33",
+        background: "rgba(0, 0, 0, 0)",
+        foreground: readToken(container, "--foreground", "#e6e6e6"),
+        cursor: readToken(container, "--primary", "#e6e6e6"),
+        cursorAccent: readToken(container, "--background", "#0b0b0c"),
+        selectionBackground: readToken(container, "--accent", "#2c2c33"),
+        selectionForeground: readToken(container, "--accent-foreground", "#e6e6e6"),
       },
     });
     const fit = new FitAddon();
@@ -170,6 +189,6 @@ function PtyTerminal({ folder }: { folder: Folder }) {
   }, [folder.id, folder.path]);
 
   return (
-    <div ref={containerRef} className="h-full w-full bg-[var(--color-bg)] p-2" />
+    <div ref={containerRef} className="h-full w-full bg-background p-2" />
   );
 }

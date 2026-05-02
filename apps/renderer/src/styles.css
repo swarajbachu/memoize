@@ -1,13 +1,10 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/geist-mono";
 
-@theme {
-  --color-bg: #0b0b0c;
-  --color-bg-elevated: #131316;
-  --color-border: #26262b;
-  --color-fg: #e6e6e6;
-  --color-fg-muted: #8f8f95;
-  --color-accent: #7c8cf8;
-}
+@custom-variant dark (&:is(.dark *));
 
 html,
 body,
@@ -24,6 +21,253 @@ body,
   width: 8px;
 }
 .xterm-viewport::-webkit-scrollbar-thumb {
-  background: #2c2c33;
+  background: var(--bg-overlay);
   border-radius: 4px;
+}
+
+@theme inline {
+  --animate-skeleton: skeleton 2s -1s infinite linear;
+  --animate-caret-blink: 1s ease-out infinite caret-blink;
+  --animate-toast-success-odd: toast-success-odd 0.32s
+    cubic-bezier(0.5, 1, 0.89, 1);
+  --animate-toast-success-even: toast-success-even 0.32s
+    cubic-bezier(0.5, 1, 0.89, 1);
+  --animate-toast-error-odd: toast-error-odd 0.28s cubic-bezier(0.5, 1, 0.89, 1);
+  --animate-toast-error-even: toast-error-even 0.28s
+    cubic-bezier(0.5, 1, 0.89, 1);
+
+  --font-sans: "Inter Variable", "Inter", sans-serif;
+  --font-heading: "Inter Variable", "Inter", sans-serif;
+  --font-mono: "Geist Mono Variable", "Geist Mono", monospace;
+
+  /* Standard shadcn semantic tokens */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* Sidebar — used by the project sidebar + the shadcn ui/sidebar primitive */
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Forkzero extras: extra rungs on the surface ladder. The semantic shadcn
+     tokens (background → card → muted → accent) form a 4-step ramp; these
+     fill in the gaps for hover/elevated/popover-on-popover surfaces. */
+  --color-bg-subtle: var(--bg-subtle);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-bg-overlay: var(--bg-overlay);
+  --color-text-faint: var(--text-faint);
+
+  /* Charts — kept for the shadcn convention; unused right now. */
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+
+  @keyframes skeleton {
+    to {
+      background-position: -200% 0;
+    }
+  }
+  @keyframes caret-blink {
+    0%, 70%, to { opacity: 1; }
+    20%, 50% { opacity: 0; }
+  }
+  @keyframes toast-success-odd {
+    0% { scale: 1; }
+    30% { scale: 1.025; }
+    60% { scale: 0.99; }
+    100% { scale: 1; }
+  }
+  @keyframes toast-error-odd {
+    0% { translate: 0 0; }
+    25% { translate: -3px 0; }
+    50% { translate: 3px 0; }
+    75% { translate: -3px 0; }
+    100% { translate: 0 0; }
+  }
+  @keyframes toast-success-even {
+    0% { scale: 1; }
+    30% { scale: 1.025; }
+    60% { scale: 0.99; }
+    100% { scale: 1; }
+  }
+  @keyframes toast-error-even {
+    0% { translate: 0 0; }
+    25% { translate: -3px 0; }
+    50% { translate: 3px 0; }
+    75% { translate: -3px 0; }
+    100% { translate: 0 0; }
+  }
+}
+
+/* ---------- Light theme ---------- */
+/* Zinc-tinted neutrals (hue 286). Cool gray, no warm tint. Light mode
+   exists for parity / future toggle but we ship dark-by-default. */
+:root {
+  --radius: 0.625rem;
+
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.141 0.005 286);
+
+  --bg-subtle: oklch(0.985 0 0);
+  --bg-elevated: oklch(0.967 0.001 286);
+  --bg-overlay: oklch(0.92 0.004 286);
+  --text-faint: oklch(0.705 0.015 286);
+
+  --card: oklch(1 0 0);
+  --card-foreground: var(--foreground);
+  --popover: oklch(1 0 0);
+  --popover-foreground: var(--foreground);
+
+  --primary: oklch(0.21 0.006 286);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.967 0.001 286);
+  --secondary-foreground: var(--foreground);
+  --muted: oklch(0.967 0.001 286);
+  --muted-foreground: oklch(0.552 0.014 286);
+  --accent: oklch(0.967 0.001 286);
+  --accent-foreground: var(--foreground);
+
+  --destructive: oklch(0.577 0.245 27.3);
+  --destructive-foreground: oklch(0.985 0 0);
+  --success: oklch(0.696 0.17 162.5);
+  --success-foreground: oklch(0.985 0 0);
+  --warning: oklch(0.769 0.188 70.1);
+  --warning-foreground: oklch(0.21 0.006 286);
+  --info: oklch(0.623 0.214 259.8);
+  --info-foreground: oklch(0.985 0 0);
+
+  --border: oklch(0.92 0.004 286);
+  --input: oklch(0.92 0.004 286);
+  --ring: oklch(0.705 0.015 286);
+
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.141 0.005 286);
+  --sidebar-primary: oklch(0.21 0.006 286);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.967 0.001 286);
+  --sidebar-accent-foreground: oklch(0.21 0.006 286);
+  --sidebar-border: oklch(0.92 0.004 286);
+  --sidebar-ring: oklch(0.705 0.015 286);
+
+  --chart-1: oklch(0.646 0.222 41.1);
+  --chart-2: oklch(0.6 0.118 184.7);
+  --chart-3: oklch(0.398 0.07 227.4);
+  --chart-4: oklch(0.828 0.189 84.4);
+  --chart-5: oklch(0.769 0.188 70.1);
+}
+
+/* ---------- Dark theme (default) ---------- */
+/* Same zinc hue (286). Lightness ramp tuned softer than typical "OLED dark":
+     0.20   background      (body — soft, not pitch black)
+     0.235  bg-subtle       (sidebar bg behind translucency)
+     0.265  card / popover  (raised surfaces)
+     0.295  bg-elevated     (between card and accent)
+     0.33   muted/secondary/accent  (subtle bg, hover)
+     0.37   bg-overlay      (top-of-stack hover, scrollbars)
+
+   Text ladder: foreground → muted-foreground → text-faint */
+.dark {
+  --background: oklch(0.2 0.005 286);
+  --foreground: oklch(0.985 0 0);
+
+  --bg-subtle: oklch(0.235 0.005 286);
+  --bg-elevated: oklch(0.295 0.006 286);
+  --bg-overlay: oklch(0.37 0.008 286);
+  --text-faint: oklch(0.6 0.013 286);
+
+  --card: oklch(0.265 0.006 286);
+  --card-foreground: var(--foreground);
+  --popover: oklch(0.265 0.006 286);
+  --popover-foreground: var(--foreground);
+
+  --primary: oklch(0.92 0.004 286);
+  --primary-foreground: oklch(0.265 0.006 286);
+  --secondary: oklch(0.33 0.007 286);
+  --secondary-foreground: var(--foreground);
+  --muted: oklch(0.33 0.007 286);
+  --muted-foreground: oklch(0.74 0.014 286);
+  --accent: oklch(0.33 0.007 286);
+  --accent-foreground: var(--foreground);
+
+  --destructive: oklch(0.704 0.191 22.2);
+  --destructive-foreground: oklch(0.985 0 0);
+  --success: oklch(0.696 0.17 162.5);
+  --success-foreground: oklch(0.985 0 0);
+  --warning: oklch(0.769 0.188 70.1);
+  --warning-foreground: oklch(0.265 0.006 286);
+  --info: oklch(0.623 0.214 259.8);
+  --info-foreground: oklch(0.985 0 0);
+
+  --border: oklch(1 0 0 / 0.12);
+  --input: oklch(1 0 0 / 0.18);
+  --ring: oklch(0.59 0.014 286);
+
+  --sidebar: oklch(0.235 0.005 286);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.33 0.007 286);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: oklch(1 0 0 / 0.12);
+  --sidebar-ring: oklch(0.59 0.014 286);
+
+  --chart-1: oklch(0.546 0.245 262.9);
+  --chart-2: oklch(0.696 0.17 162.5);
+  --chart-3: oklch(0.769 0.188 70.1);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.4);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply text-foreground;
+    /* Transparent so the macOS BrowserWindow `vibrancy` shows the desktop
+       behind translucent panes (sidebar). Per-pane backgrounds in app.tsx +
+       components paint where opacity is needed. */
+    background-color: transparent;
+  }
+  code, kbd, samp, pre {
+    font-family: var(--font-mono);
+  }
 }

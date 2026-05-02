@@ -35,10 +35,10 @@ export function App() {
   }, []);
 
   return (
-    <div className="grid h-screen w-screen grid-cols-[240px_1fr_320px] bg-[var(--color-bg)] text-[var(--color-fg)]">
+    <div className="dark grid h-screen w-screen grid-cols-[240px_1fr_320px] text-foreground">
       <FolderSidebar />
-      <main className="flex min-w-0 flex-col border-x border-[var(--color-border)]">
-        <header className="flex h-9 items-center px-3 text-xs text-[var(--color-fg-muted)] [-webkit-app-region:drag]">
+      <main className="flex min-w-0 flex-col border-x border-border bg-background">
+        <header className="flex h-9 items-center px-3 text-xs text-muted-foreground [-webkit-app-region:drag]">
           <span className="ml-16 select-none truncate" title={selected?.path}>
             {selected ? selected.name : "no folder selected"}
           </span>
