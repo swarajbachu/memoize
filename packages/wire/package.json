@@ -1,5 +1,5 @@
 {
-  "name": "@forkzero/contracts",
+  "name": "@forkzero/wire",
   "version": "0.0.0",
   "private": true,
   "type": "module",

@@ -43,7 +43,7 @@ forkzero/
         store/              # Zustand stores backed by Effect Refs
         lib/desktop.ts      # Typed IPC client
   packages/
-    contracts/      # Effect Schemas shared between main and renderer
+    wire/           # @forkzero/wire — RPC contracts, schemas, branded IDs
       src/
         terminal.ts
         git.ts

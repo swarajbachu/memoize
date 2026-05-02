@@ -3,7 +3,7 @@ import { RpcSerialization, RpcServer } from "@effect/rpc";
 import type { WebContents } from "electron";
 import { Layer } from "effect";
 
-import { ForkzeroRpcs } from "@forkzero/contracts";
+import { ForkzeroRpcs } from "@forkzero/wire";
 
 import { electronServerProtocolLayer } from "./ipc/electron-server-protocol.ts";
 import { PingHandlersLayer } from "./services/ping/handlers.ts";

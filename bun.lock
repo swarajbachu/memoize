@@ -17,7 +17,7 @@
         "@effect/platform": "^0.96.0",
         "@effect/platform-node": "^0.106.0",
         "@effect/rpc": "^0.75.0",
-        "@forkzero/contracts": "*",
+        "@forkzero/wire": "*",
         "effect": "^3.21.0",
         "electron": "^33.2.0",
       },
@@ -52,7 +52,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@effect/rpc": "^0.75.0",
-        "@forkzero/contracts": "*",
+        "@forkzero/wire": "*",
         "@xterm/addon-fit": "^0.10.0",
         "@xterm/xterm": "^5.5.0",
         "clsx": "^2.1.1",
@@ -71,18 +71,6 @@
         "tailwindcss": "^4.0.0",
         "typescript": "5.9.2",
         "vite": "^6.0.0",
-      },
-    },
-    "packages/contracts": {
-      "name": "@forkzero/contracts",
-      "version": "0.0.0",
-      "dependencies": {
-        "@effect/rpc": "^0.75.0",
-        "effect": "^3.21.0",
-      },
-      "devDependencies": {
-        "@repo/typescript-config": "*",
-        "typescript": "5.9.2",
       },
     },
     "packages/eslint-config": {
@@ -120,6 +108,18 @@
         "@types/react": "19.2.2",
         "@types/react-dom": "19.2.2",
         "eslint": "^9.39.1",
+        "typescript": "5.9.2",
+      },
+    },
+    "packages/wire": {
+      "name": "@forkzero/wire",
+      "version": "0.0.0",
+      "dependencies": {
+        "@effect/rpc": "^0.75.0",
+        "effect": "^3.21.0",
+      },
+      "devDependencies": {
+        "@repo/typescript-config": "*",
         "typescript": "5.9.2",
       },
     },
@@ -257,7 +257,7 @@
 
     "@eslint/plugin-kit": ["@eslint/plugin-kit@0.4.1", "", { "dependencies": { "@eslint/core": "^0.17.0", "levn": "^0.4.1" } }, "sha512-43/qtrDUokr7LJqoF2c3+RInu/t4zfrpYdoSDfYyhg52rwLV6TnOvdG4fXm7IkSB3wErkcmJS9iEhjVtOSEjjA=="],
 
-    "@forkzero/contracts": ["@forkzero/contracts@workspace:packages/contracts"],
+    "@forkzero/wire": ["@forkzero/wire@workspace:packages/wire"],
 
     "@humanfs/core": ["@humanfs/core@0.19.2", "", { "dependencies": { "@humanfs/types": "^0.15.0" } }, "sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA=="],
 

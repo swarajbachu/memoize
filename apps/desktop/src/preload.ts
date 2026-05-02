@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 
-import { IPC_CHANNEL } from "@forkzero/contracts";
+import { IPC_CHANNEL } from "@forkzero/wire";
 
 /**
  * Preload bridge — the only seam between the renderer and the main process.

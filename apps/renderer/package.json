@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@effect/rpc": "^0.75.0",
-    "@forkzero/contracts": "*",
+    "@forkzero/wire": "*",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0",
     "clsx": "^2.1.1",

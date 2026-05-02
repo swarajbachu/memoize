@@ -1,7 +1,7 @@
 import { RpcClient, RpcGroup, RpcSerialization } from "@effect/rpc";
 import { Effect, Layer, ManagedRuntime, Scope } from "effect";
 
-import { ForkzeroRpcs } from "@forkzero/contracts";
+import { ForkzeroRpcs } from "@forkzero/wire";
 
 import { getBridge } from "./bridge.ts";
 import { electronClientProtocolLayer } from "./electron-client-protocol.ts";

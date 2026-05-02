@@ -1,4 +1,4 @@
-import { ForkzeroRpcs, PingResult } from "@forkzero/contracts";
+import { ForkzeroRpcs, PingResult } from "@forkzero/wire";
 import { Effect } from "effect";
 
 /**
