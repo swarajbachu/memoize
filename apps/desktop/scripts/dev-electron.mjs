@@ -16,10 +16,12 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const desktopDir = resolve(__dirname, "..");
 const require = createRequire(import.meta.url);
 
-const devServerUrl = process.env.VITE_DEV_SERVER_URL?.trim();
-if (!devServerUrl) {
-  throw new Error("VITE_DEV_SERVER_URL is required for desktop development");
-}
+// Default matches apps/renderer/vite.config.ts. waitForResources() below polls
+// the port until vite comes up, so the boot order across `bun run dev` (turbo
+// runs renderer + desktop in parallel) and `bun run dev:desktop` (the root
+// orchestrator script) both work without explicit synchronization.
+const devServerUrl =
+  process.env.VITE_DEV_SERVER_URL?.trim() || "http://localhost:5733";
 const devServer = new URL(devServerUrl);
 const devPort = Number.parseInt(devServer.port, 10);
 if (!Number.isInteger(devPort) || devPort <= 0) {
@@ -89,9 +91,11 @@ function startApp() {
   if (shuttingDown || currentApp !== null) return;
 
   const electronPath = require("electron");
-  const app = spawn(electronPath, [".", "--zurich-dev"], {
+  const app = spawn(electronPath, [".", "--forkzero-dev"], {
     cwd: desktopDir,
-    env: { ...process.env },
+    // Pass the resolved dev URL through explicitly so main.ts sees it even
+    // when bun/turbo invoked us without setting the env var.
+    env: { ...process.env, VITE_DEV_SERVER_URL: devServerUrl },
     stdio: "inherit",
   });
   currentApp = app;
