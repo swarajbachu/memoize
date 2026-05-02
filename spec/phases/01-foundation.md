@@ -144,6 +144,6 @@ export const GitStatusSummary = Schema.Struct({
 
 ## Risks
 
-- **Effect learning curve.** Mitigation: Phase 1 uses Effect for service definition + Layer wiring + Schema, but defers Streams across IPC if it bogs down. We can serialize streams as polling in the worst case.
+- **Effect learning curve.** Mitigation: Phase 1 uses Effect for service definition + Layer wiring + Schema. Effect RPC (`@effect/rpc`) is wired from day 1 via a custom `RpcServer.Protocol` / `RpcClient.Protocol` over Electron IPC, so streaming RPCs (PTY output, git events) need no extra plumbing later.
 - **node-pty native build issues.** Mitigation: pin Electron version; use `electron-rebuild` in postinstall.
 - **Vite + Electron preload sandboxing gotchas.** Mitigation: keep preload minimal; do all logic in main.
