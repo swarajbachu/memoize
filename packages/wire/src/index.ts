@@ -1,3 +1,4 @@
+export * from "./git.ts";
 export * from "./ids.ts";
 export * from "./ping.ts";
 export * from "./pty.ts";

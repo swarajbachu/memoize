@@ -13,7 +13,16 @@ type WorkspaceState = {
   load: () => Promise<void>;
   add: () => Promise<void>;
   remove: (folderId: FolderId) => Promise<void>;
-  select: (folderId: FolderId) => void;
+  select: (folderId: FolderId) => Promise<void>;
+};
+
+const persistSelection = async (folderId: FolderId | null): Promise<void> => {
+  try {
+    const client = await getRpcClient();
+    await Effect.runPromise(client.workspace.setSelected({ folderId }));
+  } catch {
+    // best-effort persistence; the in-memory store already updated
+  }
 };
 
 const formatError = (err: unknown): string => {
@@ -33,15 +42,21 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const client = await getRpcClient();
-      const folders = await Effect.runPromise(client.workspace.list({}));
-      // Auto-select the first folder if nothing is selected yet.
-      const { selectedFolderId } = get();
+      const [folders, persisted] = await Promise.all([
+        Effect.runPromise(client.workspace.list({})),
+        Effect.runPromise(client.workspace.getSelected({})),
+      ]);
+      // Prefer the persisted selection if its folder still exists; otherwise
+      // pick the first folder so the UI is never in a "have folders, none
+      // selected" limbo on cold start.
       const selected =
-        selectedFolderId !== null &&
-        folders.some((f) => f.id === selectedFolderId)
-          ? selectedFolderId
+        persisted !== null && folders.some((f) => f.id === persisted)
+          ? persisted
           : (folders[0]?.id ?? null);
       set({ folders, selectedFolderId: selected, loading: false });
+      // If we fell back to first-folder, persist that so the next launch
+      // restores the same one without re-running the fallback.
+      if (selected !== persisted) await persistSelection(selected);
     } catch (err) {
       set({ error: formatError(err), loading: false });
     }
@@ -57,6 +72,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         folders: [...s.folders, folder],
         selectedFolderId: folder.id,
       }));
+      await persistSelection(folder.id);
     } catch (err) {
       set({ error: formatError(err) });
     }
@@ -66,17 +82,24 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     try {
       const client = await getRpcClient();
       await Effect.runPromise(client.workspace.remove({ folderId }));
-      set((s) => {
+      const nextSelected = (() => {
+        const s = get();
         const folders = s.folders.filter((f) => f.id !== folderId);
         const selectedFolderId =
           s.selectedFolderId === folderId
             ? (folders[0]?.id ?? null)
             : s.selectedFolderId;
-        return { folders, selectedFolderId };
-      });
+        set({ folders, selectedFolderId });
+        return { selectedFolderId, changed: s.selectedFolderId === folderId };
+      })();
+      if (nextSelected.changed) await persistSelection(nextSelected.selectedFolderId);
     } catch (err) {
       set({ error: formatError(err) });
     }
   },
-  select: (folderId) => set({ selectedFolderId: folderId }),
+  select: async (folderId) => {
+    if (get().selectedFolderId === folderId) return;
+    set({ selectedFolderId: folderId });
+    await persistSelection(folderId);
+  },
 }));

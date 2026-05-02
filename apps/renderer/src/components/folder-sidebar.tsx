@@ -53,11 +53,11 @@ export function FolderSidebar() {
               <div
                 role="button"
                 tabIndex={0}
-                onClick={() => select(folder.id)}
+                onClick={() => void select(folder.id)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
-                    select(folder.id);
+                    void select(folder.id);
                   }
                 }}
                 className={`group flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 ${

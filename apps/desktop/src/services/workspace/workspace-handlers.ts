@@ -32,9 +32,21 @@ const PickFolder = ForkzeroRpcs.toLayerHandler("workspace.pickFolder", () =>
   ),
 );
 
+const GetSelected = ForkzeroRpcs.toLayerHandler("workspace.getSelected", () =>
+  Effect.flatMap(WorkspaceService, (ws) => ws.getSelected()),
+);
+
+const SetSelected = ForkzeroRpcs.toLayerHandler(
+  "workspace.setSelected",
+  ({ folderId }) =>
+    Effect.flatMap(WorkspaceService, (ws) => ws.setSelected(folderId)),
+);
+
 export const WorkspaceHandlersLayer = Layer.mergeAll(
   Add,
   List,
   Remove,
   PickFolder,
+  GetSelected,
+  SetSelected,
 );

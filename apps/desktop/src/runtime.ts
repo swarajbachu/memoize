@@ -7,6 +7,8 @@ import { ForkzeroRpcs } from "@forkzero/wire";
 
 import { AppPaths } from "./app-paths.ts";
 import { electronServerProtocolLayer } from "./ipc/electron-server-protocol.ts";
+import { GitHandlersLayer } from "./services/git/git-handlers.ts";
+import { GitService } from "./services/git/git-service.ts";
 import { PingHandlersLayer } from "./services/ping/handlers.ts";
 import { PtyHandlersLayer } from "./services/pty/pty-handlers.ts";
 import { PtyService } from "./services/pty/pty-service.ts";
@@ -32,11 +34,23 @@ export const makeMainLayer = (webContents: WebContents, userData: string) => {
     Layer.provide(AppPathsLayer),
   );
 
+  // GitService yields WorkspaceService for folderId → path resolution and
+  // CommandExecutor (via NodeContext) for spawning git. Provide both.
+  const GitLayer = GitService.Default.pipe(
+    Layer.provide(WorkspaceLayer),
+    Layer.provide(NodeContext.layer),
+  );
+
   const HandlersLayer = Layer.mergeAll(
     PingHandlersLayer,
     WorkspaceHandlersLayer,
     PtyHandlersLayer,
-  ).pipe(Layer.provide(WorkspaceLayer), Layer.provide(PtyService.Default));
+    GitHandlersLayer,
+  ).pipe(
+    Layer.provide(WorkspaceLayer),
+    Layer.provide(PtyService.Default),
+    Layer.provide(GitLayer),
+  );
 
   const ServerLayer = RpcServer.layer(ForkzeroRpcs).pipe(
     Layer.provide(HandlersLayer),
