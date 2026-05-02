@@ -10,9 +10,12 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
+    "@effect/rpc": "^0.75.0",
+    "@forkzero/wire": "*",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0",
     "clsx": "^2.1.1",
+    "effect": "^3.21.0",
     "lucide-react": "^0.468.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

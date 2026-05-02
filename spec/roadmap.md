@@ -10,7 +10,7 @@ Make the scaffold real. By the end you can pick a folder, run a real shell in it
 - Real PTY terminal per folder (one terminal per folder in this phase)
 - Real `git log` + status pane
 - Effect runtime + Layer architecture in both processes
-- Typed IPC contracts in `packages/contracts`
+- Typed IPC contracts in `packages/wire`
 
 → See [phases/01-foundation.md](phases/01-foundation.md)
 

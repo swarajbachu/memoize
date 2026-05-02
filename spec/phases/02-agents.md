@@ -64,7 +64,7 @@ type AgentEvent =
 ## IPC contracts
 
 ```ts
-// agent.ts (in packages/contracts)
+// agent.ts (in packages/wire)
 export const AgentAvailability = Schema.Struct({
   id: Schema.Literal("claude", "codex"),
   cliInstalled: Schema.Boolean,

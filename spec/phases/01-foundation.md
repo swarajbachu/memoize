@@ -42,7 +42,7 @@
 - **Polling, not fs-watch, for git.** Poll `git log -1 --format=%H` every 2s on the active folder. Only re-fetch full log when HEAD changes. Cheap, robust, no native dependencies.
 - **PTY scrollback not persisted** in this phase. Phase 3 adds it.
 
-## IPC contracts (in `packages/contracts/`)
+## IPC contracts (in `packages/wire/`)
 
 ```ts
 // workspace.ts
@@ -114,7 +114,7 @@ export const GitStatusSummary = Schema.Struct({
 - **Create**: `apps/desktop/src/services/workspace/` — `WorkspaceService` Effect Layer
 - **Create**: `apps/desktop/src/ipc/channels.ts` — channel registration table
 - **Create**: `apps/desktop/src/ipc/handlers.ts` — Layer that registers handlers
-- **Create**: `packages/contracts/` — new package with all schemas above
+- **Create**: `packages/wire/` — new package with all schemas above
 - **Modify**: `apps/renderer/src/components/sidebar.tsx` — wire to `workspace:*`
 - **Modify**: `apps/renderer/src/components/terminal-pane.tsx` — replace local echo with PTY
 - **Modify**: `apps/renderer/src/components/git-history-pane.tsx` — replace mock with `git:log`
@@ -144,6 +144,6 @@ export const GitStatusSummary = Schema.Struct({
 
 ## Risks
 
-- **Effect learning curve.** Mitigation: Phase 1 uses Effect for service definition + Layer wiring + Schema, but defers Streams across IPC if it bogs down. We can serialize streams as polling in the worst case.
+- **Effect learning curve.** Mitigation: Phase 1 uses Effect for service definition + Layer wiring + Schema. Effect RPC (`@effect/rpc`) is wired from day 1 via a custom `RpcServer.Protocol` / `RpcClient.Protocol` over Electron IPC, so streaming RPCs (PTY output, git events) need no extra plumbing later.
 - **node-pty native build issues.** Mitigation: pin Electron version; use `electron-rebuild` in postinstall.
 - **Vite + Electron preload sandboxing gotchas.** Mitigation: keep preload minimal; do all logic in main.
