@@ -1,5 +1,6 @@
 import { RpcGroup } from "@effect/rpc";
 
+import { GitHeadChangedRpc, GitLogRpc, GitStatusRpc } from "./git.ts";
 import { PingRpc } from "./ping.ts";
 import {
   PtyCloseRpc,
@@ -10,9 +11,11 @@ import {
 } from "./pty.ts";
 import {
   WorkspaceAddRpc,
+  WorkspaceGetSelectedRpc,
   WorkspaceListRpc,
   WorkspacePickFolderRpc,
   WorkspaceRemoveRpc,
+  WorkspaceSetSelectedRpc,
 } from "./workspace.ts";
 
 /**
@@ -27,11 +30,16 @@ export const ForkzeroRpcs = RpcGroup.make(
   WorkspaceListRpc,
   WorkspaceRemoveRpc,
   WorkspacePickFolderRpc,
+  WorkspaceGetSelectedRpc,
+  WorkspaceSetSelectedRpc,
   PtyOpenRpc,
   PtyWriteRpc,
   PtyResizeRpc,
   PtyCloseRpc,
   PtyOutputRpc,
+  GitLogRpc,
+  GitStatusRpc,
+  GitHeadChangedRpc,
 );
 export type ForkzeroRpcs = typeof ForkzeroRpcs;
 

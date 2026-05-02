@@ -46,3 +46,13 @@ export const WorkspacePickFolderRpc = Rpc.make("workspace.pickFolder", {
   payload: Schema.Struct({}),
   success: Schema.NullOr(Schema.String),
 });
+
+export const WorkspaceGetSelectedRpc = Rpc.make("workspace.getSelected", {
+  payload: Schema.Struct({}),
+  success: Schema.NullOr(FolderId),
+});
+
+export const WorkspaceSetSelectedRpc = Rpc.make("workspace.setSelected", {
+  payload: Schema.Struct({ folderId: Schema.NullOr(FolderId) }),
+  success: Schema.Void,
+});
