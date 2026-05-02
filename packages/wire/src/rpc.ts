@@ -2,6 +2,13 @@ import { RpcGroup } from "@effect/rpc";
 
 import { PingRpc } from "./ping.ts";
 import {
+  PtyCloseRpc,
+  PtyOpenRpc,
+  PtyOutputRpc,
+  PtyResizeRpc,
+  PtyWriteRpc,
+} from "./pty.ts";
+import {
   WorkspaceAddRpc,
   WorkspaceListRpc,
   WorkspacePickFolderRpc,
@@ -20,6 +27,11 @@ export const ForkzeroRpcs = RpcGroup.make(
   WorkspaceListRpc,
   WorkspaceRemoveRpc,
   WorkspacePickFolderRpc,
+  PtyOpenRpc,
+  PtyWriteRpc,
+  PtyResizeRpc,
+  PtyCloseRpc,
+  PtyOutputRpc,
 );
 export type ForkzeroRpcs = typeof ForkzeroRpcs;
 

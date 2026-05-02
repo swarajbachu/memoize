@@ -8,6 +8,8 @@ import { ForkzeroRpcs } from "@forkzero/wire";
 import { AppPaths } from "./app-paths.ts";
 import { electronServerProtocolLayer } from "./ipc/electron-server-protocol.ts";
 import { PingHandlersLayer } from "./services/ping/handlers.ts";
+import { PtyHandlersLayer } from "./services/pty/pty-handlers.ts";
+import { PtyService } from "./services/pty/pty-service.ts";
 import { WorkspaceHandlersLayer } from "./services/workspace/workspace-handlers.ts";
 import { WorkspaceService } from "./services/workspace/workspace-service.ts";
 
@@ -33,7 +35,8 @@ export const makeMainLayer = (webContents: WebContents, userData: string) => {
   const HandlersLayer = Layer.mergeAll(
     PingHandlersLayer,
     WorkspaceHandlersLayer,
-  ).pipe(Layer.provide(WorkspaceLayer));
+    PtyHandlersLayer,
+  ).pipe(Layer.provide(WorkspaceLayer), Layer.provide(PtyService.Default));
 
   const ServerLayer = RpcServer.layer(ForkzeroRpcs).pipe(
     Layer.provide(HandlersLayer),
