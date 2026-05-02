@@ -11,17 +11,17 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
-    "@effect/platform": "^0.96.0",
-    "@effect/platform-node": "^0.106.0",
-    "@effect/rpc": "^0.75.0",
+    "@effect/platform": "catalog:",
+    "@effect/platform-node": "catalog:",
+    "@effect/rpc": "catalog:",
     "@forkzero/wire": "*",
-    "effect": "^3.21.0",
+    "effect": "catalog:",
     "electron": "^33.2.0"
   },
   "devDependencies": {
     "@repo/typescript-config": "*",
-    "@types/node": "^22.15.3",
+    "@types/node": "catalog:",
     "tsdown": "^0.21.10",
-    "typescript": "5.9.2"
+    "typescript": "catalog:"
   }
 }

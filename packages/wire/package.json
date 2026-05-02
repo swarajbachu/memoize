@@ -16,11 +16,11 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
-    "@effect/rpc": "^0.75.0",
-    "effect": "^3.21.0"
+    "@effect/rpc": "catalog:",
+    "effect": "catalog:"
   },
   "devDependencies": {
     "@repo/typescript-config": "*",
-    "typescript": "5.9.2"
+    "typescript": "catalog:"
   }
 }
