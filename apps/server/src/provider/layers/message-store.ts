@@ -520,6 +520,18 @@ export const MessageStoreLive = Layer.scoped(
           text,
         });
         yield* broadcastMessage(sessionId, persisted);
+        // Auto-title: if the session is still on its placeholder title, derive
+        // one from the user's first real message. Cheaper and more accurate
+        // than a separate LLM summarization step.
+        if (session.title === "New chat") {
+          const derived = titleFromInitial(text);
+          if (derived !== "New chat") {
+            yield* sql`
+              UPDATE sessions SET title = ${derived}
+              WHERE id = ${sessionId} AND title = 'New chat'
+            `.pipe(Effect.orDie);
+          }
+        }
         // First attempt: push into the existing provider session. If that
         // session is gone (provider dropped it across an app restart) start
         // a fresh one under the same id, then push.

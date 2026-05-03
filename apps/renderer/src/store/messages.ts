@@ -4,6 +4,7 @@ import { create } from "zustand";
 import type { Message, SessionId } from "@forkzero/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
+import { useSessionsStore } from "./sessions.ts";
 
 /**
  * Live view of one session's message log. Subscribes to `messages.stream`
@@ -91,6 +92,9 @@ export const useMessagesStore = create<MessagesState>((set, _get) => ({
     try {
       const client = await getRpcClient();
       await Effect.runPromise(client.messages.send({ sessionId, text }));
+      // The server auto-titles the session from the first user message. Pull
+      // the freshly-titled row so the sidebar updates without a full reload.
+      void useSessionsStore.getState().refreshOne(sessionId);
     } catch (err) {
       set((s) => ({
         errorBySession: {
