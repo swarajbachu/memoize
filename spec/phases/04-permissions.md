@@ -1,12 +1,14 @@
-# Phase 3 — Permissions & sessions
+# Phase 4 — Permissions & quality
 
-**Goal**: agents become trustworthy enough to leave running unattended.
+**Goal**: agents become trustworthy enough to leave running unattended. Add the missing UX around the chat MVP (real permission prompts, inline diffs, resume).
 
 **Status**: 📐 Spec
 
 **Estimate**: ~2 weeks
 
-**Depends on**: Phase 2
+**Depends on**: Phase 3 (chat MVP)
+
+> **Note:** Renumbered from "Phase 3" when the chat-first pivot inserted the new Phase 3. Session persistence moved up into Phase 3 (it's foundational to the chat UI). What's left here is permissions UI, inline diff rendering, resume of interrupted turns, and NDJSON transcript export.
 
 ## Deliverables
 

@@ -2,35 +2,62 @@
 
 ## What forkzero is
 
-A desktop app where coding agents are first-class citizens. The terminal is the main canvas. You add folders to a sidebar, open one, and either type into the terminal yourself or hand the keyboard to an agent. Git history of the open project is always visible alongside.
+A desktop app for working with coding agents (Claude Code, Codex) chat-first. You add a project to the sidebar, open a session, and chat with an agent that has full access to that project's files. The agent does the work; you review the diff. A file tree and a real terminal sit on the right so you can run `pnpm dev`, `tsc --noEmit`, or `ls` without leaving the app.
+
+The mental model is closer to Cursor's "Composer" or T3 Chat, not VS Code. The chat is the canvas; the file tree and terminal are tools you reach for when needed.
 
 ## What forkzero is not
 
-- Not a full IDE. We do not own the editor surface — open files in your editor of choice.
-- Not a chat app. Conversations happen inside terminals or agent panels, not in a separate "chat" UI.
-- Not cloud. Everything runs on the user's machine; agent credentials stay local.
-- Not multi-user / collaborative. Single-user desktop tool.
+- **Not an editor.** We don't own the editor surface. Open files in your editor of choice; forkzero shows file contents inline in chat, but doesn't let you edit them in-app.
+- **Not a terminal-first tool.** The terminal is on the right panel, available, but it's not the primary surface. If you want a terminal-first agent UX, use Claude Code or Codex CLI directly.
+- **Not cloud.** Sessions, messages, credentials live on disk. No telemetry without opt-in.
+- **Not multi-user / collaborative.** Single-user desktop tool.
 
 ## Target user
 
 A developer who:
-- Already uses Claude Code / Codex CLI from a terminal
-- Wants to run agents in parallel across multiple repos without juggling tmux panes
-- Wants to see what the agent did (git diff, log) without leaving the app
-- Is comfortable with the command line — we optimize for keyboard, not mouse
+- Already pays for / uses Claude Code, Codex, or both
+- Wants chat-first agent interaction (read assistant prose, expand tool calls inline) over a terminal stream
+- Runs many projects, wants per-project session history that persists across restart, and wants to archive sessions instead of deleting them
+- Needs a real terminal occasionally (run dev server, run a script, sanity-check a path) but doesn't live in it
 
 ## Principles
 
-1. **Terminal first.** Every feature must coexist with "I just want to type into a shell." Don't hide the prompt behind UI.
-2. **Local by default.** No telemetry without an explicit opt-in. No cloud features in v1.
-3. **Open formats.** Sessions, history, and config stored as files a user can read and back up.
-4. **One way to do each thing.** Resist configuration sprawl; pick a default, document the why.
-5. **Boring tech where possible.** Effect.ts is the one ambitious choice — everything else is the obvious option.
+1. **Chat-first.** The center of the screen is a message timeline + composer. Tool calls render inline as collapsible blocks. Markdown + code is rendered, not raw.
+2. **One project, many sessions.** Each project has a list of sessions (active + archived). Sessions persist; closing the app does not lose them.
+3. **Local by default.** SQLite on disk, keychain for credentials, no telemetry without opt-in.
+4. **Open formats.** Sessions and messages live in a SQLite database the user can read with `sqlite3`. Credentials in the OS keychain.
+5. **One way to do each thing.** Resist configuration sprawl. Pick a default, document the why.
+6. **Boring tech where possible.** Effect.ts + SQLite + React. No bespoke databases, no custom protocols.
+
+## Layout (MVP)
+
+```
+┌────────────────┬────────────────────────────────┬──────────────────┐
+│  Projects      │  Chat                          │  Files / Terminal│
+│  └ Project A   │  ┌──────────────────────────┐  │  ┌─────────────┐ │
+│    ├ session 1 │  │ assistant: Sure, I'll... │  │  │ src/        │ │
+│    ├ session 2 │  │   ▸ tool: read_file …    │  │  │ ├ index.ts  │ │
+│    └ archived  │  │   ▸ tool: edit_file …    │  │  │ └ …         │ │
+│  └ Project B   │  │ user: actually, …        │  │  ├─────────────┤ │
+│    └ session 1 │  └──────────────────────────┘  │  │ $ pnpm dev  │ │
+│  + New project │  ┌──────────────────────────┐  │  │ Listening … │ │
+│                │  │ [model: claude-opus-4.7]│  │  └─────────────┘ │
+│                │  │ Type a message…         │  │                  │
+│                │  └──────────────────────────┘  │                  │
+└────────────────┴────────────────────────────────┴──────────────────┘
+```
+
+Left: workspace + sessions (persisted, archivable, "+ new session" button).
+Center: chat timeline + composer. Composer has a model picker.
+Right: tabbed pane — **Files** (read-only file tree of the project) and **Terminal** (a real PTY that opens in the project root). Right pane is collapsible.
 
 ## Non-goals (v1)
 
-- Plugin/extension system
-- Multiple windows or detachable panes
+- In-app code editor / file editing
+- Plugin / extension system
+- Multiple windows / detachable panes
 - Remote / SSH workspaces
-- Built-in code editor
 - Cloud sync of sessions
+- Collaboration / shared sessions
+- Mobile / web client (architecture supports it post-1.0; not on the v1 roadmap)

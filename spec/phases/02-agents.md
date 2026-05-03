@@ -1,8 +1,10 @@
-# Phase 2 — Agents
+# Phase 2 — Agents (backend)
 
 **Goal**: running an agent in a folder is a first-class action. Two modes: spawn the CLI in the terminal (works for everything) or use the SDK with a structured side panel.
 
-**Status**: 📐 Spec
+**Status**: ✅ Backend shipped. UI shell (Cmd+K launcher + single right-side timeline panel) is **superseded by [Phase 3 — Chat-first MVP](03-chat-mvp.md)**. The backend (provider availability, credentials, Claude/Codex SDK adapters, `agent.events` stream) is reused unchanged in Phase 3.
+
+> **Heads up:** This file describes the original terminal-first plan. It is kept for history. The current product direction is chat-first — see `vision.md` and `phases/03-chat-mvp.md`.
 
 **Estimate**: ~4 weeks
 

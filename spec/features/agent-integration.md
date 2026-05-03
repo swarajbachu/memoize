@@ -1,5 +1,7 @@
 # Feature: Agent integration
 
+> **UI surface updated for Phase 3.** Spawn-CLI mode (Cmd+K → "Run Claude (CLI)") is dropped from the v1 UI — the chat surface only drives SDK mode. The CLI is still reachable from the right-pane terminal (a user can manually run `claude` or `codex` there). The adapter contract below describes the SDK path, which is the only path the chat surface uses.
+
 Two modes per provider: spawn-CLI (always available if installed) and SDK (structured experience).
 
 ## Adapter contract
