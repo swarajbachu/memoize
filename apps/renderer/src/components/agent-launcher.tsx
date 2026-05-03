@@ -31,6 +31,7 @@ export function AgentLauncher() {
   const refresh = useAgentsStore((s) => s.refresh);
   const availability = useAgentsStore((s) => s.availability);
   const launch = useAgentsStore((s) => s.launch);
+  const startSdk = useAgentsStore((s) => s.startSdk);
   const openCredentials = useAgentsStore((s) => s.setCredentialsOpen);
   const selectedFolderId = useWorkspaceStore((s) => s.selectedFolderId);
   const folders = useWorkspaceStore((s) => s.folders);
@@ -63,6 +64,11 @@ export function AgentLauncher() {
     launch(selected.id, avail);
   };
 
+  const onPickSdk = (avail: AgentAvailability) => {
+    if (!avail.sdkConfigured || selected === null) return;
+    void startSdk(selected.id, avail.providerId);
+  };
+
   const onOpenCredentials = () => {
     setOpen(false);
     openCredentials(true);
@@ -85,8 +91,8 @@ export function AgentLauncher() {
                     : `Install ${avail.displayName}`;
                   return (
                     <CommandItem
-                      key={avail.providerId}
-                      value={`run-${avail.providerId}-${label}`}
+                      key={`cli-${avail.providerId}`}
+                      value={`run-cli-${avail.providerId}-${label}`}
                       onClick={() => onPick(avail)}
                       className={
                         installed ? undefined : "text-muted-foreground"
@@ -103,6 +109,33 @@ export function AgentLauncher() {
                     </CommandItem>
                   );
                 })}
+                {availability
+                  .filter((a) => a.providerId === "claude")
+                  .map((avail) => {
+                    const ready = avail.sdkConfigured;
+                    const label = `${avail.displayName} (SDK)`;
+                    return (
+                      <CommandItem
+                        key={`sdk-${avail.providerId}`}
+                        value={`run-sdk-${avail.providerId}-${label}`}
+                        onClick={() => {
+                          if (ready) {
+                            onPickSdk(avail);
+                          } else {
+                            setOpen(false);
+                            openCredentials(true);
+                          }
+                        }}
+                        className={ready ? undefined : "text-muted-foreground"}
+                      >
+                        <Sparkles className="size-4" />
+                        <span className="flex-1">{label}</span>
+                        <CommandShortcut>
+                          {ready ? "ready" : "set API key"}
+                        </CommandShortcut>
+                      </CommandItem>
+                    );
+                  })}
               </CommandGroup>
               <CommandSeparator />
               <CommandGroup>

@@ -1,5 +1,5 @@
 import { CredentialStoreError, ForkzeroRpcs, type ProviderId } from "@forkzero/wire";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Stream } from "effect";
 
 import { ProviderService } from "./services/provider-service.ts";
 
@@ -32,4 +32,36 @@ const SetCredential = ForkzeroRpcs.toLayerHandler(
     ),
 );
 
-export const ProviderHandlersLayer = Layer.mergeAll(Availability, SetCredential);
+const Start = ForkzeroRpcs.toLayerHandler("agent.start", (input) =>
+  Effect.flatMap(ProviderService, (svc) => svc.start(input)),
+);
+
+const Send = ForkzeroRpcs.toLayerHandler("agent.send", ({ sessionId, text }) =>
+  Effect.flatMap(ProviderService, (svc) => svc.send(sessionId, text)),
+);
+
+const Interrupt = ForkzeroRpcs.toLayerHandler(
+  "agent.interrupt",
+  ({ sessionId, turnId }) =>
+    Effect.flatMap(ProviderService, (svc) => svc.interrupt(sessionId, turnId)),
+);
+
+const Close = ForkzeroRpcs.toLayerHandler("agent.close", ({ sessionId }) =>
+  Effect.flatMap(ProviderService, (svc) => svc.close(sessionId)),
+);
+
+const Events = ForkzeroRpcs.toLayerHandler("agent.events", ({ sessionId }) =>
+  Stream.unwrap(
+    Effect.map(ProviderService, (svc) => svc.events(sessionId)),
+  ),
+);
+
+export const ProviderHandlersLayer = Layer.mergeAll(
+  Availability,
+  SetCredential,
+  Start,
+  Send,
+  Interrupt,
+  Close,
+  Events,
+);

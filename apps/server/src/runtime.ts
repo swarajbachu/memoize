@@ -55,10 +55,12 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(NodeContext.layer),
   );
 
-  // ProviderService probes installed CLIs via CommandExecutor and consults
-  // CredentialsService to compute `sdkConfigured` per provider.
+  // ProviderService probes installed CLIs via CommandExecutor, consults
+  // CredentialsService for SDK keys, and resolves folderId → cwd via
+  // WorkspaceService when starting a Claude SDK session.
   const ProviderLayer = ProviderServiceLive.pipe(
     Layer.provide(CredentialsServiceLive),
+    Layer.provide(WorkspaceLayer),
     Layer.provide(NodeContext.layer),
   );
 
