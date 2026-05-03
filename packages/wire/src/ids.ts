@@ -10,3 +10,12 @@ export type FolderId = typeof FolderId.Type;
 
 export const PtyId = makeEntityId("PtyId");
 export type PtyId = typeof PtyId.Type;
+
+export const AgentSessionId = makeEntityId("AgentSessionId");
+export type AgentSessionId = typeof AgentSessionId.Type;
+
+export const AgentTurnId = makeEntityId("AgentTurnId");
+export type AgentTurnId = typeof AgentTurnId.Type;
+
+export const AgentItemId = makeEntityId("AgentItemId");
+export type AgentItemId = typeof AgentItemId.Type;
