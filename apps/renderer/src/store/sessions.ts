@@ -30,6 +30,7 @@ type SessionsState = {
     initialPrompt?: string,
   ) => Promise<SessionId | null>;
   readonly rename: (sessionId: SessionId, title: string) => Promise<void>;
+  readonly setModel: (sessionId: SessionId, model: string) => Promise<void>;
   readonly archive: (sessionId: SessionId) => Promise<void>;
   readonly unarchive: (sessionId: SessionId) => Promise<void>;
   readonly remove: (sessionId: SessionId) => Promise<void>;
@@ -126,6 +127,28 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
             ...s.sessionsByProject,
             [projectId]: sessions.map((session) =>
               session.id === sessionId ? { ...session, title } : session,
+            ),
+          },
+        };
+      });
+    } catch (err) {
+      set({ error: formatError(err) });
+    }
+  },
+  setModel: async (sessionId, model) => {
+    set({ error: null });
+    try {
+      const client = await getRpcClient();
+      await Effect.runPromise(client.session.setModel({ sessionId, model }));
+      set((s) => {
+        const projectId = findSessionProject(s.sessionsByProject, sessionId);
+        if (projectId === null) return {};
+        const sessions = s.sessionsByProject[projectId] ?? [];
+        return {
+          sessionsByProject: {
+            ...s.sessionsByProject,
+            [projectId]: sessions.map((session) =>
+              session.id === sessionId ? { ...session, model } : session,
             ),
           },
         };

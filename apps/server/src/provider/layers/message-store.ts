@@ -398,6 +398,27 @@ export const MessageStoreLive = Layer.scoped(
         `.pipe(Effect.orDie);
       });
 
+    /**
+     * Persist a new model on the session row and tear down the in-memory
+     * provider session so the next user turn lazy-restarts the SDK with the
+     * new model. Existing message history stays attached to the same row.
+     */
+    const setModel: MessageStoreShape["setModel"] = (sessionId, model) =>
+      Effect.gen(function* () {
+        yield* lookupSession(sessionId);
+        const nowIso = new Date().toISOString();
+        yield* sql`
+          UPDATE sessions SET model = ${model}, updated_at = ${nowIso}
+          WHERE id = ${sessionId}
+        `.pipe(Effect.orDie);
+        // Drop the provider's in-memory session and tear down our event pump;
+        // sendMessage's "send fails → restart" path reads sessions.model so
+        // the next turn picks up the new model.
+        yield* provider.close(sessionId).pipe(Effect.catchAll(() => Effect.void));
+        yield* teardownSubscription(sessionId);
+        yield* setStatus(sessionId, "idle");
+      });
+
     const archiveSession: MessageStoreShape["archiveSession"] = (sessionId) =>
       Effect.gen(function* () {
         yield* lookupSession(sessionId);
@@ -532,6 +553,7 @@ export const MessageStoreLive = Layer.scoped(
       getSession,
       createSession,
       renameSession,
+      setModel,
       archiveSession,
       unarchiveSession,
       deleteSession,

@@ -18,7 +18,6 @@ import { useEffect, useMemo, useState } from "react";
 
 import {
   defaultModelFor,
-  MODELS_BY_PROVIDER,
   type FolderId,
   type GitOriginInfo,
   type ProviderId,
@@ -350,19 +349,18 @@ function NewSessionButton({ projectId }: { projectId: FolderId }) {
   const refresh = useProvidersStore((s) => s.refresh);
   const create = useSessionsStore((s) => s.create);
   const [open, setOpen] = useState(false);
-  const [expanded, setExpanded] = useState<ProviderId | null>(null);
 
   // Refresh availability every time the popover opens — catches the user
   // running `claude /login` in their terminal without needing to restart.
   useEffect(() => {
     if (open) void refresh();
-    if (!open) setExpanded(null);
   }, [open, refresh]);
 
-  const onPickModel = (providerId: ProviderId, model: string) => {
+  const onPick = (providerId: ProviderId) => {
     setOpen(false);
-    setExpanded(null);
-    void create(projectId, providerId, model);
+    // New sessions start on the provider's default model; users swap it from
+    // the chat composer's model picker.
+    void create(projectId, providerId, defaultModelFor(providerId));
   };
 
   return (
@@ -393,74 +391,33 @@ function NewSessionButton({ projectId }: { projectId: FolderId }) {
             : !ready
               ? LOGIN_HINT[avail.providerId]
               : null;
-          const isExpanded = expanded === avail.providerId;
           return (
-            <div key={avail.providerId} className="flex flex-col">
-              <button
-                type="button"
-                disabled={!ready}
-                onClick={() => {
-                  if (!ready) return;
-                  // Single-click defaults to the provider's first model;
-                  // chevron click expands the model list for fine control.
-                  onPickModel(avail.providerId, defaultModelFor(avail.providerId));
-                }}
-                className={`flex w-full flex-col items-start gap-0.5 rounded px-2 py-1.5 text-left text-xs ${
-                  ready
-                    ? "hover:bg-sidebar-accent"
-                    : "cursor-not-allowed opacity-60"
-                }`}
-              >
-                <div className="flex w-full items-center gap-2">
-                  <Sparkles className="size-3.5" />
-                  <span className="flex-1 truncate">{avail.displayName}</span>
-                  {ready ? (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setExpanded(isExpanded ? null : avail.providerId);
-                      }}
-                      className="rounded p-0.5 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                      aria-label="Pick model"
-                      title="Pick model"
-                    >
-                      {isExpanded ? (
-                        <ChevronDown className="size-3" />
-                      ) : (
-                        <ChevronRight className="size-3" />
-                      )}
-                    </button>
-                  ) : (
-                    <span className="text-[10px] text-muted-foreground">
-                      needs login
-                    </span>
-                  )}
-                </div>
-                {hint !== null && (
-                  <span className="ml-5 text-[10px] text-muted-foreground">
-                    {hint}
-                  </span>
-                )}
-              </button>
-              {isExpanded && ready && (
-                <div className="ml-5 flex flex-col border-l border-sidebar-border/40 pl-2">
-                  {MODELS_BY_PROVIDER[avail.providerId].map((m) => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => onPickModel(avail.providerId, m.id)}
-                      className="flex items-center gap-2 rounded px-2 py-1 text-left text-[11px] hover:bg-sidebar-accent"
-                    >
-                      <span className="flex-1 truncate">{m.label}</span>
-                      <span className="text-[10px] text-muted-foreground">
-                        {m.id}
-                      </span>
-                    </button>
-                  ))}
-                </div>
+            <button
+              key={avail.providerId}
+              type="button"
+              disabled={!ready}
+              onClick={() => {
+                if (ready) onPick(avail.providerId);
+              }}
+              className={`flex w-full flex-col items-start gap-0.5 rounded px-2 py-1.5 text-left text-xs ${
+                ready
+                  ? "hover:bg-sidebar-accent"
+                  : "cursor-not-allowed opacity-60"
+              }`}
+            >
+              <div className="flex w-full items-center gap-2">
+                <Sparkles className="size-3.5" />
+                <span className="flex-1 truncate">{avail.displayName}</span>
+                <span className="text-[10px] text-muted-foreground">
+                  {ready ? "ready" : "needs login"}
+                </span>
+              </div>
+              {hint !== null && (
+                <span className="ml-5 text-[10px] text-muted-foreground">
+                  {hint}
+                </span>
               )}
-            </div>
+            </button>
           );
         })}
       </PopoverPopup>

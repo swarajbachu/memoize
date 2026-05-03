@@ -87,6 +87,12 @@ const SessionRename = ForkzeroRpcs.toLayerHandler(
     Effect.flatMap(MessageStore, (svc) => svc.renameSession(sessionId, title)),
 );
 
+const SessionSetModel = ForkzeroRpcs.toLayerHandler(
+  "session.setModel",
+  ({ sessionId, model }) =>
+    Effect.flatMap(MessageStore, (svc) => svc.setModel(sessionId, model)),
+);
+
 const SessionArchive = ForkzeroRpcs.toLayerHandler(
   "session.archive",
   ({ sessionId }) =>
@@ -143,6 +149,7 @@ export const ProviderHandlersLayer = Layer.mergeAll(
   SessionGet,
   SessionCreate,
   SessionRename,
+  SessionSetModel,
   SessionArchive,
   SessionUnarchive,
   SessionDelete,

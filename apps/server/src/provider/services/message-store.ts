@@ -51,6 +51,11 @@ export interface MessageStoreShape {
     title: string,
   ) => Effect.Effect<void, SessionNotFoundError>;
 
+  readonly setModel: (
+    sessionId: SessionId,
+    model: string,
+  ) => Effect.Effect<void, SessionNotFoundError>;
+
   readonly archiveSession: (
     sessionId: SessionId,
   ) => Effect.Effect<void, SessionNotFoundError>;

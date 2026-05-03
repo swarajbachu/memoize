@@ -1,14 +1,21 @@
-import { Send, Square } from "lucide-react";
+import { Check, ChevronDown, Send, Sparkles, Square } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 
 import {
   MODELS_BY_PROVIDER,
   type Message,
+  type ProviderId,
   type Session,
   type SessionId,
 } from "@forkzero/wire";
 
+import {
+  Popover,
+  PopoverPopup,
+  PopoverTrigger,
+} from "~/components/ui/popover";
 import { useMessagesStore } from "../store/messages.ts";
+import { useSessionsStore } from "../store/sessions.ts";
 
 const MIN_HEIGHT = 56;
 const MAX_HEIGHT = 240;
@@ -40,12 +47,6 @@ export function ChatComposer({ session }: { session: Session }) {
 
   const inFlight = useMemo(() => inferInFlight(messages), [messages]);
   const canSend = !inFlight && value.trim().length > 0;
-  const modelLabel = useMemo(() => {
-    const match = MODELS_BY_PROVIDER[session.providerId]?.find(
-      (m) => m.id === session.model,
-    );
-    return match?.label ?? session.model;
-  }, [session.providerId, session.model]);
 
   const submit = async () => {
     const text = value.trim();
@@ -110,14 +111,70 @@ export function ChatComposer({ session }: { session: Session }) {
           )}
         </div>
         <div className="flex items-center justify-between px-1 text-[10px] text-muted-foreground">
-          <span>
-            {session.providerId} · {modelLabel}
-          </span>
-          <span>
-            {inFlight ? "running…" : "idle"}
-          </span>
+          <ModelPicker
+            sessionId={sessionId}
+            providerId={session.providerId}
+            currentModel={session.model}
+          />
+          <span>{inFlight ? "running…" : "idle"}</span>
         </div>
       </div>
     </div>
+  );
+}
+
+function ModelPicker({
+  sessionId,
+  providerId,
+  currentModel,
+}: {
+  sessionId: SessionId;
+  providerId: ProviderId;
+  currentModel: string;
+}) {
+  const setModel = useSessionsStore((s) => s.setModel);
+  const [open, setOpen] = useState(false);
+  const models = MODELS_BY_PROVIDER[providerId] ?? [];
+  const current = models.find((m) => m.id === currentModel);
+  const label = current?.label ?? currentModel;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-muted/60 hover:text-foreground data-[popup-open]:bg-muted/60 data-[popup-open]:text-foreground"
+        title="Change model — applies to next message"
+      >
+        <Sparkles className="size-3" />
+        <span>
+          {providerId} · {label}
+        </span>
+        <ChevronDown className="size-3" />
+      </PopoverTrigger>
+      <PopoverPopup side="top" align="start" className="w-56">
+        <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+          Model — applies to next message
+        </div>
+        {models.map((m) => {
+          const active = m.id === currentModel;
+          return (
+            <button
+              key={m.id}
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                if (!active) void setModel(sessionId, m.id);
+              }}
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-sidebar-accent"
+            >
+              <Check
+                className={`size-3.5 ${active ? "opacity-100" : "opacity-0"}`}
+              />
+              <span className="flex-1 truncate">{m.label}</span>
+              <span className="text-[10px] text-muted-foreground">{m.id}</span>
+            </button>
+          );
+        })}
+      </PopoverPopup>
+    </Popover>
   );
 }

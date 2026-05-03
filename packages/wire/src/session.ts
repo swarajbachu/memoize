@@ -150,6 +150,12 @@ export const SessionRenameRpc = Rpc.make("session.rename", {
   error: SessionNotFoundError,
 });
 
+export const SessionSetModelRpc = Rpc.make("session.setModel", {
+  payload: Schema.Struct({ sessionId: SessionId, model: Schema.String }),
+  success: Schema.Void,
+  error: SessionNotFoundError,
+});
+
 export const SessionArchiveRpc = Rpc.make("session.archive", {
   payload: Schema.Struct({ sessionId: SessionId }),
   success: Schema.Void,
