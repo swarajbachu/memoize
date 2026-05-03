@@ -56,7 +56,11 @@ export const FolderId = makeEntityId("FolderId");
 
 **Why brand:** prevents `PtyId` from being passed where `FolderId` is expected, even though both are strings at runtime. Cost: zero. Caught: a real class of bugs.
 
-### Per-domain folder layout (apps/desktop)
+### Per-domain folder layout (apps/server)
+
+> **Updated 2026-05-03 by [ADR 0007](0007-server-as-code-only-app.md):** services moved from `apps/desktop/src/services/` to `apps/server/src/`, and the per-domain shape adopted the reference repo's split. The original "flat" rule below is preserved for context — see the **Updated rule** below it.
+
+**Original rule (Phase 1):**
 
 ```
 apps/desktop/src/services/<domain>/
@@ -64,36 +68,54 @@ apps/desktop/src/services/<domain>/
   <domain>-handlers.ts   # RPC handler implementations
 ```
 
-**Flat. No `Layers/` and `Services/` subdirs per domain.** Split a domain into subfolders only when it grows past ~300 LOC and the split actually clarifies things.
+Flat. No `Layers/` and `Services/` subdirs. Split only when a domain grew past ~300 LOC.
 
-**Why flat:** at v1 sizes, subdirs add navigation cost without clarifying anything. A domain folder with two files is faster to read than a domain folder with two folders that each contain one file.
+**Updated rule (Phase 2 onwards):**
+
+```
+apps/server/src/<domain>/
+  Drivers/                # per-impl static configs + factories (e.g. ClaudeDriver, CodexDriver)
+  Layers/                 # live Effect.Service impls (Layer.effect(Tag, factory))
+  Services/               # Context.Service tags — interfaces only
+  Errors.ts               # tagged errors for the domain
+  handlers.ts             # toLayerHandler bindings
+  <misc helpers>.ts       # availability.ts, spawn.ts, credentials.ts, etc.
+```
+
+Single-impl domains (Phase 1's `pty`, `git`, `workspace`) still use the same split — `Layers/` has one file, `Services/` has one file, `Drivers/` may be empty.
+
+**Why uniform split now (overriding "flat-until-scale"):**
+
+1. The reference architecture uses this split. Code we lift from there transplants 1:1 if our paths match.
+2. Phase 2 introduces the agent domain, which already justifies the split (multiple drivers + adapters + a registry + a service).
+3. Inconsistency between domains has higher onboarding cost than uniform "small-but-split" structure.
+4. Renaming Phase 1's three single-file services into the split is a one-time mechanical refactor (PR-6).
 
 ### File naming
 
 - Files: `kebab-case.ts` (`workspace-service.ts`, `electron-server-protocol.ts`)
 - Folders: singular kebab-case (`service/`, `ipc/`, not `services/` for the inner domain folder — but the parent `services/` is plural, since it contains many)
 
-### App layout (current)
+### App layout (Phase 2 onwards)
+
+See [`spec/architecture.md`](../architecture.md) for the canonical layout. Summary:
 
 ```
-apps/desktop/src/
-  main.ts               # window + lifecycle
-  preload.ts            # contextBridge → renderer
-  runtime.ts            # composes Effect Layers for the main runtime
-  ipc/
-    electron-server-protocol.ts
-    handlers.ts         # registers all *-handlers in one place
-  services/<domain>/
-    <domain>-service.ts
-    <domain>-handlers.ts
+apps/server/src/                          # NEW — main-process service implementations
+  <domain>/                                # Drivers/Layers/Services/Errors.ts/handlers.ts
+  app-paths.ts, runtime.ts, handlers.ts, bin.ts
+
+apps/desktop/src/                          # thin Electron shim
+  main.ts                                  # imports makeMainLayer from @forkzero/server
+  preload.ts
+  ipc/electron-server-protocol.ts          # transport stays in apps/desktop
 
 apps/renderer/src/
   app.tsx, main.tsx, styles.css
   lib/
-    bridge.ts                       # window.forkzero typing
+    rpc-client.ts                          # the seam — selects transport
     electron-client-protocol.ts
-    rpc-client.ts                   # uses Scope.extend(longLivedScope)
-  store/<domain>.ts                 # Zustand stores
+  store/<domain>.ts
   components/<name>.tsx
 ```
 
@@ -107,6 +129,6 @@ apps/renderer/src/
 
 - Splitting `wire` into per-domain packages — forces package coordination per RPC.
 - Central `WS_METHODS`-style enum of method names — doubles the change footprint.
-- Per-domain `Layers/` + `Services/` subdirs — premature partitioning.
+- ~~Per-domain `Layers/` + `Services/` subdirs — premature partitioning.~~ **Reversed by [ADR 0007](0007-server-as-code-only-app.md):** the per-domain split is now adopted uniformly so we match the reference repo's layout and Phase 2 code transplants line up 1:1.
 - Inconsistent service suffixes (`*Engine`, `*FileSystem`, bare verbs) — readers shouldn't have to learn a per-domain vocabulary.
 - A `packages/shared/` junk drawer — when we have a real cross-cutting utility, we'll create a focused package for it.

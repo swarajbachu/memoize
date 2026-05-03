@@ -58,3 +58,16 @@ Make it shippable.
 | Public alpha (Phases 1–2) | ~8 weeks |
 | Public beta (Phases 1–3) | ~10 weeks |
 | 1.0 (Phases 1–4) | **~3–4 months** |
+
+## Beyond 1.0 (post-roadmap, designed for from day one)
+
+The architecture (`apps/server` as a code-only app today, designed for extraction; transport-agnostic renderer) supports these without re-architecture. Each becomes a focused PR rather than a redesign.
+
+| Milestone | What changes | Estimate |
+|---|---|---|
+| **Remote desktop access** | `apps/server/src/bin.ts` becomes a real WS server boot; Electron spawns it as a subprocess; renderer's transport seam picks WS when running outside Electron. SSH + port-forward enables remote use. | ~1 week |
+| **CLI client** | New `apps/cli/` consuming `@forkzero/wire` over the WS transport. | ~1 week |
+| **Multi-window / multi-renderer** | Multiple Electron renderers (or browser tabs) connected to one backend. Backend already supports it; just wire window management. | ~3 days |
+| **Mobile client** | Native or web-based mobile app speaking WS to a desktop's server over LAN/tunnel. Re-uses `apps/renderer` as a packaging target where feasible. | TBD |
+
+See [ADR 0007](decisions/0007-server-as-code-only-app.md) for the architectural rules that keep these costs bounded.
