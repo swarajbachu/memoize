@@ -109,9 +109,7 @@ export function AgentLauncher() {
                     </CommandItem>
                   );
                 })}
-                {availability
-                  .filter((a) => a.providerId === "claude")
-                  .map((avail) => {
+                {availability.map((avail) => {
                     const ready = avail.sdkConfigured;
                     const label = `${avail.displayName} (SDK)`;
                     return (

@@ -5,7 +5,6 @@ import {
   AgentSessionId,
   AgentSessionNotFoundError,
   AgentSessionStartError,
-  ProviderNotAvailableError,
   type AgentAvailability,
   type AgentEvent,
   type ProviderId,
@@ -16,6 +15,10 @@ import {
   startClaudeSession,
   type ClaudeSessionHandle,
 } from "../drivers/claude.ts";
+import {
+  startCodexSession,
+  type CodexSessionHandle,
+} from "../drivers/codex.ts";
 import { CredentialsService } from "../services/credentials-service.ts";
 import { ProviderService } from "../services/provider-service.ts";
 import { WorkspaceService } from "../../workspace/services/workspace-service.ts";
@@ -29,9 +32,10 @@ import { WorkspaceService } from "../../workspace/services/workspace-service.ts"
  * own their own scope so `close()` is the canonical teardown — there is no
  * autocleanup tied to the renderer subscription.
  */
+type SessionHandle = ClaudeSessionHandle | CodexSessionHandle;
 type SessionEntry = {
   readonly providerId: ProviderId;
-  readonly handle: ClaudeSessionHandle;
+  readonly handle: SessionHandle;
 };
 
 let sessionCounter = 0;
@@ -84,15 +88,6 @@ export const ProviderServiceLive = Layer.effect(
       availability,
       start: (input) =>
         Effect.gen(function* () {
-          if (input.providerId !== "claude") {
-            return yield* Effect.fail(
-              new ProviderNotAvailableError({
-                providerId: input.providerId,
-                reason:
-                  "Only Claude SDK is wired in this build (Codex lands in PR 6).",
-              }),
-            );
-          }
           const folder = yield* workspace.findById(input.folderId);
           if (folder === null) {
             return yield* Effect.fail(
@@ -102,16 +97,14 @@ export const ProviderServiceLive = Layer.effect(
               }),
             );
           }
-          const apiKey = yield* credentials.get("claude").pipe(
+          const apiKey = yield* credentials.get(input.providerId).pipe(
             Effect.catchAll(() => Effect.succeed<string | null>(null)),
           );
           const sessionId = nextSessionId();
-          const handle = yield* startClaudeSession(
-            input,
-            folder.path,
-            apiKey,
-            sessionId,
-          );
+          const handle: SessionHandle =
+            input.providerId === "claude"
+              ? yield* startClaudeSession(input, folder.path, apiKey, sessionId)
+              : yield* startCodexSession(input, folder.path, apiKey, sessionId);
           yield* Ref.update(sessions, (map) => {
             const next = new Map(map);
             next.set(sessionId, { providerId: input.providerId, handle });
