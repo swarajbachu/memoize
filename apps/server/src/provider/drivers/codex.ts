@@ -211,6 +211,7 @@ export const startCodexSession = (
         sandboxMode: "read-only",
         approvalPolicy: "never",
         skipGitRepoCheck: true,
+        ...(input.model !== undefined ? { model: input.model } : {}),
       });
     } catch (cause) {
       yield* events.end;

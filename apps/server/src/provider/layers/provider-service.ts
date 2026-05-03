@@ -1,4 +1,4 @@
-import { CommandExecutor } from "@effect/platform";
+import { CommandExecutor, FileSystem } from "@effect/platform";
 import { Effect, Layer, Ref, Stream } from "effect";
 
 import {
@@ -10,7 +10,7 @@ import {
   type ProviderId,
 } from "@forkzero/wire";
 
-import { probeAllProviders } from "../availability.ts";
+import { probeAllProviders, resolveCliPath } from "../availability.ts";
 import {
   startClaudeSession,
   type ClaudeSessionHandle,
@@ -46,6 +46,7 @@ export const ProviderServiceLive = Layer.effect(
   ProviderService,
   Effect.gen(function* () {
     const executor = yield* CommandExecutor.CommandExecutor;
+    const fs = yield* FileSystem.FileSystem;
     const credentials = yield* CredentialsService;
     const workspace = yield* WorkspaceService;
     const sessions = yield* Ref.make<Map<AgentSessionId, SessionEntry>>(
@@ -56,10 +57,11 @@ export const ProviderServiceLive = Layer.effect(
       Effect.gen(function* () {
         const list = yield* probeAllProviders.pipe(
           Effect.provideService(CommandExecutor.CommandExecutor, executor),
+          Effect.provideService(FileSystem.FileSystem, fs),
         );
         // listConfigured is best-effort — a keychain failure here shouldn't
-        // wipe out the CLI-installed picture, since the launcher still works
-        // for spawn-CLI without an API key.
+        // wipe out the CLI-logged-in picture, which is the primary auth path
+        // and works without any keychain entry of ours.
         const configured = yield* credentials.listConfigured().pipe(
           Effect.catchAll(() =>
             Effect.succeed([] as ReadonlyArray<ProviderId>),
@@ -69,7 +71,7 @@ export const ProviderServiceLive = Layer.effect(
         return list.map(
           (a): AgentAvailability => ({
             ...a,
-            sdkConfigured: configuredSet.has(a.providerId),
+            hasApiKey: configuredSet.has(a.providerId),
           }),
         );
       });
@@ -100,11 +102,30 @@ export const ProviderServiceLive = Layer.effect(
           const apiKey = yield* credentials.get(input.providerId).pipe(
             Effect.catchAll(() => Effect.succeed<string | null>(null)),
           );
-          const sessionId = nextSessionId();
-          const handle: SessionHandle =
-            input.providerId === "claude"
-              ? yield* startClaudeSession(input, folder.path, apiKey, sessionId)
-              : yield* startCodexSession(input, folder.path, apiKey, sessionId);
+          const sessionId = input.sessionId ?? nextSessionId();
+          let handle: SessionHandle;
+          if (input.providerId === "claude") {
+            // Point the SDK at the user's installed `claude` binary; the
+            // SDK's bundled CLI is shipped as an optional native dep that
+            // doesn't always install. Falls through to bundled if not found.
+            const claudePath = yield* resolveCliPath("claude").pipe(
+              Effect.provideService(CommandExecutor.CommandExecutor, executor),
+            );
+            handle = yield* startClaudeSession(
+              input,
+              folder.path,
+              apiKey,
+              claudePath,
+              sessionId,
+            );
+          } else {
+            handle = yield* startCodexSession(
+              input,
+              folder.path,
+              apiKey,
+              sessionId,
+            );
+          }
           yield* Ref.update(sessions, (map) => {
             const next = new Map(map);
             next.set(sessionId, { providerId: input.providerId, handle });

@@ -5,12 +5,14 @@ import { Layer } from "effect";
 import { ForkzeroRpcs } from "@forkzero/wire";
 
 import { AppPaths } from "./app-paths.ts";
+import { FsServiceLive } from "./fs/layers/fs-service.ts";
 import { GitServiceLive } from "./git/layers/git-service.ts";
 import { HandlersLayer } from "./handlers.ts";
 import { importWorkspacesJson } from "./persistence/import-workspaces.ts";
 import { MigrationsLive } from "./persistence/migrations.ts";
 import { SqliteLive } from "./persistence/sqlite.ts";
 import { CredentialsServiceLive } from "./provider/layers/credentials-service.ts";
+import { MessageStoreLive } from "./provider/layers/message-store.ts";
 import { ProviderServiceLive } from "./provider/layers/provider-service.ts";
 import { PtyServiceLive } from "./pty/layers/pty-service.ts";
 import { FolderPicker } from "./workspace/services/folder-picker.ts";
@@ -77,6 +79,13 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(NodeContext.layer),
   );
 
+  // FsService walks the project tree one directory at a time. WorkspaceService
+  // resolves folderId → path; FileSystem (via NodeContext) reads dirs/stats.
+  const FsLayer = FsServiceLive.pipe(
+    Layer.provide(WorkspaceLayer),
+    Layer.provide(NodeContext.layer),
+  );
+
   // ProviderService probes installed CLIs via CommandExecutor, consults
   // CredentialsService for SDK keys, and resolves folderId → cwd via
   // WorkspaceService when starting a Claude SDK session.
@@ -86,11 +95,22 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(NodeContext.layer),
   );
 
+  // MessageStore composes ProviderService with the SQLite-backed sessions /
+  // messages tables. The chat-MVP RPC surface (session.* / messages.*) talks
+  // through this; legacy agent.* handlers stay bound to ProviderService for
+  // low-level testing.
+  const MessageStoreLayer = MessageStoreLive.pipe(
+    Layer.provide(ProviderLayer),
+    Layer.provide(MigratedSqlite),
+  );
+
   const Handlers = HandlersLayer.pipe(
     Layer.provide(WorkspaceLayer),
     Layer.provide(PtyServiceLive),
     Layer.provide(GitLayer),
+    Layer.provide(FsLayer),
     Layer.provide(ProviderLayer),
+    Layer.provide(MessageStoreLayer),
     Layer.provide(FolderPickerLayer),
   );
 

@@ -38,9 +38,10 @@ export type AgentStatus = typeof AgentStatus.Type;
 
 /**
  * Static availability report for a provider — does the user have the CLI on
- * PATH, do they have credentials configured for the SDK, what version is
- * installed. Computed at boot and refreshed when the user changes credentials
- * or installs a CLI.
+ * PATH, is the CLI logged in (so the SDK can ride the local OAuth subprocess),
+ * is an API key stored in the keychain. Either `cliLoggedIn` or `hasApiKey`
+ * is enough to start a session; the renderer should treat them as equivalent
+ * "ready" signals and prefer CLI login as the primary path.
  */
 export const AgentAvailability = Schema.Struct({
   providerId: ProviderId,
@@ -48,7 +49,8 @@ export const AgentAvailability = Schema.Struct({
   cliInstalled: Schema.Boolean,
   cliVersion: Schema.optional(Schema.String),
   cliPath: Schema.optional(Schema.String),
-  sdkConfigured: Schema.Boolean,
+  cliLoggedIn: Schema.Boolean,
+  hasApiKey: Schema.Boolean,
 });
 export type AgentAvailability = typeof AgentAvailability.Type;
 
@@ -143,8 +145,41 @@ export const StartSessionInput = Schema.Struct({
   providerId: ProviderId,
   mode: SessionMode,
   initialPrompt: Schema.optional(Schema.String),
+  // Optional caller-supplied id. When omitted, ProviderService mints a fresh
+  // one. MessageStore uses this to lazy-restart a closed session without
+  // moving its persisted history to a new row.
+  sessionId: Schema.optional(AgentSessionId),
+  // Optional provider-specific model id (e.g. "claude-opus-4-7"). Drivers
+  // forward it to the SDK; omitting it lets the SDK pick its own default.
+  model: Schema.optional(Schema.String),
 });
 export type StartSessionInput = typeof StartSessionInput.Type;
+
+/**
+ * Curated list of provider × model pairs the renderer offers in the
+ * new-session picker. Source of truth so the dropdown and the server agree
+ * on what's selectable. Adding a model here is the only change needed —
+ * drivers pass the string through to the SDK as-is.
+ */
+export interface ModelOption {
+  readonly id: string;
+  readonly label: string;
+}
+
+export const MODELS_BY_PROVIDER: Record<ProviderId, ReadonlyArray<ModelOption>> = {
+  claude: [
+    { id: "claude-opus-4-7", label: "Opus 4.7" },
+    { id: "claude-sonnet-4-6", label: "Sonnet 4.6" },
+    { id: "claude-haiku-4-5", label: "Haiku 4.5" },
+  ],
+  codex: [
+    { id: "gpt-5-codex", label: "GPT-5 Codex" },
+    { id: "gpt-5", label: "GPT-5" },
+  ],
+};
+
+export const defaultModelFor = (providerId: ProviderId): string =>
+  MODELS_BY_PROVIDER[providerId][0]!.id;
 
 export const SendInput = Schema.Struct({
   sessionId: AgentSessionId,

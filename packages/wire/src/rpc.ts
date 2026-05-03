@@ -9,6 +9,7 @@ import {
   AgentSetCredentialRpc,
   AgentStartRpc,
 } from "./agent.ts";
+import { FsTreeRpc } from "./fs.ts";
 import {
   GitHeadChangedRpc,
   GitLogRpc,
@@ -23,6 +24,20 @@ import {
   PtyResizeRpc,
   PtyWriteRpc,
 } from "./pty.ts";
+import {
+  MessagesInterruptRpc,
+  MessagesListRpc,
+  MessagesSendRpc,
+  MessagesStreamRpc,
+  SessionArchiveRpc,
+  SessionCreateRpc,
+  SessionDeleteRpc,
+  SessionGetRpc,
+  SessionListRpc,
+  SessionRenameRpc,
+  SessionSetModelRpc,
+  SessionUnarchiveRpc,
+} from "./session.ts";
 import {
   WorkspaceAddRpc,
   WorkspaceGetSelectedRpc,
@@ -55,6 +70,7 @@ export const ForkzeroRpcs = RpcGroup.make(
   GitStatusRpc,
   GitHeadChangedRpc,
   GitOriginRpc,
+  FsTreeRpc,
   AgentAvailabilityRpc,
   AgentSetCredentialRpc,
   AgentStartRpc,
@@ -62,6 +78,18 @@ export const ForkzeroRpcs = RpcGroup.make(
   AgentInterruptRpc,
   AgentCloseRpc,
   AgentEventsRpc,
+  SessionListRpc,
+  SessionGetRpc,
+  SessionCreateRpc,
+  SessionRenameRpc,
+  SessionSetModelRpc,
+  SessionArchiveRpc,
+  SessionUnarchiveRpc,
+  SessionDeleteRpc,
+  MessagesListRpc,
+  MessagesStreamRpc,
+  MessagesSendRpc,
+  MessagesInterruptRpc,
 );
 export type ForkzeroRpcs = typeof ForkzeroRpcs;
 

@@ -1,6 +1,6 @@
 # Phase 3 — Chat-first MVP
 
-Status: 📐 Spec
+Status: ✅ Shipped
 
 ## Goal
 

@@ -19,3 +19,6 @@ export type AgentTurnId = typeof AgentTurnId.Type;
 
 export const AgentItemId = makeEntityId("AgentItemId");
 export type AgentItemId = typeof AgentItemId.Type;
+
+export const MessageId = makeEntityId("MessageId");
+export type MessageId = typeof MessageId.Type;

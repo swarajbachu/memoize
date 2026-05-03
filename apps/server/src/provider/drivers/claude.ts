@@ -92,6 +92,30 @@ let itemCounter = 0;
 const nextItemId = (): AgentItemId =>
   `i_${Date.now()}_${++itemCounter}` as AgentItemId;
 
+// Markers Claude Code injects into every subprocess it spawns. If forkzero
+// is launched from a Claude Code terminal these get inherited, and the
+// nested `claude` binary then loads a different parent's session state
+// instead of the user's `claude /login` OAuth. Strip them so our spawn
+// runs as if the user had launched it from a fresh shell.
+const INHERITED_CLAUDE_MARKERS = [
+  "CLAUDECODE",
+  "CLAUDE_CODE_ENTRYPOINT",
+  "CLAUDE_CODE_EXECPATH",
+  "CLAUDE_AGENT_SDK_VERSION",
+  "CLAUDE_CODE_SESSION_ID",
+  "CLAUDE_CODE_SESSION_NAME",
+  "CLAUDE_CODE_SESSION_LOG",
+] as const;
+
+const scrubInheritedClaudeMarkers = (
+  base: NodeJS.ProcessEnv,
+): Record<string, string | undefined> => {
+  const next: Record<string, string | undefined> = { ...base };
+  for (const key of INHERITED_CLAUDE_MARKERS) delete next[key];
+  return next;
+};
+
+
 /**
  * Translate one SDKMessage into zero-or-more wire AgentEvents. Phase 2 keeps
  * the mapping shallow — assistant text + tool_use + tool_result + result.
@@ -155,14 +179,18 @@ const translate = (msg: SDKMessage): ReadonlyArray<AgentEvent> => {
  * is consumed by a forked daemon that translates messages into wire events
  * and offers them to the per-session mailbox.
  *
- * `apiKey` is read from the keychain by the caller and exposed via
- * `ANTHROPIC_API_KEY`. We shouldn't reach this code path without
- * `sdkConfigured`, but null is tolerated (the SDK then errors loudly).
+ * `apiKey` is the keychain-stored API key, if any. When non-null we set
+ * `ANTHROPIC_API_KEY` on the spawned `claude` subprocess. When null we omit
+ * the SDK's `env` option entirely so `process.env` is inherited — that lets
+ * the spawned `claude` CLI find its own OAuth credentials (macOS keychain
+ * entry "Claude Code-credentials" or `~/.claude/.credentials.json`). This
+ * is the primary auth path; API keys are a fallback.
  */
 export const startClaudeSession = (
   input: StartSessionInput,
   cwd: string,
   apiKey: string | null,
+  claudeExecutablePath: string | null,
   sessionId: AgentSessionId,
 ): Effect.Effect<ClaudeSessionHandle, AgentSessionStartError> =>
   Effect.gen(function* () {
@@ -174,12 +202,34 @@ export const startClaudeSession = (
       inputChannel.push(userMessageOf(input.initialPrompt, sessionId));
     }
 
-    const env: Record<string, string> = {};
+    // Pass `process.env` through, but scrub any "we are inside another
+    // Claude Code session" markers that Claude Code injects into its child
+    // shells. When forkzero is launched from a Claude Code terminal (very
+    // common during dev), the shell inherits CLAUDECODE=1,
+    // CLAUDE_CODE_ENTRYPOINT, CLAUDE_CODE_EXECPATH, and friends — which
+    // confuses the spawned `claude` binary's auth resolver into thinking
+    // it's a nested SDK call from a different Claude installation, and the
+    // `EXECPATH` even redirects to a sibling app's bundled binary with its
+    // own auth state. The result is "Invalid API key · Fix external API
+    // key" even with a perfectly valid `claude /login`.
+    //
+    // The SDK adds back its own `CLAUDE_CODE_ENTRYPOINT="sdk-ts"` for
+    // telemetry purposes (we read it back in error messages); that's fine
+    // because it lets the binary know IT is the SDK process, not its parent.
+    //
+    // `pathToClaudeCodeExecutable` points at the user's globally-installed
+    // `claude`. Without it, the SDK falls back to its bundled native CLI —
+    // shipped as an optional native dep that doesn't always install (yields
+    // "Native CLI binary for darwin-arm64 not found").
+    const env = scrubInheritedClaudeMarkers(process.env);
     if (apiKey !== null) env.ANTHROPIC_API_KEY = apiKey;
-
     const options: Options = {
       cwd,
       abortController: abort,
+      ...(claudeExecutablePath !== null
+        ? { pathToClaudeCodeExecutable: claudeExecutablePath }
+        : {}),
+      ...(input.model !== undefined ? { model: input.model } : {}),
       env: env as Options["env"],
       // Phase 2 auto-denies tool permission requests; Phase 3 wires real UI.
       canUseTool: async (toolName, toolInput) => {
