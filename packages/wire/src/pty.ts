@@ -28,11 +28,24 @@ export class PtySpawnError extends Schema.TaggedError<PtySpawnError>()(
   { reason: Schema.String },
 ) {}
 
+/**
+ * Optional override for what process the PTY hosts. Omitted → host the user's
+ * default login shell (Phase 1 behavior). Present → spawn `cmd` with `args` as
+ * the PTY's foreground process, used by spawn-CLI agent launches so closing
+ * the pane terminates the agent rather than just one shell among many.
+ */
+export const PtyCommand = Schema.Struct({
+  cmd: Schema.String,
+  args: Schema.Array(Schema.String),
+});
+export type PtyCommand = typeof PtyCommand.Type;
+
 export const PtyOpenRpc = Rpc.make("pty.open", {
   payload: Schema.Struct({
     cwd: Schema.String,
     cols: Schema.Number,
     rows: Schema.Number,
+    command: Schema.optional(PtyCommand),
   }),
   success: Schema.Struct({ ptyId: PtyId }),
   error: PtySpawnError,

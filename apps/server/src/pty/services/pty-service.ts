@@ -1,6 +1,7 @@
 import { Context, type Effect, type Stream } from "effect";
 
 import {
+  type PtyCommand,
   type PtyEvent,
   type PtyId,
   type PtyNotFoundError,
@@ -12,6 +13,7 @@ export interface PtyServiceShape {
     cwd: string,
     cols: number,
     rows: number,
+    command?: PtyCommand,
   ) => Effect.Effect<{ readonly ptyId: PtyId }, PtySpawnError>;
   readonly write: (
     ptyId: PtyId,
