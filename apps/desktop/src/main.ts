@@ -1,8 +1,11 @@
-import { app, BrowserWindow } from "electron";
+import { RpcSerialization } from "@effect/rpc";
+import { app, BrowserWindow, dialog } from "electron";
 import { Effect, Fiber, Layer } from "effect";
 import * as Path from "node:path";
 
-import { makeMainLayer } from "./runtime.ts";
+import { makeMainLayer } from "@forkzero/server";
+
+import { electronServerProtocolLayer } from "./ipc/electron-server-protocol.ts";
 
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL?.trim() || "";
 const isDevelopment = Boolean(DEV_SERVER_URL);
@@ -13,6 +16,23 @@ app.setName(APP_NAME);
 
 let mainWindow: BrowserWindow | null = null;
 let runtimeFiber: Fiber.RuntimeFiber<void, never> | null = null;
+
+// Electron's dialog is the only host-shell API the server reaches for. Wrap
+// it here so apps/server stays free of any UI-toolkit imports — see ADR 0007.
+const folderPicker = {
+  pick: () =>
+    Effect.promise(() =>
+      dialog.showOpenDialog({
+        properties: ["openDirectory", "createDirectory"],
+      }),
+    ).pipe(
+      Effect.map((result) =>
+        result.canceled || result.filePaths.length === 0
+          ? null
+          : (result.filePaths[0] ?? null),
+      ),
+    ),
+};
 
 function createMainWindow() {
   const isMac = process.platform === "darwin";
@@ -50,8 +70,18 @@ function createMainWindow() {
   // Boot the Effect runtime once the window's webContents exists. The RPC
   // server protocol is bound to this webContents, so a window restart means
   // a fresh runtime — the only Effect.runFork in the main process.
+  const serverProtocol = electronServerProtocolLayer(mainWindow.webContents).pipe(
+    Layer.provide(RpcSerialization.layerJson),
+  );
+
   runtimeFiber = Effect.runFork(
-    Layer.launch(makeMainLayer(mainWindow.webContents, app.getPath("userData"))),
+    Layer.launch(
+      makeMainLayer({
+        userData: app.getPath("userData"),
+        folderPicker,
+        serverProtocol,
+      }),
+    ),
   );
 
   if (isDevelopment) {

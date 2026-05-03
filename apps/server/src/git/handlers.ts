@@ -1,7 +1,7 @@
 import { ForkzeroRpcs } from "@forkzero/wire";
 import { Effect, Layer, Stream } from "effect";
 
-import { GitService } from "./git-service.ts";
+import { GitService } from "./services/git-service.ts";
 
 const Log = ForkzeroRpcs.toLayerHandler("git.log", ({ folderId, limit }) =>
   Effect.flatMap(GitService, (svc) => svc.log(folderId, limit)),

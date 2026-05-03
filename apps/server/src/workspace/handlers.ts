@@ -1,8 +1,8 @@
 import { ForkzeroRpcs } from "@forkzero/wire";
-import { dialog } from "electron";
 import { Effect, Layer } from "effect";
 
-import { WorkspaceService } from "./workspace-service.ts";
+import { FolderPicker } from "./services/folder-picker.ts";
+import { WorkspaceService } from "./services/workspace-service.ts";
 
 const Add = ForkzeroRpcs.toLayerHandler("workspace.add", ({ path }) =>
   Effect.flatMap(WorkspaceService, (ws) => ws.add(path)),
@@ -18,18 +18,11 @@ const Remove = ForkzeroRpcs.toLayerHandler(
     Effect.flatMap(WorkspaceService, (ws) => ws.remove(folderId)),
 );
 
+// Folder picking is a host-shell operation. The server only knows the tag —
+// the Electron shim (or any other host) provides the live impl. Keeps this
+// handler — and apps/server as a whole — free of UI-toolkit imports.
 const PickFolder = ForkzeroRpcs.toLayerHandler("workspace.pickFolder", () =>
-  Effect.promise(() =>
-    dialog.showOpenDialog({
-      properties: ["openDirectory", "createDirectory"],
-    }),
-  ).pipe(
-    Effect.map((result) =>
-      result.canceled || result.filePaths.length === 0
-        ? null
-        : (result.filePaths[0] ?? null),
-    ),
-  ),
+  Effect.flatMap(FolderPicker, (picker) => picker.pick()),
 );
 
 const GetSelected = ForkzeroRpcs.toLayerHandler("workspace.getSelected", () =>

@@ -14,9 +14,8 @@
       "name": "desktop",
       "version": "0.0.0",
       "dependencies": {
-        "@effect/platform": "catalog:",
-        "@effect/platform-node": "catalog:",
         "@effect/rpc": "catalog:",
+        "@forkzero/server": "*",
         "@forkzero/wire": "*",
         "effect": "catalog:",
         "electron": "^33.2.0",
@@ -83,6 +82,23 @@
         "tailwindcss": "^4.0.0",
         "typescript": "catalog:",
         "vite": "^6.0.0",
+      },
+    },
+    "apps/server": {
+      "name": "@forkzero/server",
+      "version": "0.0.0",
+      "dependencies": {
+        "@effect/platform": "catalog:",
+        "@effect/platform-node": "catalog:",
+        "@effect/rpc": "catalog:",
+        "@forkzero/wire": "*",
+        "effect": "catalog:",
+        "node-pty": "^1.1.0",
+      },
+      "devDependencies": {
+        "@repo/typescript-config": "*",
+        "@types/node": "catalog:",
+        "typescript": "catalog:",
       },
     },
     "packages/eslint-config": {
@@ -337,6 +353,8 @@
     "@fontsource-variable/geist-mono": ["@fontsource-variable/geist-mono@5.2.7", "", {}, "sha512-ZKlZ5sjtalb2TwXKs400mAGDlt/+2ENLNySPx0wTz3bP3mWARCsUW+rpxzZc7e05d2qGch70pItt3K4qttbIYA=="],
 
     "@fontsource-variable/inter": ["@fontsource-variable/inter@5.2.8", "", {}, "sha512-kOfP2D+ykbcX/P3IFnokOhVRNoTozo5/JxhAIVYLpea/UBmCQ/YWPBfWIDuBImXX/15KH+eKh4xpEUyS2sQQGQ=="],
+
+    "@forkzero/server": ["@forkzero/server@workspace:apps/server"],
 
     "@forkzero/wire": ["@forkzero/wire@workspace:packages/wire"],
 

@@ -12,9 +12,8 @@
     "postinstall": "electron-rebuild -f -w node-pty"
   },
   "dependencies": {
-    "@effect/platform": "catalog:",
-    "@effect/platform-node": "catalog:",
     "@effect/rpc": "catalog:",
+    "@forkzero/server": "*",
     "@forkzero/wire": "*",
     "effect": "catalog:",
     "electron": "^33.2.0",

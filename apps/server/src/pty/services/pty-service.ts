@@ -1,0 +1,36 @@
+import { Context, type Effect, type Stream } from "effect";
+
+import {
+  type PtyEvent,
+  type PtyId,
+  type PtyNotFoundError,
+  type PtySpawnError,
+} from "@forkzero/wire";
+
+export interface PtyServiceShape {
+  readonly open: (
+    cwd: string,
+    cols: number,
+    rows: number,
+  ) => Effect.Effect<{ readonly ptyId: PtyId }, PtySpawnError>;
+  readonly write: (
+    ptyId: PtyId,
+    data: string,
+  ) => Effect.Effect<void, PtyNotFoundError>;
+  readonly resize: (
+    ptyId: PtyId,
+    cols: number,
+    rows: number,
+  ) => Effect.Effect<void, PtyNotFoundError>;
+  readonly close: (
+    ptyId: PtyId,
+  ) => Effect.Effect<void, PtyNotFoundError>;
+  readonly subscribe: (
+    ptyId: PtyId,
+  ) => Stream.Stream<typeof PtyEvent.Type, PtyNotFoundError>;
+}
+
+export class PtyService extends Context.Tag("forkzero/PtyService")<
+  PtyService,
+  PtyServiceShape
+>() {}
