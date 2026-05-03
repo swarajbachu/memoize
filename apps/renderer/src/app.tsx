@@ -4,7 +4,7 @@ import { Effect } from "effect";
 import { AgentLauncher } from "./components/agent-launcher";
 import { AgentPanel } from "./components/agent-panel";
 import { CredentialsSheet } from "./components/credentials-sheet";
-import { FolderSidebar } from "./components/folder-sidebar";
+import { ProjectsSidebar } from "./components/projects-sidebar";
 import { TerminalPane } from "./components/terminal-pane";
 import { GitHistoryPane } from "./components/git-history-pane";
 import { getRpcClient } from "./lib/rpc-client.ts";
@@ -41,7 +41,7 @@ export function App() {
 
   return (
     <div className="dark grid h-screen w-screen grid-cols-[240px_1fr_320px] text-foreground">
-      <FolderSidebar />
+      <ProjectsSidebar />
       <main className="flex min-w-0 flex-col border-x border-border bg-background">
         <header className="flex h-9 items-center px-3 text-xs text-muted-foreground [-webkit-app-region:drag]">
           <span className="ml-16 select-none truncate" title={selected?.path}>
