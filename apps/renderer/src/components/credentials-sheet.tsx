@@ -14,12 +14,12 @@ import {
   SheetPopup,
   SheetTitle,
 } from "~/components/ui/sheet";
-import { useAgentsStore } from "../store/agents.ts";
+import { useProvidersStore } from "../store/providers.ts";
 
 export function CredentialsSheet() {
-  const open = useAgentsStore((s) => s.credentialsOpen);
-  const setOpen = useAgentsStore((s) => s.setCredentialsOpen);
-  const availability = useAgentsStore((s) => s.availability);
+  const open = useProvidersStore((s) => s.credentialsOpen);
+  const setOpen = useProvidersStore((s) => s.setCredentialsOpen);
+  const availability = useProvidersStore((s) => s.availability);
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -44,7 +44,7 @@ export function CredentialsSheet() {
 }
 
 function ProviderRow({ availability }: { availability: AgentAvailability }) {
-  const setCredential = useAgentsStore((s) => s.setCredential);
+  const setCredential = useProvidersStore((s) => s.setCredential);
   const [value, setValue] = useState("");
   const [reveal, setReveal] = useState(false);
   const [busy, setBusy] = useState(false);

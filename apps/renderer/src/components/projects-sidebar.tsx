@@ -11,6 +11,8 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+
+
 import { useEffect, useMemo, useState } from "react";
 
 import type { FolderId, GitOriginInfo, ProviderId, Session } from "@forkzero/wire";
@@ -28,7 +30,7 @@ import {
   PopoverTrigger,
 } from "~/components/ui/popover";
 import { getRpcClient } from "../lib/rpc-client.ts";
-import { useAgentsStore } from "../store/agents.ts";
+import { useProvidersStore } from "../store/providers.ts";
 import { useSessionsStore } from "../store/sessions.ts";
 import { useWorkspaceStore } from "../store/workspace.ts";
 
@@ -67,7 +69,6 @@ export function ProjectsSidebar() {
   const add = useWorkspaceStore((s) => s.add);
   const remove = useWorkspaceStore((s) => s.remove);
   const select = useWorkspaceStore((s) => s.select);
-  const openLauncher = useAgentsStore((s) => s.setLauncherOpen);
 
   const sessionsByProject = useSessionsStore((s) => s.sessionsByProject);
   const showArchivedByProject = useSessionsStore(
@@ -141,26 +142,14 @@ export function ProjectsSidebar() {
       </div>
       <div className="flex items-center justify-between px-3 py-2 text-xs text-muted-foreground">
         <span>Projects</span>
-        <div className="flex items-center gap-0.5">
-          <button
-            type="button"
-            onClick={() => openLauncher(true)}
-            disabled={selectedFolderId === null}
-            className="rounded p-1 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground disabled:cursor-not-allowed disabled:opacity-40"
-            aria-label="Run agent (Cmd+K)"
-            title="Run agent here (⌘K)"
-          >
-            <Sparkles className="size-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={onAddProject}
-            className="rounded p-1 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-            aria-label="Add project"
-          >
-            <Plus className="size-3.5" />
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={onAddProject}
+          className="rounded p-1 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          aria-label="Add project"
+        >
+          <Plus className="size-3.5" />
+        </button>
       </div>
 
       {(error ?? sessionsError) !== null && (
@@ -324,9 +313,9 @@ function ProjectRow({
 }
 
 function NewSessionButton({ projectId }: { projectId: FolderId }) {
-  const availability = useAgentsStore((s) => s.availability);
-  const refresh = useAgentsStore((s) => s.refresh);
-  const openCredentials = useAgentsStore((s) => s.setCredentialsOpen);
+  const availability = useProvidersStore((s) => s.availability);
+  const refresh = useProvidersStore((s) => s.refresh);
+  const openCredentials = useProvidersStore((s) => s.setCredentialsOpen);
   const create = useSessionsStore((s) => s.create);
   const [open, setOpen] = useState(false);
 
