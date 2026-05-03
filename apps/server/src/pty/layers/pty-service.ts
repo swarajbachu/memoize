@@ -29,7 +29,7 @@ export const PtyServiceLive = Layer.effect(
   Effect.gen(function* () {
     const ref = yield* Ref.make<ReadonlyMap<PtyId, ActivePty>>(new Map());
 
-    const open: PtyService["Type"]["open"] = (cwd, cols, rows) =>
+    const open: PtyService["Type"]["open"] = (cwd, cols, rows, command) =>
       Effect.gen(function* () {
         const id = PtyId.make(crypto.randomUUID());
 
@@ -38,9 +38,12 @@ export const PtyServiceLive = Layer.effect(
           PtyNotFoundError
         >();
 
+        const cmd = command?.cmd ?? defaultShell();
+        const args = command?.args ?? [];
+
         const child = yield* Effect.try({
           try: () =>
-            pty.spawn(defaultShell(), [], {
+            pty.spawn(cmd, [...args], {
               name: "xterm-256color",
               cols,
               rows,

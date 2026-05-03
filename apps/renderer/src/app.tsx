@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Effect } from "effect";
 
+import { AgentLauncher } from "./components/agent-launcher";
 import { FolderSidebar } from "./components/folder-sidebar";
 import { TerminalPane } from "./components/terminal-pane";
 import { GitHistoryPane } from "./components/git-history-pane";
@@ -48,6 +49,7 @@ export function App() {
         </div>
       </main>
       <GitHistoryPane />
+      <AgentLauncher />
     </div>
   );
 }

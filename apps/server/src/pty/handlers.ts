@@ -3,8 +3,10 @@ import { Effect, Layer, Stream } from "effect";
 
 import { PtyService } from "./services/pty-service.ts";
 
-const Open = ForkzeroRpcs.toLayerHandler("pty.open", ({ cwd, cols, rows }) =>
-  Effect.flatMap(PtyService, (svc) => svc.open(cwd, cols, rows)),
+const Open = ForkzeroRpcs.toLayerHandler(
+  "pty.open",
+  ({ cwd, cols, rows, command }) =>
+    Effect.flatMap(PtyService, (svc) => svc.open(cwd, cols, rows, command)),
 );
 
 const Write = ForkzeroRpcs.toLayerHandler("pty.write", ({ ptyId, data }) =>

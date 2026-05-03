@@ -1,15 +1,18 @@
-import { Layer } from "effect";
+import { ForkzeroRpcs } from "@forkzero/wire";
+import { Effect, Layer } from "effect";
+
+import { ProviderService } from "./services/provider-service.ts";
 
 /**
- * Provider-domain RPC handlers. Empty in PR 2 — each subsequent PR wires its
- * RPC into `ForkzeroRpcs` (in `@forkzero/wire`) and adds the matching
- * `toLayerHandler` here:
+ * Provider-domain RPC handlers. Each subsequent PR adds a `toLayerHandler` here
+ * as it registers its RPC into `ForkzeroRpcs` (in `@forkzero/wire`):
  *
- *   PR 3 — `agent.availability`
+ *   PR 3 — `agent.availability`         ← here
  *   PR 4 — `agent.setCredential`
  *   PR 5/6 — `agent.start` / `send` / `interrupt` / `close` / `events`
- *
- * Keeping the merge wired now means later PRs are pure additions inside this
- * file — no plumbing churn.
  */
-export const ProviderHandlersLayer = Layer.empty;
+const Availability = ForkzeroRpcs.toLayerHandler("agent.availability", () =>
+  Effect.flatMap(ProviderService, (svc) => svc.availability()),
+);
+
+export const ProviderHandlersLayer = Layer.mergeAll(Availability);

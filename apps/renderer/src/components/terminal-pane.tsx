@@ -3,14 +3,18 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Effect, Fiber, Stream } from "effect";
 
-import type { Folder, PtyId } from "@forkzero/wire";
+import type { Folder, PtyCommand, PtyId } from "@forkzero/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
+import { useAgentsStore } from "../store/agents.ts";
 import { useWorkspaceStore } from "../store/workspace.ts";
 
 export function TerminalPane() {
   const folders = useWorkspaceStore((s) => s.folders);
   const selectedFolderId = useWorkspaceStore((s) => s.selectedFolderId);
+  const run = useAgentsStore((s) =>
+    selectedFolderId ? (s.runs[selectedFolderId] ?? null) : null,
+  );
   const selected = selectedFolderId
     ? (folders.find((f) => f.id === selectedFolderId) ?? null)
     : null;
@@ -23,8 +27,11 @@ export function TerminalPane() {
     );
   }
 
-  // Force a fresh PTY when the folder changes by keying on folder.id.
-  return <PtyTerminal key={selected.id} folder={selected} />;
+  // Force a fresh PTY when the folder or pending agent run changes. The nonce
+  // bumps every time the user picks a launcher item, so re-selecting the same
+  // provider relaunches a fresh CLI.
+  const key = run !== null ? `${selected.id}:${run.nonce}` : selected.id;
+  return <PtyTerminal key={key} folder={selected} command={run?.command ?? null} />;
 }
 
 // xterm's canvas/webgl renderer takes literal color strings, not CSS vars,
@@ -41,7 +48,13 @@ function readToken(el: HTMLElement, cssVar: string, fallback: string): string {
   return computed || fallback;
 }
 
-function PtyTerminal({ folder }: { folder: Folder }) {
+function PtyTerminal({
+  folder,
+  command,
+}: {
+  folder: Folder;
+  command: PtyCommand | null;
+}) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -103,6 +116,7 @@ function PtyTerminal({ folder }: { folder: Folder }) {
             cwd: folder.path,
             cols: term.cols,
             rows: term.rows,
+            ...(command !== null ? { command } : {}),
           }),
         );
         if (cancelled) {
@@ -186,7 +200,7 @@ function PtyTerminal({ folder }: { folder: Folder }) {
       }
       term.dispose();
     };
-  }, [folder.id, folder.path]);
+  }, [folder.id, folder.path, command]);
 
   return (
     <div ref={containerRef} className="h-full w-full bg-background p-2" />

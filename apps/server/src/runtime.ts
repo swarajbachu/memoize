@@ -7,6 +7,7 @@ import { ForkzeroRpcs } from "@forkzero/wire";
 import { AppPaths } from "./app-paths.ts";
 import { GitServiceLive } from "./git/layers/git-service.ts";
 import { HandlersLayer } from "./handlers.ts";
+import { ProviderServiceLive } from "./provider/layers/provider-service.ts";
 import { PtyServiceLive } from "./pty/layers/pty-service.ts";
 import { FolderPicker } from "./workspace/services/folder-picker.ts";
 import { WorkspaceServiceLive } from "./workspace/layers/workspace-service.ts";
@@ -53,10 +54,16 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(NodeContext.layer),
   );
 
+  // ProviderService probes installed CLIs via CommandExecutor.
+  const ProviderLayer = ProviderServiceLive.pipe(
+    Layer.provide(NodeContext.layer),
+  );
+
   const Handlers = HandlersLayer.pipe(
     Layer.provide(WorkspaceLayer),
     Layer.provide(PtyServiceLive),
     Layer.provide(GitLayer),
+    Layer.provide(ProviderLayer),
     Layer.provide(FolderPickerLayer),
   );
 

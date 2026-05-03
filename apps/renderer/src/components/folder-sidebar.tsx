@@ -1,11 +1,12 @@
 import { Effect } from "effect";
-import { Plus, X } from "lucide-react";
+import { Plus, Sparkles, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import type { FolderId, GitOriginInfo } from "@forkzero/wire";
 
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
 import { getRpcClient } from "../lib/rpc-client.ts";
+import { useAgentsStore } from "../store/agents.ts";
 import { useWorkspaceStore } from "../store/workspace.ts";
 
 const initialsOf = (name: string): string => {
@@ -31,6 +32,7 @@ export function FolderSidebar() {
   const add = useWorkspaceStore((s) => s.add);
   const remove = useWorkspaceStore((s) => s.remove);
   const select = useWorkspaceStore((s) => s.select);
+  const openLauncher = useAgentsStore((s) => s.setLauncherOpen);
 
   // Resolved per-folder origin info, keyed by FolderId. Fetched lazily; missing
   // / failed lookups stay undefined and the row falls back to initials.
@@ -73,14 +75,26 @@ export function FolderSidebar() {
       </div>
       <div className="flex items-center justify-between px-3 py-2 text-xs text-muted-foreground">
         <span>Projects</span>
-        <button
-          type="button"
-          onClick={() => void add()}
-          className="rounded p-1 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          aria-label="Add project"
-        >
-          <Plus className="size-3.5" />
-        </button>
+        <div className="flex items-center gap-0.5">
+          <button
+            type="button"
+            onClick={() => openLauncher(true)}
+            disabled={selectedFolderId === null}
+            className="rounded p-1 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label="Run agent here"
+            title="Run agent here (⌘K)"
+          >
+            <Sparkles className="size-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => void add()}
+            className="rounded p-1 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            aria-label="Add project"
+          >
+            <Plus className="size-3.5" />
+          </button>
+        </div>
       </div>
 
       {error !== null && (
