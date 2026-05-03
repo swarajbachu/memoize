@@ -25,10 +25,12 @@ export function CredentialsSheet() {
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetPopup side="right">
         <SheetHeader>
-          <SheetTitle>Provider credentials</SheetTitle>
+          <SheetTitle>Settings · API keys</SheetTitle>
           <SheetDescription>
-            API keys are stored in your OS keychain and only sent to the
-            provider's SDK. They never appear in logs or transcripts.
+            Most users don&apos;t need this. Run <code>claude /login</code> or{" "}
+            <code>codex login</code> in your terminal and forkzero uses those
+            credentials automatically. API keys here are an advanced fallback,
+            stored in your OS keychain and only sent to the provider&apos;s SDK.
           </SheetDescription>
         </SheetHeader>
         <SheetPanel>
@@ -69,15 +71,20 @@ function ProviderRow({ availability }: { availability: AgentAvailability }) {
     <div className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-3">
       <div className="flex items-center justify-between">
         <Label className="font-medium">{availability.displayName}</Label>
-        <span
-          className={
-            availability.sdkConfigured
-              ? "text-emerald-500 text-xs"
-              : "text-muted-foreground text-xs"
-          }
-        >
-          {availability.sdkConfigured ? "configured" : "not set"}
-        </span>
+        <div className="flex items-center gap-2 text-xs">
+          {availability.cliLoggedIn && (
+            <span className="text-emerald-500">CLI logged in</span>
+          )}
+          <span
+            className={
+              availability.hasApiKey
+                ? "text-emerald-500"
+                : "text-muted-foreground"
+            }
+          >
+            {availability.hasApiKey ? "API key set" : "no API key"}
+          </span>
+        </div>
       </div>
       <div className="flex items-center gap-2">
         <div className="relative flex-1">

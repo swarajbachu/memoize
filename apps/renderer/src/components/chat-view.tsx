@@ -1,13 +1,18 @@
 import { MessageSquare } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef } from "react";
 
-import type { SessionId } from "@forkzero/wire";
+import type { Message, SessionId } from "@forkzero/wire";
 
 import { useMessagesStore } from "../store/messages.ts";
 import { useSessionsStore } from "../store/sessions.ts";
 import { MessageRow } from "./message-row.tsx";
 
 const NEAR_BOTTOM_PX = 80;
+
+// Stable empty-array reference for the selector below. Returning a fresh
+// `[]` from a Zustand selector each call breaks `useSyncExternalStore`'s
+// snapshot-equality check and triggers an infinite re-render loop.
+const EMPTY_MESSAGES: ReadonlyArray<Message> = [];
 
 /**
  * Read-only timeline of one session. Subscribes to `messages.stream` via the
@@ -17,7 +22,7 @@ const NEAR_BOTTOM_PX = 80;
  */
 export function ChatView({ sessionId }: { sessionId: SessionId }) {
   const messages = useMessagesStore(
-    (s) => s.messagesBySession[sessionId] ?? [],
+    (s) => s.messagesBySession[sessionId] ?? EMPTY_MESSAGES,
   );
   const error = useMessagesStore((s) => s.errorBySession[sessionId] ?? null);
   const hydrate = useMessagesStore((s) => s.hydrate);

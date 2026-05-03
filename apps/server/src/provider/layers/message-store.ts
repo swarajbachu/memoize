@@ -294,24 +294,14 @@ export const MessageStoreLive = Layer.scoped(
         }
       });
 
-    // Boot recovery: any session left in `running` is now stale (the previous
-    // run's provider sessions died with the process). Demote to `closed` and
-    // append a synthetic error message so the user sees a marker on resume.
-    yield* Effect.gen(function* () {
-      const stale = yield* sql<SessionRow>`
-        SELECT id, project_id, title, provider_id, model, status,
-               archived_at, created_at, updated_at
-        FROM sessions WHERE status = 'running'
-      `.pipe(Effect.orDie);
-      for (const row of stale) {
-        const sessionId = SessionId.make(row.id);
-        yield* persistMessage(sessionId, {
-          _tag: "error",
-          message: "Session interrupted by app restart.",
-        });
-        yield* setStatus(sessionId, "closed");
-      }
-    });
+    // Boot recovery: any session left in `running` is stale (the previous
+    // run's provider session died with the process). Demote to `idle` so the
+    // sidebar reflects reality, but DO NOT pollute the message timeline with
+    // synthetic rows — `sendMessage` will lazily restart the provider on the
+    // next user turn (see below).
+    yield* sql`
+      UPDATE sessions SET status = 'idle' WHERE status = 'running'
+    `.pipe(Effect.orDie);
 
     const listSessions: MessageStoreShape["listSessions"] = (
       projectId,
@@ -477,18 +467,49 @@ export const MessageStoreLive = Layer.scoped(
         }),
       );
 
+    /**
+     * Restart the provider for `session` under the same persisted id so the
+     * message history stays attached to the same row. Used after a process
+     * restart wipes the provider's in-memory session map.
+     */
+    const restartProviderSession = (
+      session: Session,
+      initialPrompt: string,
+    ): Effect.Effect<void, SessionNotFoundError> =>
+      provider
+        .start({
+          folderId: session.projectId,
+          providerId: session.providerId,
+          mode: "sdk",
+          sessionId: session.id,
+          initialPrompt,
+        })
+        .pipe(
+          Effect.flatMap(() => startSubscription(session.id)),
+          Effect.mapError(() => new SessionNotFoundError({ sessionId: session.id })),
+        );
+
     const sendMessage: MessageStoreShape["sendMessage"] = (sessionId, text) =>
       Effect.gen(function* () {
-        yield* lookupSession(sessionId);
+        const session = yield* lookupSession(sessionId);
         const persisted = yield* persistMessage(sessionId, {
           _tag: "user",
           text,
         });
         yield* broadcastMessage(sessionId, persisted);
-        yield* setStatus(sessionId, "running");
-        yield* provider.send(sessionId, text).pipe(
-          Effect.mapError(() => new SessionNotFoundError({ sessionId })),
+        // First attempt: push into the existing provider session. If that
+        // session is gone (provider dropped it across an app restart) start
+        // a fresh one under the same id, then push.
+        const sendResult = yield* provider.send(sessionId, text).pipe(
+          Effect.matchEffect({
+            onFailure: () => Effect.succeed("retry" as const),
+            onSuccess: () => Effect.succeed("ok" as const),
+          }),
         );
+        if (sendResult === "retry") {
+          yield* restartProviderSession(session, text);
+        }
+        yield* setStatus(sessionId, "running");
       });
 
     const interruptSession: MessageStoreShape["interruptSession"] = (

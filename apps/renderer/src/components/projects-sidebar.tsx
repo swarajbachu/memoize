@@ -7,6 +7,7 @@ import {
   MessageSquare,
   Pencil,
   Plus,
+  Settings,
   Sparkles,
   Trash2,
   X,
@@ -136,7 +137,7 @@ export function ProjectsSidebar() {
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
 
   return (
-    <aside className="flex flex-col bg-sidebar/80 backdrop-blur-3xl text-sidebar-foreground">
+    <aside className="flex h-full min-h-0 w-full flex-col bg-sidebar/80 backdrop-blur-3xl text-sidebar-foreground">
       <div className="flex h-9 items-center justify-between px-3 text-xs uppercase tracking-wide text-muted-foreground [-webkit-app-region:drag]">
         <span className="ml-16 select-none">forkzero</span>
       </div>
@@ -158,7 +159,7 @@ export function ProjectsSidebar() {
         </p>
       )}
 
-      <ul className="flex flex-col gap-0.5 overflow-y-auto px-1 pb-2">
+      <ul className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-1 pb-2">
         {folders.length === 0 && !loading && (
           <li className="px-3 py-4 text-center text-xs text-muted-foreground">
             No projects yet. Click + to add one.
@@ -182,7 +183,25 @@ export function ProjectsSidebar() {
           />
         ))}
       </ul>
+      <SidebarFooter />
     </aside>
+  );
+}
+
+function SidebarFooter() {
+  const setCredentialsOpen = useProvidersStore((s) => s.setCredentialsOpen);
+  return (
+    <div className="border-t border-sidebar-border/40 px-2 py-1.5">
+      <button
+        type="button"
+        onClick={() => setCredentialsOpen(true)}
+        className="flex w-full items-center gap-2 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
+        title="API key settings (advanced)"
+      >
+        <Settings className="size-3.5" />
+        <span>Settings</span>
+      </button>
+    </div>
   );
 }
 
@@ -312,16 +331,24 @@ function ProjectRow({
   );
 }
 
+// One-line login hint per provider — the user runs this in their terminal
+// and forkzero picks up the credentials automatically on next refresh.
+const LOGIN_HINT: Record<ProviderId, string> = {
+  claude: "Run `claude /login` in your terminal",
+  codex: "Run `codex login` in your terminal",
+};
+
 function NewSessionButton({ projectId }: { projectId: FolderId }) {
   const availability = useProvidersStore((s) => s.availability);
   const refresh = useProvidersStore((s) => s.refresh);
-  const openCredentials = useProvidersStore((s) => s.setCredentialsOpen);
   const create = useSessionsStore((s) => s.create);
   const [open, setOpen] = useState(false);
 
+  // Refresh availability every time the popover opens — catches the user
+  // running `claude /login` in their terminal without needing to restart.
   useEffect(() => {
-    if (open && availability.length === 0) void refresh();
-  }, [open, availability.length, refresh]);
+    if (open) void refresh();
+  }, [open, refresh]);
 
   const onPick = (providerId: ProviderId) => {
     setOpen(false);
@@ -341,44 +368,51 @@ function NewSessionButton({ projectId }: { projectId: FolderId }) {
       >
         <Plus className="size-3.5" />
       </PopoverTrigger>
-      <PopoverPopup
-        side="right"
-        align="start"
-        className="w-52"
-      >
-          <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-            New session
-          </div>
-          {availability.length === 0 && (
-            <p className="px-2 py-2 text-xs text-muted-foreground">
-              Loading providers…
-            </p>
-          )}
-          {availability.map((avail) => {
-            const ready = avail.sdkConfigured;
-            return (
-              <button
-                key={avail.providerId}
-                type="button"
-                onClick={() => {
-                  if (ready) onPick(avail.providerId);
-                  else {
-                    setOpen(false);
-                    openCredentials(true);
-                  }
-                }}
-                className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-sidebar-accent ${
-                  ready ? "" : "text-muted-foreground"
-                }`}
-              >
+      <PopoverPopup side="right" align="start" className="w-64">
+        <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+          New session
+        </div>
+        {availability.length === 0 && (
+          <p className="px-2 py-2 text-xs text-muted-foreground">
+            Loading providers…
+          </p>
+        )}
+        {availability.map((avail) => {
+          const ready = avail.cliLoggedIn || avail.hasApiKey;
+          const hint = !avail.cliInstalled
+            ? `Install the \`${avail.providerId}\` CLI`
+            : !ready
+              ? LOGIN_HINT[avail.providerId]
+              : null;
+          return (
+            <button
+              key={avail.providerId}
+              type="button"
+              disabled={!ready}
+              onClick={() => {
+                if (ready) onPick(avail.providerId);
+              }}
+              className={`flex w-full flex-col items-start gap-0.5 rounded px-2 py-1.5 text-left text-xs ${
+                ready
+                  ? "hover:bg-sidebar-accent"
+                  : "cursor-not-allowed opacity-60"
+              }`}
+            >
+              <div className="flex w-full items-center gap-2">
                 <Sparkles className="size-3.5" />
                 <span className="flex-1 truncate">{avail.displayName}</span>
                 <span className="text-[10px] text-muted-foreground">
-                  {ready ? "ready" : "set API key"}
+                  {ready ? "ready" : "needs login"}
                 </span>
-              </button>
-            );
-          })}
+              </div>
+              {hint !== null && (
+                <span className="ml-5 text-[10px] text-muted-foreground">
+                  {hint}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </PopoverPopup>
     </Popover>
   );

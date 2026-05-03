@@ -8,6 +8,9 @@ import { useMessagesStore } from "../store/messages.ts";
 const MIN_HEIGHT = 56;
 const MAX_HEIGHT = 240;
 
+// Stable empty-array reference; see chat-view.tsx for rationale.
+const EMPTY_MESSAGES: ReadonlyArray<Message> = [];
+
 /**
  * Heuristic for "we're awaiting an LLM response": the most recent message is
  * either the user's submit or a tool_use without its paired tool_result yet.
@@ -22,7 +25,7 @@ const inferInFlight = (messages: ReadonlyArray<Message>): boolean => {
 export function ChatComposer({ session }: { session: Session }) {
   const sessionId: SessionId = session.id;
   const messages = useMessagesStore(
-    (s) => s.messagesBySession[sessionId] ?? [],
+    (s) => s.messagesBySession[sessionId] ?? EMPTY_MESSAGES,
   );
   const send = useMessagesStore((s) => s.send);
   const interrupt = useMessagesStore((s) => s.interrupt);
@@ -59,7 +62,7 @@ export function ChatComposer({ session }: { session: Session }) {
   };
 
   return (
-    <div className="border-t border-border bg-background/60 px-3 pb-3 pt-2">
+    <div className="shrink-0 border-t border-border bg-zinc-900 px-3 pb-3 pt-2">
       <div className="mx-auto flex max-w-3xl flex-col gap-2">
         <div className="flex items-end gap-2 rounded-xl border border-border bg-muted/30 px-2 py-1.5 focus-within:ring-1 focus-within:ring-primary/40">
           <textarea

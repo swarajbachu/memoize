@@ -34,7 +34,7 @@ export function GitHistoryPane() {
 
   if (selected === null) {
     return (
-      <aside className="flex flex-col bg-background">
+      <aside className="flex h-full w-full flex-col bg-background">
         <Header label="git" />
         <EmptyState>No folder selected.</EmptyState>
       </aside>
@@ -106,7 +106,7 @@ function GitPane({ folderId }: { folderId: FolderId }) {
   }, [folderId]);
 
   return (
-    <aside className="flex h-full flex-col bg-background">
+    <aside className="flex h-full w-full flex-col bg-background">
       <Header
         label={
           state.status === "ready" && state.summary?.branch

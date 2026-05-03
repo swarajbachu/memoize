@@ -6,10 +6,11 @@ import type { CredentialsError } from "../errors.ts";
 
 /**
  * OS-keychain-backed credential store keyed by `providerId`. Used by the SDK
- * adapters (PR 5/6) to retrieve API keys without ever surfacing them to
- * renderer code. Set via the `agent.setCredential` RPC; never returned over
- * the wire — only `listConfigured()` is renderer-visible (used by the
- * `sdkConfigured` flag in `AgentAvailability`).
+ * adapters to retrieve API keys without ever surfacing them to renderer code.
+ * Set via the `agent.setCredential` RPC; never returned over the wire — only
+ * `listConfigured()` is renderer-visible, surfaced as the `hasApiKey` flag
+ * on `AgentAvailability`. CLI-login credentials (the primary auth path)
+ * never touch this service.
  */
 export interface CredentialsServiceShape {
   readonly get: (

@@ -38,9 +38,10 @@ export type AgentStatus = typeof AgentStatus.Type;
 
 /**
  * Static availability report for a provider — does the user have the CLI on
- * PATH, do they have credentials configured for the SDK, what version is
- * installed. Computed at boot and refreshed when the user changes credentials
- * or installs a CLI.
+ * PATH, is the CLI logged in (so the SDK can ride the local OAuth subprocess),
+ * is an API key stored in the keychain. Either `cliLoggedIn` or `hasApiKey`
+ * is enough to start a session; the renderer should treat them as equivalent
+ * "ready" signals and prefer CLI login as the primary path.
  */
 export const AgentAvailability = Schema.Struct({
   providerId: ProviderId,
@@ -48,7 +49,8 @@ export const AgentAvailability = Schema.Struct({
   cliInstalled: Schema.Boolean,
   cliVersion: Schema.optional(Schema.String),
   cliPath: Schema.optional(Schema.String),
-  sdkConfigured: Schema.Boolean,
+  cliLoggedIn: Schema.Boolean,
+  hasApiKey: Schema.Boolean,
 });
 export type AgentAvailability = typeof AgentAvailability.Type;
 
@@ -143,6 +145,10 @@ export const StartSessionInput = Schema.Struct({
   providerId: ProviderId,
   mode: SessionMode,
   initialPrompt: Schema.optional(Schema.String),
+  // Optional caller-supplied id. When omitted, ProviderService mints a fresh
+  // one. MessageStore uses this to lazy-restart a closed session without
+  // moving its persisted history to a new row.
+  sessionId: Schema.optional(AgentSessionId),
 });
 export type StartSessionInput = typeof StartSessionInput.Type;
 

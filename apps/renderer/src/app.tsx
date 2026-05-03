@@ -47,10 +47,12 @@ export function App() {
   }, []);
 
   return (
-    <div className="dark grid h-screen w-screen grid-cols-[260px_1fr_320px] text-foreground">
-      <ProjectsSidebar />
-      <main className="flex min-w-0 flex-col border-x border-border bg-background">
-        <header className="flex h-9 items-center px-3 text-xs text-muted-foreground [-webkit-app-region:drag]">
+    <div className="dark flex h-dvh max-h-dvh min-h-0 w-screen overflow-hidden text-foreground">
+      <div className="flex w-[260px] shrink-0 flex-col">
+        <ProjectsSidebar />
+      </div>
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col border-x border-border bg-zinc-950">
+        <header className="flex h-9 shrink-0 items-center px-3 text-xs text-muted-foreground [-webkit-app-region:drag]">
           <span className="ml-16 select-none truncate" title={selectedFolder?.path}>
             {selectedSession
               ? selectedSession.title
@@ -65,7 +67,7 @@ export function App() {
             <ChatComposer session={selectedSession} />
           </>
         ) : (
-          <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
             <p>
               {selectedFolder === null
                 ? "Add a project on the left to begin."
@@ -74,7 +76,9 @@ export function App() {
           </div>
         )}
       </main>
-      <GitHistoryPane />
+      <div className="flex w-[320px] shrink-0 flex-col bg-zinc-950">
+        <GitHistoryPane />
+      </div>
       <CredentialsSheet />
     </div>
   );
