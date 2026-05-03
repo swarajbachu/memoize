@@ -1,4 +1,4 @@
-# Phase 4 — Polish & distribution
+# Phase 5 — Polish & distribution
 
 **Goal**: ship a 1.0 that someone other than you would happily install.
 
@@ -6,7 +6,9 @@
 
 **Estimate**: ~3 weeks
 
-**Depends on**: Phase 3
+**Depends on**: Phase 4
+
+> **Note:** Renumbered from "Phase 4" when the chat-first pivot inserted Phase 3 (chat MVP). The "multiple terminals per folder (tabs)" deliverable from the original Phase 4 is dropped — the v1 UI has one terminal per project in the right pane and that's enough. Git diff viewer / branch indicator / branch switcher are also dropped (the old git-history pane is removed in Phase 3). What remains: cross-project session search, themes, keybindings, code signing, auto-update, multi-OS packaging.
 
 ## Deliverables
 

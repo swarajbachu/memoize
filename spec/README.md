@@ -1,6 +1,8 @@
 # forkzero — specification
 
-forkzero is a terminal-first desktop app for running coding agents. This directory holds the living specification: vision, architecture, phase roadmap, per-feature designs, and the architecture decision record.
+forkzero is a chat-first desktop app for working with coding agents (Claude Code, Codex). Three-pane layout: projects + sessions on the left, chat in the middle, files + terminal on the right. Sessions persist in SQLite. This directory holds the living specification: vision, architecture, phase roadmap, per-feature designs, and the architecture decision record.
+
+> **Spec pivoted on 2026-05-03** from terminal-first to chat-first. Phases 1–2 (foundation + agent backend) shipped under the old direction; their backend code is reused unchanged. Phase 3 (chat MVP) is the new direction's first phase. See `vision.md` for the current product shape and `roadmap.md` for the new phase numbering.
 
 ## How to read this
 

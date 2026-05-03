@@ -1,6 +1,6 @@
 # Feature: Terminal
 
-xterm.js renders, node-pty backs it. One terminal per folder in Phase 1; multiple in Phase 4.
+xterm.js renders, node-pty backs it. **In Phase 3 (chat MVP) the terminal moves from the main canvas to a tab in the right pane** — one terminal per project, persisted across session switches within that project. The "multiple terminals per folder" deliverable from the old Phase 4 plan is dropped from v1; if a user wants more terminals they open a real terminal alongside.
 
 ## Lifecycle
 

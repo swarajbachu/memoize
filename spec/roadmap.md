@@ -1,73 +1,79 @@
 # Roadmap
 
-Estimates assume a single developer, ~6 productive hours/day, with a capable LLM pair-programmer. **Add 30% to anything Effect-touching while learning** — these estimates already include that headroom.
+Estimates assume a single developer, ~6 productive hours/day, with a capable LLM pair-programmer. Effect-touching work has 30% headroom baked in.
 
-## Phase 1 — Foundation (≈4 weeks)
+## Phase 1 — Foundation ✅ (shipped)
 
-Make the scaffold real. By the end you can pick a folder, run a real shell in it, and watch the git history update as you commit.
-
-- Folder sidebar with `+` button and persistence
-- Real PTY terminal per folder (one terminal per folder in this phase)
-- Real `git log` + status pane
+- Folder sidebar + persistence
+- Real PTY terminal
 - Effect runtime + Layer architecture in both processes
-- Typed IPC contracts in `packages/wire`
+- Typed RPC contracts in `packages/wire`
 
-→ See [phases/01-foundation.md](phases/01-foundation.md)
+## Phase 2 — Agents (backend) ✅ (shipped)
 
-## Phase 2 — Agents (≈4 weeks)
+- Provider availability detection (Claude / Codex CLIs + SDK keys)
+- Keychain-backed credentials
+- Claude SDK adapter + Codex SDK adapter
+- Streaming `AgentEvent` union over RPC
 
-The headline. Run Claude Code / Codex as either a spawned CLI in the terminal (cheap fallback) or via SDK with a structured side panel showing tool calls and proposed edits.
+The UI shipped in Phase 2 (Cmd+K launcher + single right-side timeline panel) is **deprecated** — see Phase 3 for the chat-first replacement. The backend (RPCs, drivers, credentials) is unchanged and reused.
 
-- Detect installed `claude` / `codex` CLIs; one-click "run in this folder"
-- Claude Code SDK adapter with streaming events
-- Codex SDK adapter
-- Tool-call timeline UI alongside the terminal
-- Agent provider switcher per session
+## Phase 3 — Chat-first MVP (next, ~3–4 weeks)
 
-→ See [phases/02-agents.md](phases/02-agents.md)
+The pivot. Replace the terminal-first shell with a three-pane chat IDE.
 
-## Phase 3 — Permissions & sessions (≈2 weeks)
+- SQLite persistence layer (`@effect/sql-sqlite-node` + `@effect/sql/Migrator`)
+- Projects → sessions → messages schema; sessions are persisted + archivable
+- Three-pane layout: projects/sessions sidebar, chat in center, files+terminal on the right
+- Chat composer with model picker; markdown + code rendering
+- Tool calls render inline as collapsible blocks
+- Right pane: file tree (read-only) + terminal tab
+- Drop the Cmd+K launcher and the single-session right panel; drop the git history pane
 
-Make agents trustworthy enough to leave running.
+→ See [phases/03-chat-mvp.md](phases/03-chat-mvp.md)
 
-- Permission prompts: file write, command run, network access
+## Phase 4 — Permissions & quality (~2 weeks)
+
+Make the agent trustworthy enough to leave running.
+
+- Permission prompts UI (file write / shell command / network) — replace Phase 2's auto-deny
 - Per-session "always allow X" memory
-- Session persistence + resume across app restart
-- Agent run transcripts (NDJSON) for replay/audit
+- Resume an interrupted session after restart
+- Inline diff rendering for `edit_file` tool calls
+- NDJSON transcript export per session
 
-→ See [phases/03-permissions-and-sessions.md](phases/03-permissions-and-sessions.md)
+→ See [phases/04-permissions.md](phases/04-permissions.md)
 
-## Phase 4 — Polish & distribution (≈3 weeks)
+## Phase 5 — Polish & distribution (~3 weeks)
 
-Make it shippable.
-
-- Multiple terminals per folder (tabs)
-- Git diff viewer (per commit, vs working tree)
-- Branch indicator + switcher
+- Session search across projects
+- Bulk archive / delete
 - Themes + keybindings
+- macOS code signing & notarization
 - Auto-update via electron-updater
-- macOS signing & notarization (Linux + Windows packaging follow)
+- Linux + Windows packaging
 
-→ See [phases/04-polish-and-distribution.md](phases/04-polish-and-distribution.md)
+→ See [phases/05-polish.md](phases/05-polish.md)
 
 ## Total
 
 | Milestone | Calendar |
 |---|---|
-| Personal-use MVP (Phase 1) | ~4 weeks |
-| Public alpha (Phases 1–2) | ~8 weeks |
-| Public beta (Phases 1–3) | ~10 weeks |
-| 1.0 (Phases 1–4) | **~3–4 months** |
+| Backend complete (Phases 1–2) | shipped |
+| Chat MVP private alpha (Phase 3) | ~4 weeks from now |
+| Trust release (Phase 4) | ~6 weeks from now |
+| 1.0 (Phases 1–5) | ~10 weeks from now |
 
-## Beyond 1.0 (post-roadmap, designed for from day one)
+## Beyond 1.0
 
-The architecture (`apps/server` as a code-only app today, designed for extraction; transport-agnostic renderer) supports these without re-architecture. Each becomes a focused PR rather than a redesign.
+ADR 0007's transport-agnostic split keeps these costs bounded — each becomes a focused PR, not a redesign.
 
-| Milestone | What changes | Estimate |
-|---|---|---|
-| **Remote desktop access** | `apps/server/src/bin.ts` becomes a real WS server boot; Electron spawns it as a subprocess; renderer's transport seam picks WS when running outside Electron. SSH + port-forward enables remote use. | ~1 week |
-| **CLI client** | New `apps/cli/` consuming `@forkzero/wire` over the WS transport. | ~1 week |
-| **Multi-window / multi-renderer** | Multiple Electron renderers (or browser tabs) connected to one backend. Backend already supports it; just wire window management. | ~3 days |
-| **Mobile client** | Native or web-based mobile app speaking WS to a desktop's server over LAN/tunnel. Re-uses `apps/renderer` as a packaging target where feasible. | TBD |
+| Milestone | What changes |
+|---|---|
+| Remote desktop access | `apps/server/src/bin.ts` becomes a real WS server boot; renderer's transport seam picks WS when running outside Electron. |
+| CLI client | New `apps/cli/` consuming `@forkzero/wire` over the WS transport. |
+| Multi-window | Multiple Electron renderers connected to one backend — backend already supports it. |
+| Mobile client | Native or web mobile app speaking WS to a desktop's server over LAN/tunnel. |
 
-See [ADR 0007](decisions/0007-server-as-code-only-app.md) for the architectural rules that keep these costs bounded.
+See [ADR 0007](decisions/0007-server-as-code-only-app.md) for the rules that keep these costs bounded.
+See [ADR 0008](decisions/0008-sqlite-persistence.md) for the persistence story underpinning Phase 3.
