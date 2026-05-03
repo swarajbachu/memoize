@@ -1,7 +1,12 @@
 import { Send, Square } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 
-import type { Message, Session, SessionId } from "@forkzero/wire";
+import {
+  MODELS_BY_PROVIDER,
+  type Message,
+  type Session,
+  type SessionId,
+} from "@forkzero/wire";
 
 import { useMessagesStore } from "../store/messages.ts";
 
@@ -35,6 +40,12 @@ export function ChatComposer({ session }: { session: Session }) {
 
   const inFlight = useMemo(() => inferInFlight(messages), [messages]);
   const canSend = !inFlight && value.trim().length > 0;
+  const modelLabel = useMemo(() => {
+    const match = MODELS_BY_PROVIDER[session.providerId]?.find(
+      (m) => m.id === session.model,
+    );
+    return match?.label ?? session.model;
+  }, [session.providerId, session.model]);
 
   const submit = async () => {
     const text = value.trim();
@@ -100,7 +111,7 @@ export function ChatComposer({ session }: { session: Session }) {
         </div>
         <div className="flex items-center justify-between px-1 text-[10px] text-muted-foreground">
           <span>
-            {session.providerId} · {session.model}
+            {session.providerId} · {modelLabel}
           </span>
           <span>
             {inFlight ? "running…" : "idle"}

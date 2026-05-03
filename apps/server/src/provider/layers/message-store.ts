@@ -337,6 +337,7 @@ export const MessageStoreLive = Layer.scoped(
             providerId: input.providerId,
             mode: "sdk",
             initialPrompt: input.initialPrompt,
+            model: input.model,
           })
           .pipe(
             Effect.mapError((err) =>
@@ -483,6 +484,7 @@ export const MessageStoreLive = Layer.scoped(
           mode: "sdk",
           sessionId: session.id,
           initialPrompt,
+          model: session.model,
         })
         .pipe(
           Effect.flatMap(() => startSubscription(session.id)),

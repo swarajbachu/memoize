@@ -229,6 +229,7 @@ export const startClaudeSession = (
       ...(claudeExecutablePath !== null
         ? { pathToClaudeCodeExecutable: claudeExecutablePath }
         : {}),
+      ...(input.model !== undefined ? { model: input.model } : {}),
       env: env as Options["env"],
       // Phase 2 auto-denies tool permission requests; Phase 3 wires real UI.
       canUseTool: async (toolName, toolInput) => {
