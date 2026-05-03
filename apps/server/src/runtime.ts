@@ -7,6 +7,9 @@ import { ForkzeroRpcs } from "@forkzero/wire";
 import { AppPaths } from "./app-paths.ts";
 import { GitServiceLive } from "./git/layers/git-service.ts";
 import { HandlersLayer } from "./handlers.ts";
+import { importWorkspacesJson } from "./persistence/import-workspaces.ts";
+import { MigrationsLive } from "./persistence/migrations.ts";
+import { SqliteLive } from "./persistence/sqlite.ts";
 import { CredentialsServiceLive } from "./provider/layers/credentials-service.ts";
 import { ProviderServiceLive } from "./provider/layers/provider-service.ts";
 import { PtyServiceLive } from "./pty/layers/pty-service.ts";
@@ -19,8 +22,8 @@ import { WorkspaceServiceLive } from "./workspace/layers/workspace-service.ts";
  * UI-toolkit-specific. See ADR 0007 for the rules that make WS extraction
  * cheap later.
  *
- * - `userData`: where persistence files (workspaces.json, future sessions)
- *   live. Electron resolves this from `app.getPath("userData")`; a headless
+ * - `userData`: where persistence files (forkzero.sqlite, OS keychain) live.
+ *   Electron resolves this from `app.getPath("userData")`; a headless
  *   server resolves it from `XDG_DATA_HOME` or a CLI flag.
  * - `folderPicker`: a callback returning the user-chosen path. Electron
  *   wraps `dialog.showOpenDialog`; a headless server returns null (or
@@ -43,9 +46,28 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
   const AppPathsLayer = Layer.succeed(AppPaths, { userData: deps.userData });
   const FolderPickerLayer = Layer.succeed(FolderPicker, deps.folderPicker);
 
-  const WorkspaceLayer = WorkspaceServiceLive.pipe(
+  // SqlClient is the shared persistence handle. The migrator runs once on
+  // boot via `Layer.provideMerge` so any layer that consumes SqlClient sees
+  // the schema already applied.
+  const SqliteLayer = SqliteLive.pipe(Layer.provide(AppPathsLayer));
+  const MigratedSqlite = SqliteLayer.pipe(
+    Layer.provideMerge(
+      MigrationsLive.pipe(Layer.provide(SqliteLayer), Layer.provide(NodeContext.layer)),
+    ),
+  );
+
+  // After migrations: import any pre-existing `workspaces.json` once.
+  // `provideMerge` keeps the SqlClient available downstream.
+  const ImportShim = Layer.effectDiscard(importWorkspacesJson).pipe(
+    Layer.provide(MigratedSqlite),
     Layer.provide(NodeContext.layer),
     Layer.provide(AppPathsLayer),
+  );
+
+  const WorkspaceLayer = WorkspaceServiceLive.pipe(
+    Layer.provide(MigratedSqlite),
+    Layer.provide(ImportShim),
+    Layer.provide(NodeContext.layer),
   );
 
   // GitService yields WorkspaceService for folderId → path resolution and

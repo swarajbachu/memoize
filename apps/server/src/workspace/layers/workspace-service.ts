@@ -1,5 +1,6 @@
 import { FileSystem } from "@effect/platform";
-import { Effect, Layer, Ref, Schema } from "effect";
+import { SqlClient } from "@effect/sql";
+import { Effect, Layer } from "effect";
 import * as Path from "node:path";
 
 import {
@@ -10,101 +11,50 @@ import {
   WorkspaceNotFoundError,
 } from "@forkzero/wire";
 
-import { AppPaths } from "../../app-paths.ts";
 import { WorkspaceService } from "../services/workspace-service.ts";
 
-// `selectedFolderId` is optional with a `null` default so that workspaces.json
-// files written by older builds (which had no selection field) decode cleanly.
-const WorkspaceFile = Schema.parseJson(
-  Schema.Struct({
-    folders: Schema.Array(Folder),
-    selectedFolderId: Schema.optionalWith(Schema.NullOr(FolderId), {
-      default: () => null,
-    }),
-  }),
-);
-
-interface WorkspaceState {
-  readonly folders: ReadonlyArray<Folder>;
-  readonly selectedFolderId: FolderId | null;
+interface ProjectRow {
+  readonly id: string;
+  readonly path: string;
+  readonly name: string;
+  readonly created_at: string;
 }
 
-const loadInitial = (
-  fs: FileSystem.FileSystem,
-  filePath: string,
-): Effect.Effect<WorkspaceState> =>
-  fs.exists(filePath).pipe(
-    Effect.flatMap((exists) =>
-      exists
-        ? fs.readFileString(filePath).pipe(
-            Effect.flatMap(Schema.decode(WorkspaceFile)),
-            Effect.map(
-              ({ folders, selectedFolderId }): WorkspaceState => ({
-                folders,
-                selectedFolderId,
-              }),
-            ),
-          )
-        : Effect.succeed<WorkspaceState>({
-            folders: [],
-            selectedFolderId: null,
-          }),
-    ),
-    Effect.catchAllCause((cause) =>
-      Effect.logWarning(
-        "[forkzero] failed to load workspaces.json, starting empty",
-      ).pipe(
-        Effect.zipRight(Effect.logDebug(cause)),
-        Effect.zipRight(
-          Effect.succeed<WorkspaceState>({
-            folders: [],
-            selectedFolderId: null,
-          }),
-        ),
-      ),
-    ),
-  );
+const rowToFolder = (row: ProjectRow): Folder =>
+  Folder.make({
+    id: FolderId.make(row.id),
+    path: row.path,
+    name: row.name,
+    addedAt: new Date(row.created_at),
+  });
+
+const SELECTED_KEY = "selectedProjectId";
 
 export const WorkspaceServiceLive = Layer.effect(
   WorkspaceService,
   Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
     const fs = yield* FileSystem.FileSystem;
-    const paths = yield* AppPaths;
-    const filePath = Path.join(paths.userData, "workspaces.json");
-    const tmpPath = `${filePath}.tmp`;
-
-    const initial = yield* loadInitial(fs, filePath);
-    const foldersRef = yield* Ref.make<ReadonlyMap<FolderId, Folder>>(
-      new Map(initial.folders.map((f) => [f.id, f] as const)),
-    );
-    // Drop a stale persisted selection if its folder no longer exists.
-    const initialSelected =
-      initial.selectedFolderId !== null &&
-      initial.folders.some((f) => f.id === initial.selectedFolderId)
-        ? initial.selectedFolderId
-        : null;
-    const selectedRef = yield* Ref.make<FolderId | null>(initialSelected);
-
-    const persist = Effect.gen(function* () {
-      const map = yield* Ref.get(foldersRef);
-      const selectedFolderId = yield* Ref.get(selectedRef);
-      const folders = Array.from(map.values()).sort(
-        (a, b) => a.addedAt.getTime() - b.addedAt.getTime(),
-      );
-      const encoded = yield* Schema.encode(WorkspaceFile)({
-        folders,
-        selectedFolderId,
-      });
-      yield* fs.writeFileString(tmpPath, encoded);
-      yield* fs.rename(tmpPath, filePath);
-    }).pipe(Effect.orDie);
 
     const list: WorkspaceService["Type"]["list"] = () =>
       Effect.gen(function* () {
-        const map = yield* Ref.get(foldersRef);
-        return Array.from(map.values()).sort(
-          (a, b) => a.addedAt.getTime() - b.addedAt.getTime(),
-        );
+        const rows = yield* sql<ProjectRow>`
+          SELECT id, path, name, created_at
+          FROM projects
+          ORDER BY created_at ASC
+        `.pipe(Effect.orDie);
+        return rows.map(rowToFolder);
+      });
+
+    const findById: WorkspaceService["Type"]["findById"] = (folderId) =>
+      Effect.gen(function* () {
+        const rows = yield* sql<ProjectRow>`
+          SELECT id, path, name, created_at
+          FROM projects
+          WHERE id = ${folderId}
+          LIMIT 1
+        `.pipe(Effect.orDie);
+        return rows.length > 0 ? rowToFolder(rows[0]!) : null;
       });
 
     const add: WorkspaceService["Type"]["add"] = (rawPath) =>
@@ -129,73 +79,86 @@ export const WorkspaceServiceLive = Layer.effect(
           );
         }
 
-        const map = yield* Ref.get(foldersRef);
-        for (const existing of map.values()) {
-          if (existing.path === resolved) {
-            return yield* Effect.fail(
-              new WorkspaceDuplicatePathError({ path: resolved }),
-            );
-          }
+        const dupes = yield* sql<{ id: string }>`
+          SELECT id FROM projects WHERE path = ${resolved} LIMIT 1
+        `.pipe(Effect.orDie);
+        if (dupes.length > 0) {
+          return yield* Effect.fail(
+            new WorkspaceDuplicatePathError({ path: resolved }),
+          );
         }
 
-        const folder = Folder.make({
-          id: FolderId.make(crypto.randomUUID()),
-          path: resolved,
-          name: Path.basename(resolved) || resolved,
-          addedAt: new Date(),
-        });
+        const id = FolderId.make(crypto.randomUUID());
+        const name = Path.basename(resolved) || resolved;
+        const now = new Date();
+        const nowIso = now.toISOString();
 
-        yield* Ref.update(foldersRef, (m) => {
-          const next = new Map(m);
-          next.set(folder.id, folder);
-          return next;
-        });
-        yield* persist;
-        return folder;
+        yield* sql`
+          INSERT INTO projects (id, path, name, created_at, updated_at)
+          VALUES (${id}, ${resolved}, ${name}, ${nowIso}, ${nowIso})
+        `.pipe(Effect.orDie);
+
+        return Folder.make({ id, path: resolved, name, addedAt: now });
       });
 
     const remove: WorkspaceService["Type"]["remove"] = (folderId) =>
       Effect.gen(function* () {
-        const map = yield* Ref.get(foldersRef);
-        if (!map.has(folderId)) {
+        const existing = yield* sql<{ id: string }>`
+          SELECT id FROM projects WHERE id = ${folderId} LIMIT 1
+        `.pipe(Effect.orDie);
+        if (existing.length === 0) {
           return yield* Effect.fail(
             new WorkspaceNotFoundError({ folderId }),
           );
         }
-        yield* Ref.update(foldersRef, (m) => {
-          const next = new Map(m);
-          next.delete(folderId);
-          return next;
-        });
-        // If we just removed the selected folder, clear the selection so the
-        // persisted file never points to a missing id.
-        const selected = yield* Ref.get(selectedRef);
-        if (selected === folderId) {
-          yield* Ref.set(selectedRef, null);
-        }
-        yield* persist;
+        yield* sql`DELETE FROM projects WHERE id = ${folderId}`.pipe(
+          Effect.orDie,
+        );
+        // ON DELETE CASCADE on projects → sessions → messages handles the rest.
+        // If this was the selected project, clear the pointer so the persisted
+        // value never points to a missing id.
+        yield* sql`
+          DELETE FROM app_state
+          WHERE key = ${SELECTED_KEY} AND value = ${folderId}
+        `.pipe(Effect.orDie);
       });
 
     const getSelected: WorkspaceService["Type"]["getSelected"] = () =>
-      Ref.get(selectedRef);
+      Effect.gen(function* () {
+        const rows = yield* sql<{ value: string }>`
+          SELECT value FROM app_state WHERE key = ${SELECTED_KEY} LIMIT 1
+        `.pipe(Effect.orDie);
+        if (rows.length === 0) return null;
+        const id = FolderId.make(rows[0]!.value);
+        // Defensive: drop the selection if the project is gone.
+        const known = yield* sql<{ id: string }>`
+          SELECT id FROM projects WHERE id = ${id} LIMIT 1
+        `.pipe(Effect.orDie);
+        return known.length > 0 ? id : null;
+      });
 
     const setSelected: WorkspaceService["Type"]["setSelected"] = (folderId) =>
       Effect.gen(function* () {
-        if (folderId !== null) {
-          const map = yield* Ref.get(foldersRef);
-          if (!map.has(folderId)) {
-            // Caller asked for a folder we don't know about; treat as clear.
-            yield* Ref.set(selectedRef, null);
-            yield* persist;
-            return;
-          }
+        if (folderId === null) {
+          yield* sql`DELETE FROM app_state WHERE key = ${SELECTED_KEY}`.pipe(
+            Effect.orDie,
+          );
+          return;
         }
-        yield* Ref.set(selectedRef, folderId);
-        yield* persist;
+        const known = yield* sql<{ id: string }>`
+          SELECT id FROM projects WHERE id = ${folderId} LIMIT 1
+        `.pipe(Effect.orDie);
+        if (known.length === 0) {
+          yield* sql`DELETE FROM app_state WHERE key = ${SELECTED_KEY}`.pipe(
+            Effect.orDie,
+          );
+          return;
+        }
+        yield* sql`
+          INSERT INTO app_state (key, value) VALUES (${SELECTED_KEY}, ${folderId})
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        `.pipe(Effect.orDie);
       });
-
-    const findById: WorkspaceService["Type"]["findById"] = (folderId) =>
-      Effect.map(Ref.get(foldersRef), (map) => map.get(folderId) ?? null);
 
     return {
       add,

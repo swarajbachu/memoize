@@ -8,10 +8,11 @@ const shared = {
   // Workspace packages ship as raw .ts source — bundle them in instead of
   // letting Node try to require() the .ts file at runtime.
   deps: { alwaysBundle: ["@forkzero/wire", "@forkzero/server"] },
-  // node-pty's binding.js uses __dirname to locate the native pty.node file;
-  // bundling its JS relocates __dirname and breaks that lookup. Keep it
-  // external so it's require()'d from node_modules at runtime.
-  external: ["node-pty"],
+  // Native modules whose loader uses `__dirname` / `module.parent.filename`
+  // to locate a `.node` file at runtime — bundling their JS relocates those
+  // anchors and the lookup fails. Keep them external so each is require()'d
+  // from node_modules at runtime.
+  external: ["node-pty", "better-sqlite3", "bindings"],
 };
 
 export default defineConfig([

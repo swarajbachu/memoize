@@ -81,6 +81,16 @@ function createMainWindow() {
         folderPicker,
         serverProtocol,
       }),
+    ).pipe(
+      Effect.catchAllCause((cause) =>
+        Effect.sync(() => {
+          // Boot-time layer failures (sqlite open, migrator, config) are
+          // unrecoverable — surface the cause and bail. Quiet
+          // success-after-restart is preferable to a half-running app.
+          console.error("[forkzero] fatal boot error", cause);
+          app.exit(1);
+        }),
+      ),
     ),
   );
 
