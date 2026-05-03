@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Effect } from "effect";
 
 import { AgentLauncher } from "./components/agent-launcher";
+import { CredentialsSheet } from "./components/credentials-sheet";
 import { FolderSidebar } from "./components/folder-sidebar";
 import { TerminalPane } from "./components/terminal-pane";
 import { GitHistoryPane } from "./components/git-history-pane";
@@ -50,6 +51,7 @@ export function App() {
       </main>
       <GitHistoryPane />
       <AgentLauncher />
+      <CredentialsSheet />
     </div>
   );
 }

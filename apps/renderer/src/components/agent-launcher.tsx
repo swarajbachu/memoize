@@ -1,4 +1,4 @@
-import { Sparkles } from "lucide-react";
+import { KeyRound, Sparkles } from "lucide-react";
 import { useEffect } from "react";
 
 import type { AgentAvailability, ProviderId } from "@forkzero/wire";
@@ -8,10 +8,13 @@ import {
   CommandDialog,
   CommandDialogPopup,
   CommandEmpty,
+  CommandGroup,
+  CommandGroupLabel,
   CommandInput,
   CommandItem,
   CommandList,
   CommandPanel,
+  CommandSeparator,
   CommandShortcut,
 } from "~/components/ui/command";
 import { useAgentsStore } from "../store/agents.ts";
@@ -28,6 +31,7 @@ export function AgentLauncher() {
   const refresh = useAgentsStore((s) => s.refresh);
   const availability = useAgentsStore((s) => s.availability);
   const launch = useAgentsStore((s) => s.launch);
+  const openCredentials = useAgentsStore((s) => s.setCredentialsOpen);
   const selectedFolderId = useWorkspaceStore((s) => s.selectedFolderId);
   const folders = useWorkspaceStore((s) => s.folders);
   const selected = selectedFolderId
@@ -59,6 +63,11 @@ export function AgentLauncher() {
     launch(selected.id, avail);
   };
 
+  const onOpenCredentials = () => {
+    setOpen(false);
+    openCredentials(true);
+  };
+
   return (
     <CommandDialog open={open} onOpenChange={setOpen}>
       <CommandDialogPopup>
@@ -67,33 +76,50 @@ export function AgentLauncher() {
             <CommandInput placeholder="Run an agent here…" />
             <CommandList>
               <CommandEmpty>No agents available.</CommandEmpty>
-              {availability.map((avail) => {
-                const installed = avail.cliInstalled;
-                const label = installed
-                  ? `${avail.displayName} (CLI)`
-                  : `Install ${avail.displayName}`;
-                return (
-                  <CommandItem
-                    key={avail.providerId}
-                    value={`${avail.providerId}-${label}`}
-                    onClick={() => onPick(avail)}
-                    className={
-                      installed
-                        ? undefined
-                        : "text-muted-foreground"
-                    }
-                  >
-                    <Sparkles className="size-4" />
-                    <span className="flex-1">{label}</span>
-                    {installed && avail.cliVersion !== undefined && (
-                      <CommandShortcut>{avail.cliVersion}</CommandShortcut>
-                    )}
-                    {!installed && (
-                      <CommandShortcut>not installed</CommandShortcut>
-                    )}
-                  </CommandItem>
-                );
-              })}
+              <CommandGroup>
+                <CommandGroupLabel>Run agent</CommandGroupLabel>
+                {availability.map((avail) => {
+                  const installed = avail.cliInstalled;
+                  const label = installed
+                    ? `${avail.displayName} (CLI)`
+                    : `Install ${avail.displayName}`;
+                  return (
+                    <CommandItem
+                      key={avail.providerId}
+                      value={`run-${avail.providerId}-${label}`}
+                      onClick={() => onPick(avail)}
+                      className={
+                        installed ? undefined : "text-muted-foreground"
+                      }
+                    >
+                      <Sparkles className="size-4" />
+                      <span className="flex-1">{label}</span>
+                      {installed && avail.cliVersion !== undefined && (
+                        <CommandShortcut>{avail.cliVersion}</CommandShortcut>
+                      )}
+                      {!installed && (
+                        <CommandShortcut>not installed</CommandShortcut>
+                      )}
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+              <CommandSeparator />
+              <CommandGroup>
+                <CommandGroupLabel>Settings</CommandGroupLabel>
+                <CommandItem
+                  value="settings-credentials"
+                  onClick={onOpenCredentials}
+                >
+                  <KeyRound className="size-4" />
+                  <span className="flex-1">Provider credentials…</span>
+                  <CommandShortcut>
+                    {availability.filter((a) => a.sdkConfigured).length}
+                    {" / "}
+                    {availability.length}
+                  </CommandShortcut>
+                </CommandItem>
+              </CommandGroup>
             </CommandList>
           </CommandPanel>
         </Command>
