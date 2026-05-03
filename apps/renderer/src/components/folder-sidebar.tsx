@@ -67,7 +67,7 @@ export function FolderSidebar() {
   }, [folders, origins]);
 
   return (
-    <aside className="flex flex-col bg-sidebar/10 backdrop-blur-3xl text-sidebar-foreground">
+    <aside className="flex flex-col bg-sidebar/80 backdrop-blur-3xl text-sidebar-foreground">
       <div className="flex h-9 items-center justify-between px-3 text-xs uppercase tracking-wide text-muted-foreground [-webkit-app-region:drag]">
         <span className="ml-16 select-none">forkzero</span>
       </div>

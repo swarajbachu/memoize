@@ -1,7 +1,7 @@
 import { ForkzeroRpcs } from "@forkzero/wire";
 import { Effect, Layer, Stream } from "effect";
 
-import { PtyService } from "./pty-service.ts";
+import { PtyService } from "./services/pty-service.ts";
 
 const Open = ForkzeroRpcs.toLayerHandler("pty.open", ({ cwd, cols, rows }) =>
   Effect.flatMap(PtyService, (svc) => svc.open(cwd, cols, rows)),

@@ -48,18 +48,18 @@ forkzero/
     server/                                 # main-process service implementations
       src/
         workspace/                          # one folder per domain
-          Drivers/                          # per-impl factories (where applicable)
-          Layers/                           # live Effect.Service impls
-          Services/                         # Context.Service tags (interfaces)
-          Errors.ts                         # tagged errors for this domain
+          drivers/                          # per-impl factories (where applicable)
+          layers/                           # live Effect.Service impls
+          services/                         # Context.Service tags (interfaces)
+          errors.ts                         # tagged errors for this domain
           handlers.ts                       # toLayerHandler bindings for this domain's RPCs
         pty/                                # same shape
         git/                                # same shape
         provider/                           # the agent domain (Claude, Codex, ...)
-          Drivers/                          # ClaudeDriver, CodexDriver — config + factory
-          Layers/                           # ClaudeAdapter, CodexAdapter — live SDK wrappers
-          Services/                         # ProviderAdapter, ProviderRegistry, ProviderService
-          Errors.ts
+          drivers/                          # claude-driver, codex-driver — config + factory
+          layers/                           # claude-adapter, codex-adapter — live SDK wrappers
+          services/                         # provider-adapter, provider-registry, provider-service
+          errors.ts
           availability.ts                   # PATH probe — `which claude`, `which codex`
           spawn.ts                          # spawn-CLI helper
           credentials.ts                    # keychain wrapper
@@ -88,18 +88,18 @@ forkzero/
 
 ### Per-domain folder convention
 
-Every domain in `apps/server/src/` follows this split (mirrors the reference repo so transplanted code lines up 1:1):
+Every domain in `apps/server/src/` follows this split. Folder and file names are kebab-case throughout — no PascalCase paths.
 
 | Folder | Contents | Example |
 |---|---|---|
-| `Drivers/` | Per-impl static configs + factory functions | `ClaudeDriver.ts` exports `{ driverKind, displayName, create }` |
-| `Layers/` | Live `Effect.Service` impls (`Layer.effect(Tag, factory)`) | `ProviderService.ts` (live), `ClaudeAdapter.ts` |
-| `Services/` | `Context.Service` tags — interfaces only, no impls | `ProviderAdapter.ts`, `ProviderService.ts` |
-| `Errors.ts` | Tagged errors for the domain | `ProviderServiceError`, `ProviderAdapterError` |
+| `drivers/` | Per-impl static configs + factory functions | `claude-driver.ts` exports `{ driverKind, displayName, create }` |
+| `layers/` | Live `Effect.Service` impls (`Layer.effect(Tag, factory)`) | `provider-service.ts` (live), `claude-adapter.ts` |
+| `services/` | `Context.Service` tags — interfaces only, no impls | `provider-adapter.ts`, `provider-service.ts` |
+| `errors.ts` | Tagged errors for the domain | `ProviderServiceError`, `ProviderAdapterError` |
 | `handlers.ts` | `RpcGroup.toLayerHandler` bindings | `agent.start`, `agent.events`, ... |
 | Top-level `*.ts` | Domain-specific helpers that aren't services | `availability.ts`, `spawn.ts`, `credentials.ts` |
 
-Single-impl domains (Phase 1's `pty`, `git`, `workspace`) still use the same split — `Layers/` has one file, `Services/` has one file, `Drivers/` may be empty. The uniform shape makes onboarding cheap; growth is invisible.
+Single-impl domains (Phase 1's `pty`, `git`, `workspace`) still use the same split — `layers/` has one file, `services/` has one file, `drivers/` may be empty/absent. The uniform shape makes onboarding cheap; growth is invisible.
 
 ## Transport boundary
 
@@ -137,7 +137,7 @@ ServerLayer = Layer.mergeAll(
 
 ## Streaming
 
-Streaming RPCs (`pty.output`, `git.headChanged`, `agent.events`) follow a uniform pattern in the server: per-subscription `Mailbox<Event, Error>` + `Stream.unwrapScoped(Effect.gen { forkScoped pump; return Mailbox.toStream(mb) })`. The forked fiber dies when the renderer interrupts the subscription — clean teardown, no leaks. See `apps/server/src/pty/Layers/PtyService.ts` and `apps/server/src/git/Layers/GitService.ts` for the canonical shape.
+Streaming RPCs (`pty.output`, `git.headChanged`, `agent.events`) follow a uniform pattern in the server: per-subscription `Mailbox<Event, Error>` + `Stream.unwrapScoped(Effect.gen { forkScoped pump; return Mailbox.toStream(mb) })`. The forked fiber dies when the renderer interrupts the subscription — clean teardown, no leaks. See `apps/server/src/pty/layers/pty-service.ts` and `apps/server/src/git/layers/git-service.ts` for the canonical shape.
 
 ## Persistence
 
@@ -160,7 +160,7 @@ See [ADR 0005](decisions/0005-package-layout.md) for the full rules. Highlights:
 - Service classes: `<Domain>Service` (no `*Engine`, no `*FileSystem`, no bare verbs)
 - RPC method names: dotted-lowercase string literals passed directly to `Rpc.make("...", ...)` — no central enum
 - Branded IDs for every entity that crosses the wire
-- Per-domain folders use `Drivers/Layers/Services/Errors.ts` split (Phase 2+); single-impl domains land with the same structure for uniformity
+- Per-domain folders use `drivers/layers/services/errors.ts` split (Phase 2+); single-impl domains land with the same structure for uniformity
 
 ## Decision references
 
