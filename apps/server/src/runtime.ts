@@ -5,6 +5,7 @@ import { Layer } from "effect";
 import { ForkzeroRpcs } from "@forkzero/wire";
 
 import { AppPaths } from "./app-paths.ts";
+import { FsServiceLive } from "./fs/layers/fs-service.ts";
 import { GitServiceLive } from "./git/layers/git-service.ts";
 import { HandlersLayer } from "./handlers.ts";
 import { importWorkspacesJson } from "./persistence/import-workspaces.ts";
@@ -78,6 +79,13 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(NodeContext.layer),
   );
 
+  // FsService walks the project tree one directory at a time. WorkspaceService
+  // resolves folderId → path; FileSystem (via NodeContext) reads dirs/stats.
+  const FsLayer = FsServiceLive.pipe(
+    Layer.provide(WorkspaceLayer),
+    Layer.provide(NodeContext.layer),
+  );
+
   // ProviderService probes installed CLIs via CommandExecutor, consults
   // CredentialsService for SDK keys, and resolves folderId → cwd via
   // WorkspaceService when starting a Claude SDK session.
@@ -100,6 +108,7 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(WorkspaceLayer),
     Layer.provide(PtyServiceLive),
     Layer.provide(GitLayer),
+    Layer.provide(FsLayer),
     Layer.provide(ProviderLayer),
     Layer.provide(MessageStoreLayer),
     Layer.provide(FolderPickerLayer),

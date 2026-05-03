@@ -4,8 +4,8 @@ import { Effect } from "effect";
 import { ChatComposer } from "./components/chat-composer";
 import { ChatView } from "./components/chat-view";
 import { CredentialsSheet } from "./components/credentials-sheet";
-import { GitHistoryPane } from "./components/git-history-pane";
 import { ProjectsSidebar } from "./components/projects-sidebar";
+import { RightPane } from "./components/right-pane";
 import { getRpcClient } from "./lib/rpc-client.ts";
 import { useSessionsStore } from "./store/sessions.ts";
 import { useWorkspaceStore } from "./store/workspace.ts";
@@ -77,7 +77,7 @@ export function App() {
         )}
       </main>
       <div className="flex w-[320px] shrink-0 flex-col bg-zinc-950">
-        <GitHistoryPane />
+        <RightPane />
       </div>
       <CredentialsSheet />
     </div>

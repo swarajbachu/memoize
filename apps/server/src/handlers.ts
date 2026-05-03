@@ -1,5 +1,6 @@
 import { Layer } from "effect";
 
+import { FsHandlersLayer } from "./fs/handlers.ts";
 import { GitHandlersLayer } from "./git/handlers.ts";
 import { PingHandlersLayer } from "./ping/handlers.ts";
 import { ProviderHandlersLayer } from "./provider/handlers.ts";
@@ -18,4 +19,5 @@ export const HandlersLayer = Layer.mergeAll(
   PtyHandlersLayer,
   GitHandlersLayer,
   ProviderHandlersLayer,
+  FsHandlersLayer,
 );

@@ -1,4 +1,5 @@
 export * from "./agent.ts";
+export * from "./fs.ts";
 export * from "./git.ts";
 export * from "./ids.ts";
 export * from "./ping.ts";
