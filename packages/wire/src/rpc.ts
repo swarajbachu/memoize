@@ -24,6 +24,19 @@ import {
   PtyWriteRpc,
 } from "./pty.ts";
 import {
+  MessagesInterruptRpc,
+  MessagesListRpc,
+  MessagesSendRpc,
+  MessagesStreamRpc,
+  SessionArchiveRpc,
+  SessionCreateRpc,
+  SessionDeleteRpc,
+  SessionGetRpc,
+  SessionListRpc,
+  SessionRenameRpc,
+  SessionUnarchiveRpc,
+} from "./session.ts";
+import {
   WorkspaceAddRpc,
   WorkspaceGetSelectedRpc,
   WorkspaceListRpc,
@@ -62,6 +75,17 @@ export const ForkzeroRpcs = RpcGroup.make(
   AgentInterruptRpc,
   AgentCloseRpc,
   AgentEventsRpc,
+  SessionListRpc,
+  SessionGetRpc,
+  SessionCreateRpc,
+  SessionRenameRpc,
+  SessionArchiveRpc,
+  SessionUnarchiveRpc,
+  SessionDeleteRpc,
+  MessagesListRpc,
+  MessagesStreamRpc,
+  MessagesSendRpc,
+  MessagesInterruptRpc,
 );
 export type ForkzeroRpcs = typeof ForkzeroRpcs;
 
