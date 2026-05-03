@@ -27,10 +27,13 @@ type AgentsState = {
   loading: boolean;
   error: string | null;
   launcherOpen: boolean;
+  credentialsOpen: boolean;
   runs: Record<string, AgentRun>;
   refresh: () => Promise<void>;
   setLauncherOpen: (open: boolean) => void;
   toggleLauncher: () => void;
+  setCredentialsOpen: (open: boolean) => void;
+  setCredential: (providerId: ProviderId, apiKey: string) => Promise<void>;
   launch: (folderId: FolderId, availability: AgentAvailability) => void;
   clearRun: (folderId: FolderId) => void;
 };
@@ -50,6 +53,7 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
   loading: false,
   error: null,
   launcherOpen: false,
+  credentialsOpen: false,
   runs: {},
   refresh: async () => {
     set({ loading: true, error: null });
@@ -63,6 +67,20 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
   },
   setLauncherOpen: (open) => set({ launcherOpen: open }),
   toggleLauncher: () => set({ launcherOpen: !get().launcherOpen }),
+  setCredentialsOpen: (open) => set({ credentialsOpen: open }),
+  setCredential: async (providerId, apiKey) => {
+    try {
+      const client = await getRpcClient();
+      await Effect.runPromise(
+        client.agent.setCredential({ providerId, apiKey }),
+      );
+      // Refresh availability so `sdkConfigured` reflects the new state.
+      await get().refresh();
+    } catch (err) {
+      set({ error: formatError(err) });
+      throw err;
+    }
+  },
   launch: (folderId, avail) => {
     if (!avail.cliInstalled || avail.cliPath === undefined) return;
     nonceCounter += 1;

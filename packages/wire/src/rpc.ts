@@ -1,6 +1,9 @@
 import { RpcGroup } from "@effect/rpc";
 
-import { AgentAvailabilityRpc } from "./agent.ts";
+import {
+  AgentAvailabilityRpc,
+  AgentSetCredentialRpc,
+} from "./agent.ts";
 import {
   GitHeadChangedRpc,
   GitLogRpc,
@@ -48,6 +51,7 @@ export const ForkzeroRpcs = RpcGroup.make(
   GitHeadChangedRpc,
   GitOriginRpc,
   AgentAvailabilityRpc,
+  AgentSetCredentialRpc,
 );
 export type ForkzeroRpcs = typeof ForkzeroRpcs;
 
