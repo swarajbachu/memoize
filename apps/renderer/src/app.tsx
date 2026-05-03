@@ -2,15 +2,19 @@ import { useEffect } from "react";
 import { Effect } from "effect";
 
 import { AgentLauncher } from "./components/agent-launcher";
+import { AgentPanel } from "./components/agent-panel";
+import { CredentialsSheet } from "./components/credentials-sheet";
 import { FolderSidebar } from "./components/folder-sidebar";
 import { TerminalPane } from "./components/terminal-pane";
 import { GitHistoryPane } from "./components/git-history-pane";
 import { getRpcClient } from "./lib/rpc-client.ts";
+import { useAgentsStore } from "./store/agents.ts";
 import { useWorkspaceStore } from "./store/workspace.ts";
 
 export function App() {
   const folders = useWorkspaceStore((s) => s.folders);
   const selectedFolderId = useWorkspaceStore((s) => s.selectedFolderId);
+  const activeSession = useAgentsStore((s) => s.activeSession);
   const selected = selectedFolderId
     ? (folders.find((f) => f.id === selectedFolderId) ?? null)
     : null;
@@ -48,8 +52,9 @@ export function App() {
           <TerminalPane />
         </div>
       </main>
-      <GitHistoryPane />
+      {activeSession === null ? <GitHistoryPane /> : <AgentPanel />}
       <AgentLauncher />
+      <CredentialsSheet />
     </div>
   );
 }

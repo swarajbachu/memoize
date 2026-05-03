@@ -7,6 +7,7 @@ import { ForkzeroRpcs } from "@forkzero/wire";
 import { AppPaths } from "./app-paths.ts";
 import { GitServiceLive } from "./git/layers/git-service.ts";
 import { HandlersLayer } from "./handlers.ts";
+import { CredentialsServiceLive } from "./provider/layers/credentials-service.ts";
 import { ProviderServiceLive } from "./provider/layers/provider-service.ts";
 import { PtyServiceLive } from "./pty/layers/pty-service.ts";
 import { FolderPicker } from "./workspace/services/folder-picker.ts";
@@ -54,8 +55,12 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(NodeContext.layer),
   );
 
-  // ProviderService probes installed CLIs via CommandExecutor.
+  // ProviderService probes installed CLIs via CommandExecutor, consults
+  // CredentialsService for SDK keys, and resolves folderId → cwd via
+  // WorkspaceService when starting a Claude SDK session.
   const ProviderLayer = ProviderServiceLive.pipe(
+    Layer.provide(CredentialsServiceLive),
+    Layer.provide(WorkspaceLayer),
     Layer.provide(NodeContext.layer),
   );
 

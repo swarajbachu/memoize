@@ -21,11 +21,13 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.126",
     "@effect/platform": "catalog:",
     "@effect/platform-node": "catalog:",
     "@effect/rpc": "catalog:",
     "@forkzero/wire": "*",
     "effect": "catalog:",
+    "keytar": "^7.9.0",
     "node-pty": "^1.1.0"
   },
   "devDependencies": {
