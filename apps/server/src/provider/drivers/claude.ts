@@ -14,6 +14,7 @@ import {
   type AgentSessionId,
   type PermissionDecision,
   type PermissionKind,
+  type RuntimeMode,
   type StartSessionInput,
 } from "@forkzero/wire";
 
@@ -216,43 +217,68 @@ type ToolPolicy =
   | { readonly kind: "auto-allow" }
   | { readonly kind: "prompt"; readonly forcePrompt: boolean };
 
+const FILE_EDIT_TOOLS: ReadonlySet<string> = new Set([
+  "Edit",
+  "Write",
+  "MultiEdit",
+  "NotebookEdit",
+]);
+
+const editPathOf = (toolInput: Record<string, unknown>): string =>
+  typeof toolInput.file_path === "string"
+    ? toolInput.file_path
+    : typeof toolInput.notebook_path === "string"
+      ? (toolInput.notebook_path as string)
+      : "";
+
 /**
- * Decide whether the SDK's tool call needs to bother the user. The driver
- * still always reports the tool to the timeline; auto-allow only short-
- * circuits the prompt itself.
+ * Decide whether the SDK's tool call needs to bother the user. Layered:
+ *
+ *   1. Sensitive paths always force a prompt (`forcePrompt: true`) — this is
+ *      the safety net that survives every other allow rule, including
+ *      `full-access` mode.
+ *   2. Read-only tools auto-allow.
+ *   3. `auto-accept-edits` mode short-circuits file edits.
+ *   4. `full-access` mode short-circuits everything else.
+ *   5. Otherwise, prompt.
  */
 const policyFor = (
   toolName: string,
   toolInput: Record<string, unknown>,
+  runtimeMode: RuntimeMode,
 ): ToolPolicy => {
-  if (READ_ONLY_TOOLS.has(toolName)) {
-    if (toolName === "Read") {
-      const path = typeof toolInput.file_path === "string"
-        ? toolInput.file_path
-        : "";
-      if (path.length > 0 && isSensitivePath(path)) {
-        return { kind: "prompt", forcePrompt: true };
-      }
+  // 1. Sensitive paths — checked before any auto-allow. Even YOLO mode prompts.
+  if (toolName === "Read") {
+    const path = typeof toolInput.file_path === "string"
+      ? toolInput.file_path
+      : "";
+    if (path.length > 0 && isSensitivePath(path)) {
+      return { kind: "prompt", forcePrompt: true };
     }
+  }
+  if (FILE_EDIT_TOOLS.has(toolName)) {
+    const path = editPathOf(toolInput);
+    if (path.length > 0 && isSensitivePath(path)) {
+      return { kind: "prompt", forcePrompt: true };
+    }
+  }
+
+  // 2. Read-only tools — always free, regardless of mode.
+  if (READ_ONLY_TOOLS.has(toolName)) {
     return { kind: "auto-allow" };
   }
-  if (
-    toolName === "Edit" ||
-    toolName === "Write" ||
-    toolName === "MultiEdit" ||
-    toolName === "NotebookEdit"
-  ) {
-    const path =
-      typeof toolInput.file_path === "string"
-        ? toolInput.file_path
-        : typeof toolInput.notebook_path === "string"
-          ? (toolInput.notebook_path as string)
-          : "";
-    return {
-      kind: "prompt",
-      forcePrompt: path.length > 0 && isSensitivePath(path),
-    };
+
+  // 3. auto-accept-edits — file edits skip the prompt; everything else falls
+  //    through to the regular prompt flow.
+  if (runtimeMode === "auto-accept-edits" && FILE_EDIT_TOOLS.has(toolName)) {
+    return { kind: "auto-allow" };
   }
+
+  // 4. full-access — auto-allow anything that survived the sensitive-path check.
+  if (runtimeMode === "full-access") {
+    return { kind: "auto-allow" };
+  }
+
   return { kind: "prompt", forcePrompt: false };
 };
 
@@ -332,6 +358,13 @@ export type RequestPermission = (
  * decision the caller honors via the SDK's allow/deny contract; the driver
  * itself stays free of any DB or PubSub wiring.
  */
+/**
+ * Live read of the per-session runtime mode. Called inside `canUseTool` so
+ * the user toggling the chat header takes effect on the next tool call —
+ * no SDK restart needed.
+ */
+export type GetRuntimeMode = () => RuntimeMode;
+
 export const startClaudeSession = (
   input: StartSessionInput,
   cwd: string,
@@ -339,6 +372,7 @@ export const startClaudeSession = (
   claudeExecutablePath: string | null,
   sessionId: AgentSessionId,
   requestPermission: RequestPermission,
+  getRuntimeMode: GetRuntimeMode,
   resumeCursor: string | null = null,
 ): Effect.Effect<ClaudeSessionHandle, AgentSessionStartError> =>
   Effect.gen(function* () {
@@ -383,7 +417,7 @@ export const startClaudeSession = (
       // `PermissionService`. The renderer's toast eventually fulfills the
       // promise this awaits.
       canUseTool: async (toolName, toolInput) => {
-        const policy = policyFor(toolName, toolInput);
+        const policy = policyFor(toolName, toolInput, getRuntimeMode());
         if (policy.kind === "auto-allow") {
           // Read / LS / Glob / Grep / NotebookRead / BashOutput / TodoWrite
           // skip the prompt entirely. We deliberately don't surface a

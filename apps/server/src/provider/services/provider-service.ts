@@ -9,10 +9,18 @@ import type {
   AgentTurnId,
   ProviderId,
   ProviderNotAvailableError,
+  RuntimeMode,
   StartSessionInput,
 } from "@forkzero/wire";
 
 import type { CredentialsError } from "../errors.ts";
+
+/**
+ * Live-read of the per-session runtime mode. Bound at start time and read by
+ * the driver each time the SDK invokes `canUseTool`, so a renderer toggle
+ * mid-session takes effect on the next tool call.
+ */
+export type GetRuntimeMode = () => RuntimeMode;
 
 /**
  * Public-facing service that the RPC handlers bind to. Every wire RPC
@@ -26,6 +34,7 @@ export interface ProviderServiceShape {
   readonly start: (
     input: StartSessionInput,
     resumeCursor?: string | null,
+    getRuntimeMode?: GetRuntimeMode,
   ) => Effect.Effect<
     { readonly sessionId: AgentSessionId },
     ProviderNotAvailableError | AgentSessionStartError

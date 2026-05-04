@@ -118,6 +118,14 @@ const SessionResume = ForkzeroRpcs.toLayerHandler(
     Effect.flatMap(MessageStore, (svc) => svc.resumeSession(sessionId)),
 );
 
+const SessionSetRuntimeMode = ForkzeroRpcs.toLayerHandler(
+  "session.setRuntimeMode",
+  ({ sessionId, runtimeMode }) =>
+    Effect.flatMap(MessageStore, (svc) =>
+      svc.setRuntimeMode(sessionId, runtimeMode),
+    ),
+);
+
 const MessagesList = ForkzeroRpcs.toLayerHandler(
   "messages.list",
   ({ sessionId }) =>
@@ -199,6 +207,7 @@ export const ProviderHandlersLayer = Layer.mergeAll(
   SessionUnarchive,
   SessionDelete,
   SessionResume,
+  SessionSetRuntimeMode,
   MessagesList,
   MessagesStream,
   MessagesSend,

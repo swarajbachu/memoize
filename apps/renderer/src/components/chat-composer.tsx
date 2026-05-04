@@ -1,10 +1,20 @@
-import { Check, ChevronDown, Send, Sparkles, Square } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  Send,
+  ShieldAlert,
+  ShieldCheck,
+  Sparkles,
+  Square,
+  Zap,
+} from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 
 import {
   MODELS_BY_PROVIDER,
   type Message,
   type ProviderId,
+  type RuntimeMode,
   type Session,
   type SessionId,
 } from "@forkzero/wire";
@@ -110,15 +120,99 @@ export function ChatComposer({ session }: { session: Session }) {
             </button>
           )}
         </div>
-        <div className="flex items-center justify-between px-1 text-[10px] text-muted-foreground">
+        <div className="flex items-center justify-between gap-2 px-1 text-[10px] text-muted-foreground">
           <ModelPicker
             sessionId={sessionId}
             providerId={session.providerId}
             currentModel={session.model}
           />
-          <span>{inFlight ? "running…" : "idle"}</span>
+          <div className="flex items-center gap-2">
+            <RuntimeModeToggle
+              sessionId={sessionId}
+              current={session.runtimeMode}
+            />
+            <span>{inFlight ? "running…" : "idle"}</span>
+          </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Three-state segmented control for the per-session permission posture.
+ *   - approval-required (shield) — every write/Bash/Network/Task prompts.
+ *   - auto-accept-edits (check)  — file edits skip the prompt; rest still ask.
+ *   - full-access (zap)          — auto-allow everything except sensitive paths.
+ *
+ * The mode is stored on the session row and read live by the SDK's
+ * canUseTool callback, so flipping the switch mid-turn applies to the next
+ * tool call without restarting the conversation.
+ */
+const MODE_META: Record<
+  RuntimeMode,
+  { label: string; title: string; Icon: typeof ShieldAlert }
+> = {
+  "approval-required": {
+    label: "Approve",
+    title: "Prompt for every write / shell / network call",
+    Icon: ShieldAlert,
+  },
+  "auto-accept-edits": {
+    label: "Edits",
+    title: "Auto-allow file edits; still prompt for shell / network / subagent",
+    Icon: ShieldCheck,
+  },
+  "full-access": {
+    label: "YOLO",
+    title:
+      "Auto-allow everything except sensitive paths (.env, credentials, …)",
+    Icon: Zap,
+  },
+};
+
+function RuntimeModeToggle({
+  sessionId,
+  current,
+}: {
+  sessionId: SessionId;
+  current: RuntimeMode;
+}) {
+  const setRuntimeMode = useSessionsStore((s) => s.setRuntimeMode);
+  const modes: ReadonlyArray<RuntimeMode> = [
+    "approval-required",
+    "auto-accept-edits",
+    "full-access",
+  ];
+  return (
+    <div className="flex overflow-hidden rounded border border-border">
+      {modes.map((mode) => {
+        const meta = MODE_META[mode];
+        const Icon = meta.Icon;
+        const active = mode === current;
+        return (
+          <button
+            key={mode}
+            type="button"
+            onClick={() => {
+              if (!active) void setRuntimeMode(sessionId, mode);
+            }}
+            title={meta.title}
+            className={`flex items-center gap-1 px-1.5 py-0.5 text-[10px] transition-colors ${
+              active
+                ? mode === "full-access"
+                  ? "bg-amber-500/20 text-amber-200"
+                  : mode === "auto-accept-edits"
+                    ? "bg-emerald-500/20 text-emerald-200"
+                    : "bg-muted text-foreground"
+                : "text-muted-foreground hover:bg-muted/60"
+            }`}
+          >
+            <Icon className="size-3" />
+            <span>{meta.label}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }

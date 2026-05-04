@@ -4,6 +4,7 @@ import { create } from "zustand";
 import type {
   FolderId,
   ProviderId,
+  RuntimeMode,
   Session,
   SessionId,
 } from "@forkzero/wire";
@@ -31,6 +32,10 @@ type SessionsState = {
   ) => Promise<SessionId | null>;
   readonly rename: (sessionId: SessionId, title: string) => Promise<void>;
   readonly setModel: (sessionId: SessionId, model: string) => Promise<void>;
+  readonly setRuntimeMode: (
+    sessionId: SessionId,
+    runtimeMode: RuntimeMode,
+  ) => Promise<void>;
   readonly refreshOne: (sessionId: SessionId) => Promise<void>;
   readonly archive: (sessionId: SessionId) => Promise<void>;
   readonly unarchive: (sessionId: SessionId) => Promise<void>;
@@ -157,6 +162,36 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       });
     } catch (err) {
       set({ error: formatError(err) });
+    }
+  },
+  setRuntimeMode: async (sessionId, runtimeMode) => {
+    // Optimistic — patch the local row before the RPC settles so the toggle
+    // feels instant. Server-side update is also fast (single SQL UPDATE +
+    // in-memory cache poke), so the round-trip is invisible in practice.
+    set((s) => {
+      const projectId = findSessionProject(s.sessionsByProject, sessionId);
+      if (projectId === null) return { error: null };
+      const sessions = s.sessionsByProject[projectId] ?? [];
+      return {
+        error: null,
+        sessionsByProject: {
+          ...s.sessionsByProject,
+          [projectId]: sessions.map((session) =>
+            session.id === sessionId ? { ...session, runtimeMode } : session,
+          ),
+        },
+      };
+    });
+    try {
+      const client = await getRpcClient();
+      await Effect.runPromise(
+        client.session.setRuntimeMode({ sessionId, runtimeMode }),
+      );
+    } catch (err) {
+      set({ error: formatError(err) });
+      // Best-effort revert via re-hydrate of the affected project.
+      const projectId = findSessionProject(get().sessionsByProject, sessionId);
+      if (projectId !== null) await get().hydrate(projectId);
     }
   },
   archive: async (sessionId) => {

@@ -5,6 +5,7 @@ import {
   AgentSessionId,
   AgentSessionNotFoundError,
   AgentSessionStartError,
+  DEFAULT_RUNTIME_MODE,
   type AgentAvailability,
   type AgentEvent,
   type FolderId,
@@ -112,8 +113,10 @@ export const ProviderServiceLive = Layer.effect(
 
     return {
       availability,
-      start: (input, resumeCursor = null) =>
+      start: (input, resumeCursor = null, getRuntimeMode) =>
         Effect.gen(function* () {
+          const runtimeModeGetter =
+            getRuntimeMode ?? (() => DEFAULT_RUNTIME_MODE);
           const folder = yield* workspace.findById(input.folderId);
           if (folder === null) {
             return yield* Effect.fail(
@@ -142,6 +145,7 @@ export const ProviderServiceLive = Layer.effect(
               claudePath,
               sessionId,
               buildRequestPermission(input.folderId),
+              runtimeModeGetter,
               resumeCursor,
             );
           } else {
