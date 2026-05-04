@@ -1,3 +1,4 @@
+import type { EditorView } from "@codemirror/view";
 import { Check, ChevronDown, Gauge, Send, Square } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
@@ -12,6 +13,11 @@ import {
 
 import { Card, CardPanel } from "~/components/ui/card";
 import { Frame, FrameFooter } from "~/components/ui/frame";
+import {
+  composerDoc,
+  createComposerView,
+  setComposerDoc,
+} from "~/lib/codemirror/composer";
 import { cn } from "~/lib/utils";
 import {
   Menu,
@@ -59,37 +65,54 @@ export function ChatComposer({ session }: { session: Session }) {
   const send = useMessagesStore((s) => s.send);
   const interrupt = useMessagesStore((s) => s.interrupt);
 
-  const [value, setValue] = useState("");
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [hasText, setHasText] = useState(false);
+  const editorHostRef = useRef<HTMLDivElement | null>(null);
+  const editorViewRef = useRef<EditorView | null>(null);
+  // Submit reads through a ref so the keymap, captured at editor creation
+  // time, always sees the current sessionId / send / inFlight without
+  // recreating the editor on every render.
+  const submitRef = useRef<() => boolean>(() => false);
 
-  // Send is gated only on having text. The composer also swaps to an Interrupt
-  // button while in-flight, so users always have one valid action visible.
-  const canSend = value.trim().length > 0;
+  const canSend = hasText;
 
-  const submit = async () => {
-    const text = value.trim();
-    if (text.length === 0) return;
-    setValue("");
-    if (textareaRef.current !== null) {
-      textareaRef.current.style.height = `${MIN_HEIGHT}px`;
-    }
-    await send(sessionId, text);
+  // Mount the CodeMirror view once per ChatComposer instance. Switching
+  // sessions remounts the component (`session.id` is the chat-view key),
+  // so we don't have to swap docs in-place here.
+  useEffect(() => {
+    const host = editorHostRef.current;
+    if (host === null) return;
+
+    const view = createComposerView({
+      parent: host,
+      placeholderText: "Send a message…  Enter to send · Shift+Enter for newline",
+      callbacks: {
+        onSubmit: () => submitRef.current(),
+        onChange: (doc) => setHasText(doc.trim().length > 0),
+      },
+    });
+    editorViewRef.current = view;
+    view.focus();
+
+    return () => {
+      view.destroy();
+      editorViewRef.current = null;
+    };
+  }, []);
+
+  const submit = (): boolean => {
+    const view = editorViewRef.current;
+    if (view === null) return false;
+    const text = composerDoc(view).trim();
+    if (text.length === 0) return false;
+    setComposerDoc(view, "");
+    setHasText(false);
+    void send(sessionId, text);
+    return true;
   };
 
-  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-      e.preventDefault();
-      void submit();
-    }
-  };
-
-  // Auto-grow the textarea up to MAX_HEIGHT, then scroll internally.
-  const onChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setValue(e.target.value);
-    const ta = e.target;
-    ta.style.height = "0px";
-    ta.style.height = `${Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, ta.scrollHeight))}px`;
-  };
+  // Keep the keymap-bound submit pointing at the latest closure so it sees
+  // the current sessionId after a session switch / re-render.
+  submitRef.current = submit;
 
   return (
     <TooltipProvider>
@@ -98,15 +121,14 @@ export function ChatComposer({ session }: { session: Session }) {
           <Frame className="bg-muted/40">
             <Card className="rounded-xl border-border/50">
               <CardPanel className="flex items-end gap-2 px-3 py-2">
-                <textarea
-                  ref={textareaRef}
-                  value={value}
-                  onChange={onChange}
-                  onKeyDown={onKeyDown}
-                  placeholder="Send a message…  ⌘+Enter to send"
-                  rows={1}
-                  style={{ height: MIN_HEIGHT }}
-                  className="flex-1 resize-none bg-transparent px-1 py-1 text-sm leading-relaxed outline-none placeholder:text-muted-foreground"
+                <div
+                  ref={editorHostRef}
+                  className="flex-1 overflow-y-auto bg-transparent text-sm leading-relaxed outline-none"
+                  style={{
+                    minHeight: MIN_HEIGHT,
+                    maxHeight: MAX_HEIGHT,
+                  }}
+                  onClick={() => editorViewRef.current?.focus()}
                 />
                 {inFlight ? (
                   <Tooltip>
@@ -139,7 +161,7 @@ export function ChatComposer({ session }: { session: Session }) {
                         </button>
                       }
                     />
-                    <TooltipPopup>Send (⌘+Enter)</TooltipPopup>
+                    <TooltipPopup>Send (Enter)</TooltipPopup>
                   </Tooltip>
                 )}
               </CardPanel>

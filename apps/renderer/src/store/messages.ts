@@ -1,7 +1,7 @@
 import { Effect, Fiber, Stream } from "effect";
 import { create } from "zustand";
 
-import type { Message, SessionId } from "@forkzero/wire";
+import type { ComposerInput, Message, SessionId } from "@forkzero/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
 import { usePrStateStore } from "./pr-state.ts";
@@ -29,7 +29,16 @@ type MessagesState = {
    */
   readonly runningBySession: Record<string, boolean>;
   readonly hydrate: (sessionId: SessionId) => Promise<void>;
-  readonly send: (sessionId: SessionId, text: string) => Promise<void>;
+  /**
+   * Send a user turn. Accepts either a raw string (legacy / simple-text
+   * callers) or a fully-typed `ComposerInput`. The underlying RPC accepts
+   * both for the same reason — the composer migration to ComposerInput
+   * lands incrementally across phases.
+   */
+  readonly send: (
+    sessionId: SessionId,
+    input: string | ComposerInput,
+  ) => Promise<void>;
   readonly interrupt: (sessionId: SessionId) => Promise<void>;
   readonly clearError: (sessionId: SessionId) => void;
 };
@@ -132,7 +141,7 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
       }));
     }
   },
-  send: async (sessionId, text) => {
+  send: async (sessionId, input) => {
     // Optimistic — flip running to true before the server status arrives so
     // the composer's Send→Interrupt swap doesn't flash through "idle" while
     // the RPC round-trip happens.
@@ -142,7 +151,11 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
     }));
     try {
       const client = await getRpcClient();
-      await Effect.runPromise(client.messages.send({ sessionId, text }));
+      const payload =
+        typeof input === "string"
+          ? { sessionId, text: input }
+          : { sessionId, input };
+      await Effect.runPromise(client.messages.send(payload));
       void useSessionsStore.getState().refreshOne(sessionId);
     } catch (err) {
       set((s) => ({
