@@ -1,11 +1,13 @@
 import { SqlClient } from "@effect/sql";
-import { Deferred, Effect, Layer, PubSub, Ref, Stream } from "effect";
+import { Deferred, Effect, Layer, PubSub, Ref, Schema, Stream } from "effect";
 
 import {
+  PermissionKind,
   PermissionRequest,
   PermissionRequestNotFoundError,
+  SavedDecision,
+  type FolderId,
   type PermissionDecision,
-  type PermissionKind,
   type SessionId,
 } from "@forkzero/wire";
 
@@ -22,12 +24,51 @@ interface PendingEntry {
 interface DecisionRow {
   readonly request_id: string;
   readonly session_id: string;
+  readonly project_id: string | null;
   readonly kind_tag: string;
   readonly kind_key: string;
   readonly kind_json: string;
   readonly decision: string;
+  readonly scope: string;
   readonly decided_at: string;
 }
+
+/**
+ * Decisions that should map to `scope='folder'`. Only `AlwaysAllow` is
+ * folder-scoped today; everything else stays session-scoped (even denials,
+ * which we keep for inspector visibility).
+ */
+const scopeForDecision = (decision: PermissionDecision): "session" | "folder" =>
+  decision._tag === "AlwaysAllow" ? "folder" : "session";
+
+const decodeSavedDecision = Schema.decodeUnknown(SavedDecision);
+
+const rowToSavedDecision = (
+  row: DecisionRow,
+): Effect.Effect<SavedDecision, never> =>
+  decodeSavedDecision({
+    requestId: row.request_id,
+    sessionId: row.session_id,
+    projectId: row.project_id,
+    kind: JSON.parse(row.kind_json),
+    decision: row.decision,
+    scope: row.scope,
+    decidedAt: row.decided_at,
+  }).pipe(
+    Effect.catchAll(() =>
+      // Bad row (corrupted scope/decision string) — surface a synthetic Deny
+      // so the inspector still renders. Better than crashing the whole list.
+      decodeSavedDecision({
+        requestId: row.request_id,
+        sessionId: row.session_id,
+        projectId: row.project_id,
+        kind: { _tag: "Other", tool: row.kind_tag, summary: row.kind_key },
+        decision: "Deny",
+        scope: "session",
+        decidedAt: row.decided_at,
+      }).pipe(Effect.orDie),
+    ),
+  );
 
 /**
  * Stable per-kind matching key. Equality on this string is what lets
@@ -65,17 +106,22 @@ export const PermissionServiceLive = Layer.scoped(
       new Map(),
     );
 
-    const findExistingSessionAllow = (
+    const findExistingAllow = (
       sessionId: SessionId,
+      projectId: FolderId,
       kind: PermissionKind,
     ): Effect.Effect<boolean> =>
       sql<DecisionRow>`
-        SELECT request_id, session_id, kind_tag, kind_key, kind_json, decision, decided_at
+        SELECT request_id, session_id, project_id, kind_tag, kind_key,
+               kind_json, decision, scope, decided_at
         FROM permission_decisions
-        WHERE session_id = ${sessionId}
-          AND kind_tag = ${kind._tag}
+        WHERE kind_tag = ${kind._tag}
           AND kind_key = ${kindKey(kind)}
-          AND decision = 'AllowForSession'
+          AND (
+            (session_id = ${sessionId} AND scope = 'session' AND decision = 'AllowForSession')
+            OR
+            (project_id = ${projectId} AND scope = 'folder' AND decision = 'AlwaysAllow')
+          )
         LIMIT 1
       `.pipe(
         Effect.map((rows) => rows.length > 0),
@@ -84,15 +130,19 @@ export const PermissionServiceLive = Layer.scoped(
 
     const persistDecision = (
       request: PermissionRequest,
+      projectId: FolderId,
       decision: PermissionDecision,
     ): Effect.Effect<void> =>
       sql`
         INSERT OR REPLACE INTO permission_decisions
-          (request_id, session_id, kind_tag, kind_key, kind_json, decision, decided_at)
+          (request_id, session_id, project_id, kind_tag, kind_key,
+           kind_json, decision, scope, decided_at)
         VALUES
-          (${request.id}, ${request.sessionId}, ${request.kind._tag},
-           ${kindKey(request.kind)}, ${JSON.stringify(request.kind)},
-           ${decisionTag(decision)}, ${new Date().toISOString()})
+          (${request.id}, ${request.sessionId}, ${projectId},
+           ${request.kind._tag}, ${kindKey(request.kind)},
+           ${JSON.stringify(request.kind)},
+           ${decisionTag(decision)}, ${scopeForDecision(decision)},
+           ${new Date().toISOString()})
       `.pipe(
         Effect.asVoid,
         Effect.catchAll((cause) =>
@@ -102,11 +152,30 @@ export const PermissionServiceLive = Layer.scoped(
         ),
       );
 
-    const request: PermissionServiceShape["request"] = (sessionId, kind) =>
+    /**
+     * Side table — `requestId → projectId` — so `decide()` can persist with
+     * the right `project_id` without re-querying the session row. Cleared
+     * when the request is fulfilled.
+     */
+    const projectByRequest = yield* Ref.make<ReadonlyMap<string, FolderId>>(
+      new Map(),
+    );
+
+    const request: PermissionServiceShape["request"] = (
+      sessionId,
+      kind,
+      options,
+    ) =>
       Effect.gen(function* () {
-        const allowed = yield* findExistingSessionAllow(sessionId, kind);
-        if (allowed) {
-          return { _tag: "AllowOnce" } as PermissionDecision;
+        if (options.forcePrompt !== true) {
+          const allowed = yield* findExistingAllow(
+            sessionId,
+            options.projectId,
+            kind,
+          );
+          if (allowed) {
+            return { _tag: "AllowOnce" } as PermissionDecision;
+          }
         }
 
         const id = nextRequestId();
@@ -115,6 +184,12 @@ export const PermissionServiceLive = Layer.scoped(
           sessionId,
           kind,
           requestedAt: new Date(),
+          forcePrompt: options.forcePrompt === true,
+        });
+        yield* Ref.update(projectByRequest, (m) => {
+          const next = new Map(m);
+          next.set(id, options.projectId);
+          return next;
         });
         const deferred = yield* Deferred.make<PermissionDecision>();
         yield* Ref.update(pending, (m) => {
@@ -136,12 +211,21 @@ export const PermissionServiceLive = Layer.scoped(
             new PermissionRequestNotFoundError({ requestId }),
           );
         }
+        const projects = yield* Ref.get(projectByRequest);
+        const projectId = projects.get(requestId);
         yield* Ref.update(pending, (m) => {
           const next = new Map(m);
           next.delete(requestId);
           return next;
         });
-        yield* persistDecision(entry.request, decision);
+        yield* Ref.update(projectByRequest, (m) => {
+          const next = new Map(m);
+          next.delete(requestId);
+          return next;
+        });
+        if (projectId !== undefined) {
+          yield* persistDecision(entry.request, projectId, decision);
+        }
         yield* Deferred.succeed(entry.deferred, decision);
       });
 
@@ -163,11 +247,51 @@ export const PermissionServiceLive = Layer.scoped(
         }),
       );
 
+    const listDecisions: PermissionServiceShape["listDecisions"] = (filter) =>
+      Effect.gen(function* () {
+        const rows = yield* (filter.projectId !== undefined
+          ? sql<DecisionRow>`
+              SELECT request_id, session_id, project_id, kind_tag, kind_key,
+                     kind_json, decision, scope, decided_at
+              FROM permission_decisions
+              WHERE project_id = ${filter.projectId}
+              ORDER BY decided_at DESC
+            `
+          : sql<DecisionRow>`
+              SELECT request_id, session_id, project_id, kind_tag, kind_key,
+                     kind_json, decision, scope, decided_at
+              FROM permission_decisions
+              ORDER BY decided_at DESC
+            `
+        ).pipe(Effect.catchAll(() => Effect.succeed([] as DecisionRow[])));
+        const out: SavedDecision[] = [];
+        for (const row of rows) {
+          out.push(yield* rowToSavedDecision(row));
+        }
+        return out;
+      });
+
+    const revokeDecision: PermissionServiceShape["revokeDecision"] = (
+      requestId,
+    ) =>
+      sql`
+        DELETE FROM permission_decisions WHERE request_id = ${requestId}
+      `.pipe(
+        Effect.asVoid,
+        Effect.catchAll((cause) =>
+          Effect.logWarning(
+            `[PermissionService] revoke failed: ${String(cause)}`,
+          ),
+        ),
+      );
+
     return {
       request,
       decide,
       listPending,
       requests,
+      listDecisions,
+      revokeDecision,
     } as const;
   }),
 );

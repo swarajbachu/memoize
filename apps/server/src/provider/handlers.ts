@@ -168,6 +168,20 @@ const PermissionListPending = ForkzeroRpcs.toLayerHandler(
     Effect.flatMap(PermissionService, (svc) => svc.listPending(sessionId)),
 );
 
+const PermissionListDecisions = ForkzeroRpcs.toLayerHandler(
+  "permission.listDecisions",
+  ({ projectId }) =>
+    Effect.flatMap(PermissionService, (svc) =>
+      svc.listDecisions({ projectId }),
+    ),
+);
+
+const PermissionRevokeDecision = ForkzeroRpcs.toLayerHandler(
+  "permission.revokeDecision",
+  ({ requestId }) =>
+    Effect.flatMap(PermissionService, (svc) => svc.revokeDecision(requestId)),
+);
+
 export const ProviderHandlersLayer = Layer.mergeAll(
   Availability,
   SetCredential,
@@ -192,4 +206,6 @@ export const ProviderHandlersLayer = Layer.mergeAll(
   PermissionRequests,
   PermissionDecide,
   PermissionListPending,
+  PermissionListDecisions,
+  PermissionRevokeDecision,
 );

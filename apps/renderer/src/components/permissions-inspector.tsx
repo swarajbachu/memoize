@@ -1,0 +1,289 @@
+import { Globe, Pencil, Shield, Terminal, Trash2, Wrench } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+
+import type {
+  FolderId,
+  PermissionKind,
+  SavedDecision,
+} from "@forkzero/wire";
+
+import {
+  Dialog,
+  DialogBackdrop,
+  DialogPopup,
+  DialogPortal,
+  DialogTitle,
+  DialogViewport,
+} from "~/components/ui/dialog";
+import { usePermissionsStore } from "../store/permissions.ts";
+
+const kindIcon = (kind: PermissionKind) => {
+  switch (kind._tag) {
+    case "Bash":
+      return <Terminal className="size-3.5 text-amber-300" />;
+    case "FileWrite":
+      return <Pencil className="size-3.5 text-emerald-300" />;
+    case "Network":
+      return <Globe className="size-3.5 text-sky-300" />;
+    case "Other":
+      return <Wrench className="size-3.5 text-zinc-300" />;
+  }
+};
+
+const kindLabel = (kind: PermissionKind): string => {
+  switch (kind._tag) {
+    case "Bash":
+      return kind.command;
+    case "FileWrite":
+      return kind.path;
+    case "Network":
+      return kind.url;
+    case "Other":
+      return `${kind.tool} — ${kind.summary}`;
+  }
+};
+
+const decisionStyles = (decision: SavedDecision["decision"]): string => {
+  switch (decision) {
+    case "AlwaysAllow":
+      return "bg-violet-500/15 text-violet-200 border-violet-500/40";
+    case "AllowForSession":
+      return "bg-emerald-500/15 text-emerald-200 border-emerald-500/40";
+    case "AllowOnce":
+      return "bg-zinc-500/15 text-zinc-200 border-zinc-500/40";
+    case "Deny":
+      return "bg-red-500/15 text-red-200 border-red-500/40";
+  }
+};
+
+const formatDate = (d: Date): string => {
+  const sec = Math.floor((Date.now() - d.getTime()) / 1000);
+  if (sec < 60) return "just now";
+  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
+  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
+  return d.toLocaleDateString();
+};
+
+interface PermissionsInspectorProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  projectId: FolderId;
+  projectName: string;
+}
+
+/**
+ * Modal listing permission decisions saved against one project. Decisions are
+ * grouped by scope: folder (`AlwaysAllow`) shows up top, session-scoped
+ * `AllowForSession` rows below, and any persisted `AllowOnce`/`Deny` rows
+ * collapsed under "Recent activity". Revoke deletes the row so the next
+ * matching tool call re-prompts.
+ */
+export function PermissionsInspector({
+  open,
+  onOpenChange,
+  projectId,
+  projectName,
+}: PermissionsInspectorProps) {
+  const decisionsByProject = usePermissionsStore((s) => s.decisionsByProject);
+  const loadingByProject = usePermissionsStore(
+    (s) => s.loadingDecisionsByProject,
+  );
+  const loadDecisions = usePermissionsStore((s) => s.loadDecisions);
+  const revoke = usePermissionsStore((s) => s.revoke);
+
+  const decisions = decisionsByProject[projectId] ?? [];
+  const loading = loadingByProject[projectId] === true;
+
+  // Reload every time the modal opens — the user may have hit a prompt
+  // outside this surface and we want fresh state.
+  useEffect(() => {
+    if (open) void loadDecisions(projectId);
+  }, [open, projectId, loadDecisions]);
+
+  const grouped = useMemo(() => {
+    const folder: SavedDecision[] = [];
+    const session: SavedDecision[] = [];
+    const recent: SavedDecision[] = [];
+    for (const d of decisions) {
+      if (d.scope === "folder" && d.decision === "AlwaysAllow") folder.push(d);
+      else if (d.scope === "session" && d.decision === "AllowForSession")
+        session.push(d);
+      else recent.push(d);
+    }
+    return { folder, session, recent };
+  }, [decisions]);
+
+  const [showSession, setShowSession] = useState(true);
+  const [showRecent, setShowRecent] = useState(false);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogPortal>
+        <DialogBackdrop />
+        <DialogViewport>
+          <DialogPopup
+            className="max-w-2xl"
+            showCloseButton
+          >
+            <div className="flex items-center gap-2 px-6 pt-6">
+              <Shield className="size-4 text-violet-300" />
+              <DialogTitle className="text-base">
+                Permissions — {projectName}
+              </DialogTitle>
+            </div>
+            <div className="max-h-[60vh] overflow-y-auto px-6 pb-4 pt-3 text-sm">
+              {loading && decisions.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Loading…</p>
+              ) : decisions.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  No saved permission decisions for this project yet. They
+                  appear here when you click &quot;Allow for session&quot; or
+                  &quot;Always allow in project&quot; on a permission prompt.
+                </p>
+              ) : (
+                <>
+                  <Section
+                    title="Always allowed in this project"
+                    decisions={grouped.folder}
+                    onRevoke={(id) => void revoke(projectId, id)}
+                    emptyHint="No project-wide allowances yet."
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowSession((v) => !v)}
+                    className="mt-4 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    {showSession ? "▾" : "▸"} Allowed for past sessions (
+                    {grouped.session.length})
+                  </button>
+                  {showSession && (
+                    <Section
+                      title=""
+                      decisions={grouped.session}
+                      onRevoke={(id) => void revoke(projectId, id)}
+                      emptyHint="No session-scoped allowances."
+                    />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowRecent((v) => !v)}
+                    className="mt-4 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    {showRecent ? "▾" : "▸"} Recent activity (
+                    {grouped.recent.length})
+                  </button>
+                  {showRecent && (
+                    <Section
+                      title=""
+                      decisions={grouped.recent}
+                      onRevoke={(id) => void revoke(projectId, id)}
+                      emptyHint="No recent prompts."
+                    />
+                  )}
+                </>
+              )}
+            </div>
+          </DialogPopup>
+        </DialogViewport>
+      </DialogPortal>
+    </Dialog>
+  );
+}
+
+function Section({
+  title,
+  decisions,
+  onRevoke,
+  emptyHint,
+}: {
+  title: string;
+  decisions: ReadonlyArray<SavedDecision>;
+  onRevoke: (requestId: string) => void;
+  emptyHint: string;
+}) {
+  if (title === "" && decisions.length === 0) {
+    return (
+      <p className="mt-2 text-[11px] text-muted-foreground">{emptyHint}</p>
+    );
+  }
+  return (
+    <div className={title === "" ? "mt-2" : "mt-4"}>
+      {title !== "" ? (
+        <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          {title}
+        </h3>
+      ) : null}
+      {decisions.length === 0 ? (
+        <p className="text-[11px] text-muted-foreground">{emptyHint}</p>
+      ) : (
+        <ul className="flex flex-col gap-1">
+          {decisions.map((d) => (
+            <DecisionRow key={d.requestId} decision={d} onRevoke={onRevoke} />
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function DecisionRow({
+  decision,
+  onRevoke,
+}: {
+  decision: SavedDecision;
+  onRevoke: (requestId: string) => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  return (
+    <li className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/20 px-2 py-1.5">
+      <span className="shrink-0">{kindIcon(decision.kind)}</span>
+      <span
+        className="flex-1 truncate font-mono text-xs text-foreground"
+        title={kindLabel(decision.kind)}
+      >
+        {kindLabel(decision.kind)}
+      </span>
+      <span
+        className={`rounded border px-1.5 py-0.5 text-[10px] ${decisionStyles(
+          decision.decision,
+        )}`}
+      >
+        {decision.decision}
+      </span>
+      <span className="shrink-0 text-[10px] text-muted-foreground">
+        {formatDate(decision.decidedAt)}
+      </span>
+      {confirming ? (
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => {
+              onRevoke(decision.requestId);
+              setConfirming(false);
+            }}
+            className="rounded bg-red-500/30 px-2 py-0.5 text-[10px] text-red-100 hover:bg-red-500/50"
+          >
+            Revoke
+          </button>
+          <button
+            type="button"
+            onClick={() => setConfirming(false)}
+            className="rounded px-2 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
+          >
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setConfirming(true)}
+          className="rounded p-1 text-muted-foreground hover:bg-red-500/20 hover:text-red-200"
+          aria-label="Revoke"
+          title="Revoke this decision"
+        >
+          <Trash2 className="size-3.5" />
+        </button>
+      )}
+    </li>
+  );
+}

@@ -176,6 +176,87 @@ const translate = (msg: SDKMessage): ReadonlyArray<AgentEvent> => {
 };
 
 /**
+ * Tools the agent can run without a prompt. These are pure reads or
+ * internal-state tools (`TodoWrite`) with no observable blast radius. The
+ * `Read` exception for sensitive paths is enforced separately in
+ * `policyFor` — even read-only tools force a prompt when the target looks
+ * like a secret.
+ */
+const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
+  "Read",
+  "LS",
+  "Glob",
+  "Grep",
+  "NotebookRead",
+  "BashOutput",
+  "TodoWrite",
+]);
+
+/**
+ * Path patterns that always prompt regardless of any prior `AllowForSession`
+ * or `AlwaysAllow` decision. Match anywhere in the path string — agents
+ * tend to use absolute paths, so anchoring to a directory boundary catches
+ * `~/.ssh/...` and `/path/to/repo/.env` alike.
+ */
+const SENSITIVE_PATTERNS: ReadonlyArray<RegExp> = [
+  /(^|\/)\.env(\.|$)/,
+  /(^|\/)credentials(\.[^/]+)?$/i,
+  /(^|\/)\.aws\//,
+  /(^|\/)\.ssh\//,
+  /(^|\/)id_(rsa|ed25519|ecdsa|dsa)(\.pub)?$/,
+  /\.(pem|key|p12|pfx)$/i,
+  /(^|\/)\.netrc$/,
+  /(^|\/)\.pgpass$/,
+];
+
+const isSensitivePath = (p: string): boolean =>
+  SENSITIVE_PATTERNS.some((re) => re.test(p));
+
+type ToolPolicy =
+  | { readonly kind: "auto-allow" }
+  | { readonly kind: "prompt"; readonly forcePrompt: boolean };
+
+/**
+ * Decide whether the SDK's tool call needs to bother the user. The driver
+ * still always reports the tool to the timeline; auto-allow only short-
+ * circuits the prompt itself.
+ */
+const policyFor = (
+  toolName: string,
+  toolInput: Record<string, unknown>,
+): ToolPolicy => {
+  if (READ_ONLY_TOOLS.has(toolName)) {
+    if (toolName === "Read") {
+      const path = typeof toolInput.file_path === "string"
+        ? toolInput.file_path
+        : "";
+      if (path.length > 0 && isSensitivePath(path)) {
+        return { kind: "prompt", forcePrompt: true };
+      }
+    }
+    return { kind: "auto-allow" };
+  }
+  if (
+    toolName === "Edit" ||
+    toolName === "Write" ||
+    toolName === "MultiEdit" ||
+    toolName === "NotebookEdit"
+  ) {
+    const path =
+      typeof toolInput.file_path === "string"
+        ? toolInput.file_path
+        : typeof toolInput.notebook_path === "string"
+          ? (toolInput.notebook_path as string)
+          : "";
+    return {
+      kind: "prompt",
+      forcePrompt: path.length > 0 && isSensitivePath(path),
+    };
+  }
+  return { kind: "prompt", forcePrompt: false };
+};
+
+/**
  * Map a Claude SDK tool invocation onto a wire `PermissionKind`. Tools we
  * don't classify drop into `Other`; the server treats those as auto-allow
  * for now (logged) so the agent loop isn't stalled by every internal `Read`
@@ -225,11 +306,13 @@ const kindForTool = (
  * Hook the driver passes into the SDK's `canUseTool`. Returning a
  * `PermissionDecision` lets the orchestrator (`ProviderService`) plug
  * `PermissionService.request` in directly without the driver reaching
- * across modules.
+ * across modules. `forcePrompt` flows through to the broker so sensitive
+ * paths can't be silenced by prior `AllowForSession` / `AlwaysAllow` rows.
  */
 export type RequestPermission = (
   sessionId: AgentSessionId,
   kind: PermissionKind,
+  options: { readonly forcePrompt: boolean },
 ) => Promise<PermissionDecision>;
 
 /**
@@ -300,6 +383,15 @@ export const startClaudeSession = (
       // `PermissionService`. The renderer's toast eventually fulfills the
       // promise this awaits.
       canUseTool: async (toolName, toolInput) => {
+        const policy = policyFor(toolName, toolInput);
+        if (policy.kind === "auto-allow") {
+          // Read / LS / Glob / Grep / NotebookRead / BashOutput / TodoWrite
+          // skip the prompt entirely. We deliberately don't surface a
+          // `PermissionRequest` event for these — the timeline already
+          // shows the underlying `tool_use`, and a second "I asked for
+          // permission and was given it" row would be pure noise.
+          return { behavior: "allow", updatedInput: toolInput };
+        }
         const kind = kindForTool(toolName, toolInput);
         events.unsafeOffer({
           _tag: "PermissionRequest",
@@ -307,7 +399,9 @@ export const startClaudeSession = (
           kind: toolName,
           details: toolInput,
         });
-        const decision = await requestPermission(sessionId, kind);
+        const decision = await requestPermission(sessionId, kind, {
+          forcePrompt: policy.forcePrompt,
+        });
         if (decision._tag === "Deny") {
           return {
             behavior: "deny",
@@ -315,9 +409,9 @@ export const startClaudeSession = (
           };
         }
         // AllowOnce / AllowForSession / AlwaysAllow → allow. The session
-        // scope is enforced server-side: a second request with the same
-        // (sessionId, kindKey) short-circuits to AllowOnce without
-        // prompting.
+        // and folder scopes are enforced server-side: a second request
+        // with the same (sessionId|projectId, kindKey) short-circuits to
+        // AllowOnce without prompting (unless `forcePrompt` is set).
         return { behavior: "allow", updatedInput: toolInput };
       },
     };

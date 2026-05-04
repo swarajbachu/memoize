@@ -7,6 +7,7 @@ import {
   AgentSessionStartError,
   type AgentAvailability,
   type AgentEvent,
+  type FolderId,
   type PermissionDecision,
   type PermissionKind,
   type ProviderId,
@@ -60,12 +61,21 @@ export const ProviderServiceLive = Layer.effect(
 
     // The Claude SDK's `canUseTool` callback returns a Promise; here we
     // shim PermissionService.request into that signature using the live
-    // runtime captured at layer construction.
-    const requestPermission = (
-      sessionId: AgentSessionId,
-      kind: PermissionKind,
-    ): Promise<PermissionDecision> =>
-      Runtime.runPromise(runtime)(permissions.request(sessionId, kind));
+    // runtime captured at layer construction. `projectId` is bound at
+    // start() time so the driver doesn't need to know about projects.
+    const buildRequestPermission =
+      (projectId: FolderId) =>
+      (
+        sessionId: AgentSessionId,
+        kind: PermissionKind,
+        options: { readonly forcePrompt: boolean },
+      ): Promise<PermissionDecision> =>
+        Runtime.runPromise(runtime)(
+          permissions.request(sessionId, kind, {
+            projectId,
+            forcePrompt: options.forcePrompt,
+          }),
+        );
 
     const availability = () =>
       Effect.gen(function* () {
@@ -131,7 +141,7 @@ export const ProviderServiceLive = Layer.effect(
               apiKey,
               claudePath,
               sessionId,
-              requestPermission,
+              buildRequestPermission(input.folderId),
               resumeCursor,
             );
           } else {
