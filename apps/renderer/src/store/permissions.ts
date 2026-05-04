@@ -104,16 +104,3 @@ export const usePermissionsStore = create<PermissionsState>((set) => ({
   },
 }));
 
-export const selectRequestsForSession = (
-  sessionId: SessionId,
-): ((s: PermissionsState) => ReadonlyArray<PermissionRequest>) => {
-  return (s) => {
-    const out: PermissionRequest[] = [];
-    for (const req of Object.values(s.requestsById)) {
-      if (req.sessionId === sessionId) out.push(req);
-    }
-    return out.sort(
-      (a, b) => a.requestedAt.getTime() - b.requestedAt.getTime(),
-    );
-  };
-};
