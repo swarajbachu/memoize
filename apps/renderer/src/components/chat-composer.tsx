@@ -1,14 +1,14 @@
 import {
   Check,
   ChevronDown,
+  Gauge,
   Send,
   ShieldAlert,
   ShieldCheck,
-  Sparkles,
   Square,
   Zap,
 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   MODELS_BY_PROVIDER,
@@ -19,13 +19,28 @@ import {
   type SessionId,
 } from "@forkzero/wire";
 
+import { Card, CardPanel } from "~/components/ui/card";
+import { Frame, FrameFooter } from "~/components/ui/frame";
 import {
-  Popover,
-  PopoverPopup,
-  PopoverTrigger,
-} from "~/components/ui/popover";
+  Menu,
+  MenuGroup,
+  MenuGroupLabel,
+  MenuItem,
+  MenuPopup,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuSeparator,
+  MenuTrigger,
+} from "~/components/ui/menu";
+import {
+  Tooltip,
+  TooltipPopup,
+  TooltipProvider,
+  TooltipTrigger,
+} from "~/components/ui/tooltip";
 import { useMessagesStore } from "../store/messages.ts";
 import { useSessionsStore } from "../store/sessions.ts";
+import { ProviderIcon } from "./provider-icons.tsx";
 
 const MIN_HEIGHT = 56;
 const MAX_HEIGHT = 240;
@@ -43,6 +58,13 @@ const inferInFlight = (messages: ReadonlyArray<Message>): boolean => {
   const last = messages[messages.length - 1]!;
   return last.content._tag === "user" || last.content._tag === "tool_use";
 };
+
+type ReasoningLevel = "low" | "medium" | "high";
+const REASONING_LEVELS: ReadonlyArray<ReasoningLevel> = [
+  "low",
+  "medium",
+  "high",
+];
 
 export function ChatComposer({ session }: { session: Session }) {
   const sessionId: SessionId = session.id;
@@ -84,58 +106,79 @@ export function ChatComposer({ session }: { session: Session }) {
   };
 
   return (
-    <div className="shrink-0 border-t border-border bg-zinc-900 px-3 pb-3 pt-2">
-      <div className="mx-auto flex max-w-3xl flex-col gap-2">
-        <div className="flex items-end gap-2 rounded-xl border border-border bg-muted/30 px-2 py-1.5 focus-within:ring-1 focus-within:ring-primary/40">
-          <textarea
-            ref={textareaRef}
-            value={value}
-            onChange={onChange}
-            onKeyDown={onKeyDown}
-            placeholder="Send a message…  ⌘+Enter to send"
-            rows={1}
-            style={{ height: MIN_HEIGHT }}
-            className="flex-1 resize-none bg-transparent px-1 py-1 text-sm leading-relaxed outline-none placeholder:text-muted-foreground"
-          />
-          {inFlight ? (
-            <button
-              type="button"
-              onClick={() => void interrupt(sessionId)}
-              className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-destructive text-destructive-foreground hover:opacity-90"
-              aria-label="Interrupt"
-              title="Interrupt"
-            >
-              <Square className="size-3.5" />
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => void submit()}
-              disabled={!canSend}
-              className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-              aria-label="Send"
-              title="Send (⌘+Enter)"
-            >
-              <Send className="size-3.5" />
-            </button>
-          )}
-        </div>
-        <div className="flex items-center justify-between gap-2 px-1 text-[10px] text-muted-foreground">
-          <ModelPicker
-            sessionId={sessionId}
-            providerId={session.providerId}
-            currentModel={session.model}
-          />
-          <div className="flex items-center gap-2">
-            <RuntimeModeToggle
-              sessionId={sessionId}
-              current={session.runtimeMode}
-            />
-            <span>{inFlight ? "running…" : "idle"}</span>
-          </div>
+    <TooltipProvider>
+      <div className="shrink-0 px-3 pb-3 pt-2">
+        <div className="mx-auto max-w-3xl">
+          <Frame className="bg-muted/40">
+            <Card className="rounded-xl border-border/50">
+              <CardPanel className="flex items-end gap-2 px-3 py-2">
+                <textarea
+                  ref={textareaRef}
+                  value={value}
+                  onChange={onChange}
+                  onKeyDown={onKeyDown}
+                  placeholder="Send a message…  ⌘+Enter to send"
+                  rows={1}
+                  style={{ height: MIN_HEIGHT }}
+                  className="flex-1 resize-none bg-transparent px-1 py-1 text-sm leading-relaxed outline-none placeholder:text-muted-foreground"
+                />
+                {inFlight ? (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <button
+                          type="button"
+                          onClick={() => void interrupt(sessionId)}
+                          aria-label="Interrupt"
+                          className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-destructive text-destructive-foreground transition-opacity hover:opacity-90"
+                        >
+                          <Square className="size-3.5" />
+                        </button>
+                      }
+                    />
+                    <TooltipPopup>Interrupt the running turn</TooltipPopup>
+                  </Tooltip>
+                ) : (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <button
+                          type="button"
+                          onClick={() => void submit()}
+                          disabled={!canSend}
+                          aria-label="Send"
+                          className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          <Send className="size-3.5" />
+                        </button>
+                      }
+                    />
+                    <TooltipPopup>Send (⌘+Enter)</TooltipPopup>
+                  </Tooltip>
+                )}
+              </CardPanel>
+            </Card>
+            <FrameFooter className="flex items-center justify-between gap-2 px-2 py-1.5">
+              <div className="flex items-center gap-1.5">
+                <ModelPicker
+                  sessionId={sessionId}
+                  providerId={session.providerId}
+                  currentModel={session.model}
+                />
+                <ReasoningPicker sessionId={sessionId} />
+              </div>
+              <div className="flex items-center gap-2">
+                <RuntimeModeToggle
+                  sessionId={sessionId}
+                  current={session.runtimeMode}
+                />
+                <TurnTimer messages={messages} inFlight={inFlight} />
+              </div>
+            </FrameFooter>
+          </Frame>
         </div>
       </div>
-    </div>
+    </TooltipProvider>
   );
 }
 
@@ -151,23 +194,32 @@ export function ChatComposer({ session }: { session: Session }) {
  */
 const MODE_META: Record<
   RuntimeMode,
-  { label: string; title: string; Icon: typeof ShieldAlert }
+  {
+    label: string;
+    tooltip: string;
+    Icon: typeof ShieldAlert;
+    activeClass: string;
+  }
 > = {
   "approval-required": {
     label: "Approve",
-    title: "Prompt for every write / shell / network call",
+    tooltip: "Prompt for every write, shell, and network call",
     Icon: ShieldAlert,
+    activeClass: "bg-background text-foreground shadow-xs/5",
   },
   "auto-accept-edits": {
     label: "Edits",
-    title: "Auto-allow file edits; still prompt for shell / network / subagent",
+    tooltip:
+      "Auto-allow file edits — still prompt for shell, network, subagents",
     Icon: ShieldCheck,
+    activeClass: "bg-emerald-500/15 text-emerald-300 shadow-xs/5",
   },
   "full-access": {
     label: "YOLO",
-    title:
+    tooltip:
       "Auto-allow everything except sensitive paths (.env, credentials, …)",
     Icon: Zap,
+    activeClass: "bg-amber-500/15 text-amber-300 shadow-xs/5",
   },
 };
 
@@ -185,37 +237,45 @@ function RuntimeModeToggle({
     "full-access",
   ];
   return (
-    <div className="flex overflow-hidden rounded border border-border">
+    <div className="flex items-center gap-0.5 rounded-lg border border-border/60 bg-muted/30 p-0.5">
       {modes.map((mode) => {
         const meta = MODE_META[mode];
         const Icon = meta.Icon;
         const active = mode === current;
         return (
-          <button
-            key={mode}
-            type="button"
-            onClick={() => {
-              if (!active) void setRuntimeMode(sessionId, mode);
-            }}
-            title={meta.title}
-            className={`flex items-center gap-1 px-1.5 py-0.5 text-[10px] transition-colors ${
-              active
-                ? mode === "full-access"
-                  ? "bg-amber-500/20 text-amber-200"
-                  : mode === "auto-accept-edits"
-                    ? "bg-emerald-500/20 text-emerald-200"
-                    : "bg-muted text-foreground"
-                : "text-muted-foreground hover:bg-muted/60"
-            }`}
-          >
-            <Icon className="size-3" />
-            <span>{meta.label}</span>
-          </button>
+          <Tooltip key={mode}>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!active) void setRuntimeMode(sessionId, mode);
+                  }}
+                  aria-label={meta.label}
+                  aria-pressed={active}
+                  className={`flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] transition-colors ${
+                    active
+                      ? meta.activeClass
+                      : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  }`}
+                >
+                  <Icon className="size-3" />
+                  <span>{meta.label}</span>
+                </button>
+              }
+            />
+            <TooltipPopup>{meta.tooltip}</TooltipPopup>
+          </Tooltip>
         );
       })}
     </div>
   );
 }
+
+const PROVIDER_LABEL: Record<ProviderId, string> = {
+  claude: "Claude Code",
+  codex: "Codex",
+};
 
 function ModelPicker({
   sessionId,
@@ -227,48 +287,167 @@ function ModelPicker({
   currentModel: string;
 }) {
   const setModel = useSessionsStore((s) => s.setModel);
-  const [open, setOpen] = useState(false);
   const models = MODELS_BY_PROVIDER[providerId] ?? [];
   const current = models.find((m) => m.id === currentModel);
   const label = current?.label ?? currentModel;
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
-        className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-muted/60 hover:text-foreground data-[popup-open]:bg-muted/60 data-[popup-open]:text-foreground"
+    <Menu>
+      <MenuTrigger
+        className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-foreground hover:bg-muted/60 data-[popup-open]:bg-muted/60"
+        aria-label="Change model"
         title="Change model — applies to next message"
       >
-        <Sparkles className="size-3" />
-        <span>
-          {providerId} · {label}
-        </span>
-        <ChevronDown className="size-3" />
-      </PopoverTrigger>
-      <PopoverPopup side="top" align="start" className="w-56">
-        <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-          Model — applies to next message
-        </div>
-        {models.map((m) => {
-          const active = m.id === currentModel;
-          return (
-            <button
-              key={m.id}
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                if (!active) void setModel(sessionId, m.id);
-              }}
-              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-sidebar-accent"
-            >
-              <Check
-                className={`size-3.5 ${active ? "opacity-100" : "opacity-0"}`}
-              />
-              <span className="flex-1 truncate">{m.label}</span>
-              <span className="text-[10px] text-muted-foreground">{m.id}</span>
-            </button>
-          );
-        })}
-      </PopoverPopup>
-    </Popover>
+        <ProviderIcon providerId={providerId} className="size-3" />
+        <span>{label}</span>
+        <ChevronDown className="size-3 opacity-60" />
+      </MenuTrigger>
+      <MenuPopup side="top" align="start" className="w-72">
+        {(Object.keys(MODELS_BY_PROVIDER) as ReadonlyArray<ProviderId>).map(
+          (pid, i) => (
+            <Fragment key={pid}>
+              {i > 0 && <MenuSeparator />}
+              <MenuGroup>
+                <MenuGroupLabel>{PROVIDER_LABEL[pid]}</MenuGroupLabel>
+                {MODELS_BY_PROVIDER[pid].map((m) => {
+                  const active = pid === providerId && m.id === currentModel;
+                  return (
+                    <MenuItem
+                      key={m.id}
+                      onClick={() => {
+                        // For now, only switch within the current provider —
+                        // cross-provider model changes need a fresh session.
+                        if (pid !== providerId) return;
+                        if (m.id !== currentModel)
+                          void setModel(sessionId, m.id);
+                      }}
+                      disabled={pid !== providerId}
+                      className={
+                        active
+                          ? "bg-accent/60 text-accent-foreground data-highlighted:bg-accent"
+                          : undefined
+                      }
+                    >
+                      <ProviderIcon providerId={pid} className="size-3.5" />
+                      <span className="flex-1 truncate">{m.label}</span>
+                      {active && <Check className="size-3.5 opacity-90" />}
+                    </MenuItem>
+                  );
+                })}
+              </MenuGroup>
+            </Fragment>
+          ),
+        )}
+      </MenuPopup>
+    </Menu>
+  );
+}
+
+/**
+ * Reasoning effort selector. UI-only for now — wire integration is a
+ * follow-up (codex driver needs to forward `--reasoning-effort`, claude
+ * driver maps to thinking budget). State is per-session and lives in
+ * sessionStorage so reloads keep the chosen level visible.
+ */
+function ReasoningPicker({ sessionId }: { sessionId: SessionId }) {
+  const storageKey = `forkzero.reasoning.${sessionId}`;
+  const [level, setLevel] = useState<ReasoningLevel>(() => {
+    if (typeof window === "undefined") return "medium";
+    const stored = window.sessionStorage.getItem(storageKey);
+    return stored === "low" || stored === "high" ? stored : "medium";
+  });
+
+  const onChange = (next: string) => {
+    if (next !== "low" && next !== "medium" && next !== "high") return;
+    setLevel(next);
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem(storageKey, next);
+    }
+  };
+
+  return (
+    <Menu>
+      <MenuTrigger
+        className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-foreground hover:bg-muted/60 data-[popup-open]:bg-muted/60"
+        aria-label="Reasoning effort"
+        title="Reasoning effort for the next message"
+      >
+        <Gauge className="size-3" />
+        <span className="capitalize">{level}</span>
+        <ChevronDown className="size-3 opacity-60" />
+      </MenuTrigger>
+      <MenuPopup side="top" align="start" className="w-44">
+        <MenuGroup>
+          <MenuGroupLabel>Reasoning effort</MenuGroupLabel>
+          <MenuRadioGroup value={level} onValueChange={onChange}>
+            {REASONING_LEVELS.map((l) => (
+              <MenuRadioItem key={l} value={l}>
+                <span className="capitalize">{l}</span>
+              </MenuRadioItem>
+            ))}
+          </MenuRadioGroup>
+        </MenuGroup>
+      </MenuPopup>
+    </Menu>
+  );
+}
+
+const formatElapsed = (ms: number): string => {
+  const totalSec = ms / 1000;
+  if (totalSec < 60) return `${totalSec.toFixed(1)}s`;
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec - min * 60;
+  return `${min}m ${sec.toFixed(1)}s`;
+};
+
+/**
+ * Live elapsed time for the current turn. Anchors to the most recent user
+ * message; ticks while the turn is in flight, then freezes the final value
+ * once the assistant lands so the user can see how long the turn took.
+ */
+function TurnTimer({
+  messages,
+  inFlight,
+}: {
+  messages: ReadonlyArray<Message>;
+  inFlight: boolean;
+}) {
+  const anchorMs = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i]!;
+      if (m.content._tag === "user") return m.createdAt.getTime();
+    }
+    return null;
+  }, [messages]);
+
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!inFlight) return;
+    const id = window.setInterval(() => setNow(Date.now()), 100);
+    return () => window.clearInterval(id);
+  }, [inFlight]);
+
+  if (anchorMs === null) {
+    return <span className="text-[10px] text-muted-foreground">idle</span>;
+  }
+
+  // Freeze on the final assistant/tool-result timestamp once the turn ends, so
+  // the displayed value matches the actual turn duration instead of "time
+  // since user spoke".
+  const endMs = inFlight
+    ? now
+    : (messages[messages.length - 1]?.createdAt.getTime() ?? now);
+  const elapsed = Math.max(0, endMs - anchorMs);
+
+  return (
+    <span
+      className={`tabular-nums text-[10px] ${
+        inFlight ? "text-foreground" : "text-muted-foreground"
+      }`}
+      title={inFlight ? "Time on the current turn" : "Last turn duration"}
+    >
+      {inFlight ? "● " : ""}
+      {formatElapsed(elapsed)}
+    </span>
   );
 }
