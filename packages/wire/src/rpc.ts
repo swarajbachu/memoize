@@ -9,7 +9,7 @@ import {
   AgentSetCredentialRpc,
   AgentStartRpc,
 } from "./agent.ts";
-import { FsTreeRpc } from "./fs.ts";
+import { FsReadFileRpc, FsTreeRpc, FsWriteFileRpc } from "./fs.ts";
 import {
   GitHeadChangedRpc,
   GitLogRpc,
@@ -83,6 +83,8 @@ export const ForkzeroRpcs = RpcGroup.make(
   GitOriginRpc,
   GitPrStateRpc,
   FsTreeRpc,
+  FsReadFileRpc,
+  FsWriteFileRpc,
   AgentAvailabilityRpc,
   AgentSetCredentialRpc,
   AgentStartRpc,

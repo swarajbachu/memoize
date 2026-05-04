@@ -3,6 +3,8 @@ import { Effect } from "effect";
 
 import { ChatComposer } from "./components/chat-composer";
 import { ChatView } from "./components/chat-view";
+import { FileEditor } from "./components/file-editor.tsx";
+import { MainTabs } from "./components/main-tabs.tsx";
 import { PermissionToast } from "./components/permission-toast";
 import { ProjectsSidebar } from "./components/projects-sidebar";
 import { RightPane } from "./components/right-pane";
@@ -35,6 +37,20 @@ export function App() {
   }, [startPermissionsStream]);
 
   const view = useUiStore((s) => s.view);
+  const activeMainTab = useUiStore((s) => s.activeMainTab);
+  const openFile = useUiStore((s) => s.openFile);
+  const closeFileTab = useUiStore((s) => s.closeFileTab);
+
+  // Switching projects in the left sidebar closes the file tab — its path
+  // wouldn't resolve under the new project's root anyway. Run only when the
+  // selected folder actually leaves the open file behind.
+  useEffect(() => {
+    if (openFile === null) return;
+    if (selectedFolderId !== null && openFile.folderId === selectedFolderId) {
+      return;
+    }
+    closeFileTab();
+  }, [selectedFolderId, openFile, closeFileTab]);
 
   useEffect(() => {
     let cancelled = false;
@@ -56,6 +72,12 @@ export function App() {
     };
   }, []);
 
+  const headerLabel = selectedSession
+    ? selectedSession.title
+    : selectedFolder
+      ? selectedFolder.name
+      : "no project selected";
+
   return (
     <div className="dark flex h-dvh max-h-dvh min-h-0 w-screen overflow-hidden text-foreground">
       <div className="flex w-[260px] shrink-0 flex-col">
@@ -66,31 +88,36 @@ export function App() {
           <SettingsPage />
         ) : (
           <>
-            <header className="flex h-9 shrink-0 items-center px-3 text-xs text-muted-foreground [-webkit-app-region:drag]">
-              <span
-                className="ml-16 select-none truncate"
-                title={selectedFolder?.path}
+            <MainTabs
+              headerLabel={headerLabel}
+              headerTitle={selectedFolder?.path}
+            />
+            <div
+              hidden={activeMainTab !== "chat"}
+              className="flex min-h-0 flex-1 flex-col"
+            >
+              {selectedSessionId !== null && selectedSession !== null ? (
+                <>
+                  <PermissionToast sessionId={selectedSessionId} />
+                  <ChatView sessionId={selectedSessionId} />
+                  <ChatComposer session={selectedSession} />
+                </>
+              ) : (
+                <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
+                  <p>
+                    {selectedFolder === null
+                      ? "Add a project on the left to begin."
+                      : "Pick or create a session in the sidebar."}
+                  </p>
+                </div>
+              )}
+            </div>
+            {openFile !== null && (
+              <div
+                hidden={activeMainTab !== "file"}
+                className="flex min-h-0 flex-1 flex-col"
               >
-                {selectedSession
-                  ? selectedSession.title
-                  : selectedFolder
-                    ? selectedFolder.name
-                    : "no project selected"}
-              </span>
-            </header>
-            {selectedSessionId !== null && selectedSession !== null ? (
-              <>
-                <PermissionToast sessionId={selectedSessionId} />
-                <ChatView sessionId={selectedSessionId} />
-                <ChatComposer session={selectedSession} />
-              </>
-            ) : (
-              <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
-                <p>
-                  {selectedFolder === null
-                    ? "Add a project on the left to begin."
-                    : "Pick or create a session in the sidebar."}
-                </p>
+                <FileEditor />
               </div>
             )}
           </>
