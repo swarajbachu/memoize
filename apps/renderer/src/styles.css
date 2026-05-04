@@ -271,3 +271,62 @@ body,
     font-family: var(--font-mono);
   }
 }
+
+/* Composer atomic chips. Inline pill that visually replaces the underlying
+   token (e.g. `@apps/foo.ts`) with an icon + label. Sized to sit on the
+   prose baseline without disturbing line-height. */
+@layer components {
+  .fz-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0 0.4rem 0 0.3rem;
+    margin: 0 0.1rem;
+    height: 1.4em;
+    border: 1px solid hsl(var(--border) / 0.6);
+    border-radius: 0.375rem;
+    background-color: hsl(var(--muted) / 0.4);
+    color: hsl(var(--foreground));
+    font-size: 0.85em;
+    line-height: 1;
+    vertical-align: -0.2em;
+    user-select: none;
+    white-space: nowrap;
+  }
+  .fz-chip-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 0.95em;
+    height: 0.95em;
+  }
+  .fz-chip-iconimg {
+    width: 0.95em;
+    height: 0.95em;
+    object-fit: contain;
+  }
+  .fz-chip-iconsvg {
+    display: inline-flex;
+    align-items: center;
+    color: hsl(var(--muted-foreground));
+  }
+  .fz-chip-thumb {
+    width: 1.4em;
+    height: 1.4em;
+    object-fit: cover;
+    border-radius: 0.2rem;
+    margin: 0 0.1rem 0 -0.2rem;
+  }
+  .fz-chip-divider {
+    width: 1px;
+    height: 0.85em;
+    background-color: hsl(var(--border) / 0.7);
+  }
+  .fz-chip-label {
+    font-variant-numeric: tabular-nums;
+    color: hsl(var(--foreground));
+  }
+  .fz-chip[data-kind="image"] .fz-chip-divider {
+    display: none;
+  }
+}

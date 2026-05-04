@@ -17,8 +17,17 @@ import {
   composerDoc,
   createComposerView,
   setComposerDoc,
+  type ActiveTrigger,
 } from "~/lib/codemirror/composer";
+import { clearChipsEffect } from "~/lib/codemirror/composer-chips";
 import { cn } from "~/lib/utils";
+import {
+  matchBuiltin,
+  type BuiltinCommand,
+} from "../composer/builtin-commands.ts";
+import { parseComposerInput } from "../composer/segment-parser.ts";
+import { FileTagPopover } from "./composer/file-tag-popover.tsx";
+import { SlashCommandPopover } from "./composer/slash-command-popover.tsx";
 import {
   Menu,
   MenuGroup,
@@ -66,12 +75,16 @@ export function ChatComposer({ session }: { session: Session }) {
   const interrupt = useMessagesStore((s) => s.interrupt);
 
   const [hasText, setHasText] = useState(false);
+  const [trigger, setTrigger] = useState<ActiveTrigger | null>(null);
   const editorHostRef = useRef<HTMLDivElement | null>(null);
   const editorViewRef = useRef<EditorView | null>(null);
   // Submit reads through a ref so the keymap, captured at editor creation
   // time, always sees the current sessionId / send / inFlight without
   // recreating the editor on every render.
   const submitRef = useRef<() => boolean>(() => false);
+
+  const setModel = useSessionsStore((s) => s.setModel);
+  const setRuntimeMode = useSessionsStore((s) => s.setRuntimeMode);
 
   const canSend = hasText;
 
@@ -88,6 +101,7 @@ export function ChatComposer({ session }: { session: Session }) {
       callbacks: {
         onSubmit: () => submitRef.current(),
         onChange: (doc) => setHasText(doc.trim().length > 0),
+        onTrigger: (t) => setTrigger(t),
       },
     });
     editorViewRef.current = view;
@@ -99,14 +113,58 @@ export function ChatComposer({ session }: { session: Session }) {
     };
   }, []);
 
+  const clearComposer = (view: EditorView): void => {
+    setComposerDoc(view, "");
+    view.dispatch({ effects: clearChipsEffect.of() });
+    setHasText(false);
+    setTrigger(null);
+  };
+
+  const dispatchBuiltin = (parsed: { command: BuiltinCommand; args: string }): void => {
+    switch (parsed.command.name) {
+      case "clear":
+        // Editor is already cleared by the caller; nothing else to do.
+        break;
+      case "model":
+        if (parsed.args) void setModel(sessionId, parsed.args);
+        break;
+      case "mode":
+        if (
+          parsed.args === "approval-required" ||
+          parsed.args === "auto-accept-edits" ||
+          parsed.args === "full-access"
+        ) {
+          void setRuntimeMode(sessionId, parsed.args);
+        }
+        break;
+      case "new":
+      case "help":
+        // `/new` and `/help` are wired in a follow-up — for 0.03 we accept
+        // them silently rather than show an error toast that doesn't yet
+        // have a destination.
+        break;
+    }
+  };
+
   const submit = (): boolean => {
+    // Don't submit while a popover is open — Enter belongs to the popover.
+    if (trigger !== null) return false;
+
     const view = editorViewRef.current;
     if (view === null) return false;
-    const text = composerDoc(view).trim();
-    if (text.length === 0) return false;
-    setComposerDoc(view, "");
-    setHasText(false);
-    void send(sessionId, text);
+    const docText = composerDoc(view).trim();
+    if (docText.length === 0) return false;
+
+    const builtin = matchBuiltin(docText);
+    if (builtin !== null) {
+      clearComposer(view);
+      dispatchBuiltin(builtin);
+      return true;
+    }
+
+    const input = parseComposerInput(view.state, session.providerId);
+    clearComposer(view);
+    void send(sessionId, input);
     return true;
   };
 
@@ -120,7 +178,23 @@ export function ChatComposer({ session }: { session: Session }) {
         <div className="mx-auto max-w-3xl">
           <Frame className="bg-muted/40">
             <Card className="rounded-xl border-border/50">
-              <CardPanel className="flex items-end gap-2 px-3 py-2">
+              <CardPanel className="relative flex items-end gap-2 px-3 py-2">
+                {trigger !== null && editorViewRef.current !== null ? (
+                  trigger.kind === "slash" ? (
+                    <SlashCommandPopover
+                      trigger={trigger}
+                      view={editorViewRef.current}
+                      onClose={() => setTrigger(null)}
+                    />
+                  ) : (
+                    <FileTagPopover
+                      trigger={trigger}
+                      view={editorViewRef.current}
+                      projectId={session.projectId}
+                      onClose={() => setTrigger(null)}
+                    />
+                  )
+                ) : null}
                 <div
                   ref={editorHostRef}
                   className="flex-1 overflow-y-auto bg-transparent text-sm leading-relaxed outline-none"

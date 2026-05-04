@@ -2,8 +2,13 @@ import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView, keymap, placeholder } from "@codemirror/view";
 
+import { addChipEffect, chipExtensions, type ChipMeta } from "./composer-chips.ts";
 import { composerKeymap } from "./composer-keymap.ts";
 import { composerTheme } from "./composer-theme.ts";
+import {
+  composerTriggerPlugin,
+  type ActiveTrigger,
+} from "./composer-triggers.ts";
 
 export type ComposerCallbacks = {
   /**
@@ -14,6 +19,7 @@ export type ComposerCallbacks = {
    */
   readonly onSubmit: () => boolean;
   readonly onChange: (doc: string) => void;
+  readonly onTrigger: (trigger: ActiveTrigger | null) => void;
 };
 
 export type ComposerCreateParams = {
@@ -42,6 +48,8 @@ export const createComposerView = ({
     placeholder(placeholderText),
     EditorView.lineWrapping,
     composerTheme,
+    ...chipExtensions,
+    composerTriggerPlugin(callbacks.onTrigger),
     keymap.of([
       ...composerKeymap(callbacks),
       ...historyKeymap,
@@ -72,3 +80,30 @@ export const setComposerDoc = (view: EditorView, doc: string): void => {
 
 export const composerDoc = (view: EditorView): string =>
   view.state.doc.toString();
+
+/**
+ * Replace `[from, to)` in the document with `tokenText` and register a chip
+ * over the inserted range. Used by the slash + file popovers when the user
+ * confirms a suggestion. A trailing space is inserted after the chip so the
+ * cursor lands ready for the next word — matches the spec's `@chat-comp` →
+ * inserts chip and the trigger literal is consumed behaviour.
+ */
+export const replaceWithChip = (
+  view: EditorView,
+  from: number,
+  to: number,
+  tokenText: string,
+  meta: ChipMeta,
+): void => {
+  const insertText = tokenText + " ";
+  const chipFrom = from;
+  const chipTo = from + tokenText.length;
+  view.dispatch({
+    changes: { from, to, insert: insertText },
+    selection: { anchor: from + insertText.length },
+    effects: addChipEffect.of({ from: chipFrom, to: chipTo, meta }),
+  });
+  view.focus();
+};
+
+export type { ActiveTrigger } from "./composer-triggers.ts";
