@@ -684,14 +684,18 @@ export function ThinkingRow({
   redacted: boolean;
 }) {
   // Three states:
-  // 1. redacted — model thought but content is policy-hidden
-  // 2. empty text — provider stripped or didn't deliver thinking content
-  // 3. plain text — render as markdown
+  // 1. redacted — model thought but content is policy-hidden (rare;
+  //    `redacted_thinking` content blocks).
+  // 2. empty text — Anthropic's SDK / CLI receives the signature but
+  //    strips every `thinking_delta` chunk before forwarding to us. The
+  //    model did think, we just never see the words. We render a row
+  //    anyway so the timeline accurately reflects what happened.
+  // 3. plain text — render as markdown.
   const isEmpty = !redacted && text.length === 0;
   const teaser = redacted
     ? "(redacted)"
     : isEmpty
-      ? "(no content provided)"
+      ? "(content not exposed by SDK)"
       : firstSentence(text);
   const body = redacted ? (
     <p className="whitespace-pre-wrap text-[11px] italic leading-relaxed text-muted-foreground/70">
@@ -699,8 +703,10 @@ export function ThinkingRow({
     </p>
   ) : isEmpty ? (
     <p className="whitespace-pre-wrap text-[11px] italic leading-relaxed text-muted-foreground/70">
-      The provider acknowledged a thinking block but didn't deliver any text.
-      This usually means the SDK CLI filtered it before forwarding.
+      The model produced a thinking block (the SDK forwarded its signed
+      receipt) but the underlying text was filtered out by Anthropic's
+      agent SDK before it reached us. We can&apos;t expose the actual
+      thoughts without bypassing the official SDK.
     </p>
   ) : (
     <MarkdownBlock text={text} />
