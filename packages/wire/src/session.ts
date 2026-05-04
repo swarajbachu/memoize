@@ -175,6 +175,7 @@ export const SessionCreateRpc = Rpc.make("session.create", {
     model: Schema.String,
     title: Schema.optional(Schema.String),
     initialPrompt: Schema.optional(Schema.String),
+    runtimeMode: Schema.optional(RuntimeMode),
   }),
   success: Session,
   error: SessionStartError,
@@ -269,4 +270,17 @@ export const SessionSetRuntimeModeRpc = Rpc.make("session.setRuntimeMode", {
   }),
   success: Schema.Void,
   error: SessionNotFoundError,
+});
+
+/**
+ * Live status feed for a session. Mirrors the message stream pattern: emits
+ * the current status immediately, then every transition. The renderer uses
+ * it to keep the composer's "running" indicator stable across the whole
+ * tool-call loop instead of inferring from the last message.
+ */
+export const SessionStatusStreamRpc = Rpc.make("session.streamStatus", {
+  payload: Schema.Struct({ sessionId: SessionId }),
+  success: Schema.Struct({ sessionId: SessionId, status: SessionStatus }),
+  error: SessionNotFoundError,
+  stream: true,
 });

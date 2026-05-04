@@ -4,19 +4,18 @@ import {
   ArchiveRestore,
   ChevronDown,
   ChevronRight,
-  MessageSquare,
+  Eye,
+  EyeOff,
+  MoreHorizontal,
   Pencil,
-  Play,
   Plus,
   Settings,
   Shield,
-  Sparkles,
+  SquarePen,
   Trash2,
-  X,
 } from "lucide-react";
 
-
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 
 import {
   defaultModelFor,
@@ -27,22 +26,19 @@ import {
 } from "@forkzero/wire";
 
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
-import {
-  Menu,
-  MenuItem,
-  MenuPopup,
-  MenuTrigger,
-} from "~/components/ui/menu";
-import {
-  Popover,
-  PopoverPopup,
-  PopoverTrigger,
-} from "~/components/ui/popover";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
+import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
+import { cn } from "~/lib/utils";
 import { getRpcClient } from "../lib/rpc-client.ts";
+import { usePrStateStore } from "../store/pr-state.ts";
 import { useProvidersStore } from "../store/providers.ts";
 import { useSessionsStore } from "../store/sessions.ts";
+import { useSettingsStore } from "../store/settings.ts";
+import { useUiStore } from "../store/ui.ts";
 import { useWorkspaceStore } from "../store/workspace.ts";
+import { BranchIcon, type BranchState } from "./branch-icon.tsx";
 import { PermissionsInspector } from "./permissions-inspector.tsx";
+import { ProviderIcon } from "./provider-icons.tsx";
 
 const initialsOf = (name: string): string => {
   const parts = name.split(/[-_.\s]+/).filter(Boolean);
@@ -115,8 +111,19 @@ export function ProjectsSidebar() {
     }
   }, [expanded, folders, sessionsByProject, hydrateSessions]);
 
-  // Resolve git origin for avatar rendering — same pattern as the old folder
-  // sidebar. Lookups that fail stay `null` and the row falls back to initials.
+  // Lazy-hydrate per-project PR state for every expanded project. The store
+  // is keyed by FolderId and dedupes requests so this is safe to over-call.
+  const hydratePrState = usePrStateStore((s) => s.hydrate);
+  useEffect(() => {
+    for (const folder of folders) {
+      if (expanded[folder.id]) {
+        void hydratePrState(folder.id);
+      }
+    }
+  }, [expanded, folders, hydratePrState]);
+
+  // Resolve git origin for avatar rendering. Lookups that fail stay `null`
+  // and the row falls back to initials.
   useEffect(() => {
     let cancelled = false;
     const missing = folders.filter((f) => !(f.id in origins));
@@ -168,20 +175,19 @@ export function ProjectsSidebar() {
         </p>
       )}
 
-      <ul className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-1 pb-2">
+      <ul className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-2">
         {folders.length === 0 && !loading && (
           <li className="px-3 py-4 text-center text-xs text-muted-foreground">
             No projects yet. Click + to add one.
           </li>
         )}
         {folders.map((folder) => (
-          <ProjectRow
+          <ProjectGroup
             key={folder.id}
             id={folder.id}
             name={folder.name}
             path={folder.path}
             origin={origins[folder.id] ?? null}
-            isSelected={folder.id === selectedFolderId}
             isExpanded={expanded[folder.id] === true}
             sessions={sessionsByProject[folder.id] ?? []}
             showArchived={showArchivedByProject[folder.id] === true}
@@ -198,14 +204,19 @@ export function ProjectsSidebar() {
 }
 
 function SidebarFooter() {
-  const setCredentialsOpen = useProvidersStore((s) => s.setCredentialsOpen);
+  const setView = useUiStore((s) => s.setView);
+  const view = useUiStore((s) => s.view);
   return (
     <div className="border-t border-sidebar-border/40 px-2 py-1.5">
       <button
         type="button"
-        onClick={() => setCredentialsOpen(true)}
-        className="flex w-full items-center gap-2 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
-        title="API key settings (advanced)"
+        onClick={() => setView("settings")}
+        className={cn(
+          "flex w-full items-center gap-2 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
+          view === "settings" &&
+            "bg-sidebar-accent/60 text-sidebar-accent-foreground",
+        )}
+        title="Settings"
       >
         <Settings className="size-3.5" />
         <span>Settings</span>
@@ -214,12 +225,11 @@ function SidebarFooter() {
   );
 }
 
-function ProjectRow({
+function ProjectGroup({
   id,
   name,
   path,
   origin,
-  isSelected,
   isExpanded,
   sessions,
   showArchived,
@@ -232,7 +242,6 @@ function ProjectRow({
   name: string;
   path: string;
   origin: GitOriginInfo | null;
-  isSelected: boolean;
   isExpanded: boolean;
   sessions: ReadonlyArray<Session>;
   showArchived: boolean;
@@ -248,9 +257,7 @@ function ProjectRow({
 
   const visibleSessions = useMemo(
     () =>
-      showArchived
-        ? sessions
-        : sessions.filter((s) => s.archivedAt === null),
+      showArchived ? sessions : sessions.filter((s) => s.archivedAt === null),
     [sessions, showArchived],
   );
   const archivedCount = sessions.filter((s) => s.archivedAt !== null).length;
@@ -258,105 +265,163 @@ function ProjectRow({
   const Chevron = isExpanded ? ChevronDown : ChevronRight;
 
   return (
-    <li>
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={onSelect}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
+    <Fragment>
+      {/* Project header — clicking it toggles expansion + selects the folder.
+          Intentionally not highlighted; the active row is the selected
+          session, not the project. */}
+      <li>
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
             onSelect();
-          }
-        }}
-        className={`group flex cursor-pointer items-center gap-1.5 rounded px-1.5 py-1.5 transition-colors ${
-          isSelected
-            ? "bg-sidebar-accent text-sidebar-accent-foreground"
-            : "hover:bg-sidebar-accent/60"
-        }`}
-      >
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
             onToggleExpanded();
           }}
-          className="rounded p-0.5 text-muted-foreground hover:text-sidebar-accent-foreground"
-          aria-label={isExpanded ? "Collapse" : "Expand"}
-        >
-          <Chevron className="size-3.5" />
-        </button>
-        <Avatar className="size-6 shrink-0 rounded-md">
-          {avatarUrl !== null && (
-            <AvatarImage src={avatarUrl} alt={displayName} />
-          )}
-          <AvatarFallback className="rounded-md text-[10px]">
-            {fallbackText}
-          </AvatarFallback>
-        </Avatar>
-        <span
-          className="min-w-0 flex-1 truncate text-sm"
-          title={origin ? `${origin.owner}/${origin.repo} · ${path}` : path}
-        >
-          {displayName}
-        </span>
-        <NewSessionButton projectId={id} />
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            setInspectorOpen(true);
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onSelect();
+              onToggleExpanded();
+            }
           }}
-          className="rounded p-0.5 text-muted-foreground opacity-0 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group-hover:opacity-100"
-          aria-label={`Permissions for ${displayName}`}
-          title="Permissions"
+          className="group flex cursor-pointer items-center gap-2 px-3 py-2.5 transition-colors hover:bg-sidebar-accent/30 rounded-md"
         >
-          <Shield className="size-3.5" />
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onRemove();
-          }}
-          className="rounded p-0.5 text-muted-foreground opacity-0 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group-hover:opacity-100"
-          aria-label={`Remove ${displayName}`}
-        >
-          <X className="size-3.5" />
-        </button>
-      </div>
+          {/* Single 20px slot holds avatar (idle) and chevron (hover). Both
+              live in the same grid cell so the row never reflows; opacity
+              fades between them. motion-reduce drops the transition. */}
+          <div className="relative grid size-5 shrink-0 place-items-center">
+            <Avatar
+              className={cn(
+                "col-start-1 row-start-1 size-5 rounded transition-opacity duration-150 ease-out",
+                "group-hover:opacity-0 motion-reduce:transition-none",
+              )}
+            >
+              {avatarUrl !== null && (
+                <AvatarImage src={avatarUrl} alt={displayName} />
+              )}
+              <AvatarFallback className="rounded text-[9px]">
+                {fallbackText}
+              </AvatarFallback>
+            </Avatar>
+            <Chevron
+              aria-hidden="true"
+              className={cn(
+                "col-start-1 row-start-1 size-3.5 text-muted-foreground opacity-0 transition-opacity duration-150 ease-out",
+                "group-hover:opacity-100 motion-reduce:transition-none",
+              )}
+            />
+          </div>
+          <span
+            className="min-w-0 flex-1 truncate text-sm"
+            title={origin ? `${origin.owner}/${origin.repo} · ${path}` : path}
+          >
+            {displayName}
+          </span>
+          <ProjectActionsMenu
+            displayName={displayName}
+            showArchived={showArchived}
+            archivedCount={archivedCount}
+            onOpenPermissions={() => setInspectorOpen(true)}
+            onToggleShowArchived={onToggleShowArchived}
+            onRemove={onRemove}
+          />
+          <NewSessionButton projectId={id} />
+        </div>
 
-      <PermissionsInspector
-        open={inspectorOpen}
-        onOpenChange={setInspectorOpen}
-        projectId={id}
-        projectName={displayName}
-      />
+        <PermissionsInspector
+          open={inspectorOpen}
+          onOpenChange={setInspectorOpen}
+          projectId={id}
+          projectName={displayName}
+        />
+      </li>
 
       {isExpanded && (
-        <div className="ml-7 flex flex-col gap-0.5 pb-1">
+        <>
           {visibleSessions.length === 0 && (
-            <p className="px-2 py-1 text-[11px] text-muted-foreground">
+            <li className="px-12 py-1 text-[11px] text-muted-foreground">
               No sessions yet.
-            </p>
+            </li>
           )}
           {visibleSessions.map((session) => (
             <SessionRow key={session.id} session={session} />
           ))}
           {archivedCount > 0 && (
-            <button
-              type="button"
-              onClick={onToggleShowArchived}
-              className="mt-0.5 self-start rounded px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
-            >
-              {showArchived
-                ? `Hide archived (${archivedCount})`
-                : `Show archived (${archivedCount})`}
-            </button>
+            <li>
+              <button
+                type="button"
+                onClick={onToggleShowArchived}
+                className="ml-12 rounded px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
+              >
+                {showArchived
+                  ? `Hide archived (${archivedCount})`
+                  : `Show archived (${archivedCount})`}
+              </button>
+            </li>
           )}
-        </div>
+        </>
       )}
-    </li>
+    </Fragment>
+  );
+}
+
+function ProjectActionsMenu({
+  displayName,
+  showArchived,
+  archivedCount,
+  onOpenPermissions,
+  onToggleShowArchived,
+  onRemove,
+}: {
+  displayName: string;
+  showArchived: boolean;
+  archivedCount: number;
+  onOpenPermissions: () => void;
+  onToggleShowArchived: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <Menu>
+      <MenuTrigger
+        onClick={(e) => e.stopPropagation()}
+        className="rounded p-0.5 text-muted-foreground opacity-0 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group-hover:opacity-100 data-[popup-open]:opacity-100"
+        aria-label={`Actions for ${displayName}`}
+        title="More actions"
+      >
+        <MoreHorizontal className="size-3.5" />
+      </MenuTrigger>
+      <MenuPopup align="end" className="min-w-[180px]">
+        <MenuItem
+          onClick={onOpenPermissions}
+          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
+        >
+          <Shield className="size-3.5" />
+          Permissions
+        </MenuItem>
+        {archivedCount > 0 && (
+          <MenuItem
+            onClick={onToggleShowArchived}
+            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
+          >
+            {showArchived ? (
+              <EyeOff className="size-3.5" />
+            ) : (
+              <Eye className="size-3.5" />
+            )}
+            {showArchived
+              ? `Hide archived (${archivedCount})`
+              : `Show archived (${archivedCount})`}
+          </MenuItem>
+        )}
+        <MenuItem
+          onClick={onRemove}
+          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-red-300 hover:bg-red-500/20"
+        >
+          <Trash2 className="size-3.5" />
+          Remove project
+        </MenuItem>
+      </MenuPopup>
+    </Menu>
   );
 }
 
@@ -371,6 +436,11 @@ function NewSessionButton({ projectId }: { projectId: FolderId }) {
   const availability = useProvidersStore((s) => s.availability);
   const refresh = useProvidersStore((s) => s.refresh);
   const create = useSessionsStore((s) => s.create);
+  const defaultProviderId = useSettingsStore((s) => s.defaultProviderId);
+  const defaultModelByProvider = useSettingsStore(
+    (s) => s.defaultModelByProvider,
+  );
+  const defaultRuntimeMode = useSettingsStore((s) => s.defaultRuntimeMode);
   const [open, setOpen] = useState(false);
 
   // Refresh availability every time the popover opens — catches the user
@@ -379,28 +449,56 @@ function NewSessionButton({ projectId }: { projectId: FolderId }) {
     if (open) void refresh();
   }, [open, refresh]);
 
+  const isReady = (providerId: ProviderId): boolean => {
+    const a = availability.find((x) => x.providerId === providerId);
+    if (a === undefined) return false;
+    return a.cliLoggedIn || a.hasApiKey;
+  };
+
+  const startSession = (providerId: ProviderId, model: string) => {
+    void create(projectId, providerId, model, {
+      runtimeMode: defaultRuntimeMode,
+    });
+  };
+
+  const onClick = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    // Cheap availability refresh in case the user just logged into a CLI.
+    await refresh();
+    if (isReady(defaultProviderId)) {
+      const model =
+        defaultModelByProvider[defaultProviderId] ??
+        defaultModelFor(defaultProviderId);
+      startSession(defaultProviderId, model);
+      return;
+    }
+    // Saved default isn't logged in — fall back to the popover so the user
+    // can still pick a provider that works right now.
+    setOpen(true);
+  };
+
   const onPick = (providerId: ProviderId) => {
     setOpen(false);
-    // New sessions start on the provider's default model; users swap it from
-    // the chat composer's model picker.
-    void create(projectId, providerId, defaultModelFor(providerId));
+    const model =
+      defaultModelByProvider[providerId] ?? defaultModelFor(providerId);
+    startSession(providerId, model);
   };
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
-        onClick={(e) => {
-          e.stopPropagation();
-        }}
-        className="rounded p-0.5 text-muted-foreground opacity-0 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group-hover:opacity-100 data-[popup-open]:opacity-100"
-        aria-label="New session"
-        title="New session"
+        onClick={onClick}
+        className="rounded p-0.5 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[popup-open]:bg-sidebar-accent data-[popup-open]:text-sidebar-accent-foreground"
+        aria-label="New chat"
+        title="New chat"
       >
-        <Plus className="size-3.5" />
+        <SquarePen className="size-3.5" />
       </PopoverTrigger>
       <PopoverPopup side="right" align="start" className="w-64">
         <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-          New session
+          {isReady(defaultProviderId)
+            ? "New session"
+            : "Saved default isn't ready — pick another provider"}
         </div>
         {availability.length === 0 && (
           <p className="px-2 py-2 text-xs text-muted-foreground">
@@ -429,7 +527,10 @@ function NewSessionButton({ projectId }: { projectId: FolderId }) {
               }`}
             >
               <div className="flex w-full items-center gap-2">
-                <Sparkles className="size-3.5" />
+                <ProviderIcon
+                  providerId={avail.providerId}
+                  className="size-3.5"
+                />
                 <span className="flex-1 truncate">{avail.displayName}</span>
                 <span className="text-[10px] text-muted-foreground">
                   {ready ? "ready" : "needs login"}
@@ -455,16 +556,26 @@ function SessionRow({ session }: { session: Session }) {
   const archive = useSessionsStore((s) => s.archive);
   const unarchive = useSessionsStore((s) => s.unarchive);
   const remove = useSessionsStore((s) => s.remove);
-  const resume = useSessionsStore((s) => s.resume);
+  const prInfo = usePrStateStore((s) => s.byFolder[session.projectId] ?? null);
+
   const isSelected = selectedSessionId === session.id;
   const isArchived = session.archivedAt !== null;
-  const canResume =
-    !isArchived &&
-    (session.status === "closed" ||
-      session.status === "error" ||
-      session.status === "idle") &&
-    session.resumeStrategy !== "none" &&
-    session.cursor !== null;
+
+  // PR state colors the branch icon and toggles the right-side slot between
+  // diff stats (when a PR exists) and a relative timestamp (otherwise).
+  const branchState: BranchState =
+    prInfo === null
+      ? "default"
+      : prInfo.state === "open"
+        ? "pr-open"
+        : prInfo.state === "merged" || prInfo.state === "closed"
+          ? "pr-closed"
+          : "default";
+  const showDiff =
+    prInfo !== null &&
+    (prInfo.state === "open" ||
+      prInfo.state === "merged" ||
+      prInfo.state === "closed");
 
   const onRename = () => {
     const next = window.prompt("Rename session", session.title);
@@ -482,7 +593,7 @@ function SessionRow({ session }: { session: Session }) {
 
   return (
     <Menu>
-      <div
+      <li
         role="button"
         tabIndex={0}
         onClick={() => select(session.id)}
@@ -492,77 +603,82 @@ function SessionRow({ session }: { session: Session }) {
             select(session.id);
           }
         }}
-        className={`group flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-xs transition-colors ${
-          isSelected
-            ? "bg-sidebar-accent text-sidebar-accent-foreground"
-            : isArchived
-              ? "text-muted-foreground hover:bg-sidebar-accent/40"
-              : "hover:bg-sidebar-accent/60"
-        }`}
+        className={cn(
+          "group flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-xs transition-colors",
+          isSelected && "bg-sidebar-accent text-sidebar-accent-foreground",
+          !isSelected &&
+            isArchived &&
+            "text-muted-foreground hover:bg-sidebar-accent/40",
+          !isSelected && !isArchived && "hover:bg-sidebar-accent/40",
+        )}
         title={`${session.providerId} · ${session.model}`}
       >
-        <MessageSquare className="size-3 shrink-0 opacity-70" />
+        <BranchIcon
+          state={branchState}
+          selected={isSelected}
+          className="ml-3"
+        />
         <span className="min-w-0 flex-1 truncate">{session.title}</span>
-        {canResume ? (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              void resume(session.id);
-            }}
-            className="flex shrink-0 items-center gap-0.5 rounded bg-emerald-500/20 px-1 py-[1px] text-[9px] uppercase tracking-wide text-emerald-200 hover:bg-emerald-500/40"
-            title="Resume this Claude session"
+        {/* Right-side slot: idle row shows diff stats (if PR open/closed) or
+            timestamp (no PR). The three-dot menu fades over the same slot on
+            hover so the row never reflows. tabular-nums keeps digit widths
+            stable when the elapsed time ticks. */}
+        <div className="relative flex h-4 w-[64px] shrink-0 items-center justify-end">
+          <span
+            className={cn(
+              "tabular-nums text-[10px] transition-opacity duration-150 ease-out group-hover:opacity-0 motion-reduce:transition-none",
+              showDiff && prInfo !== null && prInfo.state === "open"
+                ? "text-emerald-400/90"
+                : showDiff
+                  ? "text-purple-300/80"
+                  : "text-muted-foreground",
+            )}
           >
-            <Play className="size-2.5" />
-            Resume
-          </button>
-        ) : null}
-        <span className="shrink-0 text-[10px] text-muted-foreground">
-          {formatRelative(session.updatedAt)}
-        </span>
-        <MenuTrigger
-          onClick={(e) => e.stopPropagation()}
-          className="rounded p-0.5 text-muted-foreground opacity-0 hover:text-sidebar-accent-foreground group-hover:opacity-100 data-[popup-open]:opacity-100"
-          aria-label={`Actions for ${session.title}`}
+            {showDiff && prInfo !== null
+              ? `+${prInfo.additions} −${prInfo.deletions}`
+              : formatRelative(session.updatedAt)}
+          </span>
+          <MenuTrigger
+            onClick={(e) => e.stopPropagation()}
+            className="absolute inset-y-0 right-0 flex items-center rounded p-0.5 text-muted-foreground opacity-0 transition-opacity duration-150 ease-out hover:text-sidebar-accent-foreground group-hover:opacity-100 data-[popup-open]:opacity-100 motion-reduce:transition-none"
+            aria-label={`Actions for ${session.title}`}
+          >
+            <MoreHorizontal className="size-3.5" />
+          </MenuTrigger>
+        </div>
+      </li>
+      <MenuPopup align="end" className="min-w-[160px]">
+        <MenuItem
+          onClick={onRename}
+          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
         >
-          ⋯
-        </MenuTrigger>
-      </div>
-      <MenuPopup
-        align="end"
-        className="min-w-[160px]"
-      >
+          <Pencil className="size-3.5" />
+          Rename
+        </MenuItem>
+        {isArchived ? (
           <MenuItem
-            onClick={onRename}
+            onClick={() => void unarchive(session.id)}
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
           >
-            <Pencil className="size-3.5" />
-            Rename
+            <ArchiveRestore className="size-3.5" />
+            Unarchive
           </MenuItem>
-          {isArchived ? (
-            <MenuItem
-              onClick={() => void unarchive(session.id)}
-              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
-            >
-              <ArchiveRestore className="size-3.5" />
-              Unarchive
-            </MenuItem>
-          ) : (
-            <MenuItem
-              onClick={() => void archive(session.id)}
-              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
-            >
-              <Archive className="size-3.5" />
-              Archive
-            </MenuItem>
-          )}
+        ) : (
           <MenuItem
-            onClick={onDelete}
-            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-red-300 hover:bg-red-500/20"
+            onClick={() => void archive(session.id)}
+            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
           >
-            <Trash2 className="size-3.5" />
-            Delete
+            <Archive className="size-3.5" />
+            Archive
           </MenuItem>
+        )}
+        <MenuItem
+          onClick={onDelete}
+          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-red-300 hover:bg-red-500/20"
+        >
+          <Trash2 className="size-3.5" />
+          Delete
+        </MenuItem>
       </MenuPopup>
     </Menu>
   );

@@ -4,6 +4,7 @@ import { create } from "zustand";
 import type { Message, SessionId } from "@forkzero/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
+import { usePrStateStore } from "./pr-state.ts";
 import { useSessionsStore } from "./sessions.ts";
 
 /**
@@ -21,6 +22,12 @@ import { useSessionsStore } from "./sessions.ts";
 type MessagesState = {
   readonly messagesBySession: Record<string, ReadonlyArray<Message>>;
   readonly errorBySession: Record<string, string | null>;
+  /**
+   * Mirror of `Session.status === "running"`, fed by the `session.streamStatus`
+   * subscription. The composer reads this for its in-flight indicator so the
+   * Send/Interrupt swap stays stable across the whole tool-call loop.
+   */
+  readonly runningBySession: Record<string, boolean>;
   readonly hydrate: (sessionId: SessionId) => Promise<void>;
   readonly send: (sessionId: SessionId, text: string) => Promise<void>;
   readonly interrupt: (sessionId: SessionId) => Promise<void>;
@@ -36,20 +43,27 @@ const formatError = (err: unknown): string => {
 };
 
 let liveFiber: Fiber.RuntimeFiber<unknown, unknown> | null = null;
+let statusFiber: Fiber.RuntimeFiber<unknown, unknown> | null = null;
 let liveSessionId: SessionId | null = null;
 
 const stopLiveFiber = async () => {
+  const tasks: Array<Promise<unknown>> = [];
   if (liveFiber !== null) {
-    const fiber = liveFiber;
+    tasks.push(Effect.runPromise(Fiber.interrupt(liveFiber)));
     liveFiber = null;
-    liveSessionId = null;
-    await Effect.runPromise(Fiber.interrupt(fiber));
   }
+  if (statusFiber !== null) {
+    tasks.push(Effect.runPromise(Fiber.interrupt(statusFiber)));
+    statusFiber = null;
+  }
+  liveSessionId = null;
+  await Promise.all(tasks);
 };
 
-export const useMessagesStore = create<MessagesState>((set, _get) => ({
+export const useMessagesStore = create<MessagesState>((set, get) => ({
   messagesBySession: {},
   errorBySession: {},
+  runningBySession: {},
   hydrate: async (sessionId) => {
     if (liveSessionId === sessionId && liveFiber !== null) return;
     await stopLiveFiber();
@@ -76,6 +90,39 @@ export const useMessagesStore = create<MessagesState>((set, _get) => ({
           }),
         ),
       );
+      // Status mirror — keeps the composer's "running" indicator stable
+      // across the whole tool-call loop. When a turn ends we also refresh
+      // the project's PR state so freshly pushed branches recolor the
+      // branch icon without waiting for the user to click around.
+      statusFiber = Effect.runFork(
+        Stream.runForEach(
+          client.session.streamStatus({ sessionId }),
+          (event) =>
+            Effect.sync(() => {
+              const wasRunning = get().runningBySession[sessionId] === true;
+              const isRunning = event.status === "running";
+              set((s) => ({
+                runningBySession: {
+                  ...s.runningBySession,
+                  [sessionId]: isRunning,
+                },
+              }));
+              if (wasRunning && !isRunning) {
+                const session = useSessionsStore
+                  .getState()
+                  .sessionsByProject;
+                for (const [projectId, sessions] of Object.entries(session)) {
+                  if (sessions.some((sess) => sess.id === sessionId)) {
+                    void usePrStateStore
+                      .getState()
+                      .refresh(projectId as never);
+                    break;
+                  }
+                }
+              }
+            }),
+        ),
+      );
     } catch (err) {
       set((s) => ({
         errorBySession: {
@@ -86,14 +133,16 @@ export const useMessagesStore = create<MessagesState>((set, _get) => ({
     }
   },
   send: async (sessionId, text) => {
+    // Optimistic — flip running to true before the server status arrives so
+    // the composer's Send→Interrupt swap doesn't flash through "idle" while
+    // the RPC round-trip happens.
     set((s) => ({
       errorBySession: { ...s.errorBySession, [sessionId]: null },
+      runningBySession: { ...s.runningBySession, [sessionId]: true },
     }));
     try {
       const client = await getRpcClient();
       await Effect.runPromise(client.messages.send({ sessionId, text }));
-      // The server auto-titles the session from the first user message. Pull
-      // the freshly-titled row so the sidebar updates without a full reload.
       void useSessionsStore.getState().refreshOne(sessionId);
     } catch (err) {
       set((s) => ({

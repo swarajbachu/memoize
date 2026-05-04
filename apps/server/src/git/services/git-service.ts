@@ -8,6 +8,7 @@ import {
   type GitNotARepoError,
   type GitNotInstalledError,
   type GitOriginInfo,
+  type GitPrInfo,
   type GitStatusSummary,
 } from "@forkzero/wire";
 
@@ -31,6 +32,9 @@ export interface GitServiceShape {
   readonly origin: (
     folderId: FolderId,
   ) => Effect.Effect<GitOriginInfo | null, GitFailure>;
+  readonly prState: (
+    folderId: FolderId,
+  ) => Effect.Effect<GitPrInfo, GitFailure>;
 }
 
 export class GitService extends Context.Tag("forkzero/GitService")<
