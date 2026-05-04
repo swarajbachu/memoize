@@ -18,8 +18,9 @@ import { MessageStoreLive } from "./provider/layers/message-store.ts";
 import { PermissionServiceLive } from "./provider/layers/permission-service.ts";
 import { ProviderServiceLive } from "./provider/layers/provider-service.ts";
 import { PtyServiceLive } from "./pty/layers/pty-service.ts";
-import { FolderPicker } from "./workspace/services/folder-picker.ts";
+import { FileSearchServiceLive } from "./workspace/layers/file-search.ts";
 import { WorkspaceServiceLive } from "./workspace/layers/workspace-service.ts";
+import { FolderPicker } from "./workspace/services/folder-picker.ts";
 
 /**
  * Inputs to `makeMainLayer`. The host shell (today: Electron in
@@ -89,6 +90,13 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(NodeContext.layer),
   );
 
+  // FileSearchService backs the composer's `@` file picker. Same deps as
+  // FsLayer — recursive walk skipping common heavy directories.
+  const FileSearchLayer = FileSearchServiceLive.pipe(
+    Layer.provide(WorkspaceLayer),
+    Layer.provide(NodeContext.layer),
+  );
+
   // PermissionService brokers between the SDK permission callback (driver
   // side) and the renderer toast (RPC side). It writes decisions to
   // SQLite so an `AllowForSession` row survives a process crash and the
@@ -139,6 +147,7 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(PtyServiceLive),
     Layer.provide(GitLayer),
     Layer.provide(FsLayer),
+    Layer.provide(FileSearchLayer),
     Layer.provide(ProviderLayer),
     Layer.provide(MessageStoreLayer),
     Layer.provide(PermissionLayer),

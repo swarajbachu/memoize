@@ -56,6 +56,7 @@ import {
   WorkspaceListRpc,
   WorkspacePickFolderRpc,
   WorkspaceRemoveRpc,
+  WorkspaceSearchFilesRpc,
   WorkspaceSetSelectedRpc,
 } from "./workspace.ts";
 
@@ -73,6 +74,7 @@ export const ForkzeroRpcs = RpcGroup.make(
   WorkspacePickFolderRpc,
   WorkspaceGetSelectedRpc,
   WorkspaceSetSelectedRpc,
+  WorkspaceSearchFilesRpc,
   PtyOpenRpc,
   PtyWriteRpc,
   PtyResizeRpc,
