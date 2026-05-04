@@ -9,6 +9,7 @@ import {
   Play,
   Plus,
   Settings,
+  Shield,
   Sparkles,
   Trash2,
   X,
@@ -41,6 +42,7 @@ import { getRpcClient } from "../lib/rpc-client.ts";
 import { useProvidersStore } from "../store/providers.ts";
 import { useSessionsStore } from "../store/sessions.ts";
 import { useWorkspaceStore } from "../store/workspace.ts";
+import { PermissionsInspector } from "./permissions-inspector.tsx";
 
 const initialsOf = (name: string): string => {
   const parts = name.split(/[-_.\s]+/).filter(Boolean);
@@ -242,6 +244,7 @@ function ProjectRow({
   const displayName = origin?.repo ?? name;
   const avatarUrl = avatarUrlFor(origin);
   const fallbackText = initialsOf(origin?.owner ?? name);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
 
   const visibleSessions = useMemo(
     () =>
@@ -302,6 +305,18 @@ function ProjectRow({
           type="button"
           onClick={(e) => {
             e.stopPropagation();
+            setInspectorOpen(true);
+          }}
+          className="rounded p-0.5 text-muted-foreground opacity-0 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group-hover:opacity-100"
+          aria-label={`Permissions for ${displayName}`}
+          title="Permissions"
+        >
+          <Shield className="size-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
             onRemove();
           }}
           className="rounded p-0.5 text-muted-foreground opacity-0 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group-hover:opacity-100"
@@ -310,6 +325,13 @@ function ProjectRow({
           <X className="size-3.5" />
         </button>
       </div>
+
+      <PermissionsInspector
+        open={inspectorOpen}
+        onOpenChange={setInspectorOpen}
+        projectId={id}
+        projectName={displayName}
+      />
 
       {isExpanded && (
         <div className="ml-7 flex flex-col gap-0.5 pb-1">

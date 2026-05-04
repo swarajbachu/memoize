@@ -1,6 +1,7 @@
 import { Rpc } from "@effect/rpc";
 import { Schema } from "effect";
 
+import { FolderId } from "./ids.ts";
 import { SessionId } from "./session.ts";
 
 /**
@@ -51,7 +52,35 @@ export class PermissionRequest extends Schema.Class<PermissionRequest>(
   sessionId: SessionId,
   kind: PermissionKind,
   requestedAt: Schema.DateFromString,
+  /**
+   * Sensitive paths (e.g. `.env`, SSH keys) flip this to `true` server-side.
+   * The renderer disables `AllowForSession` and `AlwaysAllow` for these so
+   * the user can't silence future prompts on them by accident.
+   */
+  forcePrompt: Schema.Boolean,
 }) {}
+
+/**
+ * One row from `permission_decisions`, denormalized for the inspector UI.
+ * Mirrors the table columns but keeps the kind as the structured wire type
+ * so the renderer doesn't re-parse JSON.
+ */
+export class SavedDecision extends Schema.Class<SavedDecision>("SavedDecision")(
+  {
+    requestId: Schema.String,
+    sessionId: SessionId,
+    projectId: Schema.NullOr(FolderId),
+    kind: PermissionKind,
+    decision: Schema.Literal(
+      "AllowOnce",
+      "AllowForSession",
+      "AlwaysAllow",
+      "Deny",
+    ),
+    scope: Schema.Literal("session", "folder", "global"),
+    decidedAt: Schema.DateFromString,
+  },
+) {}
 
 export class PermissionRequestNotFoundError extends Schema.TaggedError<PermissionRequestNotFoundError>()(
   "PermissionRequestNotFoundError",
@@ -93,3 +122,26 @@ export const PermissionListPendingRpc = Rpc.make("permission.listPending", {
   payload: Schema.Struct({ sessionId: SessionId }),
   success: Schema.Array(PermissionRequest),
 });
+
+/**
+ * Inspector RPCs. `listDecisions` returns saved decisions optionally filtered
+ * by project (typical use is per-project from the projects sidebar). `revoke`
+ * deletes a single row by `requestId` so the next matching request re-prompts.
+ */
+export const PermissionListDecisionsRpc = Rpc.make(
+  "permission.listDecisions",
+  {
+    payload: Schema.Struct({
+      projectId: Schema.optional(FolderId),
+    }),
+    success: Schema.Array(SavedDecision),
+  },
+);
+
+export const PermissionRevokeDecisionRpc = Rpc.make(
+  "permission.revokeDecision",
+  {
+    payload: Schema.Struct({ requestId: Schema.String }),
+    success: Schema.Void,
+  },
+);

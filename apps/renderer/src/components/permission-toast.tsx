@@ -1,4 +1,4 @@
-import { ShieldAlert, ShieldCheck, ShieldX } from "lucide-react";
+import { ShieldAlert, ShieldCheck, ShieldX, Zap } from "lucide-react";
 import { useEffect, useMemo } from "react";
 
 import type {
@@ -38,6 +38,10 @@ const kindDetail = (kind: PermissionKind): string => {
 
 const ALLOW_ONCE: PermissionDecision = { _tag: "AllowOnce" };
 const ALLOW_FOR_SESSION: PermissionDecision = { _tag: "AllowForSession" };
+const ALWAYS_ALLOW_FOLDER: PermissionDecision = {
+  _tag: "AlwaysAllow",
+  scope: "folder",
+};
 const DENY: PermissionDecision = { _tag: "Deny" };
 
 /**
@@ -90,6 +94,11 @@ export function PermissionToast({ sessionId }: { sessionId: SessionId }) {
 
   if (head === undefined) return null;
 
+  const persistentDisabled = head.forcePrompt;
+  const persistentTooltip = persistentDisabled
+    ? "Sensitive path — must approve each time"
+    : undefined;
+
   return (
     <div className="border-b border-amber-500/40 bg-amber-500/10 px-4 py-3">
       <div className="mx-auto flex max-w-3xl flex-col gap-2">
@@ -102,6 +111,12 @@ export function PermissionToast({ sessionId }: { sessionId: SessionId }) {
             <div className="mt-1 break-all rounded bg-zinc-950/40 px-2 py-1 font-mono text-xs text-amber-50">
               {kindDetail(head.kind)}
             </div>
+            {head.forcePrompt ? (
+              <div className="mt-1 text-[11px] text-amber-200/80">
+                Sensitive path — &quot;Allow for session&quot; and &quot;Always
+                allow&quot; are disabled here.
+              </div>
+            ) : null}
           </div>
           {requests.length > 1 ? (
             <span className="rounded bg-amber-500/30 px-1.5 py-0.5 text-[10px] font-medium text-amber-100">
@@ -121,11 +136,23 @@ export function PermissionToast({ sessionId }: { sessionId: SessionId }) {
           </button>
           <button
             type="button"
+            disabled={persistentDisabled}
             onClick={() => void decide(head.id, ALLOW_FOR_SESSION)}
-            className="flex items-center gap-1.5 rounded-md border border-emerald-700 bg-emerald-900/40 px-2.5 py-1 text-xs text-emerald-100 hover:bg-emerald-900/70"
+            className="flex items-center gap-1.5 rounded-md border border-emerald-700 bg-emerald-900/40 px-2.5 py-1 text-xs text-emerald-100 hover:bg-emerald-900/70 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-emerald-900/40"
+            title={persistentTooltip}
           >
             <ShieldCheck className="size-3.5" />
-            Allow for this session
+            Allow for session
+          </button>
+          <button
+            type="button"
+            disabled={persistentDisabled}
+            onClick={() => void decide(head.id, ALWAYS_ALLOW_FOLDER)}
+            className="flex items-center gap-1.5 rounded-md border border-violet-700 bg-violet-900/40 px-2.5 py-1 text-xs text-violet-100 hover:bg-violet-900/70 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-violet-900/40"
+            title={persistentTooltip}
+          >
+            <Zap className="size-3.5" />
+            Always allow in project
           </button>
           <button
             type="button"

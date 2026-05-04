@@ -18,8 +18,10 @@ import {
 } from "./git.ts";
 import {
   PermissionDecideRpc,
+  PermissionListDecisionsRpc,
   PermissionListPendingRpc,
   PermissionRequestsRpc,
+  PermissionRevokeDecisionRpc,
 } from "./permission.ts";
 import { PingRpc } from "./ping.ts";
 import {
@@ -100,6 +102,8 @@ export const ForkzeroRpcs = RpcGroup.make(
   PermissionRequestsRpc,
   PermissionDecideRpc,
   PermissionListPendingRpc,
+  PermissionListDecisionsRpc,
+  PermissionRevokeDecisionRpc,
 );
 export type ForkzeroRpcs = typeof ForkzeroRpcs;
 
