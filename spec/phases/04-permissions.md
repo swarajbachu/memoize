@@ -8,15 +8,15 @@
 
 **Depends on**: Phase 3 (chat MVP)
 
-> **Note:** Renumbered from "Phase 3" when the chat-first pivot inserted the new Phase 3. Session persistence moved up into Phase 3 (it's foundational to the chat UI). What's left here is permissions UI, inline diff rendering, resume of interrupted turns, and NDJSON transcript export.
+> **Note:** Renumbered from "Phase 3" when the chat-first pivot inserted the new Phase 3. Session persistence already shipped in Phase 3 (SQLite at `<userData>/forkzero.sqlite`, sessions list in the projects sidebar). What's left here is permissions UI, inline diff rendering, resume of interrupted turns, and an NDJSON audit/export sink.
 
 ## Deliverables
 
 1. Permission prompt UI: file write, command exec, network access
-2. Per-session "always allow" memory
-3. Session persistence — full transcript saved as NDJSON
-4. Resume: relaunch app, click a stopped session, continue from where it ended (where SDK supports it)
-5. Sessions list view per folder
+2. Per-session "allow for session" memory (no in-app pattern matching — the SDK suppresses re-prompts when we hand back a session-scoped decision)
+3. NDJSON transcript audit log — best-effort tail-write per session, rotates at ~100 MB. SQLite remains the canonical store; NDJSON is for export / external tooling.
+4. Resume: relaunch app, click a stopped session, continue from where it ended (where the SDK supports it — Claude does via its `session_id`; Codex falls back to "Session ended").
+5. Inline diff rendering for `Edit` / `Write` / `MultiEdit` tool calls (replaces the JSON view).
 
 ## User scenarios
 
@@ -31,13 +31,14 @@
 
 ## Storage layout
 
+Session metadata, message history, and permission decisions all live in `<userData>/forkzero.sqlite` (SQLite is canonical — schema added by migrations 0002 and 0003). NDJSON is a side-write audit/export sink:
+
 ```
-userData/
+<userData>/
+  forkzero.sqlite                                 # canonical: sessions, messages, permission_decisions
   sessions/
-    <folder-id>/
-      <session-id>.meta.json      # provider, started, ended, status, model, cursor
-      <session-id>.events.ndjson  # one AgentEvent per line
-      <session-id>.permissions.json # session-scoped allow list
+    <project-id>/
+      <session-id>.events.ndjson                  # tail-written; rotates to *.events.<ts>.ndjson at 100MB
 ```
 
 ## Permission model
@@ -55,7 +56,7 @@ type PermissionDecision =
   | { _tag: "AlwaysAllow"; scope: "folder" | "global" }   // future
 ```
 
-For Phase 3 only `AllowOnce`, `AllowForSession`, `Deny` are exposed. `AlwaysAllow` is plumbing only, no UI yet.
+For Phase 4 only `AllowOnce`, `AllowForSession`, `Deny` are exposed in the UI. `AlwaysAllow` is schema-only plumbing.
 
 ## Acceptance criteria
 

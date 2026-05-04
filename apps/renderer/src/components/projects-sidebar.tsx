@@ -6,6 +6,7 @@ import {
   ChevronRight,
   MessageSquare,
   Pencil,
+  Play,
   Plus,
   Settings,
   Sparkles,
@@ -432,8 +433,16 @@ function SessionRow({ session }: { session: Session }) {
   const archive = useSessionsStore((s) => s.archive);
   const unarchive = useSessionsStore((s) => s.unarchive);
   const remove = useSessionsStore((s) => s.remove);
+  const resume = useSessionsStore((s) => s.resume);
   const isSelected = selectedSessionId === session.id;
   const isArchived = session.archivedAt !== null;
+  const canResume =
+    !isArchived &&
+    (session.status === "closed" ||
+      session.status === "error" ||
+      session.status === "idle") &&
+    session.resumeStrategy !== "none" &&
+    session.cursor !== null;
 
   const onRename = () => {
     const next = window.prompt("Rename session", session.title);
@@ -472,6 +481,20 @@ function SessionRow({ session }: { session: Session }) {
       >
         <MessageSquare className="size-3 shrink-0 opacity-70" />
         <span className="min-w-0 flex-1 truncate">{session.title}</span>
+        {canResume ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              void resume(session.id);
+            }}
+            className="flex shrink-0 items-center gap-0.5 rounded bg-emerald-500/20 px-1 py-[1px] text-[9px] uppercase tracking-wide text-emerald-200 hover:bg-emerald-500/40"
+            title="Resume this Claude session"
+          >
+            <Play className="size-2.5" />
+            Resume
+          </button>
+        ) : null}
         <span className="shrink-0 text-[10px] text-muted-foreground">
           {formatRelative(session.updatedAt)}
         </span>

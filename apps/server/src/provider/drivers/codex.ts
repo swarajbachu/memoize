@@ -207,7 +207,11 @@ export const startCodexSession = (
       });
       thread = codex.startThread({
         workingDirectory: cwd,
-        // Phase 2: read-only sandbox + auto-deny tools (matches Claude path).
+        // Codex SDK exposes `approvalPolicy` but no callback — when set to
+        // anything other than "never" it routes prompts to its own stdio,
+        // which we can't bridge to forkzero's toast. Stay on "never" until
+        // the SDK exposes a programmatic hook; Claude is the primary
+        // permission path in Phase 4.
         sandboxMode: "read-only",
         approvalPolicy: "never",
         skipGitRepoCheck: true,

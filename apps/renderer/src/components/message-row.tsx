@@ -5,6 +5,10 @@ import remarkGfm from "remark-gfm";
 
 import type { Message } from "@forkzero/wire";
 
+import { InlineDiff } from "./inline-diff.tsx";
+
+const FILE_EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit"]);
+
 const stringifyJson = (value: unknown): string => {
   try {
     return JSON.stringify(value, null, 2);
@@ -25,7 +29,12 @@ export function MessageRow({ message }: { message: Message }) {
     case "assistant":
       return <AssistantBubble text={message.content.text} />;
     case "tool_use":
-      return (
+      return FILE_EDIT_TOOLS.has(message.content.tool) ? (
+        <InlineDiff
+          tool={message.content.tool}
+          input={message.content.input}
+        />
+      ) : (
         <ToolUseBubble
           tool={message.content.tool}
           input={message.content.input}

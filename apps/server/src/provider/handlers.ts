@@ -2,6 +2,7 @@ import { CredentialStoreError, ForkzeroRpcs, type ProviderId } from "@forkzero/w
 import { Effect, Layer, Stream } from "effect";
 
 import { MessageStore } from "./services/message-store.ts";
+import { PermissionService } from "./services/permission-service.ts";
 import { ProviderService } from "./services/provider-service.ts";
 
 /**
@@ -111,6 +112,12 @@ const SessionDelete = ForkzeroRpcs.toLayerHandler(
     Effect.flatMap(MessageStore, (svc) => svc.deleteSession(sessionId)),
 );
 
+const SessionResume = ForkzeroRpcs.toLayerHandler(
+  "session.resume",
+  ({ sessionId }) =>
+    Effect.flatMap(MessageStore, (svc) => svc.resumeSession(sessionId)),
+);
+
 const MessagesList = ForkzeroRpcs.toLayerHandler(
   "messages.list",
   ({ sessionId }) =>
@@ -137,6 +144,30 @@ const MessagesInterrupt = ForkzeroRpcs.toLayerHandler(
     Effect.flatMap(MessageStore, (svc) => svc.interruptSession(sessionId)),
 );
 
+// ---------------------------------------------------------------------------
+// permission.* — Phase 4 surface. The renderer subscribes to
+// `permission.requests`, shows a toast, and posts back via `permission.decide`.
+// `listPending` is the cold-load helper used on session mount.
+// ---------------------------------------------------------------------------
+
+const PermissionRequests = ForkzeroRpcs.toLayerHandler(
+  "permission.requests",
+  () =>
+    Stream.unwrap(Effect.map(PermissionService, (svc) => svc.requests())),
+);
+
+const PermissionDecide = ForkzeroRpcs.toLayerHandler(
+  "permission.decide",
+  ({ requestId, decision }) =>
+    Effect.flatMap(PermissionService, (svc) => svc.decide(requestId, decision)),
+);
+
+const PermissionListPending = ForkzeroRpcs.toLayerHandler(
+  "permission.listPending",
+  ({ sessionId }) =>
+    Effect.flatMap(PermissionService, (svc) => svc.listPending(sessionId)),
+);
+
 export const ProviderHandlersLayer = Layer.mergeAll(
   Availability,
   SetCredential,
@@ -153,8 +184,12 @@ export const ProviderHandlersLayer = Layer.mergeAll(
   SessionArchive,
   SessionUnarchive,
   SessionDelete,
+  SessionResume,
   MessagesList,
   MessagesStream,
   MessagesSend,
   MessagesInterrupt,
+  PermissionRequests,
+  PermissionDecide,
+  PermissionListPending,
 );

@@ -1,5 +1,5 @@
 import { CommandExecutor, FileSystem } from "@effect/platform";
-import { Effect, Layer, Ref, Stream } from "effect";
+import { Effect, Layer, Ref, Runtime, Stream } from "effect";
 
 import {
   AgentSessionId,
@@ -7,6 +7,8 @@ import {
   AgentSessionStartError,
   type AgentAvailability,
   type AgentEvent,
+  type PermissionDecision,
+  type PermissionKind,
   type ProviderId,
 } from "@forkzero/wire";
 
@@ -20,6 +22,7 @@ import {
   type CodexSessionHandle,
 } from "../drivers/codex.ts";
 import { CredentialsService } from "../services/credentials-service.ts";
+import { PermissionService } from "../services/permission-service.ts";
 import { ProviderService } from "../services/provider-service.ts";
 import { WorkspaceService } from "../../workspace/services/workspace-service.ts";
 
@@ -49,9 +52,20 @@ export const ProviderServiceLive = Layer.effect(
     const fs = yield* FileSystem.FileSystem;
     const credentials = yield* CredentialsService;
     const workspace = yield* WorkspaceService;
+    const permissions = yield* PermissionService;
+    const runtime = yield* Effect.runtime<never>();
     const sessions = yield* Ref.make<Map<AgentSessionId, SessionEntry>>(
       new Map(),
     );
+
+    // The Claude SDK's `canUseTool` callback returns a Promise; here we
+    // shim PermissionService.request into that signature using the live
+    // runtime captured at layer construction.
+    const requestPermission = (
+      sessionId: AgentSessionId,
+      kind: PermissionKind,
+    ): Promise<PermissionDecision> =>
+      Runtime.runPromise(runtime)(permissions.request(sessionId, kind));
 
     const availability = () =>
       Effect.gen(function* () {
@@ -88,7 +102,7 @@ export const ProviderServiceLive = Layer.effect(
 
     return {
       availability,
-      start: (input) =>
+      start: (input, resumeCursor = null) =>
         Effect.gen(function* () {
           const folder = yield* workspace.findById(input.folderId);
           if (folder === null) {
@@ -117,8 +131,21 @@ export const ProviderServiceLive = Layer.effect(
               apiKey,
               claudePath,
               sessionId,
+              requestPermission,
+              resumeCursor,
             );
           } else {
+            // Codex SDK currently has no public resume API matching our
+            // cursor-based model; reject early with a stable reason the
+            // renderer can route to "Session ended — start new session".
+            if (resumeCursor !== null) {
+              return yield* Effect.fail(
+                new AgentSessionStartError({
+                  providerId: "codex",
+                  reason: "resume_unsupported",
+                }),
+              );
+            }
             handle = yield* startCodexSession(
               input,
               folder.path,
