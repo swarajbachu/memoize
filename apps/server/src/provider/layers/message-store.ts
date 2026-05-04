@@ -103,6 +103,7 @@ const roleForContent = (content: MessageContent): MessageRole => {
     case "user":
       return "user";
     case "assistant":
+    case "thinking":
     case "tool_use":
       return "assistant";
     case "tool_result":
@@ -122,6 +123,13 @@ const eventToContent = (event: AgentEvent): MessageContent | null => {
   switch (event._tag) {
     case "AssistantMessage":
       return { _tag: "assistant", text: event.text };
+    case "Thinking":
+      return {
+        _tag: "thinking",
+        itemId: event.itemId,
+        text: event.text,
+        redacted: event.redacted,
+      };
     case "ToolUse":
       return {
         _tag: "tool_use",

@@ -1,10 +1,7 @@
 import { structuredPatch } from "diff";
-import { ChevronDown, ChevronRight, FileEdit } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 
-const COLLAPSE_THRESHOLD_LINES = 30;
-
-interface FileEdit {
+export interface FileEdit {
   readonly path: string;
   readonly oldText: string;
   readonly newText: string;
@@ -16,7 +13,10 @@ interface FileEdit {
  * `Edit` / `Write` / `MultiEdit` tool input. Tools we can't parse fall back
  * to the JSON view at the call site — never throws.
  */
-const extractEdits = (tool: string, input: unknown): ReadonlyArray<FileEdit> => {
+export const extractEdits = (
+  tool: string,
+  input: unknown,
+): ReadonlyArray<FileEdit> => {
   if (input === null || typeof input !== "object") return [];
   const obj = input as Record<string, unknown>;
   const path = typeof obj.file_path === "string" ? obj.file_path : null;
@@ -100,58 +100,7 @@ const buildDiff = (edit: FileEdit): ReadonlyArray<DiffLine> => {
   return lines;
 };
 
-export function InlineDiff({ tool, input }: { tool: string; input: unknown }) {
-  const edits = useMemo(() => extractEdits(tool, input), [tool, input]);
-  const totalChangedLines = useMemo(() => {
-    let n = 0;
-    for (const edit of edits) {
-      const oldLines = edit.oldText === "" ? 0 : edit.oldText.split("\n").length;
-      const newLines = edit.newText === "" ? 0 : edit.newText.split("\n").length;
-      n += Math.abs(newLines - oldLines) + Math.min(oldLines, newLines);
-    }
-    return n;
-  }, [edits]);
-  const [expanded, setExpanded] = useState(
-    totalChangedLines <= COLLAPSE_THRESHOLD_LINES,
-  );
-
-  if (edits.length === 0) return null;
-
-  const Chevron = expanded ? ChevronDown : ChevronRight;
-  const headPath = edits[0]!.path;
-  const summary =
-    edits.length === 1
-      ? edits[0]!.mode === "create"
-        ? "create"
-        : "edit"
-      : `${edits.length} edits`;
-
-  return (
-    <div className="px-4 py-1">
-      <div className="max-w-[88%] overflow-hidden rounded-md border border-border bg-muted/40 text-xs">
-        <button
-          type="button"
-          onClick={() => setExpanded((e) => !e)}
-          className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left hover:bg-muted/60"
-        >
-          <Chevron className="size-3 shrink-0 text-muted-foreground" />
-          <FileEdit className="size-3 shrink-0 text-sky-400" />
-          <span className="truncate font-mono text-sky-200">{headPath}</span>
-          <span className="ml-1 text-muted-foreground">{summary}</span>
-        </button>
-        {expanded && (
-          <div className="border-t border-border/60">
-            {edits.map((edit, idx) => (
-              <DiffBlock key={idx} edit={edit} showHeader={edits.length > 1} />
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function DiffBlock({
+export function DiffBody({
   edit,
   showHeader,
 }: {
@@ -212,7 +161,7 @@ function DiffRow({ line }: { line: DiffLine }) {
         {marker}
       </span>
       <span className="whitespace-pre-wrap break-words">
-        {line.text === "" ? " " : line.text}
+        {line.text === "" ? " " : line.text}
       </span>
     </div>
   );

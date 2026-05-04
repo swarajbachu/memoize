@@ -120,17 +120,78 @@ const scrubInheritedClaudeMarkers = (
 
 
 /**
- * Translate one SDKMessage into zero-or-more wire AgentEvents. Phase 2 keeps
- * the mapping shallow — assistant text + tool_use + tool_result + result.
- * Other SDK message kinds (status, hooks, plugin install, …) are ignored;
- * Phase 3 will surface a richer subset.
+ * Per-turn accumulator for thinking_delta / redacted_thinking blocks. The
+ * SDK delivers raw `content_block_*` events when `includePartialMessages`
+ * is on; we stitch them back together because the completed assistant
+ * message has the `thinking` field stripped (SDK policy).
+ *
+ * Keyed by `index` from the stream events, which is stable within one
+ * message but resets per turn — `message_start` clears the map.
  */
-const translate = (msg: SDKMessage): ReadonlyArray<AgentEvent> => {
+interface ThinkingAccumulator {
+  kind: "thinking" | "redacted_thinking";
+  text: string;
+  signatureLength: number;
+}
+
+interface TranslateState {
+  thinkingByIndex: Map<number, ThinkingAccumulator>;
+  emittedThinkingThisTurn: boolean;
+}
+
+const newTranslateState = (): TranslateState => ({
+  thinkingByIndex: new Map(),
+  emittedThinkingThisTurn: false,
+});
+
+// Off by default; enable with FORKZERO_DEBUG_THINKING=1 when diagnosing
+// thinking-block delivery. One JSON object per line so terminal
+// scrollback / `grep` / `tee logfile` all preserve every field — Node's
+// default util.inspect spans multiple lines and gets chopped by
+// line-oriented tools.
+const THINKING_DEBUG = process.env.FORKZERO_DEBUG_THINKING === "1";
+const tlog = (event: string, payload: Record<string, unknown> = {}): void => {
+  if (!THINKING_DEBUG) return;
+  let line: string;
+  try {
+    line = JSON.stringify({ event, ...payload });
+  } catch {
+    line = JSON.stringify({ event, error: "unserializable payload" });
+  }
+  // eslint-disable-next-line no-console
+  console.error(`[claude-driver/thinking] ${line}`);
+};
+const summarize = (value: unknown, max = 200): string => {
+  try {
+    const s = typeof value === "string" ? value : JSON.stringify(value);
+    return s.length > max ? `${s.slice(0, max)}…(${s.length}b)` : s;
+  } catch {
+    return String(value);
+  }
+};
+
+/**
+ * Translate one SDKMessage into zero-or-more wire AgentEvents. Mostly
+ * stateless, but the `state` carries thinking-delta accumulators across
+ * `stream_event` messages so we can emit one Thinking event per content
+ * block at its `content_block_stop`.
+ */
+const translate = (
+  msg: SDKMessage,
+  state: TranslateState,
+): ReadonlyArray<AgentEvent> => {
+  tlog("sdk-msg", {
+    type: (msg as { type?: unknown }).type,
+    hasMessage: "message" in (msg as object),
+    sessionId: (msg as { session_id?: unknown }).session_id,
+  });
   if (msg.type === "assistant") {
     const out: AgentEvent[] = [];
     const content = msg.message.content;
+    const blockTypes: string[] = [];
     if (Array.isArray(content)) {
       for (const block of content) {
+        blockTypes.push(String((block as { type?: unknown }).type));
         if (block.type === "text" && typeof block.text === "string") {
           out.push({
             _tag: "AssistantMessage",
@@ -138,16 +199,185 @@ const translate = (msg: SDKMessage): ReadonlyArray<AgentEvent> => {
             text: block.text,
           });
         } else if (block.type === "tool_use") {
+          const id =
+            typeof (block as { id?: unknown }).id === "string"
+              ? ((block as { id: string }).id as AgentItemId)
+              : nextItemId();
           out.push({
             _tag: "ToolUse",
-            itemId: nextItemId(),
+            itemId: id,
             tool: block.name,
             input: block.input,
           });
+        } else if (
+          block.type === "thinking" &&
+          typeof (block as { thinking?: unknown }).thinking === "string"
+        ) {
+          // Fallback: if the partial-message deltas didn't deliver
+          // anything for this turn (e.g. SDK strips them too), at least
+          // emit whatever the assistant message has — even if `thinking`
+          // is empty — so a row appears and we know thinking happened.
+          const text = (block as { thinking: string }).thinking;
+          tlog("assistant.thinking-block", {
+            textLen: text.length,
+            emittedFromDeltasThisTurn: state.emittedThinkingThisTurn,
+            preview: summarize(text),
+          });
+          if (!state.emittedThinkingThisTurn) {
+            out.push({
+              _tag: "Thinking",
+              itemId: nextItemId(),
+              text,
+              redacted: false,
+            });
+          }
+        } else if (block.type === "redacted_thinking") {
+          tlog("assistant.redacted-thinking-block", {
+            emittedFromDeltasThisTurn: state.emittedThinkingThisTurn,
+          });
+          if (!state.emittedThinkingThisTurn) {
+            out.push({
+              _tag: "Thinking",
+              itemId: nextItemId(),
+              text: "",
+              redacted: true,
+            });
+          }
         }
       }
     }
+    tlog("assistant.blocks", { types: blockTypes, emitted: out.length });
     return out;
+  }
+  if (msg.type === "stream_event") {
+    const ev = (msg as { event?: unknown }).event as
+      | Record<string, unknown>
+      | undefined;
+    if (ev === undefined || typeof ev.type !== "string") {
+      tlog("stream_event.malformed", { event: summarize(ev) });
+      return [];
+    }
+    if (ev.type === "message_start") {
+      state.thinkingByIndex.clear();
+      state.emittedThinkingThisTurn = false;
+      tlog("stream_event.message_start");
+      return [];
+    }
+    if (ev.type === "content_block_start") {
+      const index = typeof ev.index === "number" ? ev.index : null;
+      const block = ev.content_block as Record<string, unknown> | undefined;
+      tlog("stream_event.content_block_start", {
+        index,
+        blockType: block?.type,
+        block: summarize(block),
+      });
+      if (index === null || block === undefined) return [];
+      if (block.type === "thinking") {
+        state.thinkingByIndex.set(index, {
+          kind: "thinking",
+          text: "",
+          signatureLength: 0,
+        });
+      } else if (block.type === "redacted_thinking") {
+        state.thinkingByIndex.set(index, {
+          kind: "redacted_thinking",
+          text: "",
+          signatureLength: 0,
+        });
+      }
+      return [];
+    }
+    if (ev.type === "content_block_delta") {
+      const index = typeof ev.index === "number" ? ev.index : null;
+      const delta = ev.delta as Record<string, unknown> | undefined;
+      if (index === null || delta === undefined) {
+        tlog("stream_event.content_block_delta.malformed", {
+          index,
+          delta: summarize(delta),
+        });
+        return [];
+      }
+      const acc = state.thinkingByIndex.get(index);
+      if (delta.type === "thinking_delta") {
+        const chunk =
+          typeof delta.thinking === "string" ? delta.thinking : "";
+        tlog("stream_event.thinking_delta", {
+          index,
+          chunkLen: chunk.length,
+          chunkPreview: summarize(chunk, 80),
+          haveAccumulator: acc !== undefined,
+        });
+        if (acc !== undefined) acc.text += chunk;
+      } else if (delta.type === "signature_delta") {
+        // signatures confirm thinking happened even when text is empty
+        const sig =
+          typeof delta.signature === "string" ? delta.signature : "";
+        tlog("stream_event.signature_delta", { index, sigLen: sig.length });
+        if (acc !== undefined) acc.signatureLength += sig.length;
+      } else if (
+        delta.type !== "text_delta" &&
+        delta.type !== "input_json_delta"
+      ) {
+        tlog("stream_event.other_delta", {
+          index,
+          deltaType: delta.type,
+          delta: summarize(delta),
+        });
+      }
+      return [];
+    }
+    if (ev.type === "content_block_stop") {
+      const index = typeof ev.index === "number" ? ev.index : null;
+      if (index === null) return [];
+      const acc = state.thinkingByIndex.get(index);
+      if (acc === undefined) return [];
+      state.thinkingByIndex.delete(index);
+      tlog("stream_event.content_block_stop[thinking]", {
+        index,
+        kind: acc.kind,
+        textLen: acc.text.length,
+        signatureLen: acc.signatureLength,
+        textPreview: summarize(acc.text),
+      });
+      if (acc.kind === "redacted_thinking") {
+        state.emittedThinkingThisTurn = true;
+        return [
+          {
+            _tag: "Thinking",
+            itemId: nextItemId(),
+            text: "",
+            redacted: true,
+          },
+        ];
+      }
+      if (acc.text.length > 0) {
+        state.emittedThinkingThisTurn = true;
+        return [
+          {
+            _tag: "Thinking",
+            itemId: nextItemId(),
+            text: acc.text,
+            redacted: false,
+          },
+        ];
+      }
+      // Empty thinking + a non-zero signature still indicates a thought
+      // was produced — render the empty placeholder so the user can see
+      // it happened. (If signature is also zero, drop silently.)
+      if (acc.signatureLength > 0) {
+        state.emittedThinkingThisTurn = true;
+        return [
+          {
+            _tag: "Thinking",
+            itemId: nextItemId(),
+            text: "",
+            redacted: false,
+          },
+        ];
+      }
+      return [];
+    }
+    return [];
   }
   if (msg.type === "user") {
     // Tool results come back as user messages with tool_result content blocks.
@@ -156,9 +386,18 @@ const translate = (msg: SDKMessage): ReadonlyArray<AgentEvent> => {
     if (Array.isArray(content)) {
       for (const block of content) {
         if (block.type === "tool_result") {
+          // Pair to the originating tool_use by the SDK's correlation id;
+          // fall back to a fresh id only if the SDK omits it (shouldn't
+          // happen for valid tool_result blocks).
+          const id =
+            typeof (block as { tool_use_id?: unknown }).tool_use_id ===
+            "string"
+              ? ((block as { tool_use_id: string })
+                  .tool_use_id as AgentItemId)
+              : nextItemId();
           out.push({
             _tag: "ToolResult",
-            itemId: nextItemId(),
+            itemId: id,
             output: block.content ?? null,
             isError: block.is_error === true,
           });
@@ -412,6 +651,20 @@ export const startClaudeSession = (
         ? { pathToClaudeCodeExecutable: claudeExecutablePath }
         : {}),
       ...(input.model !== undefined ? { model: input.model } : {}),
+      // `effort: "high"` enables deep reasoning. We pair it with an
+      // explicit `display: "summarized"` because Opus 4.7 defaults the
+      // adaptive-thinking display to "omitted" — meaning the API
+      // intentionally returns empty thinking text plus a signature.
+      // Without this override, our `thinking_delta` chunks arrive empty
+      // even though the model thought (we see `signature_delta` only).
+      // Other Claude 4 models default to "summarized" so this is a
+      // no-op for them.
+      effort: "high",
+      thinking: { type: "adaptive", display: "summarized" },
+      forwardSubagentText: true,
+      // Surfaces thinking deltas in the partial-message stream so we
+      // can render thinking as it streams in.
+      includePartialMessages: true,
       env: env as Options["env"],
       // Bridge the SDK's permission callback to the server-side
       // `PermissionService`. The renderer's toast eventually fulfills the
@@ -482,6 +735,7 @@ export const startClaudeSession = (
     // populated `session_id` we surface it as `SessionCursor` so MessageStore
     // can persist it for resume.
     let cursorAnnounced = false;
+    const translateState = newTranslateState();
     const pump = Effect.tryPromise({
       try: async () => {
         for await (const msg of q) {
@@ -496,7 +750,7 @@ export const startClaudeSession = (
               });
             }
           }
-          const translated = translate(msg);
+          const translated = translate(msg, translateState);
           for (const ev of translated) {
             events.unsafeOffer(ev);
           }

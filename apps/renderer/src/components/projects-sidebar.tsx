@@ -15,7 +15,7 @@ import {
   Trash2,
 } from "lucide-react";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   defaultModelFor,
@@ -28,7 +28,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
 import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
-import { cn } from "~/lib/utils";
+import { cn, formatCompactNumber } from "~/lib/utils";
 import { getRpcClient } from "../lib/rpc-client.ts";
 import { usePrStateStore } from "../store/pr-state.ts";
 import { useProvidersStore } from "../store/providers.ts";
@@ -591,12 +591,33 @@ function SessionRow({ session }: { session: Session }) {
     void remove(session.id);
   };
 
+  // Right-click context menu uses a virtual anchor positioned at the cursor.
+  // The visible button on hover (Archive / Unarchive) is the primary action;
+  // the full action set (Rename / Archive / Delete) lives in the context menu.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const anchorRef = useRef<{ getBoundingClientRect: () => DOMRect } | null>(
+    null,
+  );
+
+  const onContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const x = e.clientX;
+    const y = e.clientY;
+    const rect = new DOMRect(x, y, 0, 0);
+    anchorRef.current = { getBoundingClientRect: () => rect };
+    setMenuOpen(true);
+  };
+
+  const PrimaryActionIcon = isArchived ? ArchiveRestore : Archive;
+  const primaryActionLabel = isArchived ? "Unarchive" : "Archive";
+
   return (
-    <Menu>
+    <>
       <li
         role="button"
         tabIndex={0}
         onClick={() => select(session.id)}
+        onContextMenu={onContextMenu}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
@@ -620,66 +641,78 @@ function SessionRow({ session }: { session: Session }) {
         />
         <span className="min-w-0 flex-1 truncate">{session.title}</span>
         {/* Right-side slot: idle row shows diff stats (if PR open/closed) or
-            timestamp (no PR). The three-dot menu fades over the same slot on
-            hover so the row never reflows. tabular-nums keeps digit widths
-            stable when the elapsed time ticks. */}
-        <div className="relative flex h-4 w-[64px] shrink-0 items-center justify-end">
-          <span
-            className={cn(
-              "tabular-nums text-[10px] transition-opacity duration-150 ease-out group-hover:opacity-0 motion-reduce:transition-none",
-              showDiff && prInfo !== null && prInfo.state === "open"
-                ? "text-emerald-400/90"
-                : showDiff
-                  ? "text-purple-300/80"
-                  : "text-muted-foreground",
+            timestamp (no PR). On hover the slot swaps to a single Archive
+            (or Unarchive) action — no menu glyph; the rest of the actions
+            live behind right-click. tabular-nums keeps digit widths stable. */}
+        <div className="relative flex h-4 w-16 shrink-0 items-center justify-end">
+          <span className="tabular-nums text-[10px] text-muted-foreground transition-opacity duration-150 ease-out motion-reduce:transition-none group-hover:hidden">
+            {showDiff && prInfo !== null ? (
+              <>
+                <span className="text-emerald-400">
+                  +{formatCompactNumber(prInfo.additions)}
+                </span>{" "}
+                <span className="text-red-400">
+                  −{formatCompactNumber(prInfo.deletions)}
+                </span>
+              </>
+            ) : (
+              formatRelative(session.updatedAt)
             )}
-          >
-            {showDiff && prInfo !== null
-              ? `+${prInfo.additions} −${prInfo.deletions}`
-              : formatRelative(session.updatedAt)}
           </span>
-          <MenuTrigger
-            onClick={(e) => e.stopPropagation()}
-            className="absolute inset-y-0 right-0 flex items-center rounded p-0.5 text-muted-foreground opacity-0 transition-opacity duration-150 ease-out hover:text-sidebar-accent-foreground group-hover:opacity-100 data-[popup-open]:opacity-100 motion-reduce:transition-none"
-            aria-label={`Actions for ${session.title}`}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              void (isArchived ? unarchive(session.id) : archive(session.id));
+            }}
+            className="hidden items-center rounded p-0.5 text-muted-foreground transition-opacity duration-150 ease-out hover:text-sidebar-accent-foreground group-hover:flex motion-reduce:transition-none"
+            aria-label={`${primaryActionLabel} ${session.title}`}
+            title={primaryActionLabel}
           >
-            <MoreHorizontal className="size-3.5" />
-          </MenuTrigger>
+            <PrimaryActionIcon className="size-3.5" />
+          </button>
         </div>
       </li>
-      <MenuPopup align="end" className="min-w-[160px]">
-        <MenuItem
-          onClick={onRename}
-          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
+      <Menu open={menuOpen} onOpenChange={setMenuOpen}>
+        <MenuPopup
+          anchor={anchorRef.current ?? undefined}
+          align="start"
+          side="bottom"
+          className="min-w-40"
         >
-          <Pencil className="size-3.5" />
-          Rename
-        </MenuItem>
-        {isArchived ? (
           <MenuItem
-            onClick={() => void unarchive(session.id)}
+            onClick={onRename}
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
           >
-            <ArchiveRestore className="size-3.5" />
-            Unarchive
+            <Pencil className="size-3.5" />
+            Rename
           </MenuItem>
-        ) : (
+          {isArchived ? (
+            <MenuItem
+              onClick={() => void unarchive(session.id)}
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
+            >
+              <ArchiveRestore className="size-3.5" />
+              Unarchive
+            </MenuItem>
+          ) : (
+            <MenuItem
+              onClick={() => void archive(session.id)}
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
+            >
+              <Archive className="size-3.5" />
+              Archive
+            </MenuItem>
+          )}
           <MenuItem
-            onClick={() => void archive(session.id)}
-            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
+            onClick={onDelete}
+            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-red-300 hover:bg-red-500/20"
           >
-            <Archive className="size-3.5" />
-            Archive
+            <Trash2 className="size-3.5" />
+            Delete
           </MenuItem>
-        )}
-        <MenuItem
-          onClick={onDelete}
-          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-red-300 hover:bg-red-500/20"
-        >
-          <Trash2 className="size-3.5" />
-          Delete
-        </MenuItem>
-      </MenuPopup>
-    </Menu>
+        </MenuPopup>
+      </Menu>
+    </>
   );
 }

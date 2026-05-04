@@ -1,11 +1,11 @@
 import { MessageSquare } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 
-import type { Message, SessionId } from "@forkzero/wire";
+import type { AgentItemId, Message, SessionId } from "@forkzero/wire";
 
 import { useMessagesStore } from "../store/messages.ts";
 import { useSessionsStore } from "../store/sessions.ts";
-import { MessageRow } from "./message-row.tsx";
+import { MessageRow, type ToolResultRecord } from "./message-row.tsx";
 
 const NEAR_BOTTOM_PX = 80;
 
@@ -59,6 +59,31 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
     el.scrollTop = el.scrollHeight;
   }, [messages.length]);
 
+  // Pair tool_result rows back to their originating tool_use by AgentItemId.
+  // The driver assigns the SDK's tool_use id to both events, so each
+  // ToolRow can render its own result inline. We only record results that
+  // have a preceding tool_use in this transcript so true orphans (e.g. a
+  // dropped tool_use event) still fall through to a standalone error row
+  // in MessageRow rather than disappearing silently.
+  const resultsByItemId = useMemo(() => {
+    const seenUseIds = new Set<AgentItemId>();
+    const map = new Map<AgentItemId, ToolResultRecord>();
+    for (const m of messages) {
+      if (m.content._tag === "tool_use") {
+        seenUseIds.add(m.content.itemId);
+      } else if (
+        m.content._tag === "tool_result" &&
+        seenUseIds.has(m.content.itemId)
+      ) {
+        map.set(m.content.itemId, {
+          output: m.content.output,
+          isError: m.content.isError,
+        });
+      }
+    }
+    return map;
+  }, [messages]);
+
   return (
     <div
       ref={scrollRef}
@@ -80,7 +105,11 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
       ) : (
         <div className="flex flex-col py-2">
           {messages.map((message) => (
-            <MessageRow key={message.id} message={message} />
+            <MessageRow
+              key={message.id}
+              message={message}
+              resultsByItemId={resultsByItemId}
+            />
           ))}
         </div>
       )}
