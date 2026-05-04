@@ -1,5 +1,5 @@
 import type { EditorView } from "@codemirror/view";
-import { Check, ChevronDown, Gauge, Send, Square } from "lucide-react";
+import { Check, ChevronDown, Gauge, Paperclip, Send, Square } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -19,7 +19,12 @@ import {
   setComposerDoc,
   type ActiveTrigger,
 } from "~/lib/codemirror/composer";
-import { clearChipsEffect } from "~/lib/codemirror/composer-chips";
+import {
+  addChipEffect,
+  clearChipsEffect,
+  updateImageChipEffect,
+} from "~/lib/codemirror/composer-chips";
+import { useAttachmentsStore } from "../store/attachments.ts";
 import { cn } from "~/lib/utils";
 import {
   matchBuiltin,
@@ -52,6 +57,7 @@ import { MODES_ORDER, MODE_META } from "./runtime-mode-meta.ts";
 
 const MIN_HEIGHT = 56;
 const MAX_HEIGHT = 240;
+const MAX_ATTACHMENTS_PER_TURN = 20;
 
 // Stable empty-array reference; see chat-view.tsx for rationale.
 const EMPTY_MESSAGES: ReadonlyArray<Message> = [];
@@ -76,8 +82,13 @@ export function ChatComposer({ session }: { session: Session }) {
 
   const [hasText, setHasText] = useState(false);
   const [trigger, setTrigger] = useState<ActiveTrigger | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const editorHostRef = useRef<HTMLDivElement | null>(null);
   const editorViewRef = useRef<EditorView | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const dragDepthRef = useRef(0);
+  const uploadOne = useAttachmentsStore((s) => s.uploadOne);
+  const forgetActive = useAttachmentsStore((s) => s.forgetActive);
   // Submit reads through a ref so the keymap, captured at editor creation
   // time, always sees the current sessionId / send / inFlight without
   // recreating the editor on every render.
@@ -146,6 +157,138 @@ export function ChatComposer({ session }: { session: Session }) {
     }
   };
 
+  /**
+   * Insert image chips for `files`. Each chip starts with a blob: preview
+   * URL so the user sees something instantly; the chip's metadata swaps to
+   * a `forkzero://attachments/<id>` URL once the upload resolves. Files
+   * beyond the per-turn cap are dropped with a console warning.
+   */
+  const attachImages = (files: readonly File[]): void => {
+    const view = editorViewRef.current;
+    if (view === null || files.length === 0) return;
+
+    const images = files.filter((f) => f.type.startsWith("image/"));
+    if (images.length === 0) return;
+
+    let accepted = images.slice(0, MAX_ATTACHMENTS_PER_TURN);
+    if (images.length > MAX_ATTACHMENTS_PER_TURN) {
+      console.warn(
+        `Maximum ${MAX_ATTACHMENTS_PER_TURN} attachments per turn — ${
+          images.length - MAX_ATTACHMENTS_PER_TURN
+        } image(s) dropped`,
+      );
+    }
+
+    for (const file of accepted) {
+      const tempId = `pending-${Math.random().toString(36).slice(2, 10)}`;
+      const blobUrl = URL.createObjectURL(file);
+      const token = `[image:${tempId}]`;
+      const sel = view.state.selection.main;
+      const insertText = token + " ";
+      const chipFrom = sel.from;
+      const chipTo = sel.from + token.length;
+
+      view.dispatch({
+        changes: { from: sel.from, to: sel.to, insert: insertText },
+        selection: { anchor: sel.from + insertText.length },
+        effects: addChipEffect.of({
+          from: chipFrom,
+          to: chipTo,
+          meta: {
+            kind: "image",
+            id: tempId,
+            mimeType: file.type,
+            originalName: file.name,
+            previewUrl: blobUrl,
+          },
+        }),
+      });
+
+      // Kick off the upload; swap the chip's metadata when it resolves.
+      void uploadOne(sessionId, file)
+        .then((ref) => {
+          const finalUrl = `forkzero://attachments/${ref.id}`;
+          editorViewRef.current?.dispatch({
+            effects: updateImageChipEffect.of({
+              previousId: tempId,
+              meta: {
+                kind: "image",
+                id: ref.id,
+                mimeType: ref.mimeType,
+                originalName: ref.originalName,
+                previewUrl: finalUrl,
+              },
+            }),
+          });
+        })
+        .catch((err) => {
+          console.error("[chat-composer] upload failed", err);
+        })
+        .finally(() => {
+          URL.revokeObjectURL(blobUrl);
+        });
+    }
+  };
+
+  // Paperclip → hidden file input.
+  const onPickFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files === null) return;
+    attachImages(Array.from(files));
+    e.target.value = "";
+  };
+
+  // Paste handler — runs on the composer card so images dropped into the
+  // editor surface (or anywhere on the card) get caught.
+  const onPaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const files: File[] = [];
+    for (const it of Array.from(items)) {
+      if (it.kind === "file") {
+        const f = it.getAsFile();
+        if (f && f.type.startsWith("image/")) files.push(f);
+      }
+    }
+    if (files.length > 0) {
+      e.preventDefault();
+      attachImages(files);
+    }
+  };
+
+  const onDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    dragDepthRef.current += 1;
+    setIsDragging(true);
+  };
+  const onDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    if (e.dataTransfer.types.includes("Files")) {
+      e.preventDefault();
+    }
+  };
+  const onDragLeave = () => {
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setIsDragging(false);
+  };
+  const onDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    dragDepthRef.current = 0;
+    setIsDragging(false);
+    const files = Array.from(e.dataTransfer.files).filter((f) =>
+      f.type.startsWith("image/"),
+    );
+    if (files.length > 0) attachImages(files);
+  };
+
+  // Forget any stale tempId-keyed attachments when the composer unmounts —
+  // the heartbeat tracks ids, so dropping unattached blobs is enough to
+  // let the GC reap them.
+  useEffect(() => () => {
+    // No-op for now: forgetActive is called per-id only when a chip is
+    // dropped explicitly. Server GC handles long-lived orphans.
+    void forgetActive;
+  }, [forgetActive]);
+
   const submit = (): boolean => {
     // Don't submit while a popover is open — Enter belongs to the popover.
     if (trigger !== null) return false;
@@ -177,7 +320,29 @@ export function ChatComposer({ session }: { session: Session }) {
       <div className="shrink-0 px-3 pb-3 pt-2">
         <div className="mx-auto max-w-3xl">
           <Frame className="bg-muted/40">
-            <Card className="rounded-xl border-border/50">
+            <Card
+              className="rounded-xl border-border/50"
+              onDragEnter={onDragEnter}
+              onDragOver={onDragOver}
+              onDragLeave={onDragLeave}
+              onDrop={onDrop}
+              onPaste={onPaste}
+            >
+              {isDragging && (
+                <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center rounded-xl bg-accent/30 ring-2 ring-accent">
+                  <span className="rounded-md bg-popover px-3 py-1.5 text-xs font-medium text-foreground shadow">
+                    Drop images to attach
+                  </span>
+                </div>
+              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                hidden
+                onChange={onPickFiles}
+              />
               <CardPanel className="relative flex items-end gap-2 px-3 py-2">
                 {trigger !== null && editorViewRef.current !== null ? (
                   trigger.kind === "slash" ? (
@@ -242,6 +407,21 @@ export function ChatComposer({ session }: { session: Session }) {
             </Card>
             <FrameFooter className="flex items-center justify-between gap-2 px-2 py-1.5">
               <div className="flex items-center gap-1.5">
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        aria-label="Attach image"
+                        className="flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                      >
+                        <Paperclip className="size-3.5" />
+                      </button>
+                    }
+                  />
+                  <TooltipPopup>Attach image (paste / drop also work)</TooltipPopup>
+                </Tooltip>
                 <ModelPicker
                   sessionId={sessionId}
                   providerId={session.providerId}

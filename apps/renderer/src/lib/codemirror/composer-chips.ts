@@ -66,6 +66,17 @@ export const addChipEffect = StateEffect.define<ChipRange>({
 export const clearChipsEffect = StateEffect.define<void>();
 
 /**
+ * Swap the metadata of an existing image chip in place — used when an
+ * upload resolves and the renderer wants to replace the blob: preview URL
+ * with the durable `forkzero://attachments/<id>` URL without disturbing the
+ * cursor or the chip's position in the doc.
+ */
+export const updateImageChipEffect = StateEffect.define<{
+  readonly previousId: string;
+  readonly meta: ChipMeta;
+}>();
+
+/**
  * Holds the current chip set. Decoration ranges are derived; this field
  * is the source of truth that survives transactions.
  */
@@ -84,6 +95,14 @@ export const chipsField = StateField.define<readonly ChipRange[]>({
     for (const e of tr.effects) {
       if (e.is(addChipEffect)) next = [...next, e.value];
       else if (e.is(clearChipsEffect)) next = [];
+      else if (e.is(updateImageChipEffect)) {
+        const { previousId, meta } = e.value;
+        next = next.map((c) =>
+          c.meta.kind === "image" && c.meta.id === previousId
+            ? { ...c, meta }
+            : c,
+        );
+      }
     }
 
     // Dedupe overlapping ranges that arrive from race conditions; keep the
