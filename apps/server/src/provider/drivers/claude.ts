@@ -138,9 +138,15 @@ const translate = (msg: SDKMessage): ReadonlyArray<AgentEvent> => {
             text: block.text,
           });
         } else if (block.type === "tool_use") {
+          // Use the SDK-assigned tool_use id as the wire item id so the
+          // matching tool_result can pair to its tool_use on the renderer.
+          const id =
+            typeof (block as { id?: unknown }).id === "string"
+              ? ((block as { id: string }).id as AgentItemId)
+              : nextItemId();
           out.push({
             _tag: "ToolUse",
-            itemId: nextItemId(),
+            itemId: id,
             tool: block.name,
             input: block.input,
           });
@@ -173,9 +179,18 @@ const translate = (msg: SDKMessage): ReadonlyArray<AgentEvent> => {
     if (Array.isArray(content)) {
       for (const block of content) {
         if (block.type === "tool_result") {
+          // Pair to the originating tool_use by the SDK's correlation id;
+          // fall back to a fresh id only if the SDK omits it (shouldn't
+          // happen for valid tool_result blocks).
+          const id =
+            typeof (block as { tool_use_id?: unknown }).tool_use_id ===
+            "string"
+              ? ((block as { tool_use_id: string })
+                  .tool_use_id as AgentItemId)
+              : nextItemId();
           out.push({
             _tag: "ToolResult",
-            itemId: nextItemId(),
+            itemId: id,
             output: block.content ?? null,
             isError: block.is_error === true,
           });
@@ -429,6 +444,12 @@ export const startClaudeSession = (
         ? { pathToClaudeCodeExecutable: claudeExecutablePath }
         : {}),
       ...(input.model !== undefined ? { model: input.model } : {}),
+      // Adaptive thinking is the model-side default for Opus 4.6+ but
+      // setting it explicitly makes the contract obvious and survives
+      // future default changes. Subagent text/thinking is forwarded so a
+      // Task call's nested reasoning shows up in the timeline.
+      thinking: { type: "adaptive" },
+      forwardSubagentText: true,
       env: env as Options["env"],
       // Bridge the SDK's permission callback to the server-side
       // `PermissionService`. The renderer's toast eventually fulfills the

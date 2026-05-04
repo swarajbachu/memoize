@@ -12,12 +12,19 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 import { cn } from "~/lib/utils";
 
 import { DiffBody, extractEdits, type FileEdit } from "./inline-diff.tsx";
 
 type IconHandle = Parameters<typeof HugeiconsIcon>[0]["icon"];
+
+interface ToolResult {
+  readonly output: unknown;
+  readonly isError: boolean;
+}
 
 const stringifyJson = (value: unknown): string => {
   try {
@@ -35,44 +42,193 @@ const basename = (p: string): string => {
   return i === -1 ? p : p.slice(i + 1);
 };
 
+const dirname = (p: string): string => {
+  const i = p.lastIndexOf("/");
+  return i === -1 ? "" : p.slice(0, i + 1);
+};
+
 const truncate = (s: string, max: number): string =>
   s.length > max ? s.slice(0, max - 1) + "…" : s;
 
-const JsonBody = ({ value }: { value: unknown }) => (
-  <pre className="overflow-x-auto whitespace-pre-wrap break-words font-mono text-[11px] text-muted-foreground">
-    {stringifyJson(value)}
-  </pre>
-);
-
-const editsBody = (edits: ReadonlyArray<FileEdit>): React.ReactNode => (
-  <div className="overflow-hidden rounded border border-border/60">
-    {edits.map((edit, i) => (
-      <DiffBody key={i} edit={edit} showHeader={edits.length > 1} />
-    ))}
-  </div>
-);
-
 /**
- * Single-line collapsible row used by tool calls and thinking blocks. The
- * leading slot is a fixed-size grid cell that holds the contextual icon
- * (idle) and a chevron (hover) in the same cell — same swap pattern the
- * project sidebar uses for avatar↔chevron and session row uses for
- * branch↔archive.
+ * Coerce a tool_result `output` into displayable text. The Anthropic SDK
+ * sometimes returns a string, sometimes an array of content blocks (each
+ * with its own `text`); fall back to JSON for anything stranger.
  */
+const toResultText = (output: unknown): string => {
+  if (typeof output === "string") return output;
+  if (output === null || output === undefined) return "";
+  if (Array.isArray(output)) {
+    const parts: string[] = [];
+    for (const block of output) {
+      if (block === null || typeof block !== "object") continue;
+      const b = block as Record<string, unknown>;
+      if (typeof b.text === "string") parts.push(b.text);
+    }
+    if (parts.length > 0) return parts.join("\n");
+  }
+  return stringifyJson(output);
+};
+
+// First-sentence (or first-line) teaser, with whitespace collapsed and
+// hard-capped so a single fat row doesn't blow up the timeline.
+const firstSentence = (text: string, hardCap = 160): string => {
+  const flat = text.replace(/\s+/g, " ").trim();
+  if (flat.length === 0) return "";
+  const periodIdx = flat.indexOf(". ");
+  const newlineIdx = flat.indexOf("\n");
+  const stops = [periodIdx, newlineIdx].filter((i) => i > 0);
+  const cut = stops.length > 0 ? Math.min(...stops) + 1 : flat.length;
+  return truncate(flat.slice(0, cut).trim(), hardCap);
+};
+
+// ---------------------------------------------------------------------------
+// Visual primitives
+// ---------------------------------------------------------------------------
+
+function InlineCodeChip({ value }: { value: string }) {
+  return (
+    <span className="ml-1 truncate rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+      {value}
+    </span>
+  );
+}
+
+function InlineTextHint({ value }: { value: string }) {
+  return (
+    <span className="ml-1 truncate text-muted-foreground italic">
+      {value}
+    </span>
+  );
+}
+
+function TerminalBlock({
+  command,
+  output,
+  isError,
+}: {
+  command?: string;
+  output?: string;
+  isError?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded bg-zinc-900/70 px-3 py-2 font-mono text-[11px] leading-relaxed overflow-x-auto",
+        isError ? "border border-red-500/30" : "",
+      )}
+    >
+      {command !== undefined ? (
+        <div className="whitespace-pre-wrap break-words text-foreground/90">
+          <span className="select-none text-muted-foreground">$ </span>
+          {command}
+        </div>
+      ) : null}
+      {output !== undefined && output.length > 0 ? (
+        <div
+          className={cn(
+            "whitespace-pre-wrap break-words",
+            command !== undefined ? "mt-2" : "",
+            isError ? "text-red-200" : "text-foreground/80",
+          )}
+        >
+          {output}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ErrorPill() {
+  return (
+    <span className="mr-2 rounded bg-red-500/20 px-1.5 py-0.5 font-medium text-[10px] text-red-300">
+      Error
+    </span>
+  );
+}
+
+function FileListBlock({ paths }: { paths: ReadonlyArray<string> }) {
+  if (paths.length === 0) {
+    return (
+      <p className="text-[11px] italic text-muted-foreground">No matches.</p>
+    );
+  }
+  return (
+    <ul className="space-y-0.5 font-mono text-[11px]">
+      {paths.map((p, i) => {
+        const dir = dirname(p);
+        const base = basename(p);
+        return (
+          <li key={i} className="truncate">
+            <span className="text-muted-foreground">{dir}</span>
+            <span className="text-foreground/90">{base}</span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function MarkdownBlock({ text }: { text: string }) {
+  return (
+    <div className="prose prose-invert prose-sm max-w-none break-words text-[12px] [&>:first-child]:mt-0 [&>:last-child]:mb-0 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-3 [&_pre>code]:bg-transparent [&_pre>code]:p-0">
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+    </div>
+  );
+}
+
+function PreBlock({
+  text,
+  isError,
+}: {
+  text: string;
+  isError?: boolean;
+}) {
+  return (
+    <pre
+      className={cn(
+        "overflow-x-auto whitespace-pre-wrap break-words rounded bg-zinc-900/70 px-3 py-2 font-mono text-[11px]",
+        isError ? "border border-red-500/30 text-red-200" : "text-foreground/80",
+      )}
+    >
+      {text || "(empty)"}
+    </pre>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Result extractors (per tool)
+// ---------------------------------------------------------------------------
+
+const splitLines = (s: string): ReadonlyArray<string> => {
+  const trimmed = s.trim();
+  if (trimmed.length === 0) return [];
+  return trimmed.split("\n").map((line) => line.trim()).filter((l) => l.length > 0);
+};
+
+// Grep / Glob results are usually one path per line, sometimes followed
+// by a header like "Found N files". Filter out obvious headers.
+const parseFileList = (output: string): ReadonlyArray<string> => {
+  const lines = splitLines(output);
+  return lines.filter((l) => !/^found\s+\d+\s+/i.test(l) && !/^no\s+/i.test(l));
+};
+
+// ---------------------------------------------------------------------------
+// Expandable row primitive (icon ↔ chevron hover swap, click to toggle)
+// ---------------------------------------------------------------------------
+
 function ExpandableIconRow({
   icon,
   label,
-  summary,
+  trailing,
   body,
-  labelClassName,
-  summaryClassName,
+  hasContent,
 }: {
   icon: IconHandle;
-  label: string;
-  summary: string | null;
+  label: React.ReactNode;
+  trailing?: React.ReactNode;
   body: React.ReactNode;
-  labelClassName?: string;
-  summaryClassName?: string;
+  hasContent: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const Chevron = expanded ? ChevronDown : ChevronRight;
@@ -80,8 +236,11 @@ function ExpandableIconRow({
     <div className="px-4">
       <button
         type="button"
-        onClick={() => setExpanded((e) => !e)}
-        className="group flex w-full items-center gap-2 rounded px-1.5 py-0.5 text-left text-xs hover:bg-muted/40"
+        onClick={() => hasContent && setExpanded((e) => !e)}
+        className={cn(
+          "group flex w-full items-center gap-2 rounded px-1.5 py-0.5 text-left text-xs",
+          hasContent ? "hover:bg-muted/40 cursor-pointer" : "cursor-default",
+        )}
       >
         <div className="relative grid size-4 shrink-0 place-items-center">
           <HugeiconsIcon
@@ -90,72 +249,141 @@ function ExpandableIconRow({
             aria-hidden="true"
             className={cn(
               "col-start-1 row-start-1 size-3.5 text-muted-foreground transition-opacity duration-150 ease-out",
-              "group-hover:opacity-0 motion-reduce:transition-none",
+              hasContent ? "group-hover:opacity-0" : "",
+              "motion-reduce:transition-none",
             )}
           />
-          <Chevron
-            aria-hidden="true"
-            className={cn(
-              "col-start-1 row-start-1 size-3.5 text-muted-foreground opacity-0 transition-opacity duration-150 ease-out",
-              "group-hover:opacity-100 motion-reduce:transition-none",
-            )}
-          />
+          {hasContent ? (
+            <Chevron
+              aria-hidden="true"
+              className={cn(
+                "col-start-1 row-start-1 size-3.5 text-muted-foreground opacity-0 transition-opacity duration-150 ease-out",
+                "group-hover:opacity-100 motion-reduce:transition-none",
+              )}
+            />
+          ) : null}
         </div>
-        <span className={cn("font-medium text-foreground/90", labelClassName)}>
-          {label}
-        </span>
-        {summary !== null ? (
-          <span className={cn("truncate text-muted-foreground", summaryClassName)}>
-            {summary}
+        <span className="font-medium text-foreground/90 shrink-0">{label}</span>
+        {trailing !== undefined ? (
+          <span className="min-w-0 flex-1 truncate flex items-center">
+            {trailing}
           </span>
         ) : null}
       </button>
-      {expanded ? (
-        <div className="ml-7 mt-1 border-l border-border/60 pl-3">{body}</div>
+      {expanded && hasContent ? (
+        <div className="ml-7 mt-1 space-y-2 border-l border-border/60 pl-3 pr-1">
+          {body}
+        </div>
       ) : null}
     </div>
   );
 }
 
+// ---------------------------------------------------------------------------
+// Per-tool views
+// ---------------------------------------------------------------------------
+
 interface ToolView {
   readonly icon: IconHandle;
   readonly label: string;
-  readonly summary: string | null;
-  readonly body: React.ReactNode;
+  readonly trailing?: React.ReactNode;
+  readonly inputPanel?: React.ReactNode;
+  readonly resultPanel?: (result: ToolResult) => React.ReactNode;
+  readonly fallbackBody?: React.ReactNode;
 }
 
-const buildToolView = (tool: string, input: unknown): ToolView => {
+// Line-count derived from a tool result's textual output. Used by Read /
+// Grep / Glob to summarise "how much did this return?" in the collapsed row.
+const lineCountOf = (output: unknown): number => {
+  const text = toResultText(output);
+  if (text.length === 0) return 0;
+  return text.split("\n").length;
+};
+
+const buildToolView = (
+  tool: string,
+  input: unknown,
+  result: ToolResult | undefined,
+): ToolView => {
   const obj =
     input !== null && typeof input === "object"
       ? (input as Record<string, unknown>)
       : {};
 
   switch (tool) {
-    case "Read": {
-      const path = asString(obj.file_path);
-      return {
-        icon: File01Icon,
-        label: "Read",
-        summary: path !== null ? basename(path) : null,
-        body: <JsonBody value={input} />,
-      };
-    }
-
     case "Bash": {
       const cmd = asString(obj.command);
       const desc = asString(obj.description);
       return {
         icon: TerminalIcon,
-        label: "Bash",
-        summary: desc ?? (cmd !== null ? truncate(cmd, 80) : null),
-        body:
-          cmd !== null ? (
-            <pre className="overflow-x-auto whitespace-pre-wrap break-words font-mono text-[11px] text-foreground/80">
-              {cmd}
-            </pre>
-          ) : (
-            <JsonBody value={input} />
-          ),
+        label: desc ?? "Bash",
+        trailing:
+          cmd !== null ? <InlineCodeChip value={truncate(cmd, 120)} /> : undefined,
+        inputPanel:
+          cmd !== null ? <TerminalBlock command={cmd} /> : undefined,
+        resultPanel: (result) => (
+          <TerminalBlock
+            output={toResultText(result.output) || "(no output)"}
+            isError={result.isError}
+          />
+        ),
+        fallbackBody:
+          cmd === null ? (
+            <PreBlock text={stringifyJson(input)} />
+          ) : undefined,
+      };
+    }
+
+    case "Read": {
+      const path = asString(obj.file_path);
+      const offset = typeof obj.offset === "number" ? obj.offset : null;
+      const limit = typeof obj.limit === "number" ? obj.limit : null;
+      const range =
+        offset !== null || limit !== null
+          ? `lines ${offset ?? 1}–${(offset ?? 1) + (limit ?? 0) - 1}`
+          : null;
+      // Once the result is in we can show "N lines" — until then, a "…"
+      // placeholder so the row's geometry doesn't shift when the result
+      // arrives a frame later.
+      const lines = result !== undefined ? lineCountOf(result.output) : null;
+      const linesHint =
+        lines !== null
+          ? lines === 0
+            ? "(empty)"
+            : `${lines} line${lines === 1 ? "" : "s"}`
+          : "…";
+      return {
+        icon: File01Icon,
+        label: "Read",
+        trailing:
+          path !== null ? (
+            <>
+              <InlineTextHint value={linesHint} />
+              <InlineCodeChip value={basename(path)} />
+            </>
+          ) : undefined,
+        inputPanel:
+          path !== null ? (
+            <p className="font-mono text-[11px] text-muted-foreground break-all">
+              {path}
+              {range !== null ? ` · ${range}` : null}
+            </p>
+          ) : undefined,
+        resultPanel: (result) => {
+          const text = toResultText(result.output);
+          const lineCount = text.length === 0 ? 0 : text.split("\n").length;
+          return (
+            <div className="space-y-1">
+              <p className="text-[11px] text-muted-foreground">
+                {lineCount} line{lineCount === 1 ? "" : "s"}
+              </p>
+              <PreBlock
+                text={truncate(text, 4000)}
+                isError={result.isError}
+              />
+            </div>
+          );
+        },
       };
     }
 
@@ -173,9 +401,28 @@ const buildToolView = (tool: string, input: unknown): ToolView => {
       return {
         icon: PencilEdit01Icon,
         label,
-        summary: path !== null ? basename(path) : null,
-        body:
-          edits.length > 0 ? editsBody(edits) : <JsonBody value={input} />,
+        trailing:
+          path !== null ? (
+            <InlineCodeChip value={basename(path)} />
+          ) : undefined,
+        fallbackBody:
+          edits.length > 0 ? (
+            <div className="overflow-hidden rounded border border-border/60">
+              {edits.map((edit, i) => (
+                <DiffBody
+                  key={i}
+                  edit={edit as FileEdit}
+                  showHeader={edits.length > 1}
+                />
+              ))}
+            </div>
+          ) : (
+            <PreBlock text={stringifyJson(input)} />
+          ),
+        resultPanel: (result) =>
+          result.isError ? (
+            <PreBlock text={toResultText(result.output)} isError />
+          ) : null,
       };
     }
 
@@ -183,38 +430,123 @@ const buildToolView = (tool: string, input: unknown): ToolView => {
       const pattern = asString(obj.pattern);
       const path = asString(obj.path);
       const glob = asString(obj.glob);
-      const where = path ?? glob;
+      const type = asString(obj.type);
+      const where = path ?? glob ?? type;
+      const matches =
+        result !== undefined && !result.isError
+          ? parseFileList(toResultText(result.output)).length
+          : null;
+      const matchesHint =
+        matches !== null
+          ? matches === 0
+            ? "no matches"
+            : `${matches} match${matches === 1 ? "" : "es"}`
+          : null;
       return {
         icon: SearchIcon,
         label: "Grep",
-        summary:
-          pattern !== null
-            ? where !== null
-              ? `${pattern} in ${where}`
-              : pattern
-            : null,
-        body: <JsonBody value={input} />,
+        trailing:
+          pattern !== null ? (
+            <>
+              <InlineCodeChip value={pattern} />
+              {where !== null ? <InlineTextHint value={`in ${where}`} /> : null}
+              {matchesHint !== null ? (
+                <InlineTextHint value={`· ${matchesHint}`} />
+              ) : null}
+            </>
+          ) : undefined,
+        inputPanel:
+          pattern !== null ? (
+            <div className="text-[11px] text-muted-foreground space-y-0.5">
+              <div>
+                pattern <span className="font-mono text-foreground/90">{pattern}</span>
+              </div>
+              {where !== null ? (
+                <div>
+                  scope <span className="font-mono text-foreground/90">{where}</span>
+                </div>
+              ) : null}
+            </div>
+          ) : undefined,
+        resultPanel: (result) => {
+          const text = toResultText(result.output);
+          if (result.isError) return <PreBlock text={text} isError />;
+          const paths = parseFileList(text);
+          return paths.length > 0 ? (
+            <FileListBlock paths={paths} />
+          ) : (
+            <PreBlock text={text || "No matches."} />
+          );
+        },
       };
     }
 
     case "Glob": {
       const pattern = asString(obj.pattern);
+      const matches =
+        result !== undefined && !result.isError
+          ? parseFileList(toResultText(result.output)).length
+          : null;
+      const matchesHint =
+        matches !== null
+          ? matches === 0
+            ? "no matches"
+            : `${matches} file${matches === 1 ? "" : "s"}`
+          : null;
       return {
         icon: SearchIcon,
         label: "Glob",
-        summary: pattern,
-        body: <JsonBody value={input} />,
+        trailing:
+          pattern !== null ? (
+            <>
+              <InlineCodeChip value={pattern} />
+              {matchesHint !== null ? (
+                <InlineTextHint value={`· ${matchesHint}`} />
+              ) : null}
+            </>
+          ) : undefined,
+        resultPanel: (result) => {
+          const text = toResultText(result.output);
+          if (result.isError) return <PreBlock text={text} isError />;
+          const paths = parseFileList(text);
+          return paths.length > 0 ? (
+            <FileListBlock paths={paths} />
+          ) : (
+            <PreBlock text={text || "No matches."} />
+          );
+        },
       };
     }
 
     case "Task":
     case "Agent": {
       const desc = asString(obj.description) ?? asString(obj.subagent_type);
+      const prompt = asString(obj.prompt);
       return {
         icon: Robot01Icon,
         label: "Agent",
-        summary: desc,
-        body: <JsonBody value={input} />,
+        trailing: desc !== null ? <InlineTextHint value={desc} /> : undefined,
+        inputPanel:
+          prompt !== null ? (
+            <div className="space-y-1">
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                Prompt
+              </p>
+              <PreBlock text={prompt} />
+            </div>
+          ) : undefined,
+        resultPanel: (result) => {
+          const text = toResultText(result.output);
+          if (result.isError) return <PreBlock text={text} isError />;
+          return (
+            <div className="space-y-1">
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                Reply
+              </p>
+              <MarkdownBlock text={text || "(empty)"} />
+            </div>
+          );
+        },
       };
     }
 
@@ -223,8 +555,13 @@ const buildToolView = (tool: string, input: unknown): ToolView => {
       return {
         icon: GlobeIcon,
         label: "WebFetch",
-        summary: url,
-        body: <JsonBody value={input} />,
+        trailing: url !== null ? <InlineCodeChip value={url} /> : undefined,
+        resultPanel: (result) => (
+          <PreBlock
+            text={truncate(toResultText(result.output), 4000)}
+            isError={result.isError}
+          />
+        ),
       };
     }
 
@@ -233,18 +570,45 @@ const buildToolView = (tool: string, input: unknown): ToolView => {
       return {
         icon: GlobeIcon,
         label: "WebSearch",
-        summary: q,
-        body: <JsonBody value={input} />,
+        trailing: q !== null ? <InlineCodeChip value={q} /> : undefined,
+        resultPanel: (result) => (
+          <PreBlock
+            text={truncate(toResultText(result.output), 4000)}
+            isError={result.isError}
+          />
+        ),
       };
     }
 
     case "TodoWrite": {
-      const todos = Array.isArray(obj.todos) ? obj.todos.length : null;
+      const todos = Array.isArray(obj.todos) ? obj.todos : null;
       return {
         icon: CheckListIcon,
         label: "TodoWrite",
-        summary: todos !== null ? `${todos} todos` : null,
-        body: <JsonBody value={input} />,
+        trailing:
+          todos !== null ? (
+            <InlineTextHint value={`${todos.length} todos`} />
+          ) : undefined,
+        fallbackBody:
+          todos !== null ? (
+            <ul className="space-y-0.5 text-[11px]">
+              {todos.map((t, i) => {
+                if (t === null || typeof t !== "object")
+                  return <li key={i}>{stringifyJson(t)}</li>;
+                const r = t as Record<string, unknown>;
+                const content = asString(r.content) ?? asString(r.activeForm) ?? "";
+                const status = asString(r.status) ?? "";
+                return (
+                  <li key={i} className="font-mono">
+                    <span className="text-muted-foreground">[{status}]</span>{" "}
+                    {content}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <PreBlock text={stringifyJson(input)} />
+          ),
       };
     }
 
@@ -252,21 +616,62 @@ const buildToolView = (tool: string, input: unknown): ToolView => {
       return {
         icon: Wrench01Icon,
         label: tool,
-        summary: null,
-        body: <JsonBody value={input} />,
+        fallbackBody: <PreBlock text={stringifyJson(input)} />,
+        resultPanel: (result) => (
+          <PreBlock
+            text={toResultText(result.output)}
+            isError={result.isError}
+          />
+        ),
       };
     }
   }
 };
 
-export function ToolRow({ tool, input }: { tool: string; input: unknown }) {
-  const view = buildToolView(tool, input);
+export function ToolRow({
+  tool,
+  input,
+  result,
+}: {
+  tool: string;
+  input: unknown;
+  result?: ToolResult;
+}) {
+  const view = buildToolView(tool, input, result);
+
+  const sections: React.ReactNode[] = [];
+  if (view.inputPanel !== undefined) sections.push(view.inputPanel);
+  if (view.fallbackBody !== undefined) sections.push(view.fallbackBody);
+  if (result !== undefined && view.resultPanel !== undefined) {
+    const rendered = view.resultPanel(result);
+    if (rendered !== null) {
+      sections.push(
+        <div key="result">
+          {result.isError ? (
+            <div className="mb-1 flex items-center">
+              <ErrorPill />
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                Result
+              </span>
+            </div>
+          ) : (
+            <p className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+              Result
+            </p>
+          )}
+          {rendered}
+        </div>,
+      );
+    }
+  }
+
   return (
     <ExpandableIconRow
       icon={view.icon}
       label={view.label}
-      summary={view.summary}
-      body={view.body}
+      trailing={view.trailing}
+      hasContent={sections.length > 0}
+      body={sections.length > 0 ? sections : null}
     />
   );
 }
@@ -278,27 +683,35 @@ export function ThinkingRow({
   text: string;
   redacted: boolean;
 }) {
-  const summary = redacted
+  // Three states:
+  // 1. redacted — model thought but content is policy-hidden
+  // 2. empty text — provider stripped or didn't deliver thinking content
+  // 3. plain text — render as markdown
+  const isEmpty = !redacted && text.length === 0;
+  const teaser = redacted
     ? "(redacted)"
-    : text.length > 0
-      ? truncate(text.replace(/\s+/g, " ").trim(), 100)
-      : null;
+    : isEmpty
+      ? "(no content provided)"
+      : firstSentence(text);
   const body = redacted ? (
     <p className="whitespace-pre-wrap text-[11px] italic leading-relaxed text-muted-foreground/70">
       Thought content was redacted by the model.
     </p>
-  ) : (
-    <p className="whitespace-pre-wrap text-[11px] leading-relaxed text-muted-foreground">
-      {text}
+  ) : isEmpty ? (
+    <p className="whitespace-pre-wrap text-[11px] italic leading-relaxed text-muted-foreground/70">
+      The provider acknowledged a thinking block but didn't deliver any text.
+      This usually means the SDK CLI filtered it before forwarding.
     </p>
+  ) : (
+    <MarkdownBlock text={text} />
   );
   return (
     <ExpandableIconRow
       icon={Brain01Icon}
       label="Thinking"
-      summary={summary}
+      trailing={<InlineTextHint value={teaser} />}
+      hasContent
       body={body}
-      summaryClassName="italic"
     />
   );
 }

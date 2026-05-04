@@ -5,11 +5,16 @@ import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import type { Message } from "@forkzero/wire";
+import type { AgentItemId, Message } from "@forkzero/wire";
 
 import { cn } from "~/lib/utils";
 
 import { ThinkingRow, ToolRow } from "./tool-row.tsx";
+
+export interface ToolResultRecord {
+  readonly output: unknown;
+  readonly isError: boolean;
+}
 
 const stringifyJson = (value: unknown): string => {
   try {
@@ -23,8 +28,18 @@ const stringifyJson = (value: unknown): string => {
  * Render a single chat row. Variants are dispatched on `content._tag` rather
  * than `role` because role collapses tool_use and assistant text into one
  * bucket, but their visual treatment differs.
+ *
+ * `resultsByItemId` lets `tool_use` rows render their paired `tool_result`
+ * inline. Standalone `tool_result` rows are suppressed when they pair with
+ * a tool_use; only orphan errors fall through to the standalone error row.
  */
-export function MessageRow({ message }: { message: Message }) {
+export function MessageRow({
+  message,
+  resultsByItemId,
+}: {
+  message: Message;
+  resultsByItemId: ReadonlyMap<AgentItemId, ToolResultRecord>;
+}) {
   switch (message.content._tag) {
     case "user":
       return <UserBubble text={message.content.text} />;
@@ -39,12 +54,22 @@ export function MessageRow({ message }: { message: Message }) {
       );
     case "tool_use":
       return (
-        <ToolRow tool={message.content.tool} input={message.content.input} />
+        <ToolRow
+          tool={message.content.tool}
+          input={message.content.input}
+          result={resultsByItemId.get(message.content.itemId)}
+        />
       );
-    case "tool_result":
+    case "tool_result": {
+      // Suppress paired results — the matching ToolRow renders them inline.
+      // Only orphan errors (no tool_use found, e.g. driver dropped the use
+      // event) surface as a standalone error row.
+      const paired = resultsByItemId.has(message.content.itemId);
+      if (paired) return null;
       return message.content.isError ? (
         <ToolErrorRow output={message.content.output} />
       ) : null;
+    }
     case "error":
       return <ErrorBubble text={message.content.message} />;
   }
