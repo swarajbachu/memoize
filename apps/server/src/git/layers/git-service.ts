@@ -34,7 +34,7 @@ type GitFailure =
 const NUL = " ";
 
 // `git log --format=...` separator: NUL-delimited fields, newline-delimited
-// commits. Fields in this order — match `spec/features/git-history.md`.
+// commits. Fields in this order — match `specs/0.01-MVP/features/git-history.md`.
 const LOG_FORMAT = "%H%x00%h%x00%s%x00%an%x00%aI%x00%P";
 
 const parseLogOutput = (out: string): ReadonlyArray<GitCommit> => {

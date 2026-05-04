@@ -30,10 +30,40 @@ export class FsReadError extends Schema.TaggedError<FsReadError>()(
   { folderId: FolderId, path: Schema.String, reason: Schema.String },
 ) {}
 
+export class FsTooLargeError extends Schema.TaggedError<FsTooLargeError>()(
+  "FsTooLargeError",
+  { folderId: FolderId, path: Schema.String, size: Schema.Number, limit: Schema.Number },
+) {}
+
+export class FsConflictError extends Schema.TaggedError<FsConflictError>()(
+  "FsConflictError",
+  {
+    folderId: FolderId,
+    path: Schema.String,
+    expectedMtime: Schema.String,
+    actualMtime: Schema.String,
+  },
+) {}
+
 const FsErrors = Schema.Union(
   FsFolderNotFoundError,
   FsPathOutsideError,
   FsReadError,
+);
+
+const FsReadFileErrors = Schema.Union(
+  FsFolderNotFoundError,
+  FsPathOutsideError,
+  FsReadError,
+  FsTooLargeError,
+);
+
+const FsWriteFileErrors = Schema.Union(
+  FsFolderNotFoundError,
+  FsPathOutsideError,
+  FsReadError,
+  FsConflictError,
+  FsTooLargeError,
 );
 
 /**
@@ -49,4 +79,59 @@ export const FsTreeRpc = Rpc.make("fs.tree", {
   }),
   success: Schema.Array(FsEntry),
   error: FsErrors,
+});
+
+/**
+ * The shape returned by `fs.readFile`. Text files come back with their
+ * UTF-8 contents and the modification time used as an optimistic-concurrency
+ * token by `fs.writeFile`. Files that fail UTF-8 decoding return as
+ * `kind: "binary"` so the editor can render a placeholder instead of mojibake.
+ */
+export const FsFileContent = Schema.Union(
+  Schema.Struct({
+    kind: Schema.Literal("text"),
+    content: Schema.String,
+    mtime: Schema.String,
+    size: Schema.Number,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("binary"),
+    size: Schema.Number,
+  }),
+);
+
+/**
+ * Read a single file's contents. Path is project-root-relative. Files
+ * larger than the server-side cap (5 MB) reject with `FsTooLargeError`;
+ * non-UTF-8 files come back as `kind: "binary"`. The renderer file editor
+ * stores the returned `mtime` and passes it back on `fs.writeFile` so the
+ * server can reject writes when the file changed on disk underneath us.
+ */
+export const FsReadFileRpc = Rpc.make("fs.readFile", {
+  payload: Schema.Struct({
+    folderId: FolderId,
+    path: Schema.String,
+  }),
+  success: FsFileContent,
+  error: FsReadFileErrors,
+});
+
+/**
+ * Write a single file. `expectedMtime` is the mtime the renderer received
+ * from the most recent `fs.readFile` (or the most recent successful write).
+ * If the file's mtime on disk no longer matches, the server rejects with
+ * `FsConflictError` and the renderer surfaces a "file changed on disk"
+ * toast. Same 5 MB cap applies to incoming content.
+ */
+export const FsWriteFileRpc = Rpc.make("fs.writeFile", {
+  payload: Schema.Struct({
+    folderId: FolderId,
+    path: Schema.String,
+    content: Schema.String,
+    expectedMtime: Schema.String,
+  }),
+  success: Schema.Struct({
+    mtime: Schema.String,
+  }),
+  error: FsWriteFileErrors,
 });

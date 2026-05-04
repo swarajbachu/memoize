@@ -1,13 +1,15 @@
 import * as path from "node:path";
 
 import { FileSystem, Path } from "@effect/platform";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Option } from "effect";
 
 import {
+  FsConflictError,
   FsEntry,
   FsFolderNotFoundError,
   FsPathOutsideError,
   FsReadError,
+  FsTooLargeError,
   type FolderId,
 } from "@forkzero/wire";
 
@@ -19,8 +21,19 @@ import { FsService } from "../services/fs-service.ts";
 // users often want to see `.env`, `.github/`, `.vscode/`, etc.
 const SKIP_DIRS = new Set([".git", "node_modules", ".DS_Store"]);
 
+// Cap how much we'll ship across the RPC for a single file. Anything larger
+// surfaces as `FsTooLargeError` so the editor can render a placeholder
+// instead of trying to load gigabytes into a CodeMirror buffer.
+const MAX_FILE_BYTES = 5 * 1024 * 1024;
+
 const toForwardSlash = (p: string): string =>
   path.sep === "/" ? p : p.split(path.sep).join("/");
+
+const mtimeToString = (mtime: Option.Option<Date>): string =>
+  Option.match(mtime, {
+    onNone: () => "",
+    onSome: (d) => d.toISOString(),
+  });
 
 export const FsServiceLive = Layer.effect(
   FsService,
@@ -29,21 +42,17 @@ export const FsServiceLive = Layer.effect(
     const fs = yield* FileSystem.FileSystem;
     const pathSvc = yield* Path.Path;
 
-    const tree: FsService["Type"]["tree"] = (
-      folderId: FolderId,
-      relPath: string,
-    ) =>
+    // Resolve a project-root-relative request path to an absolute path,
+    // failing with the appropriate wire error if the folder is unknown or
+    // the path escapes the project root. Shared by tree / readFile /
+    // writeFile so path-validation lives in exactly one place.
+    const resolveInsideFolder = (folderId: FolderId, relPath: string) =>
       Effect.gen(function* () {
         const folder = yield* workspace.findById(folderId);
         if (folder === null) {
           return yield* Effect.fail(new FsFolderNotFoundError({ folderId }));
         }
         const rootAbs = pathSvc.resolve(folder.path);
-
-        // Resolve the requested subpath against the root and reject anything
-        // that escapes (`..` traversal, absolute paths, symlinks pointing
-        // outside). The renderer only ever asks for entries it just got
-        // from a previous call, so this is belt-and-suspenders.
         const requestedAbs = pathSvc.resolve(rootAbs, relPath);
         const rel = pathSvc.relative(rootAbs, requestedAbs);
         if (rel.startsWith("..") || pathSvc.isAbsolute(rel)) {
@@ -51,6 +60,12 @@ export const FsServiceLive = Layer.effect(
             new FsPathOutsideError({ folderId, path: relPath }),
           );
         }
+        return { rootAbs, requestedAbs } as const;
+      });
+
+    const tree: FsService["Type"]["tree"] = (folderId, relPath) =>
+      Effect.gen(function* () {
+        const { requestedAbs } = yield* resolveInsideFolder(folderId, relPath);
 
         const names = yield* fs.readDirectory(requestedAbs).pipe(
           Effect.mapError(
@@ -63,23 +78,28 @@ export const FsServiceLive = Layer.effect(
           ),
         );
 
-        // Stat every entry so we know file vs directory. A failed stat
-        // (broken symlink, racey delete) just drops that entry; one bad
-        // entry shouldn't blank the whole listing.
-        const stats = yield* Effect.forEach(names, (name) =>
-          Effect.gen(function* () {
-            const entryAbs = pathSvc.join(requestedAbs, name);
-            const stat = yield* fs.stat(entryAbs).pipe(Effect.option);
-            if (stat._tag === "None") return null;
-            const kind = stat.value.type === "Directory" ? "directory" : "file";
-            if (kind === "directory" && SKIP_DIRS.has(name)) return null;
-            const childRel = relPath === "" ? name : `${relPath}/${name}`;
-            return FsEntry.make({
-              name,
-              path: toForwardSlash(childRel),
-              kind,
-            });
-          }),
+        // Stat every entry in parallel — sequential stats blow up for any
+        // folder with more than a few dozen files. A failed stat (broken
+        // symlink, racey delete) just drops that entry so one bad child
+        // doesn't blank the whole listing.
+        const stats = yield* Effect.forEach(
+          names,
+          (name) =>
+            Effect.gen(function* () {
+              const entryAbs = pathSvc.join(requestedAbs, name);
+              const stat = yield* fs.stat(entryAbs).pipe(Effect.option);
+              if (stat._tag === "None") return null;
+              const kind =
+                stat.value.type === "Directory" ? "directory" : "file";
+              if (kind === "directory" && SKIP_DIRS.has(name)) return null;
+              const childRel = relPath === "" ? name : `${relPath}/${name}`;
+              return FsEntry.make({
+                name,
+                path: toForwardSlash(childRel),
+                kind,
+              });
+            }),
+          { concurrency: "unbounded" },
         );
 
         const entries = stats.filter((e): e is FsEntry => e !== null);
@@ -91,6 +111,130 @@ export const FsServiceLive = Layer.effect(
         return entries;
       });
 
-    return { tree } as const;
+    const readFile: FsService["Type"]["readFile"] = (folderId, relPath) =>
+      Effect.gen(function* () {
+        const { requestedAbs } = yield* resolveInsideFolder(folderId, relPath);
+
+        const stat = yield* fs.stat(requestedAbs).pipe(
+          Effect.mapError(
+            (cause) =>
+              new FsReadError({
+                folderId,
+                path: relPath,
+                reason: cause.message ?? String(cause),
+              }),
+          ),
+        );
+        const size = Number(stat.size);
+        if (size > MAX_FILE_BYTES) {
+          return yield* Effect.fail(
+            new FsTooLargeError({
+              folderId,
+              path: relPath,
+              size,
+              limit: MAX_FILE_BYTES,
+            }),
+          );
+        }
+
+        const bytes = yield* fs.readFile(requestedAbs).pipe(
+          Effect.mapError(
+            (cause) =>
+              new FsReadError({
+                folderId,
+                path: relPath,
+                reason: cause.message ?? String(cause),
+              }),
+          ),
+        );
+
+        // Decode strict-UTF-8. A failure means the file is binary — return
+        // it as such so the editor can render a placeholder instead of
+        // garbage. We don't attempt other encodings.
+        try {
+          const decoder = new TextDecoder("utf-8", { fatal: true });
+          const content = decoder.decode(bytes);
+          return {
+            kind: "text" as const,
+            content,
+            mtime: mtimeToString(stat.mtime),
+            size,
+          };
+        } catch {
+          return { kind: "binary" as const, size };
+        }
+      });
+
+    const writeFile: FsService["Type"]["writeFile"] = (
+      folderId,
+      relPath,
+      content,
+      expectedMtime,
+    ) =>
+      Effect.gen(function* () {
+        const { requestedAbs } = yield* resolveInsideFolder(folderId, relPath);
+
+        const byteLen = new TextEncoder().encode(content).byteLength;
+        if (byteLen > MAX_FILE_BYTES) {
+          return yield* Effect.fail(
+            new FsTooLargeError({
+              folderId,
+              path: relPath,
+              size: byteLen,
+              limit: MAX_FILE_BYTES,
+            }),
+          );
+        }
+
+        // Optimistic concurrency: the renderer holds the mtime from its
+        // most recent read. If disk has moved since, refuse the write so
+        // the user can decide whether to discard their edits and reload.
+        const beforeStat = yield* fs.stat(requestedAbs).pipe(
+          Effect.mapError(
+            (cause) =>
+              new FsReadError({
+                folderId,
+                path: relPath,
+                reason: cause.message ?? String(cause),
+              }),
+          ),
+        );
+        const actualMtime = mtimeToString(beforeStat.mtime);
+        if (actualMtime !== expectedMtime) {
+          return yield* Effect.fail(
+            new FsConflictError({
+              folderId,
+              path: relPath,
+              expectedMtime,
+              actualMtime,
+            }),
+          );
+        }
+
+        yield* fs.writeFileString(requestedAbs, content).pipe(
+          Effect.mapError(
+            (cause) =>
+              new FsReadError({
+                folderId,
+                path: relPath,
+                reason: cause.message ?? String(cause),
+              }),
+          ),
+        );
+
+        const afterStat = yield* fs.stat(requestedAbs).pipe(
+          Effect.mapError(
+            (cause) =>
+              new FsReadError({
+                folderId,
+                path: relPath,
+                reason: cause.message ?? String(cause),
+              }),
+          ),
+        );
+        return { mtime: mtimeToString(afterStat.mtime) };
+      });
+
+    return { tree, readFile, writeFile } as const;
   }),
 );
