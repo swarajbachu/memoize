@@ -32,6 +32,7 @@ import {
 } from "../composer/builtin-commands.ts";
 import { parseComposerInput } from "../composer/segment-parser.ts";
 import { FileTagPopover } from "./composer/file-tag-popover.tsx";
+import { QueueTray } from "./composer/queue-tray.tsx";
 import { SlashCommandPopover } from "./composer/slash-command-popover.tsx";
 import {
   Menu,
@@ -79,6 +80,7 @@ export function ChatComposer({ session }: { session: Session }) {
   );
   const send = useMessagesStore((s) => s.send);
   const interrupt = useMessagesStore((s) => s.interrupt);
+  const queue = useMessagesStore((s) => s.queue);
 
   const [hasText, setHasText] = useState(false);
   const [trigger, setTrigger] = useState<ActiveTrigger | null>(null);
@@ -307,7 +309,13 @@ export function ChatComposer({ session }: { session: Session }) {
 
     const input = parseComposerInput(view.state, session.providerId);
     clearComposer(view);
-    void send(sessionId, input);
+    if (inFlight) {
+      // Mid-turn submit becomes a queue chip; auto-flushed when the turn
+      // ends or steered manually.
+      queue(sessionId, input);
+    } else {
+      void send(sessionId, input);
+    }
     return true;
   };
 
@@ -343,6 +351,7 @@ export function ChatComposer({ session }: { session: Session }) {
                 hidden
                 onChange={onPickFiles}
               />
+              <QueueTray sessionId={sessionId} />
               <CardPanel className="relative flex items-end gap-2 px-3 py-2">
                 {trigger !== null && editorViewRef.current !== null ? (
                   trigger.kind === "slash" ? (

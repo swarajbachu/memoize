@@ -19,6 +19,17 @@ import { useSessionsStore } from "./sessions.ts";
  * subscription; for the chat-MVP it gives the composer a "running" indicator
  * that flips on send and back off when the assistant text arrives.
  */
+/**
+ * One queued mid-turn message. The user pressed Enter while a turn was in
+ * flight; we hold the input here until the turn ends (auto-flush) or the
+ * user clicks the Steer arrow on the chip.
+ */
+export interface QueuedMessage {
+  readonly id: string;
+  readonly input: ComposerInput;
+  readonly createdAt: Date;
+}
+
 type MessagesState = {
   readonly messagesBySession: Record<string, ReadonlyArray<Message>>;
   readonly errorBySession: Record<string, string | null>;
@@ -28,6 +39,7 @@ type MessagesState = {
    * Send/Interrupt swap stays stable across the whole tool-call loop.
    */
   readonly runningBySession: Record<string, boolean>;
+  readonly queueBySession: Record<string, ReadonlyArray<QueuedMessage>>;
   readonly hydrate: (sessionId: SessionId) => Promise<void>;
   /**
    * Send a user turn. Accepts either a raw string (legacy / simple-text
@@ -40,6 +52,15 @@ type MessagesState = {
     input: string | ComposerInput,
   ) => Promise<void>;
   readonly interrupt: (sessionId: SessionId) => Promise<void>;
+  /** Append `input` to this session's queue. */
+  readonly queue: (sessionId: SessionId, input: ComposerInput) => void;
+  /** Interrupt the running turn, then send `queueId` as the next user turn. */
+  readonly steerFromQueue: (
+    sessionId: SessionId,
+    queueId: string,
+  ) => Promise<void>;
+  /** Silently drop a queue chip — no RPC call. */
+  readonly dropFromQueue: (sessionId: SessionId, queueId: string) => void;
   readonly clearError: (sessionId: SessionId) => void;
 };
 
@@ -69,10 +90,14 @@ const stopLiveFiber = async () => {
   await Promise.all(tasks);
 };
 
+const newQueueId = (): string =>
+  `q_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+
 export const useMessagesStore = create<MessagesState>((set, get) => ({
   messagesBySession: {},
   errorBySession: {},
   runningBySession: {},
+  queueBySession: {},
   hydrate: async (sessionId) => {
     if (liveSessionId === sessionId && liveFiber !== null) return;
     await stopLiveFiber();
@@ -128,6 +153,33 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
                     break;
                   }
                 }
+
+                // Auto-flush: when a turn lands and the queue is non-empty,
+                // send the queued items in order. Each send awaits the
+                // previous so the provider sees a single linear chain.
+                const queued = get().queueBySession[sessionId] ?? [];
+                if (queued.length > 0) {
+                  void (async () => {
+                    for (const q of queued) {
+                      try {
+                        await get().send(sessionId, q.input);
+                      } catch {
+                        // Stop on first error; remaining chips stay in the
+                        // queue and the user can retry by clicking Steer
+                        // (which is a no-op send when no turn is running).
+                        return;
+                      }
+                      set((s) => ({
+                        queueBySession: {
+                          ...s.queueBySession,
+                          [sessionId]: (s.queueBySession[sessionId] ?? []).filter(
+                            (it) => it.id !== q.id,
+                          ),
+                        },
+                      }));
+                    }
+                  })();
+                }
               }
             }),
         ),
@@ -170,6 +222,61 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
     try {
       const client = await getRpcClient();
       await Effect.runPromise(client.messages.interrupt({ sessionId }));
+    } catch (err) {
+      set((s) => ({
+        errorBySession: {
+          ...s.errorBySession,
+          [sessionId]: formatError(err),
+        },
+      }));
+    }
+  },
+  queue: (sessionId, input) =>
+    set((s) => {
+      const item: QueuedMessage = {
+        id: newQueueId(),
+        input,
+        createdAt: new Date(),
+      };
+      const existing = s.queueBySession[sessionId] ?? [];
+      return {
+        queueBySession: {
+          ...s.queueBySession,
+          [sessionId]: [...existing, item],
+        },
+      };
+    }),
+  dropFromQueue: (sessionId, queueId) =>
+    set((s) => ({
+      queueBySession: {
+        ...s.queueBySession,
+        [sessionId]: (s.queueBySession[sessionId] ?? []).filter(
+          (q) => q.id !== queueId,
+        ),
+      },
+    })),
+  steerFromQueue: async (sessionId, queueId) => {
+    const queue = get().queueBySession[sessionId] ?? [];
+    const item = queue.find((q) => q.id === queueId);
+    if (!item) return;
+    // Optimistic — drop the chip from the queue before issuing the RPCs so
+    // a re-click can't fire twice.
+    set((s) => ({
+      queueBySession: {
+        ...s.queueBySession,
+        [sessionId]: (s.queueBySession[sessionId] ?? []).filter(
+          (q) => q.id !== queueId,
+        ),
+      },
+    }));
+    // Renderer-side steer: interrupt → wait briefly for the SDK's
+    // post-interrupt cleanup → send. A driver-side `messages.steer` orchestrator
+    // is a follow-up that lets us await the result-message drain instead of
+    // sleeping; the visible UX is the same.
+    try {
+      await get().interrupt(sessionId);
+      await new Promise((r) => setTimeout(r, 250));
+      await get().send(sessionId, item.input);
     } catch (err) {
       set((s) => ({
         errorBySession: {
