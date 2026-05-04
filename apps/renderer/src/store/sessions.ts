@@ -28,7 +28,7 @@ type SessionsState = {
     projectId: FolderId,
     providerId: ProviderId,
     model: string,
-    initialPrompt?: string,
+    opts?: { initialPrompt?: string; runtimeMode?: RuntimeMode },
   ) => Promise<SessionId | null>;
   readonly rename: (sessionId: SessionId, title: string) => Promise<void>;
   readonly setModel: (sessionId: SessionId, model: string) => Promise<void>;
@@ -92,7 +92,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       }));
     }
   },
-  create: async (projectId, providerId, model, initialPrompt) => {
+  create: async (projectId, providerId, model, opts) => {
     set({ error: null });
     try {
       const client = await getRpcClient();
@@ -101,7 +101,8 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
           projectId,
           providerId,
           model,
-          initialPrompt,
+          initialPrompt: opts?.initialPrompt,
+          runtimeMode: opts?.runtimeMode,
         }),
       );
       set((s) => {

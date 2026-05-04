@@ -17,6 +17,7 @@ import {
   GitNotARepoError,
   GitNotInstalledError,
   GitOriginInfo,
+  GitPrInfo,
   GitStatusSummary,
   type FolderId,
 } from "@forkzero/wire";
@@ -239,6 +240,123 @@ export const GitServiceLive = Layer.effect(
         ),
       );
 
+    // Run `gh ...` in `cwd`. Same shape as `run` but uses the GitHub CLI.
+    // Missing `gh` (ENOENT) maps to GitNotInstalled — the caller catches it
+    // and falls back to "no PR" so the renderer doesn't pop an error toast on
+    // machines without `gh`.
+    const ghRun = (
+      folderId: FolderId,
+      cwd: string,
+      args: ReadonlyArray<string>,
+    ) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const cmd = Command.make("gh", ...args).pipe(
+            Command.workingDirectory(cwd),
+          );
+          const proc = yield* executor.start(cmd);
+          const stdout = yield* collectText(proc.stdout);
+          const stderr = yield* collectText(proc.stderr);
+          const exitCode = yield* proc.exitCode;
+          if (exitCode === 0) return stdout;
+          return yield* Effect.fail(
+            new GitCommandError({
+              folderId,
+              reason: stderr.trim() || `gh exited with code ${exitCode}`,
+            }),
+          );
+        }),
+      ).pipe(
+        Effect.catchTags({
+          SystemError: (err) =>
+            err.reason === "NotFound"
+              ? Effect.fail(new GitNotInstalledError({}))
+              : Effect.fail(
+                  new GitCommandError({
+                    folderId,
+                    reason: err.message ?? String(err),
+                  }),
+                ),
+          BadArgument: (err) =>
+            Effect.fail(
+              new GitCommandError({
+                folderId,
+                reason: err.message ?? String(err),
+              }),
+            ),
+        }),
+      );
+
+    const prState: GitService["Type"]["prState"] = (folderId) =>
+      Effect.flatMap(resolvePath(folderId), (cwd) =>
+        Effect.gen(function* () {
+          const empty: GitPrInfo = GitPrInfo.make({
+            state: "none",
+            branch: null,
+            baseBranch: null,
+            additions: 0,
+            deletions: 0,
+            number: null,
+            url: null,
+          });
+
+          // `gh pr view --json` returns the PR for the current branch. Exits
+          // non-zero when there's no PR, when the branch isn't pushed, or
+          // when `gh` isn't authenticated. All of those collapse to "none".
+          const stdout = yield* ghRun(folderId, cwd, [
+            "pr",
+            "view",
+            "--json",
+            "state,additions,deletions,number,url,headRefName,baseRefName",
+          ]).pipe(
+            Effect.catchTags({
+              GitNotInstalledError: () => Effect.succeed(""),
+              GitCommandError: () => Effect.succeed(""),
+            }),
+          );
+
+          if (stdout.trim().length === 0) return empty;
+
+          let parsed: {
+            state?: string;
+            additions?: number;
+            deletions?: number;
+            number?: number;
+            url?: string;
+            headRefName?: string;
+            baseRefName?: string;
+          };
+          try {
+            parsed = JSON.parse(stdout) as typeof parsed;
+          } catch {
+            return empty;
+          }
+
+          // gh returns "OPEN" / "CLOSED" / "MERGED"; map to the wire literal.
+          const raw = (parsed.state ?? "").toLowerCase();
+          const state: GitPrInfo["state"] =
+            raw === "open"
+              ? "open"
+              : raw === "merged"
+                ? "merged"
+                : raw === "closed"
+                  ? "closed"
+                  : "none";
+
+          return GitPrInfo.make({
+            state,
+            branch: parsed.headRefName ?? null,
+            baseBranch: parsed.baseRefName ?? null,
+            additions:
+              typeof parsed.additions === "number" ? parsed.additions : 0,
+            deletions:
+              typeof parsed.deletions === "number" ? parsed.deletions : 0,
+            number: typeof parsed.number === "number" ? parsed.number : null,
+            url: parsed.url ?? null,
+          });
+        }),
+      );
+
     // Per-subscription stream: a forked fiber polls HEAD every 2s and pushes
     // into a Mailbox only when the SHA changes. The fiber is scoped to the
     // stream's lifetime, so interrupting the renderer's subscription stops
@@ -275,6 +393,6 @@ export const GitServiceLive = Layer.effect(
         }),
       );
 
-    return { log, status, subscribeHeadChanges, origin } as const;
+    return { log, status, subscribeHeadChanges, origin, prState } as const;
   }),
 );

@@ -9,6 +9,7 @@ import type {
   SessionId,
   SessionNotFoundError,
   SessionStartError,
+  SessionStatus,
 } from "@forkzero/wire";
 
 /**
@@ -31,6 +32,7 @@ export interface CreateSessionInput {
   readonly model: string;
   readonly title?: string;
   readonly initialPrompt?: string;
+  readonly runtimeMode?: RuntimeMode;
 }
 
 export interface MessageStoreShape {
@@ -90,6 +92,19 @@ export interface MessageStoreShape {
   readonly streamMessages: (
     sessionId: SessionId,
   ) => Stream.Stream<Message, SessionNotFoundError>;
+
+  /**
+   * Live status feed. Emits the current `Session.status` immediately and
+   * publishes every transition (`idle` → `running` → `closed` / `error`).
+   * The renderer uses this to keep its in-flight indicator stable across
+   * the whole tool-call loop instead of inferring from message content.
+   */
+  readonly streamStatus: (
+    sessionId: SessionId,
+  ) => Stream.Stream<
+    { readonly sessionId: SessionId; readonly status: SessionStatus },
+    SessionNotFoundError
+  >;
 
   readonly sendMessage: (
     sessionId: SessionId,

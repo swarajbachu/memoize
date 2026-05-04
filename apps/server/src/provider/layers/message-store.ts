@@ -206,6 +206,14 @@ export const MessageStoreLive = Layer.scoped(
       ReadonlyMap<SessionId, Fiber.RuntimeFiber<unknown, unknown>>
     >(new Map());
 
+    type StatusEvent = {
+      readonly sessionId: SessionId;
+      readonly status: Session["status"];
+    };
+    const statusPubsubs = yield* Ref.make<
+      ReadonlyMap<SessionId, PubSub.PubSub<StatusEvent>>
+    >(new Map());
+
     const getOrMakePubsub = (sessionId: SessionId) =>
       Effect.gen(function* () {
         const map = yield* Ref.get(pubsubs);
@@ -213,6 +221,20 @@ export const MessageStoreLive = Layer.scoped(
         if (existing !== undefined) return existing;
         const pubsub = yield* PubSub.unbounded<Message>();
         yield* Ref.update(pubsubs, (m) => {
+          const next = new Map(m);
+          next.set(sessionId, pubsub);
+          return next;
+        });
+        return pubsub;
+      });
+
+    const getOrMakeStatusPubsub = (sessionId: SessionId) =>
+      Effect.gen(function* () {
+        const map = yield* Ref.get(statusPubsubs);
+        const existing = map.get(sessionId);
+        if (existing !== undefined) return existing;
+        const pubsub = yield* PubSub.unbounded<StatusEvent>();
+        yield* Ref.update(statusPubsubs, (m) => {
           const next = new Map(m);
           next.set(sessionId, pubsub);
           return next;
@@ -265,10 +287,14 @@ export const MessageStoreLive = Layer.scoped(
       sessionId: SessionId,
       status: Session["status"],
     ): Effect.Effect<void> =>
-      sql`
-        UPDATE sessions SET status = ${status}, updated_at = ${new Date().toISOString()}
-        WHERE id = ${sessionId}
-      `.pipe(Effect.asVoid, Effect.orDie);
+      Effect.gen(function* () {
+        yield* sql`
+          UPDATE sessions SET status = ${status}, updated_at = ${new Date().toISOString()}
+          WHERE id = ${sessionId}
+        `.pipe(Effect.asVoid, Effect.orDie);
+        const pubsub = yield* getOrMakeStatusPubsub(sessionId);
+        yield* PubSub.publish(pubsub, { sessionId, status });
+      });
 
     const broadcastMessage = (
       sessionId: SessionId,
@@ -363,6 +389,16 @@ export const MessageStoreLive = Layer.scoped(
             return next;
           });
         }
+        const statusMap = yield* Ref.get(statusPubsubs);
+        const statusPubsub = statusMap.get(sessionId);
+        if (statusPubsub !== undefined) {
+          yield* PubSub.shutdown(statusPubsub);
+          yield* Ref.update(statusPubsubs, (m) => {
+            const next = new Map(m);
+            next.delete(sessionId);
+            return next;
+          });
+        }
       });
 
     // Boot recovery: any session left in `running` is stale (the previous
@@ -439,16 +475,17 @@ export const MessageStoreLive = Layer.scoped(
           );
         const sessionId = started.sessionId;
         mintedSessionId = sessionId;
-        runtimeModeBySession.set(sessionId, DEFAULT_RUNTIME_MODE);
+        const initialRuntimeMode = input.runtimeMode ?? DEFAULT_RUNTIME_MODE;
+        runtimeModeBySession.set(sessionId, initialRuntimeMode);
         const now = new Date();
         const nowIso = now.toISOString();
         const title = input.title?.trim() || titleFromInitial(input.initialPrompt);
         yield* sql`
           INSERT INTO sessions
-            (id, project_id, title, provider_id, model, status, created_at, updated_at)
+            (id, project_id, title, provider_id, model, status, runtime_mode, created_at, updated_at)
           VALUES
             (${sessionId}, ${input.projectId}, ${title}, ${input.providerId},
-             ${input.model}, 'running', ${nowIso}, ${nowIso})
+             ${input.model}, 'running', ${initialRuntimeMode}, ${nowIso}, ${nowIso})
         `.pipe(Effect.orDie);
         if (
           input.initialPrompt !== undefined &&
@@ -470,7 +507,7 @@ export const MessageStoreLive = Layer.scoped(
           archivedAt: null,
           cursor: null,
           resumeStrategy: "none",
-          runtimeMode: DEFAULT_RUNTIME_MODE,
+          runtimeMode: initialRuntimeMode,
           createdAt: now,
           updatedAt: now,
         });
@@ -597,6 +634,25 @@ export const MessageStoreLive = Layer.scoped(
             Stream.filter((m) => !seen.has(m.id)),
           );
           return Stream.concat(Stream.fromIterable(backfill), live);
+        }),
+      );
+
+    const streamStatus: MessageStoreShape["streamStatus"] = (sessionId) =>
+      Stream.unwrapScoped(
+        Effect.gen(function* () {
+          const session = yield* lookupSession(sessionId);
+          // Mirror streamMessages: subscribe before reading the persisted row
+          // so transitions during the SELECT window are still delivered.
+          const pubsub = yield* getOrMakeStatusPubsub(sessionId);
+          const dequeue = yield* pubsub.subscribe;
+          const initial: { readonly sessionId: SessionId; readonly status: Session["status"] } = {
+            sessionId,
+            status: session.status,
+          };
+          return Stream.concat(
+            Stream.succeed(initial),
+            Stream.fromQueue(dequeue),
+          );
         }),
       );
 
@@ -739,6 +795,7 @@ export const MessageStoreLive = Layer.scoped(
       resumeSession,
       listMessages,
       streamMessages,
+      streamStatus,
       sendMessage,
       interruptSession,
     } as const;

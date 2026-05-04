@@ -14,6 +14,7 @@ import {
   GitHeadChangedRpc,
   GitLogRpc,
   GitOriginRpc,
+  GitPrStateRpc,
   GitStatusRpc,
 } from "./git.ts";
 import {
@@ -45,6 +46,7 @@ import {
   SessionResumeRpc,
   SessionSetModelRpc,
   SessionSetRuntimeModeRpc,
+  SessionStatusStreamRpc,
   SessionUnarchiveRpc,
 } from "./session.ts";
 import {
@@ -79,6 +81,7 @@ export const ForkzeroRpcs = RpcGroup.make(
   GitStatusRpc,
   GitHeadChangedRpc,
   GitOriginRpc,
+  GitPrStateRpc,
   FsTreeRpc,
   AgentAvailabilityRpc,
   AgentSetCredentialRpc,
@@ -97,6 +100,7 @@ export const ForkzeroRpcs = RpcGroup.make(
   SessionDeleteRpc,
   SessionResumeRpc,
   SessionSetRuntimeModeRpc,
+  SessionStatusStreamRpc,
   MessagesListRpc,
   MessagesStreamRpc,
   MessagesSendRpc,

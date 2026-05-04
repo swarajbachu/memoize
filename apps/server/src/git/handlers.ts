@@ -23,4 +23,14 @@ const Origin = ForkzeroRpcs.toLayerHandler("git.origin", ({ folderId }) =>
   Effect.flatMap(GitService, (svc) => svc.origin(folderId)),
 );
 
-export const GitHandlersLayer = Layer.mergeAll(Log, Status, HeadChanged, Origin);
+const PrState = ForkzeroRpcs.toLayerHandler("git.prState", ({ folderId }) =>
+  Effect.flatMap(GitService, (svc) => svc.prState(folderId)),
+);
+
+export const GitHandlersLayer = Layer.mergeAll(
+  Log,
+  Status,
+  HeadChanged,
+  Origin,
+  PrState,
+);

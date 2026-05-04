@@ -1,13 +1,4 @@
-import {
-  Check,
-  ChevronDown,
-  Gauge,
-  Send,
-  ShieldAlert,
-  ShieldCheck,
-  Square,
-  Zap,
-} from "lucide-react";
+import { Check, ChevronDown, Gauge, Send, Square } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -21,6 +12,7 @@ import {
 
 import { Card, CardPanel } from "~/components/ui/card";
 import { Frame, FrameFooter } from "~/components/ui/frame";
+import { cn } from "~/lib/utils";
 import {
   Menu,
   MenuGroup,
@@ -41,23 +33,13 @@ import {
 import { useMessagesStore } from "../store/messages.ts";
 import { useSessionsStore } from "../store/sessions.ts";
 import { ProviderIcon } from "./provider-icons.tsx";
+import { MODES_ORDER, MODE_META } from "./runtime-mode-meta.ts";
 
 const MIN_HEIGHT = 56;
 const MAX_HEIGHT = 240;
 
 // Stable empty-array reference; see chat-view.tsx for rationale.
 const EMPTY_MESSAGES: ReadonlyArray<Message> = [];
-
-/**
- * Heuristic for "we're awaiting an LLM response": the most recent message is
- * either the user's submit or a tool_use without its paired tool_result yet.
- * Coarse but stable; PR 7 may swap it for a real session-status subscription.
- */
-const inferInFlight = (messages: ReadonlyArray<Message>): boolean => {
-  if (messages.length === 0) return false;
-  const last = messages[messages.length - 1]!;
-  return last.content._tag === "user" || last.content._tag === "tool_use";
-};
 
 type ReasoningLevel = "low" | "medium" | "high";
 const REASONING_LEVELS: ReadonlyArray<ReasoningLevel> = [
@@ -71,18 +53,22 @@ export function ChatComposer({ session }: { session: Session }) {
   const messages = useMessagesStore(
     (s) => s.messagesBySession[sessionId] ?? EMPTY_MESSAGES,
   );
+  const inFlight = useMessagesStore(
+    (s) => s.runningBySession[sessionId] === true,
+  );
   const send = useMessagesStore((s) => s.send);
   const interrupt = useMessagesStore((s) => s.interrupt);
 
   const [value, setValue] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const inFlight = useMemo(() => inferInFlight(messages), [messages]);
-  const canSend = !inFlight && value.trim().length > 0;
+  // Send is gated only on having text. The composer also swaps to an Interrupt
+  // button while in-flight, so users always have one valid action visible.
+  const canSend = value.trim().length > 0;
 
   const submit = async () => {
     const text = value.trim();
-    if (text.length === 0 || inFlight) return;
+    if (text.length === 0) return;
     setValue("");
     if (textareaRef.current !== null) {
       textareaRef.current.style.height = `${MIN_HEIGHT}px`;
@@ -183,46 +169,11 @@ export function ChatComposer({ session }: { session: Session }) {
 }
 
 /**
- * Three-state segmented control for the per-session permission posture.
- *   - approval-required (shield) — every write/Bash/Network/Task prompts.
- *   - auto-accept-edits (check)  — file edits skip the prompt; rest still ask.
- *   - full-access (zap)          — auto-allow everything except sensitive paths.
- *
- * The mode is stored on the session row and read live by the SDK's
- * canUseTool callback, so flipping the switch mid-turn applies to the next
- * tool call without restarting the conversation.
+ * Per-session permission posture, picked from a menu so each option can carry
+ * a description. The mode is stored on the session row and read live by the
+ * SDK's canUseTool callback — flipping it mid-turn applies to the next tool
+ * call without restarting the conversation.
  */
-const MODE_META: Record<
-  RuntimeMode,
-  {
-    label: string;
-    tooltip: string;
-    Icon: typeof ShieldAlert;
-    activeClass: string;
-  }
-> = {
-  "approval-required": {
-    label: "Approve",
-    tooltip: "Prompt for every write, shell, and network call",
-    Icon: ShieldAlert,
-    activeClass: "bg-background text-foreground shadow-xs/5",
-  },
-  "auto-accept-edits": {
-    label: "Edits",
-    tooltip:
-      "Auto-allow file edits — still prompt for shell, network, subagents",
-    Icon: ShieldCheck,
-    activeClass: "bg-emerald-500/15 text-emerald-300 shadow-xs/5",
-  },
-  "full-access": {
-    label: "YOLO",
-    tooltip:
-      "Auto-allow everything except sensitive paths (.env, credentials, …)",
-    Icon: Zap,
-    activeClass: "bg-amber-500/15 text-amber-300 shadow-xs/5",
-  },
-};
-
 function RuntimeModeToggle({
   sessionId,
   current,
@@ -231,44 +182,54 @@ function RuntimeModeToggle({
   current: RuntimeMode;
 }) {
   const setRuntimeMode = useSessionsStore((s) => s.setRuntimeMode);
-  const modes: ReadonlyArray<RuntimeMode> = [
-    "approval-required",
-    "auto-accept-edits",
-    "full-access",
-  ];
+  const meta = MODE_META[current];
+  const TriggerIcon = meta.Icon;
+
+  const onSelect = (mode: RuntimeMode) => {
+    if (mode !== current) void setRuntimeMode(sessionId, mode);
+  };
+
   return (
-    <div className="flex items-center gap-0.5 rounded-lg border border-border/60 bg-muted/30 p-0.5">
-      {modes.map((mode) => {
-        const meta = MODE_META[mode];
-        const Icon = meta.Icon;
-        const active = mode === current;
-        return (
-          <Tooltip key={mode}>
-            <TooltipTrigger
-              render={
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!active) void setRuntimeMode(sessionId, mode);
-                  }}
-                  aria-label={meta.label}
-                  aria-pressed={active}
-                  className={`flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] transition-colors ${
-                    active
-                      ? meta.activeClass
-                      : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                  }`}
-                >
-                  <Icon className="size-3" />
-                  <span>{meta.label}</span>
-                </button>
-              }
-            />
-            <TooltipPopup>{meta.tooltip}</TooltipPopup>
-          </Tooltip>
-        );
-      })}
-    </div>
+    <Menu>
+      <MenuTrigger
+        className="flex items-center gap-1.5 rounded-md border border-border/60 bg-background px-2 py-1 text-[11px] text-foreground shadow-xs/5 transition-colors hover:bg-muted/60 data-[popup-open]:bg-muted/60"
+        aria-label={`Permissions: ${meta.label}`}
+      >
+        <TriggerIcon className="size-3.5" />
+        <span>{meta.label}</span>
+        <ChevronDown className="size-3 opacity-60" />
+      </MenuTrigger>
+      <MenuPopup side="top" align="end" className="w-72 p-1">
+        {MODES_ORDER.map((mode) => {
+          const m = MODE_META[mode];
+          const ItemIcon = m.Icon;
+          const active = mode === current;
+          return (
+            <MenuItem
+              key={mode}
+              onClick={() => onSelect(mode)}
+              className={cn(
+                "grid grid-cols-[1rem_auto_1fr] items-start gap-x-2.5 rounded-md px-2 py-2 text-sm",
+                active
+                  ? "bg-accent/40 text-accent-foreground data-highlighted:bg-accent/60"
+                  : undefined,
+              )}
+            >
+              <span className="col-start-1 row-start-1 flex h-5 items-center justify-center">
+                {active && <Check className="size-3.5 opacity-90" />}
+              </span>
+              <ItemIcon className="col-start-2 row-start-1 mt-0.5 size-4 shrink-0" />
+              <div className="col-start-3 row-start-1 flex flex-col gap-0.5">
+                <span className="font-medium leading-none">{m.label}</span>
+                <span className="text-xs text-muted-foreground leading-snug">
+                  {m.description}
+                </span>
+              </div>
+            </MenuItem>
+          );
+        })}
+      </MenuPopup>
+    </Menu>
   );
 }
 

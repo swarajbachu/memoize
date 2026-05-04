@@ -3,13 +3,14 @@ import { Effect } from "effect";
 
 import { ChatComposer } from "./components/chat-composer";
 import { ChatView } from "./components/chat-view";
-import { CredentialsSheet } from "./components/credentials-sheet";
 import { PermissionToast } from "./components/permission-toast";
 import { ProjectsSidebar } from "./components/projects-sidebar";
 import { RightPane } from "./components/right-pane";
+import { SettingsPage } from "./components/settings-page";
 import { getRpcClient } from "./lib/rpc-client.ts";
 import { usePermissionsStore } from "./store/permissions.ts";
 import { useSessionsStore } from "./store/sessions.ts";
+import { useUiStore } from "./store/ui.ts";
 import { useWorkspaceStore } from "./store/workspace.ts";
 
 export function App() {
@@ -32,6 +33,8 @@ export function App() {
   useEffect(() => {
     startPermissionsStream();
   }, [startPermissionsStream]);
+
+  const view = useUiStore((s) => s.view);
 
   useEffect(() => {
     let cancelled = false;
@@ -59,35 +62,43 @@ export function App() {
         <ProjectsSidebar />
       </div>
       <main className="flex min-h-0 min-w-0 flex-1 flex-col border-x border-border bg-zinc-950">
-        <header className="flex h-9 shrink-0 items-center px-3 text-xs text-muted-foreground [-webkit-app-region:drag]">
-          <span className="ml-16 select-none truncate" title={selectedFolder?.path}>
-            {selectedSession
-              ? selectedSession.title
-              : selectedFolder
-                ? selectedFolder.name
-                : "no project selected"}
-          </span>
-        </header>
-        {selectedSessionId !== null && selectedSession !== null ? (
-          <>
-            <PermissionToast sessionId={selectedSessionId} />
-            <ChatView sessionId={selectedSessionId} />
-            <ChatComposer session={selectedSession} />
-          </>
+        {view === "settings" ? (
+          <SettingsPage />
         ) : (
-          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
-            <p>
-              {selectedFolder === null
-                ? "Add a project on the left to begin."
-                : "Pick or create a session in the sidebar."}
-            </p>
-          </div>
+          <>
+            <header className="flex h-9 shrink-0 items-center px-3 text-xs text-muted-foreground [-webkit-app-region:drag]">
+              <span
+                className="ml-16 select-none truncate"
+                title={selectedFolder?.path}
+              >
+                {selectedSession
+                  ? selectedSession.title
+                  : selectedFolder
+                    ? selectedFolder.name
+                    : "no project selected"}
+              </span>
+            </header>
+            {selectedSessionId !== null && selectedSession !== null ? (
+              <>
+                <PermissionToast sessionId={selectedSessionId} />
+                <ChatView sessionId={selectedSessionId} />
+                <ChatComposer session={selectedSession} />
+              </>
+            ) : (
+              <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
+                <p>
+                  {selectedFolder === null
+                    ? "Add a project on the left to begin."
+                    : "Pick or create a session in the sidebar."}
+                </p>
+              </div>
+            )}
+          </>
         )}
       </main>
       <div className="flex w-[320px] shrink-0 flex-col bg-zinc-950">
         <RightPane />
       </div>
-      <CredentialsSheet />
     </div>
   );
 }

@@ -140,6 +140,14 @@ const MessagesStream = ForkzeroRpcs.toLayerHandler(
     ),
 );
 
+const SessionStreamStatus = ForkzeroRpcs.toLayerHandler(
+  "session.streamStatus",
+  ({ sessionId }) =>
+    Stream.unwrap(
+      Effect.map(MessageStore, (svc) => svc.streamStatus(sessionId)),
+    ),
+);
+
 const MessagesSend = ForkzeroRpcs.toLayerHandler(
   "messages.send",
   ({ sessionId, text }) =>
@@ -208,6 +216,7 @@ export const ProviderHandlersLayer = Layer.mergeAll(
   SessionDelete,
   SessionResume,
   SessionSetRuntimeMode,
+  SessionStreamStatus,
   MessagesList,
   MessagesStream,
   MessagesSend,
