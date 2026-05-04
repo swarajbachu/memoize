@@ -2,6 +2,7 @@ import { Rpc } from "@effect/rpc";
 import { Schema } from "effect";
 
 import { ProviderId } from "./agent.ts";
+import { AttachmentRef, ComposerInput, FileRef, SkillRef } from "./composer.ts";
 import {
   AgentItemId,
   AgentSessionId,
@@ -97,6 +98,19 @@ const UserContent = Schema.TaggedStruct("user", {
   text: Schema.String,
 });
 
+/**
+ * User message that carries chips: typed file/directory tags, image
+ * attachments, and skill invocations. Coexists with `user` — old rows still
+ * render via the plain `user` variant. The renderer prefers `user_rich` when
+ * a submission has any non-text segments.
+ */
+const UserRichContent = Schema.TaggedStruct("user_rich", {
+  text: Schema.String,
+  attachments: Schema.Array(AttachmentRef),
+  fileRefs: Schema.Array(FileRef),
+  skillRefs: Schema.Array(SkillRef),
+});
+
 const AssistantContent = Schema.TaggedStruct("assistant", {
   text: Schema.String,
 });
@@ -137,6 +151,7 @@ const ErrorContent = Schema.TaggedStruct("error", {
  */
 export const MessageContent = Schema.Union(
   UserContent,
+  UserRichContent,
   AssistantContent,
   ThinkingContent,
   ToolUseContent,
@@ -161,6 +176,16 @@ export class SessionNotFoundError extends Schema.TaggedError<SessionNotFoundErro
 export class SessionStartError extends Schema.TaggedError<SessionStartError>()(
   "SessionStartError",
   { providerId: ProviderId, reason: Schema.String },
+) {}
+
+/**
+ * Reported by `messages.steer` if the active provider cannot interrupt the
+ * running turn. Both 0.03 drivers (Claude, Codex) support steer; the error
+ * is reserved for future providers.
+ */
+export class SteerUnsupportedError extends Schema.TaggedError<SteerUnsupportedError>()(
+  "SteerUnsupportedError",
+  { providerId: ProviderId },
 ) {}
 
 // ---------------------------------------------------------------------------
@@ -247,8 +272,18 @@ export const MessagesStreamRpc = Rpc.make("messages.stream", {
   stream: true,
 });
 
+/**
+ * Send a user turn. The legacy `text` field stays accepted alongside the
+ * richer `input` form so the renderer can migrate the composer to
+ * `ComposerInput` in a follow-up phase without a wire flag-day. Server
+ * prefers `input` when both are present.
+ */
 export const MessagesSendRpc = Rpc.make("messages.send", {
-  payload: Schema.Struct({ sessionId: SessionId, text: Schema.String }),
+  payload: Schema.Struct({
+    sessionId: SessionId,
+    text: Schema.optional(Schema.String),
+    input: Schema.optional(ComposerInput),
+  }),
   success: Schema.Void,
   error: SessionNotFoundError,
 });
@@ -257,6 +292,20 @@ export const MessagesInterruptRpc = Rpc.make("messages.interrupt", {
   payload: Schema.Struct({ sessionId: SessionId }),
   success: Schema.Void,
   error: SessionNotFoundError,
+});
+
+/**
+ * Interrupt the running turn (if any) and immediately send `input` as the
+ * next user turn. The driver drains the post-interrupt cleanup messages
+ * before issuing the new query so the message stream stays linear.
+ */
+export const MessagesSteerRpc = Rpc.make("messages.steer", {
+  payload: Schema.Struct({
+    sessionId: SessionId,
+    input: ComposerInput,
+  }),
+  success: Schema.Void,
+  error: Schema.Union(SessionNotFoundError, SteerUnsupportedError),
 });
 
 /**

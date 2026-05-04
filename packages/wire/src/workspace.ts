@@ -1,6 +1,7 @@
 import { Rpc } from "@effect/rpc";
 import { Schema } from "effect";
 
+import { FsFolderNotFoundError } from "./fs.ts";
 import { FolderId } from "./ids.ts";
 
 export class Folder extends Schema.Class<Folder>("Folder")({
@@ -55,4 +56,25 @@ export const WorkspaceGetSelectedRpc = Rpc.make("workspace.getSelected", {
 export const WorkspaceSetSelectedRpc = Rpc.make("workspace.setSelected", {
   payload: Schema.Struct({ folderId: Schema.NullOr(FolderId) }),
   success: Schema.Void,
+});
+
+/**
+ * Walk the project's file tree honouring `.gitignore` and return up to
+ * `limit` matches against `query`. Backs the composer's `@` file picker.
+ * Empty `query` returns the most recently touched entries (server's call).
+ */
+export const WorkspaceSearchFilesRpc = Rpc.make("workspace.searchFiles", {
+  payload: Schema.Struct({
+    projectId: FolderId,
+    query: Schema.String,
+    limit: Schema.optional(Schema.Number),
+  }),
+  success: Schema.Array(
+    Schema.Struct({
+      relPath: Schema.String,
+      absPath: Schema.String,
+      kind: Schema.Literal("file", "directory"),
+    }),
+  ),
+  error: FsFolderNotFoundError,
 });

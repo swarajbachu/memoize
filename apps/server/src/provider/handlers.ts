@@ -150,8 +150,10 @@ const SessionStreamStatus = ForkzeroRpcs.toLayerHandler(
 
 const MessagesSend = ForkzeroRpcs.toLayerHandler(
   "messages.send",
-  ({ sessionId, text }) =>
-    Effect.flatMap(MessageStore, (svc) => svc.sendMessage(sessionId, text)),
+  ({ sessionId, text, input }) =>
+    Effect.flatMap(MessageStore, (svc) =>
+      svc.sendMessage(sessionId, input?.text ?? text ?? ""),
+    ),
 );
 
 const MessagesInterrupt = ForkzeroRpcs.toLayerHandler(

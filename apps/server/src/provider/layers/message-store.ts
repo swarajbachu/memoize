@@ -101,6 +101,7 @@ const messageFromRow = (row: MessageRow): Message => {
 const roleForContent = (content: MessageContent): MessageRole => {
   switch (content._tag) {
     case "user":
+    case "user_rich":
       return "user";
     case "assistant":
     case "thinking":
