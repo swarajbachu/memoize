@@ -8,10 +8,7 @@ import type {
   SessionId,
 } from "@forkzero/wire";
 
-import {
-  selectRequestsForSession,
-  usePermissionsStore,
-} from "../store/permissions.ts";
+import { usePermissionsStore } from "../store/permissions.ts";
 
 const kindHeadline = (kind: PermissionKind): string => {
   switch (kind._tag) {
@@ -50,12 +47,22 @@ const DENY: PermissionDecision = { _tag: "Deny" };
  * user can react without focusing the toast.
  */
 export function PermissionToast({ sessionId }: { sessionId: SessionId }) {
-  const selector = useMemo(() => selectRequestsForSession(sessionId), [
-    sessionId,
-  ]);
-  const requests = usePermissionsStore(selector);
+  // Select the stable map; derive the per-session list in useMemo. Returning
+  // a freshly-allocated filtered array directly from a Zustand selector
+  // breaks useSyncExternalStore's snapshot-equality check and triggers an
+  // infinite re-render loop.
+  const requestsById = usePermissionsStore((s) => s.requestsById);
   const decide = usePermissionsStore((s) => s.decide);
   const hydrate = usePermissionsStore((s) => s.hydrate);
+
+  const requests = useMemo<ReadonlyArray<PermissionRequest>>(() => {
+    const out: PermissionRequest[] = [];
+    for (const req of Object.values(requestsById)) {
+      if (req.sessionId === sessionId) out.push(req);
+    }
+    out.sort((a, b) => a.requestedAt.getTime() - b.requestedAt.getTime());
+    return out;
+  }, [requestsById, sessionId]);
 
   // Hydrate pending requests when the session changes — covers the boot
   // case where the global stream missed events that landed before this
