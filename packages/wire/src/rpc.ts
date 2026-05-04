@@ -44,6 +44,7 @@ import {
   SessionRenameRpc,
   SessionResumeRpc,
   SessionSetModelRpc,
+  SessionSetRuntimeModeRpc,
   SessionUnarchiveRpc,
 } from "./session.ts";
 import {
@@ -95,6 +96,7 @@ export const ForkzeroRpcs = RpcGroup.make(
   SessionUnarchiveRpc,
   SessionDeleteRpc,
   SessionResumeRpc,
+  SessionSetRuntimeModeRpc,
   MessagesListRpc,
   MessagesStreamRpc,
   MessagesSendRpc,

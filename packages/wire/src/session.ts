@@ -45,6 +45,26 @@ export type SessionStatus = typeof SessionStatus.Type;
 export const ResumeStrategy = Schema.Literal("claude-session-id", "none");
 export type ResumeStrategy = typeof ResumeStrategy.Type;
 
+/**
+ * How permission prompts behave for this session.
+ *
+ *   - `approval-required` — prompt every write/Bash/Network/Task/MCP call.
+ *     Read-only tools auto-allow. Sensitive paths force a prompt regardless
+ *     of any other allow rule. **Default for new sessions** — safe by default.
+ *   - `auto-accept-edits` — also auto-allow `Edit` / `Write` / `MultiEdit` /
+ *     `NotebookEdit`. Bash / Network / Task / MCP still prompt. Sensitive
+ *     paths still force a prompt.
+ *   - `full-access` — auto-allow everything except sensitive paths (which
+ *     still prompt — the safety net the user opted into is preserved).
+ */
+export const RuntimeMode = Schema.Literal(
+  "approval-required",
+  "auto-accept-edits",
+  "full-access",
+);
+export type RuntimeMode = typeof RuntimeMode.Type;
+export const DEFAULT_RUNTIME_MODE: RuntimeMode = "approval-required";
+
 export class Session extends Schema.Class<Session>("Session")({
   id: SessionId,
   projectId: FolderId,
@@ -55,6 +75,7 @@ export class Session extends Schema.Class<Session>("Session")({
   archivedAt: Schema.NullOr(Schema.DateFromString),
   cursor: Schema.NullOr(Schema.String),
   resumeStrategy: ResumeStrategy,
+  runtimeMode: RuntimeMode,
   createdAt: Schema.DateFromString,
   updatedAt: Schema.DateFromString,
 }) {}
@@ -234,4 +255,18 @@ export const SessionResumeRpc = Rpc.make("session.resume", {
   payload: Schema.Struct({ sessionId: SessionId }),
   success: Session,
   error: Schema.Union(SessionNotFoundError, SessionStartError),
+});
+
+/**
+ * Set the per-session permission posture. Takes effect on the next tool call —
+ * if a turn is in flight when the toggle changes, the running canUseTool
+ * callbacks observe the new mode without restarting the SDK.
+ */
+export const SessionSetRuntimeModeRpc = Rpc.make("session.setRuntimeMode", {
+  payload: Schema.Struct({
+    sessionId: SessionId,
+    runtimeMode: RuntimeMode,
+  }),
+  success: Schema.Void,
+  error: SessionNotFoundError,
 });

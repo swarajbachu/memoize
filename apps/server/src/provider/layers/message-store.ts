@@ -9,6 +9,7 @@ import {
 } from "effect";
 
 import {
+  DEFAULT_RUNTIME_MODE,
   Message,
   MessageId,
   type AgentEvent,
@@ -16,6 +17,7 @@ import {
   type MessageContent,
   type MessageRole,
   type ProviderId,
+  type RuntimeMode,
   Session,
   SessionId,
   SessionNotFoundError,
@@ -28,7 +30,10 @@ import {
   type CreateSessionInput,
   type MessageStoreShape,
 } from "../services/message-store.ts";
-import { ProviderService } from "../services/provider-service.ts";
+import {
+  ProviderService,
+  type GetRuntimeMode,
+} from "../services/provider-service.ts";
 
 interface SessionRow {
   readonly id: string;
@@ -40,9 +45,21 @@ interface SessionRow {
   readonly archived_at: string | null;
   readonly cursor: string | null;
   readonly resume_strategy: string;
+  readonly runtime_mode: string;
   readonly created_at: string;
   readonly updated_at: string;
 }
+
+const RUNTIME_MODES: ReadonlySet<RuntimeMode> = new Set([
+  "approval-required",
+  "auto-accept-edits",
+  "full-access",
+]);
+
+const runtimeModeFromRow = (raw: string): RuntimeMode =>
+  RUNTIME_MODES.has(raw as RuntimeMode)
+    ? (raw as RuntimeMode)
+    : DEFAULT_RUNTIME_MODE;
 
 interface MessageRow {
   readonly id: string;
@@ -65,6 +82,7 @@ const sessionFromRow = (row: SessionRow): Session =>
     cursor: row.cursor,
     resumeStrategy:
       row.resume_strategy === "claude-session-id" ? "claude-session-id" : "none",
+    runtimeMode: runtimeModeFromRow(row.runtime_mode),
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   });
@@ -147,6 +165,16 @@ export const MessageStoreLive = Layer.scoped(
     // Project-id cache so the per-message NDJSON append doesn't hit the DB
     // for every event. Populated lazily on first append per session.
     const projectIdBySession = new Map<SessionId, FolderId>();
+
+    /**
+     * Live runtime-mode cache. The driver reads this through the getter we
+     * hand to `provider.start`, so a renderer-driven `setRuntimeMode` takes
+     * effect on the next tool call without restarting the SDK. Populated on
+     * every `provider.start` and on `setRuntimeMode`.
+     */
+    const runtimeModeBySession = new Map<SessionId, RuntimeMode>();
+    const getRuntimeModeFor = (sessionId: SessionId): RuntimeMode =>
+      runtimeModeBySession.get(sessionId) ?? DEFAULT_RUNTIME_MODE;
     const ndjsonAppend = (
       sessionId: SessionId,
       message: Message,
@@ -198,7 +226,8 @@ export const MessageStoreLive = Layer.scoped(
       Effect.gen(function* () {
         const rows = yield* sql<SessionRow>`
           SELECT id, project_id, title, provider_id, model, status,
-                 archived_at, cursor, resume_strategy, created_at, updated_at
+                 archived_at, cursor, resume_strategy, runtime_mode,
+                 created_at, updated_at
           FROM sessions WHERE id = ${sessionId} LIMIT 1
         `.pipe(Effect.orDie);
         if (rows.length === 0) {
@@ -353,13 +382,15 @@ export const MessageStoreLive = Layer.scoped(
         const rows = includeArchived
           ? yield* sql<SessionRow>`
               SELECT id, project_id, title, provider_id, model, status,
-                     archived_at, cursor, resume_strategy, created_at, updated_at
+                     archived_at, cursor, resume_strategy, runtime_mode,
+                     created_at, updated_at
               FROM sessions WHERE project_id = ${projectId}
               ORDER BY updated_at DESC
             `.pipe(Effect.orDie)
           : yield* sql<SessionRow>`
               SELECT id, project_id, title, provider_id, model, status,
-                     archived_at, cursor, resume_strategy, created_at, updated_at
+                     archived_at, cursor, resume_strategy, runtime_mode,
+                     created_at, updated_at
               FROM sessions
               WHERE project_id = ${projectId} AND archived_at IS NULL
               ORDER BY updated_at DESC
@@ -372,15 +403,27 @@ export const MessageStoreLive = Layer.scoped(
     ) =>
       Effect.gen(function* () {
         // Provider mints the canonical session id; we mirror it into the row
-        // so the in-memory map and the persisted row stay in lockstep.
+        // so the in-memory map and the persisted row stay in lockstep. New
+        // sessions always start at the default runtime mode — `canUseTool`
+        // can't fire until provider.start returns, so resolving sessionId
+        // through a closure is safe.
+        let mintedSessionId: SessionId | null = null;
+        const newSessionRuntimeMode: GetRuntimeMode = () =>
+          mintedSessionId === null
+            ? DEFAULT_RUNTIME_MODE
+            : getRuntimeModeFor(mintedSessionId);
         const started = yield* provider
-          .start({
-            folderId: input.projectId,
-            providerId: input.providerId,
-            mode: "sdk",
-            initialPrompt: input.initialPrompt,
-            model: input.model,
-          })
+          .start(
+            {
+              folderId: input.projectId,
+              providerId: input.providerId,
+              mode: "sdk",
+              initialPrompt: input.initialPrompt,
+              model: input.model,
+            },
+            null,
+            newSessionRuntimeMode,
+          )
           .pipe(
             Effect.mapError((err) =>
               err._tag === "ProviderNotAvailableError"
@@ -395,6 +438,8 @@ export const MessageStoreLive = Layer.scoped(
             ),
           );
         const sessionId = started.sessionId;
+        mintedSessionId = sessionId;
+        runtimeModeBySession.set(sessionId, DEFAULT_RUNTIME_MODE);
         const now = new Date();
         const nowIso = now.toISOString();
         const title = input.title?.trim() || titleFromInitial(input.initialPrompt);
@@ -425,6 +470,7 @@ export const MessageStoreLive = Layer.scoped(
           archivedAt: null,
           cursor: null,
           resumeStrategy: "none",
+          runtimeMode: DEFAULT_RUNTIME_MODE,
           createdAt: now,
           updatedAt: now,
         });
@@ -440,6 +486,27 @@ export const MessageStoreLive = Layer.scoped(
           UPDATE sessions SET title = ${title}, updated_at = ${new Date().toISOString()}
           WHERE id = ${sessionId}
         `.pipe(Effect.orDie);
+      });
+
+    /**
+     * Update the per-session runtime mode. Persists immediately. The driver's
+     * `canUseTool` callback observes the new value via `provider.start`'s
+     * runtime-mode getter on the next tool call — no need to restart the SDK.
+     */
+    const setRuntimeMode: MessageStoreShape["setRuntimeMode"] = (
+      sessionId,
+      runtimeMode,
+    ) =>
+      Effect.gen(function* () {
+        yield* lookupSession(sessionId);
+        const nowIso = new Date().toISOString();
+        yield* sql`
+          UPDATE sessions SET runtime_mode = ${runtimeMode}, updated_at = ${nowIso}
+          WHERE id = ${sessionId}
+        `.pipe(Effect.orDie);
+        // Poke the in-memory cache so the next `canUseTool` invocation picks
+        // up the new mode without restarting the SDK.
+        runtimeModeBySession.set(sessionId, runtimeMode);
       });
 
     /**
@@ -541,8 +608,9 @@ export const MessageStoreLive = Layer.scoped(
     const restartProviderSession = (
       session: Session,
       initialPrompt: string,
-    ): Effect.Effect<void, SessionNotFoundError> =>
-      provider
+    ): Effect.Effect<void, SessionNotFoundError> => {
+      runtimeModeBySession.set(session.id, session.runtimeMode);
+      return provider
         .start(
           {
             folderId: session.projectId,
@@ -556,11 +624,13 @@ export const MessageStoreLive = Layer.scoped(
           // The driver passes it as `options.resume`; SDK reloads history
           // and continues from there.
           session.cursor,
+          () => getRuntimeModeFor(session.id),
         )
         .pipe(
           Effect.flatMap(() => startSubscription(session.id)),
           Effect.mapError(() => new SessionNotFoundError({ sessionId: session.id })),
         );
+    };
 
     const resumeSession: MessageStoreShape["resumeSession"] = (sessionId) =>
       Effect.gen(function* () {
@@ -577,6 +647,7 @@ export const MessageStoreLive = Layer.scoped(
         // a fresh handle attached to the same DB row.
         yield* provider.close(sessionId).pipe(Effect.catchAll(() => Effect.void));
         yield* teardownSubscription(sessionId);
+        runtimeModeBySession.set(session.id, session.runtimeMode);
         yield* provider
           .start(
             {
@@ -587,6 +658,7 @@ export const MessageStoreLive = Layer.scoped(
               model: session.model,
             },
             session.cursor,
+            () => getRuntimeModeFor(session.id),
           )
           .pipe(
             Effect.mapError((err) =>
@@ -660,6 +732,7 @@ export const MessageStoreLive = Layer.scoped(
       createSession,
       renameSession,
       setModel,
+      setRuntimeMode,
       archiveSession,
       unarchiveSession,
       deleteSession,

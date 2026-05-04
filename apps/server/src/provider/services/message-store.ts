@@ -4,6 +4,7 @@ import type {
   FolderId,
   Message,
   ProviderId,
+  RuntimeMode,
   Session,
   SessionId,
   SessionNotFoundError,
@@ -54,6 +55,16 @@ export interface MessageStoreShape {
   readonly setModel: (
     sessionId: SessionId,
     model: string,
+  ) => Effect.Effect<void, SessionNotFoundError>;
+
+  /**
+   * Update the per-session permission posture. The change applies to the
+   * next tool call — running `canUseTool` callbacks observe the new value
+   * via the runtime-mode getter `ProviderService` hands the driver.
+   */
+  readonly setRuntimeMode: (
+    sessionId: SessionId,
+    runtimeMode: RuntimeMode,
   ) => Effect.Effect<void, SessionNotFoundError>;
 
   readonly archiveSession: (
