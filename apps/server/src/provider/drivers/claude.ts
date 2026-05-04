@@ -144,6 +144,23 @@ const translate = (msg: SDKMessage): ReadonlyArray<AgentEvent> => {
             tool: block.name,
             input: block.input,
           });
+        } else if (
+          block.type === "thinking" &&
+          typeof (block as { thinking?: unknown }).thinking === "string"
+        ) {
+          out.push({
+            _tag: "Thinking",
+            itemId: nextItemId(),
+            text: (block as { thinking: string }).thinking,
+            redacted: false,
+          });
+        } else if (block.type === "redacted_thinking") {
+          out.push({
+            _tag: "Thinking",
+            itemId: nextItemId(),
+            text: "",
+            redacted: true,
+          });
         }
       }
     }

@@ -101,6 +101,18 @@ const AssistantContent = Schema.TaggedStruct("assistant", {
   text: Schema.String,
 });
 
+/**
+ * Extended-thinking / reasoning text emitted by the model before its final
+ * answer. `redacted` mirrors Anthropic's `redacted_thinking` blocks where
+ * the content is hidden but the row still appears so users see something
+ * was thought about.
+ */
+const ThinkingContent = Schema.TaggedStruct("thinking", {
+  itemId: AgentItemId,
+  text: Schema.String,
+  redacted: Schema.Boolean,
+});
+
 const ToolUseContent = Schema.TaggedStruct("tool_use", {
   itemId: AgentItemId,
   tool: Schema.String,
@@ -126,6 +138,7 @@ const ErrorContent = Schema.TaggedStruct("error", {
 export const MessageContent = Schema.Union(
   UserContent,
   AssistantContent,
+  ThinkingContent,
   ToolUseContent,
   ToolResultContent,
   ErrorContent,

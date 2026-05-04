@@ -9,7 +9,7 @@ import type { Message } from "@forkzero/wire";
 
 import { cn } from "~/lib/utils";
 
-import { ToolRow } from "./tool-row.tsx";
+import { ThinkingRow, ToolRow } from "./tool-row.tsx";
 
 const stringifyJson = (value: unknown): string => {
   try {
@@ -30,6 +30,13 @@ export function MessageRow({ message }: { message: Message }) {
       return <UserBubble text={message.content.text} />;
     case "assistant":
       return <AssistantBubble text={message.content.text} />;
+    case "thinking":
+      return (
+        <ThinkingRow
+          text={message.content.text}
+          redacted={message.content.redacted}
+        />
+      );
     case "tool_use":
       return (
         <ToolRow tool={message.content.tool} input={message.content.input} />

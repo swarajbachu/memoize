@@ -89,6 +89,12 @@ const AssistantMessageEvent = Schema.TaggedStruct("AssistantMessage", {
   text: Schema.String,
 });
 
+const ThinkingEvent = Schema.TaggedStruct("Thinking", {
+  itemId: AgentItemId,
+  text: Schema.String,
+  redacted: Schema.Boolean,
+});
+
 const ToolUseEvent = Schema.TaggedStruct("ToolUse", {
   itemId: AgentItemId,
   tool: Schema.String,
@@ -140,6 +146,7 @@ export const AgentEvent = Schema.Union(
   VersionEvent,
   CapabilitiesEvent,
   AssistantMessageEvent,
+  ThinkingEvent,
   ToolUseEvent,
   ToolResultEvent,
   PermissionRequestEvent,

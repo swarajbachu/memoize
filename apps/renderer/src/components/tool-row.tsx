@@ -19,13 +19,6 @@ import { DiffBody, extractEdits, type FileEdit } from "./inline-diff.tsx";
 
 type IconHandle = Parameters<typeof HugeiconsIcon>[0]["icon"];
 
-interface ToolView {
-  readonly icon: IconHandle;
-  readonly label: string;
-  readonly summary: string | null;
-  readonly body: React.ReactNode;
-}
-
 const stringifyJson = (value: unknown): string => {
   try {
     return JSON.stringify(value, null, 2);
@@ -59,7 +52,79 @@ const editsBody = (edits: ReadonlyArray<FileEdit>): React.ReactNode => (
   </div>
 );
 
-const buildView = (tool: string, input: unknown): ToolView => {
+/**
+ * Single-line collapsible row used by tool calls and thinking blocks. The
+ * leading slot is a fixed-size grid cell that holds the contextual icon
+ * (idle) and a chevron (hover) in the same cell — same swap pattern the
+ * project sidebar uses for avatar↔chevron and session row uses for
+ * branch↔archive.
+ */
+function ExpandableIconRow({
+  icon,
+  label,
+  summary,
+  body,
+  labelClassName,
+  summaryClassName,
+}: {
+  icon: IconHandle;
+  label: string;
+  summary: string | null;
+  body: React.ReactNode;
+  labelClassName?: string;
+  summaryClassName?: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const Chevron = expanded ? ChevronDown : ChevronRight;
+  return (
+    <div className="px-4">
+      <button
+        type="button"
+        onClick={() => setExpanded((e) => !e)}
+        className="group flex w-full items-center gap-2 rounded px-1.5 py-0.5 text-left text-xs hover:bg-muted/40"
+      >
+        <div className="relative grid size-4 shrink-0 place-items-center">
+          <HugeiconsIcon
+            icon={icon}
+            strokeWidth={2}
+            aria-hidden="true"
+            className={cn(
+              "col-start-1 row-start-1 size-3.5 text-muted-foreground transition-opacity duration-150 ease-out",
+              "group-hover:opacity-0 motion-reduce:transition-none",
+            )}
+          />
+          <Chevron
+            aria-hidden="true"
+            className={cn(
+              "col-start-1 row-start-1 size-3.5 text-muted-foreground opacity-0 transition-opacity duration-150 ease-out",
+              "group-hover:opacity-100 motion-reduce:transition-none",
+            )}
+          />
+        </div>
+        <span className={cn("font-medium text-foreground/90", labelClassName)}>
+          {label}
+        </span>
+        {summary !== null ? (
+          <span className={cn("truncate text-muted-foreground", summaryClassName)}>
+            {summary}
+          </span>
+        ) : null}
+      </button>
+      {expanded ? (
+        <div className="ml-7 mt-1 border-l border-border/60 pl-3">{body}</div>
+      ) : null}
+    </div>
+  );
+}
+
+interface ToolView {
+  readonly icon: IconHandle;
+  readonly label: string;
+  readonly summary: string | null;
+  readonly body: React.ReactNode;
+}
+
+const buildToolView = (tool: string, input: unknown): ToolView => {
   const obj =
     input !== null && typeof input === "object"
       ? (input as Record<string, unknown>)
@@ -153,24 +218,6 @@ const buildView = (tool: string, input: unknown): ToolView => {
       };
     }
 
-    case "Think":
-    case "Thinking": {
-      const text = asString(obj.thought) ?? asString(obj.text);
-      return {
-        icon: Brain01Icon,
-        label: "Thinking",
-        summary: text !== null ? truncate(text, 100) : null,
-        body:
-          text !== null ? (
-            <p className="whitespace-pre-wrap text-[11px] leading-relaxed text-muted-foreground">
-              {text}
-            </p>
-          ) : (
-            <JsonBody value={input} />
-          ),
-      };
-    }
-
     case "WebFetch": {
       const url = asString(obj.url);
       return {
@@ -213,50 +260,45 @@ const buildView = (tool: string, input: unknown): ToolView => {
 };
 
 export function ToolRow({ tool, input }: { tool: string; input: unknown }) {
-  const [expanded, setExpanded] = useState(false);
-  const view = buildView(tool, input);
-  const Chevron = expanded ? ChevronDown : ChevronRight;
-
+  const view = buildToolView(tool, input);
   return (
-    <div className="px-4">
-      <button
-        type="button"
-        onClick={() => setExpanded((e) => !e)}
-        className="group flex w-full items-center gap-2 rounded px-1.5 py-0.5 text-left text-xs hover:bg-muted/40"
-      >
-        {/* Single icon slot: tool icon at rest, chevron on hover. Both live
-            in the same grid cell so the row never reflows. Mirrors the
-            avatar/chevron swap on the project sidebar header. */}
-        <div className="relative grid size-4 shrink-0 place-items-center">
-          <HugeiconsIcon
-            icon={view.icon}
-            strokeWidth={2}
-            aria-hidden="true"
-            className={cn(
-              "col-start-1 row-start-1 size-3.5 text-muted-foreground transition-opacity duration-150 ease-out",
-              "group-hover:opacity-0 motion-reduce:transition-none",
-            )}
-          />
-          <Chevron
-            aria-hidden="true"
-            className={cn(
-              "col-start-1 row-start-1 size-3.5 text-muted-foreground opacity-0 transition-opacity duration-150 ease-out",
-              "group-hover:opacity-100 motion-reduce:transition-none",
-            )}
-          />
-        </div>
-        <span className="font-medium text-foreground/90">{view.label}</span>
-        {view.summary !== null ? (
-          <span className="truncate text-muted-foreground">
-            {view.summary}
-          </span>
-        ) : null}
-      </button>
-      {expanded ? (
-        <div className="ml-7 mt-1 border-l border-border/60 pl-3">
-          {view.body}
-        </div>
-      ) : null}
-    </div>
+    <ExpandableIconRow
+      icon={view.icon}
+      label={view.label}
+      summary={view.summary}
+      body={view.body}
+    />
+  );
+}
+
+export function ThinkingRow({
+  text,
+  redacted,
+}: {
+  text: string;
+  redacted: boolean;
+}) {
+  const summary = redacted
+    ? "(redacted)"
+    : text.length > 0
+      ? truncate(text.replace(/\s+/g, " ").trim(), 100)
+      : null;
+  const body = redacted ? (
+    <p className="whitespace-pre-wrap text-[11px] italic leading-relaxed text-muted-foreground/70">
+      Thought content was redacted by the model.
+    </p>
+  ) : (
+    <p className="whitespace-pre-wrap text-[11px] leading-relaxed text-muted-foreground">
+      {text}
+    </p>
+  );
+  return (
+    <ExpandableIconRow
+      icon={Brain01Icon}
+      label="Thinking"
+      summary={summary}
+      body={body}
+      summaryClassName="italic"
+    />
   );
 }
