@@ -28,7 +28,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
 import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
-import { cn } from "~/lib/utils";
+import { cn, formatCompactNumber } from "~/lib/utils";
 import { getRpcClient } from "../lib/rpc-client.ts";
 import { usePrStateStore } from "../store/pr-state.ts";
 import { useProvidersStore } from "../store/providers.ts";
@@ -623,31 +623,31 @@ function SessionRow({ session }: { session: Session }) {
             timestamp (no PR). The three-dot menu fades over the same slot on
             hover so the row never reflows. tabular-nums keeps digit widths
             stable when the elapsed time ticks. */}
-        <div className="relative flex h-4 w-[64px] shrink-0 items-center justify-end">
-          <span
-            className={cn(
-              "tabular-nums text-[10px] transition-opacity duration-150 ease-out group-hover:opacity-0 motion-reduce:transition-none",
-              showDiff && prInfo !== null && prInfo.state === "open"
-                ? "text-emerald-400/90"
-                : showDiff
-                  ? "text-purple-300/80"
-                  : "text-muted-foreground",
+        <div className="relative flex h-4 w-16 shrink-0 items-center justify-end">
+          <span className="tabular-nums text-[10px] text-muted-foreground transition-opacity duration-150 ease-out motion-reduce:transition-none group-hover:hidden">
+            {showDiff && prInfo !== null ? (
+              <>
+                <span className="text-emerald-400">
+                  +{formatCompactNumber(prInfo.additions)}
+                </span>{" "}
+                <span className="text-red-400">
+                  −{formatCompactNumber(prInfo.deletions)}
+                </span>
+              </>
+            ) : (
+              formatRelative(session.updatedAt)
             )}
-          >
-            {showDiff && prInfo !== null
-              ? `+${prInfo.additions} −${prInfo.deletions}`
-              : formatRelative(session.updatedAt)}
           </span>
           <MenuTrigger
             onClick={(e) => e.stopPropagation()}
-            className="absolute inset-y-0 right-0 flex items-center rounded p-0.5 text-muted-foreground opacity-0 transition-opacity duration-150 ease-out hover:text-sidebar-accent-foreground group-hover:opacity-100 data-[popup-open]:opacity-100 motion-reduce:transition-none"
+            className=" items-center rounded p-0.5 text-muted-foreground hidden transition-opacity duration-150 ease-out hover:text-sidebar-accent-foreground group-hover:flex data-popup-open:opacity-100 motion-reduce:transition-none"
             aria-label={`Actions for ${session.title}`}
           >
             <MoreHorizontal className="size-3.5" />
           </MenuTrigger>
         </div>
       </li>
-      <MenuPopup align="end" className="min-w-[160px]">
+      <MenuPopup align="end" className="min-w-40">
         <MenuItem
           onClick={onRename}
           className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
