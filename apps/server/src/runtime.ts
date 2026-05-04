@@ -5,6 +5,7 @@ import { Layer } from "effect";
 import { ForkzeroRpcs } from "@forkzero/wire";
 
 import { AppPaths } from "./app-paths.ts";
+import { AttachmentServiceLive } from "./attachment/layers/attachment-service.ts";
 import { FsServiceLive } from "./fs/layers/fs-service.ts";
 import { GitServiceLive } from "./git/layers/git-service.ts";
 import { HandlersLayer } from "./handlers.ts";
@@ -124,6 +125,15 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(NdjsonLoggerLayer),
   );
 
+  // AttachmentService writes uploaded image bytes under userData and runs
+  // the GC sweep that reaps orphaned blobs. Disk I/O comes from
+  // NodeContext; persistence joins MigratedSqlite.
+  const AttachmentLayer = AttachmentServiceLive.pipe(
+    Layer.provide(MigratedSqlite),
+    Layer.provide(AppPathsLayer),
+    Layer.provide(NodeContext.layer),
+  );
+
   const Handlers = HandlersLayer.pipe(
     Layer.provide(WorkspaceLayer),
     Layer.provide(PtyServiceLive),
@@ -132,6 +142,7 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(ProviderLayer),
     Layer.provide(MessageStoreLayer),
     Layer.provide(PermissionLayer),
+    Layer.provide(AttachmentLayer),
     Layer.provide(FolderPickerLayer),
   );
 

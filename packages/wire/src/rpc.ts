@@ -9,6 +9,7 @@ import {
   AgentSetCredentialRpc,
   AgentStartRpc,
 } from "./agent.ts";
+import { AttachmentTouchRpc, AttachmentUploadRpc } from "./attachment.ts";
 import { FsReadFileRpc, FsTreeRpc, FsWriteFileRpc } from "./fs.ts";
 import {
   GitHeadChangedRpc,
@@ -107,6 +108,8 @@ export const ForkzeroRpcs = RpcGroup.make(
   MessagesStreamRpc,
   MessagesSendRpc,
   MessagesInterruptRpc,
+  AttachmentUploadRpc,
+  AttachmentTouchRpc,
   PermissionRequestsRpc,
   PermissionDecideRpc,
   PermissionListPendingRpc,
