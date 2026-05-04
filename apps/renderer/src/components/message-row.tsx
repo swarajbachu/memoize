@@ -1,13 +1,15 @@
-import { ChevronDown, ChevronRight, Wrench } from "lucide-react";
+import { AlertCircleIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import type { Message } from "@forkzero/wire";
 
-import { InlineDiff } from "./inline-diff.tsx";
+import { cn } from "~/lib/utils";
 
-const FILE_EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit"]);
+import { ToolRow } from "./tool-row.tsx";
 
 const stringifyJson = (value: unknown): string => {
   try {
@@ -29,24 +31,13 @@ export function MessageRow({ message }: { message: Message }) {
     case "assistant":
       return <AssistantBubble text={message.content.text} />;
     case "tool_use":
-      return FILE_EDIT_TOOLS.has(message.content.tool) ? (
-        <InlineDiff
-          tool={message.content.tool}
-          input={message.content.input}
-        />
-      ) : (
-        <ToolUseBubble
-          tool={message.content.tool}
-          input={message.content.input}
-        />
+      return (
+        <ToolRow tool={message.content.tool} input={message.content.input} />
       );
     case "tool_result":
-      return (
-        <ToolResultBubble
-          output={message.content.output}
-          isError={message.content.isError}
-        />
-      );
+      return message.content.isError ? (
+        <ToolErrorRow output={message.content.output} />
+      ) : null;
     case "error":
       return <ErrorBubble text={message.content.message} />;
   }
@@ -74,74 +65,46 @@ function AssistantBubble({ text }: { text: string }) {
   );
 }
 
-function ToolUseBubble({ tool, input }: { tool: string; input: unknown }) {
+function ToolErrorRow({ output }: { output: unknown }) {
   const [expanded, setExpanded] = useState(false);
   const Chevron = expanded ? ChevronDown : ChevronRight;
+  const text = typeof output === "string" ? output : stringifyJson(output);
+  const firstLine = text.split("\n", 1)[0] ?? "";
   return (
-    <div className="px-4 py-1">
-      <div className="max-w-[88%] rounded-md border border-border bg-muted/40 text-xs">
-        <button
-          type="button"
-          onClick={() => setExpanded((e) => !e)}
-          className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left hover:bg-muted/60"
-        >
-          <Chevron className="size-3 shrink-0 text-muted-foreground" />
-          <Wrench className="size-3 shrink-0 text-amber-400" />
-          <span className="font-mono text-amber-200">{tool}</span>
-          <span className="ml-1 text-muted-foreground">tool call</span>
-        </button>
-        {expanded && (
-          <pre className="overflow-x-auto border-t border-border/60 px-2 py-2 font-mono text-[11px] text-muted-foreground">
-            {stringifyJson(input)}
-          </pre>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ToolResultBubble({
-  output,
-  isError,
-}: {
-  output: unknown;
-  isError: boolean;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const Chevron = expanded ? ChevronDown : ChevronRight;
-  const text =
-    typeof output === "string" ? output : stringifyJson(output);
-  return (
-    <div className="px-4 py-1">
-      <div
-        className={`max-w-[88%] rounded-md border text-xs ${
-          isError
-            ? "border-red-500/40 bg-red-500/10"
-            : "border-border bg-muted/40"
-        }`}
+    <div className="px-4">
+      <button
+        type="button"
+        onClick={() => setExpanded((e) => !e)}
+        className="group flex w-full items-center gap-2 rounded px-1.5 py-0.5 text-left text-xs hover:bg-red-500/10"
       >
-        <button
-          type="button"
-          onClick={() => setExpanded((e) => !e)}
-          className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left hover:bg-muted/60"
-        >
-          <Chevron className="size-3 shrink-0 text-muted-foreground" />
-          <span className={isError ? "text-red-300" : "text-emerald-300"}>
-            {isError ? "tool error" : "tool result"}
-          </span>
-        </button>
-        {expanded && (
-          <pre
-            className={`overflow-x-auto border-t px-2 py-2 font-mono text-[11px] ${
-              isError
-                ? "border-red-500/30 text-red-200"
-                : "border-border/60 text-muted-foreground"
-            }`}
-          >
+        <div className="relative grid size-4 shrink-0 place-items-center">
+          <HugeiconsIcon
+            icon={AlertCircleIcon}
+            strokeWidth={2}
+            aria-hidden="true"
+            className={cn(
+              "col-start-1 row-start-1 size-3.5 text-red-400 transition-opacity duration-150 ease-out",
+              "group-hover:opacity-0 motion-reduce:transition-none",
+            )}
+          />
+          <Chevron
+            aria-hidden="true"
+            className={cn(
+              "col-start-1 row-start-1 size-3.5 text-red-400 opacity-0 transition-opacity duration-150 ease-out",
+              "group-hover:opacity-100 motion-reduce:transition-none",
+            )}
+          />
+        </div>
+        <span className="font-medium text-red-300">Error</span>
+        <span className="truncate text-red-200/80">{firstLine}</span>
+      </button>
+      {expanded ? (
+        <div className="ml-7 mt-1 border-l border-red-500/30 pl-3">
+          <pre className="overflow-x-auto whitespace-pre-wrap break-words font-mono text-[11px] text-red-200">
             {text || "(empty)"}
           </pre>
-        )}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }
