@@ -22,6 +22,7 @@ import {
   SessionStartError,
 } from "@forkzero/wire";
 
+import { NdjsonLogger } from "../../persistence/ndjson-logger.ts";
 import {
   MessageStore,
   type CreateSessionInput,
@@ -37,6 +38,8 @@ interface SessionRow {
   readonly model: string;
   readonly status: string;
   readonly archived_at: string | null;
+  readonly cursor: string | null;
+  readonly resume_strategy: string;
   readonly created_at: string;
   readonly updated_at: string;
 }
@@ -59,6 +62,9 @@ const sessionFromRow = (row: SessionRow): Session =>
     model: row.model,
     status: row.status as Session["status"],
     archivedAt: row.archived_at === null ? null : new Date(row.archived_at),
+    cursor: row.cursor,
+    resumeStrategy:
+      row.resume_strategy === "claude-session-id" ? "claude-session-id" : "none",
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   });
@@ -136,6 +142,31 @@ export const MessageStoreLive = Layer.scoped(
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     const provider = yield* ProviderService;
+    const ndjson = yield* NdjsonLogger;
+
+    // Project-id cache so the per-message NDJSON append doesn't hit the DB
+    // for every event. Populated lazily on first append per session.
+    const projectIdBySession = new Map<SessionId, FolderId>();
+    const ndjsonAppend = (
+      sessionId: SessionId,
+      message: Message,
+    ): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        let projectId = projectIdBySession.get(sessionId);
+        if (projectId === undefined) {
+          const rows = yield* sql<{ readonly project_id: string }>`
+            SELECT project_id FROM sessions WHERE id = ${sessionId} LIMIT 1
+          `.pipe(
+            Effect.catchAll(() =>
+              Effect.succeed([] as ReadonlyArray<{ readonly project_id: string }>),
+            ),
+          );
+          if (rows.length === 0) return;
+          projectId = rows[0]!.project_id as FolderId;
+          projectIdBySession.set(sessionId, projectId);
+        }
+        yield* ndjson.append(sessionId, projectId, message);
+      });
 
     // One pubsub per session, lazily created. Re-used across multiple
     // `streamMessages` subscribers so a single provider event fans out to
@@ -167,7 +198,7 @@ export const MessageStoreLive = Layer.scoped(
       Effect.gen(function* () {
         const rows = yield* sql<SessionRow>`
           SELECT id, project_id, title, provider_id, model, status,
-                 archived_at, created_at, updated_at
+                 archived_at, cursor, resume_strategy, created_at, updated_at
           FROM sessions WHERE id = ${sessionId} LIMIT 1
         `.pipe(Effect.orDie);
         if (rows.length === 0) {
@@ -250,10 +281,21 @@ export const MessageStoreLive = Layer.scoped(
                 );
                 return;
               }
+              if (event._tag === "SessionCursor") {
+                yield* sql`
+                  UPDATE sessions
+                     SET cursor = ${event.cursor},
+                         resume_strategy = ${event.strategy},
+                         updated_at = ${new Date().toISOString()}
+                  WHERE id = ${sessionId}
+                `.pipe(Effect.asVoid, Effect.orDie);
+                return;
+              }
               const content = eventToContent(event);
               if (content === null) return;
               const persisted = yield* persistMessage(sessionId, content);
               yield* broadcastMessage(sessionId, persisted);
+              yield* ndjsonAppend(sessionId, persisted);
             }),
           ).pipe(
             Effect.catchAllCause((cause) =>
@@ -311,13 +353,13 @@ export const MessageStoreLive = Layer.scoped(
         const rows = includeArchived
           ? yield* sql<SessionRow>`
               SELECT id, project_id, title, provider_id, model, status,
-                     archived_at, created_at, updated_at
+                     archived_at, cursor, resume_strategy, created_at, updated_at
               FROM sessions WHERE project_id = ${projectId}
               ORDER BY updated_at DESC
             `.pipe(Effect.orDie)
           : yield* sql<SessionRow>`
               SELECT id, project_id, title, provider_id, model, status,
-                     archived_at, created_at, updated_at
+                     archived_at, cursor, resume_strategy, created_at, updated_at
               FROM sessions
               WHERE project_id = ${projectId} AND archived_at IS NULL
               ORDER BY updated_at DESC
@@ -381,6 +423,8 @@ export const MessageStoreLive = Layer.scoped(
           model: input.model,
           status: "running",
           archivedAt: null,
+          cursor: null,
+          resumeStrategy: "none",
           createdAt: now,
           updatedAt: now,
         });
@@ -499,18 +543,68 @@ export const MessageStoreLive = Layer.scoped(
       initialPrompt: string,
     ): Effect.Effect<void, SessionNotFoundError> =>
       provider
-        .start({
-          folderId: session.projectId,
-          providerId: session.providerId,
-          mode: "sdk",
-          sessionId: session.id,
-          initialPrompt,
-          model: session.model,
-        })
+        .start(
+          {
+            folderId: session.projectId,
+            providerId: session.providerId,
+            mode: "sdk",
+            sessionId: session.id,
+            initialPrompt,
+            model: session.model,
+          },
+          // Re-attach to the upstream conversation when we have a cursor.
+          // The driver passes it as `options.resume`; SDK reloads history
+          // and continues from there.
+          session.cursor,
+        )
         .pipe(
           Effect.flatMap(() => startSubscription(session.id)),
           Effect.mapError(() => new SessionNotFoundError({ sessionId: session.id })),
         );
+
+    const resumeSession: MessageStoreShape["resumeSession"] = (sessionId) =>
+      Effect.gen(function* () {
+        const session = yield* lookupSession(sessionId);
+        if (session.resumeStrategy === "none" || session.cursor === null) {
+          return yield* Effect.fail(
+            new SessionStartError({
+              providerId: session.providerId,
+              reason: "resume_unsupported",
+            }),
+          );
+        }
+        // Best-effort cleanup of any stale in-memory session before opening
+        // a fresh handle attached to the same DB row.
+        yield* provider.close(sessionId).pipe(Effect.catchAll(() => Effect.void));
+        yield* teardownSubscription(sessionId);
+        yield* provider
+          .start(
+            {
+              folderId: session.projectId,
+              providerId: session.providerId,
+              mode: "sdk",
+              sessionId: session.id,
+              model: session.model,
+            },
+            session.cursor,
+          )
+          .pipe(
+            Effect.mapError((err) =>
+              err._tag === "ProviderNotAvailableError"
+                ? new SessionStartError({
+                    providerId: session.providerId,
+                    reason: err.reason,
+                  })
+                : new SessionStartError({
+                    providerId: err.providerId,
+                    reason: err.reason,
+                  }),
+            ),
+          );
+        yield* startSubscription(sessionId);
+        yield* setStatus(sessionId, "running");
+        return yield* lookupSession(sessionId);
+      });
 
     const sendMessage: MessageStoreShape["sendMessage"] = (sessionId, text) =>
       Effect.gen(function* () {
@@ -569,6 +663,7 @@ export const MessageStoreLive = Layer.scoped(
       archiveSession,
       unarchiveSession,
       deleteSession,
+      resumeSession,
       listMessages,
       streamMessages,
       sendMessage,

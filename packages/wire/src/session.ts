@@ -32,6 +32,19 @@ export const SessionStatus = Schema.Literal(
 );
 export type SessionStatus = typeof SessionStatus.Type;
 
+/**
+ * How (if at all) a session can resume after the provider session is gone.
+ * Captured at start time; the renderer uses it to decide whether to expose
+ * a "Resumable" affordance on stopped sessions.
+ *
+ *   - `claude-session-id` — Claude SDK's `session_id` is stored in `cursor`
+ *     and passed back as `options.resume` on the next start.
+ *   - `none` — no resume; sending again starts a fresh provider session
+ *     under the same DB row (existing chat-MVP behavior).
+ */
+export const ResumeStrategy = Schema.Literal("claude-session-id", "none");
+export type ResumeStrategy = typeof ResumeStrategy.Type;
+
 export class Session extends Schema.Class<Session>("Session")({
   id: SessionId,
   projectId: FolderId,
@@ -40,6 +53,8 @@ export class Session extends Schema.Class<Session>("Session")({
   model: Schema.String,
   status: SessionStatus,
   archivedAt: Schema.NullOr(Schema.DateFromString),
+  cursor: Schema.NullOr(Schema.String),
+  resumeStrategy: ResumeStrategy,
   createdAt: Schema.DateFromString,
   updatedAt: Schema.DateFromString,
 }) {}
@@ -207,4 +222,16 @@ export const MessagesInterruptRpc = Rpc.make("messages.interrupt", {
   payload: Schema.Struct({ sessionId: SessionId }),
   success: Schema.Void,
   error: SessionNotFoundError,
+});
+
+/**
+ * Re-open a stopped session against the provider. For Claude this passes
+ * the persisted `cursor` to the SDK's `resume`; for Codex it currently
+ * fails with `SessionStartError({ reason: "resume_unsupported" })` and the
+ * renderer offers "Start new session" instead.
+ */
+export const SessionResumeRpc = Rpc.make("session.resume", {
+  payload: Schema.Struct({ sessionId: SessionId }),
+  success: Session,
+  error: Schema.Union(SessionNotFoundError, SessionStartError),
 });

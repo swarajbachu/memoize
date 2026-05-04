@@ -10,9 +10,11 @@ import { GitServiceLive } from "./git/layers/git-service.ts";
 import { HandlersLayer } from "./handlers.ts";
 import { importWorkspacesJson } from "./persistence/import-workspaces.ts";
 import { MigrationsLive } from "./persistence/migrations.ts";
+import { NdjsonLoggerLive } from "./persistence/ndjson-logger.ts";
 import { SqliteLive } from "./persistence/sqlite.ts";
 import { CredentialsServiceLive } from "./provider/layers/credentials-service.ts";
 import { MessageStoreLive } from "./provider/layers/message-store.ts";
+import { PermissionServiceLive } from "./provider/layers/permission-service.ts";
 import { ProviderServiceLive } from "./provider/layers/provider-service.ts";
 import { PtyServiceLive } from "./pty/layers/pty-service.ts";
 import { FolderPicker } from "./workspace/services/folder-picker.ts";
@@ -86,13 +88,30 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(NodeContext.layer),
   );
 
+  // PermissionService brokers between the SDK permission callback (driver
+  // side) and the renderer toast (RPC side). It writes decisions to
+  // SQLite so an `AllowForSession` row survives a process crash and the
+  // user isn't re-prompted on resume.
+  const PermissionLayer = PermissionServiceLive.pipe(
+    Layer.provide(MigratedSqlite),
+  );
+
   // ProviderService probes installed CLIs via CommandExecutor, consults
-  // CredentialsService for SDK keys, and resolves folderId → cwd via
-  // WorkspaceService when starting a Claude SDK session.
+  // CredentialsService for SDK keys, resolves folderId → cwd via
+  // WorkspaceService, and forwards the SDK's tool-permission callback to
+  // PermissionService.
   const ProviderLayer = ProviderServiceLive.pipe(
     Layer.provide(CredentialsServiceLive),
     Layer.provide(WorkspaceLayer),
+    Layer.provide(PermissionLayer),
     Layer.provide(NodeContext.layer),
+  );
+
+  // NdjsonLogger writes a best-effort transcript audit file alongside the
+  // SQLite store. Provided to MessageStore so the same daemon that persists
+  // a row also tail-writes the NDJSON line.
+  const NdjsonLoggerLayer = NdjsonLoggerLive.pipe(
+    Layer.provide(AppPathsLayer),
   );
 
   // MessageStore composes ProviderService with the SQLite-backed sessions /
@@ -102,6 +121,7 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
   const MessageStoreLayer = MessageStoreLive.pipe(
     Layer.provide(ProviderLayer),
     Layer.provide(MigratedSqlite),
+    Layer.provide(NdjsonLoggerLayer),
   );
 
   const Handlers = HandlersLayer.pipe(
@@ -111,6 +131,7 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(FsLayer),
     Layer.provide(ProviderLayer),
     Layer.provide(MessageStoreLayer),
+    Layer.provide(PermissionLayer),
     Layer.provide(FolderPickerLayer),
   );
 

@@ -35,6 +35,7 @@ type SessionsState = {
   readonly archive: (sessionId: SessionId) => Promise<void>;
   readonly unarchive: (sessionId: SessionId) => Promise<void>;
   readonly remove: (sessionId: SessionId) => Promise<void>;
+  readonly resume: (sessionId: SessionId) => Promise<boolean>;
   readonly select: (sessionId: SessionId | null) => void;
   readonly toggleShowArchived: (projectId: FolderId) => void;
 };
@@ -202,6 +203,33 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       });
     } catch (err) {
       set({ error: formatError(err) });
+    }
+  },
+  resume: async (sessionId) => {
+    set({ error: null });
+    try {
+      const client = await getRpcClient();
+      const session = await Effect.runPromise(
+        client.session.resume({ sessionId }),
+      );
+      set((s) => {
+        const projectId = findSessionProject(s.sessionsByProject, sessionId);
+        if (projectId === null) return {};
+        const sessions = s.sessionsByProject[projectId] ?? [];
+        return {
+          sessionsByProject: {
+            ...s.sessionsByProject,
+            [projectId]: sessions.map((existing) =>
+              existing.id === sessionId ? session : existing,
+            ),
+          },
+          selectedSessionId: session.id,
+        };
+      });
+      return true;
+    } catch (err) {
+      set({ error: formatError(err) });
+      return false;
     }
   },
   refreshOne: async (sessionId) => {

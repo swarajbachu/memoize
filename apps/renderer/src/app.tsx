@@ -4,9 +4,11 @@ import { Effect } from "effect";
 import { ChatComposer } from "./components/chat-composer";
 import { ChatView } from "./components/chat-view";
 import { CredentialsSheet } from "./components/credentials-sheet";
+import { PermissionToast } from "./components/permission-toast";
 import { ProjectsSidebar } from "./components/projects-sidebar";
 import { RightPane } from "./components/right-pane";
 import { getRpcClient } from "./lib/rpc-client.ts";
+import { usePermissionsStore } from "./store/permissions.ts";
 import { useSessionsStore } from "./store/sessions.ts";
 import { useWorkspaceStore } from "./store/workspace.ts";
 
@@ -25,6 +27,11 @@ export function App() {
   const selectedFolder = selectedFolderId
     ? (folders.find((f) => f.id === selectedFolderId) ?? null)
     : null;
+
+  const startPermissionsStream = usePermissionsStore((s) => s.start);
+  useEffect(() => {
+    startPermissionsStream();
+  }, [startPermissionsStream]);
 
   useEffect(() => {
     let cancelled = false;
@@ -63,6 +70,7 @@ export function App() {
         </header>
         {selectedSessionId !== null && selectedSession !== null ? (
           <>
+            <PermissionToast sessionId={selectedSessionId} />
             <ChatView sessionId={selectedSessionId} />
             <ChatComposer session={selectedSession} />
           </>

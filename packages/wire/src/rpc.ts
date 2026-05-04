@@ -16,6 +16,11 @@ import {
   GitOriginRpc,
   GitStatusRpc,
 } from "./git.ts";
+import {
+  PermissionDecideRpc,
+  PermissionListPendingRpc,
+  PermissionRequestsRpc,
+} from "./permission.ts";
 import { PingRpc } from "./ping.ts";
 import {
   PtyCloseRpc,
@@ -35,6 +40,7 @@ import {
   SessionGetRpc,
   SessionListRpc,
   SessionRenameRpc,
+  SessionResumeRpc,
   SessionSetModelRpc,
   SessionUnarchiveRpc,
 } from "./session.ts";
@@ -86,10 +92,14 @@ export const ForkzeroRpcs = RpcGroup.make(
   SessionArchiveRpc,
   SessionUnarchiveRpc,
   SessionDeleteRpc,
+  SessionResumeRpc,
   MessagesListRpc,
   MessagesStreamRpc,
   MessagesSendRpc,
   MessagesInterruptRpc,
+  PermissionRequestsRpc,
+  PermissionDecideRpc,
+  PermissionListPendingRpc,
 );
 export type ForkzeroRpcs = typeof ForkzeroRpcs;
 

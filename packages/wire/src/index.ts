@@ -2,6 +2,7 @@ export * from "./agent.ts";
 export * from "./fs.ts";
 export * from "./git.ts";
 export * from "./ids.ts";
+export * from "./permission.ts";
 export * from "./ping.ts";
 export * from "./pty.ts";
 export * from "./rpc.ts";

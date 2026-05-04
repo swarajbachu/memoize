@@ -25,6 +25,7 @@ export interface ProviderServiceShape {
 
   readonly start: (
     input: StartSessionInput,
+    resumeCursor?: string | null,
   ) => Effect.Effect<
     { readonly sessionId: AgentSessionId },
     ProviderNotAvailableError | AgentSessionStartError

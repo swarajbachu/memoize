@@ -12,6 +12,8 @@ import {
   type AgentEvent,
   type AgentItemId,
   type AgentSessionId,
+  type PermissionDecision,
+  type PermissionKind,
   type StartSessionInput,
 } from "@forkzero/wire";
 
@@ -174,6 +176,63 @@ const translate = (msg: SDKMessage): ReadonlyArray<AgentEvent> => {
 };
 
 /**
+ * Map a Claude SDK tool invocation onto a wire `PermissionKind`. Tools we
+ * don't classify drop into `Other`; the server treats those as auto-allow
+ * for now (logged) so the agent loop isn't stalled by every internal `Read`
+ * or `Glob`. Adding a classification is a one-line change here.
+ */
+const kindForTool = (
+  toolName: string,
+  toolInput: Record<string, unknown>,
+): PermissionKind => {
+  switch (toolName) {
+    case "Bash": {
+      const command = typeof toolInput.command === "string"
+        ? toolInput.command
+        : JSON.stringify(toolInput);
+      return { _tag: "Bash", command };
+    }
+    case "Edit":
+    case "Write":
+    case "MultiEdit":
+    case "NotebookEdit": {
+      const path =
+        typeof toolInput.file_path === "string"
+          ? toolInput.file_path
+          : typeof toolInput.notebook_path === "string"
+            ? (toolInput.notebook_path as string)
+            : "(unknown)";
+      return { _tag: "FileWrite", path };
+    }
+    case "WebFetch":
+    case "WebSearch": {
+      const url =
+        typeof toolInput.url === "string"
+          ? toolInput.url
+          : typeof toolInput.query === "string"
+            ? `search:${toolInput.query as string}`
+            : "(unknown)";
+      return { _tag: "Network", url };
+    }
+    default: {
+      const summary = JSON.stringify(toolInput).slice(0, 120);
+      return { _tag: "Other", tool: toolName, summary };
+    }
+  }
+};
+
+/**
+ * Hook the driver passes into the SDK's `canUseTool`. Returning a
+ * `PermissionDecision` lets the orchestrator (`ProviderService`) plug
+ * `PermissionService.request` in directly without the driver reaching
+ * across modules.
+ */
+export type RequestPermission = (
+  sessionId: AgentSessionId,
+  kind: PermissionKind,
+) => Promise<PermissionDecision>;
+
+/**
  * Spin up a streaming-input Claude conversation. The SDK is driven by an
  * AsyncIterable we push into from `send()`; the SDK's outbound async generator
  * is consumed by a forked daemon that translates messages into wire events
@@ -185,6 +244,10 @@ const translate = (msg: SDKMessage): ReadonlyArray<AgentEvent> => {
  * the spawned `claude` CLI find its own OAuth credentials (macOS keychain
  * entry "Claude Code-credentials" or `~/.claude/.credentials.json`). This
  * is the primary auth path; API keys are a fallback.
+ *
+ * `requestPermission` is the bridge to `PermissionService`. It returns a
+ * decision the caller honors via the SDK's allow/deny contract; the driver
+ * itself stays free of any DB or PubSub wiring.
  */
 export const startClaudeSession = (
   input: StartSessionInput,
@@ -192,6 +255,8 @@ export const startClaudeSession = (
   apiKey: string | null,
   claudeExecutablePath: string | null,
   sessionId: AgentSessionId,
+  requestPermission: RequestPermission,
+  resumeCursor: string | null = null,
 ): Effect.Effect<ClaudeSessionHandle, AgentSessionStartError> =>
   Effect.gen(function* () {
     const events = yield* Mailbox.make<AgentEvent>();
@@ -231,19 +296,29 @@ export const startClaudeSession = (
         : {}),
       ...(input.model !== undefined ? { model: input.model } : {}),
       env: env as Options["env"],
-      // Phase 2 auto-denies tool permission requests; Phase 3 wires real UI.
+      // Bridge the SDK's permission callback to the server-side
+      // `PermissionService`. The renderer's toast eventually fulfills the
+      // promise this awaits.
       canUseTool: async (toolName, toolInput) => {
+        const kind = kindForTool(toolName, toolInput);
         events.unsafeOffer({
           _tag: "PermissionRequest",
           itemId: nextItemId(),
           kind: toolName,
           details: toolInput,
         });
-        return {
-          behavior: "deny",
-          message:
-            "forkzero v2 auto-denies tool permissions; Phase 3 will let you allow this.",
-        };
+        const decision = await requestPermission(sessionId, kind);
+        if (decision._tag === "Deny") {
+          return {
+            behavior: "deny",
+            message: "User denied this tool call.",
+          };
+        }
+        // AllowOnce / AllowForSession / AlwaysAllow → allow. The session
+        // scope is enforced server-side: a second request with the same
+        // (sessionId, kindKey) short-circuits to AllowOnce without
+        // prompting.
+        return { behavior: "allow", updatedInput: toolInput };
       },
     };
 
@@ -253,6 +328,12 @@ export const startClaudeSession = (
       providerId: "claude",
       mode: "sdk",
     });
+
+    // If the caller has a resume cursor, hand it to the SDK before opening
+    // the conversation. Mutually exclusive with `forkSession` per SDK docs.
+    if (resumeCursor !== null) {
+      options.resume = resumeCursor;
+    }
 
     let q: Query;
     try {
@@ -269,10 +350,24 @@ export const startClaudeSession = (
 
     // Pump SDK messages → AgentEvents in a forked daemon. Sessions outlive the
     // start RPC; `close()` is what ends the pump (input close + abort, which
-    // makes the SDK loop terminate).
+    // makes the SDK loop terminate). On the first message that has a
+    // populated `session_id` we surface it as `SessionCursor` so MessageStore
+    // can persist it for resume.
+    let cursorAnnounced = false;
     const pump = Effect.tryPromise({
       try: async () => {
         for await (const msg of q) {
+          if (!cursorAnnounced) {
+            const sid = (msg as { session_id?: unknown }).session_id;
+            if (typeof sid === "string" && sid.length > 0) {
+              cursorAnnounced = true;
+              events.unsafeOffer({
+                _tag: "SessionCursor",
+                cursor: sid,
+                strategy: "claude-session-id",
+              });
+            }
+          }
           const translated = translate(msg);
           for (const ev of translated) {
             events.unsafeOffer(ev);

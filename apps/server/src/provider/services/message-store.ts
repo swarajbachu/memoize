@@ -68,6 +68,10 @@ export interface MessageStoreShape {
     sessionId: SessionId,
   ) => Effect.Effect<void, SessionNotFoundError>;
 
+  readonly resumeSession: (
+    sessionId: SessionId,
+  ) => Effect.Effect<Session, SessionNotFoundError | SessionStartError>;
+
   readonly listMessages: (
     sessionId: SessionId,
   ) => Effect.Effect<ReadonlyArray<Message>, SessionNotFoundError>;
