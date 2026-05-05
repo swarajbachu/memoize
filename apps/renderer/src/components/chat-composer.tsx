@@ -31,6 +31,7 @@ import {
   type BuiltinCommand,
 } from "../composer/builtin-commands.ts";
 import { parseComposerInput } from "../composer/segment-parser.ts";
+import { FileChipHover } from "./composer/file-chip-hover.tsx";
 import { FileTagPopover } from "./composer/file-tag-popover.tsx";
 import { QueueTray } from "./composer/queue-tray.tsx";
 import { SlashCommandPopover } from "./composer/slash-command-popover.tsx";
@@ -95,6 +96,11 @@ export function ChatComposer({ session }: { session: Session }) {
   // time, always sees the current sessionId / send / inFlight without
   // recreating the editor on every render.
   const submitRef = useRef<() => boolean>(() => false);
+  // Same indirection for file drops — the editor extension is bound once
+  // and we want it to call the latest closure with the current sessionId.
+  const filesDroppedRef = useRef<(files: ReadonlyArray<File>) => void>(
+    () => undefined,
+  );
 
   const setModel = useSessionsStore((s) => s.setModel);
   const setRuntimeMode = useSessionsStore((s) => s.setRuntimeMode);
@@ -110,11 +116,13 @@ export function ChatComposer({ session }: { session: Session }) {
 
     const view = createComposerView({
       parent: host,
-      placeholderText: "Send a message…  Enter to send · Shift+Enter for newline",
+      placeholderText:
+        "Ask to make changes at the @ mentioned files or run slash commands, shift enter for next line.",
       callbacks: {
         onSubmit: () => submitRef.current(),
         onChange: (doc) => setHasText(doc.trim().length > 0),
         onTrigger: (t) => setTrigger(t),
+        onFilesDropped: (files) => filesDroppedRef.current(files),
       },
     });
     editorViewRef.current = view;
@@ -260,12 +268,16 @@ export function ChatComposer({ session }: { session: Session }) {
 
   const onDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
     if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
     dragDepthRef.current += 1;
     setIsDragging(true);
   };
   const onDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     if (e.dataTransfer.types.includes("Files")) {
+      // Both calls are required: preventDefault marks the element as a
+      // valid drop target, dropEffect tells the OS what cursor to show.
       e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
     }
   };
   const onDragLeave = () => {
@@ -322,6 +334,7 @@ export function ChatComposer({ session }: { session: Session }) {
   // Keep the keymap-bound submit pointing at the latest closure so it sees
   // the current sessionId after a session switch / re-render.
   submitRef.current = submit;
+  filesDroppedRef.current = (files) => attachImages(files);
 
   return (
     <TooltipProvider>
@@ -358,6 +371,7 @@ export function ChatComposer({ session }: { session: Session }) {
                     <SlashCommandPopover
                       trigger={trigger}
                       view={editorViewRef.current}
+                      sessionId={sessionId}
                       onClose={() => setTrigger(null)}
                     />
                   ) : (
@@ -377,6 +391,10 @@ export function ChatComposer({ session }: { session: Session }) {
                     maxHeight: MAX_HEIGHT,
                   }}
                   onClick={() => editorViewRef.current?.focus()}
+                />
+                <FileChipHover
+                  hostRef={editorHostRef}
+                  projectId={session.projectId}
                 />
                 {inFlight ? (
                   <Tooltip>

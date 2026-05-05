@@ -20,6 +20,13 @@ export type ComposerCallbacks = {
   readonly onSubmit: () => boolean;
   readonly onChange: (doc: string) => void;
   readonly onTrigger: (trigger: ActiveTrigger | null) => void;
+  /**
+   * Called when one or more files are dropped onto the editor surface.
+   * CodeMirror's default drop handler treats file drops as text paste —
+   * we override that so image attachments take the same code path as
+   * paperclip / paste.
+   */
+  readonly onFilesDropped: (files: ReadonlyArray<File>) => void;
 };
 
 export type ComposerCreateParams = {
@@ -58,6 +65,28 @@ export const createComposerView = ({
     ]),
     EditorView.updateListener.of((u) => {
       if (u.docChanged) callbacks.onChange(u.state.doc.toString());
+    }),
+    // File drops: CodeMirror's default handler tries to paste the dropped
+    // payload as text. For image drops that turns into a `file://...`
+    // URL string in the doc — confusing and useless. Catch the drop here
+    // and forward to the host so it can run the same upload pipeline as
+    // paperclip / paste. Returning true tells CM we handled it.
+    EditorView.domEventHandlers({
+      dragover: (event) => {
+        if (event.dataTransfer?.types.includes("Files") === true) {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "copy";
+          return true;
+        }
+        return false;
+      },
+      drop: (event) => {
+        const files = event.dataTransfer?.files;
+        if (files === undefined || files.length === 0) return false;
+        event.preventDefault();
+        callbacks.onFilesDropped(Array.from(files));
+        return true;
+      },
     }),
   ];
 

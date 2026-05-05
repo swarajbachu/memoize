@@ -131,6 +131,18 @@ class ChipWidget extends WidgetType {
     span.dataset.kind = this.meta.kind;
     span.contentEditable = "false";
 
+    // Surface chip metadata as data-attributes so the React-side hover
+    // popover (event-delegated on the composer card) can read them
+    // without re-mounting React inside the CM widget.
+    if (this.meta.kind === "file") {
+      span.dataset.relPath = this.meta.relPath;
+      span.dataset.absPath = this.meta.absPath;
+      span.dataset.entryKind = this.meta.entryKind;
+    } else if (this.meta.kind === "skill") {
+      span.dataset.skillName = this.meta.name;
+      span.dataset.skillScope = this.meta.scope;
+    }
+
     const icon = document.createElement("span");
     icon.className = "fz-chip-icon";
     icon.appendChild(buildIconNode(this.meta));

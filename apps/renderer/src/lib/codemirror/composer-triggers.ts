@@ -56,7 +56,10 @@ const detectTrigger = (
     if (!kind) continue;
     const triggerAbs = start + i;
     const before = triggerAbs === 0 ? "" : doc.sliceString(triggerAbs - 1, triggerAbs);
-    if (triggerAbs !== 0 && !/\s/.test(before)) return null;
+    // A `/` (or `@`) mid-token — e.g. the `/` in `@apps/` — isn't a real
+    // trigger because it isn't preceded by whitespace. Keep walking: there
+    // may still be a valid `@` further left that starts the actual trigger.
+    if (triggerAbs !== 0 && !/\s/.test(before)) continue;
     return {
       kind,
       from: triggerAbs,

@@ -6,6 +6,7 @@ import { GitHandlersLayer } from "./git/handlers.ts";
 import { PingHandlersLayer } from "./ping/handlers.ts";
 import { ProviderHandlersLayer } from "./provider/handlers.ts";
 import { PtyHandlersLayer } from "./pty/handlers.ts";
+import { SkillHandlersLayer } from "./skill/handlers.ts";
 import { WorkspaceHandlersLayer } from "./workspace/handlers.ts";
 
 /**
@@ -22,4 +23,5 @@ export const HandlersLayer = Layer.mergeAll(
   ProviderHandlersLayer,
   FsHandlersLayer,
   AttachmentHandlersLayer,
+  SkillHandlersLayer,
 );

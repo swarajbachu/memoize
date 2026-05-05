@@ -36,6 +36,7 @@
       "@types/react-dom": "19.2.2",
       "effect": "^3.21.0",
       "eslint": "^9.39.1",
+      "fuzzysort": "^3.1.0",
       "prettier": "^3.7.4",
       "react": "^19.2.0",
       "react-dom": "^19.2.0",

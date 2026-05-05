@@ -37,6 +37,7 @@
     "clsx": "^2.1.1",
     "diff": "^9.0.0",
     "effect": "catalog:",
+    "fuzzysort": "catalog:",
     "lucide-react": "^1.14.0",
     "material-icon-theme": "^5.30.0",
     "react": "catalog:",

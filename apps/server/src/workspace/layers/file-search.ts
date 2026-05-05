@@ -2,6 +2,7 @@ import * as path from "node:path";
 
 import { FileSystem, Path } from "@effect/platform";
 import { Effect, Layer } from "effect";
+import fuzzysort from "fuzzysort";
 
 import { FsFolderNotFoundError } from "@forkzero/wire";
 
@@ -43,18 +44,6 @@ const DEFAULT_LIMIT = 20;
 const toForwardSlash = (p: string): string =>
   path.sep === "/" ? p : p.split(path.sep).join("/");
 
-const matches = (
-  needle: string,
-  basename: string,
-  relPath: string,
-): boolean => {
-  if (!needle) return true;
-  const n = needle.toLowerCase();
-  return (
-    basename.toLowerCase().includes(n) || relPath.toLowerCase().includes(n)
-  );
-};
-
 export const FileSearchServiceLive = Layer.effect(
   FileSearchService,
   Effect.gen(function* () {
@@ -75,7 +64,13 @@ export const FileSearchServiceLive = Layer.effect(
         const cap = limit && limit > 0 ? limit : DEFAULT_LIMIT;
         const rootAbs = pathSvc.resolve(folder.path);
 
-        const hits: FileSearchHit[] = [];
+        // Collect every candidate (subject to depth/visit caps), then rank
+        // with fuzzysort. The substring matcher we used previously couldn't
+        // span path segments — typing `chatcomp` wouldn't match
+        // `apps/renderer/src/components/chat-composer.tsx`. fuzzysort's
+        // boundary-aware ranking handles that and keeps the result count
+        // small enough that scoring everything is cheap.
+        const candidates: FileSearchHit[] = [];
         let visited = 0;
 
         const walk = (
@@ -84,21 +79,19 @@ export const FileSearchServiceLive = Layer.effect(
           depth: number,
         ): Effect.Effect<void> =>
           Effect.gen(function* () {
-            if (hits.length >= cap || visited >= MAX_VISITED) return;
+            if (visited >= MAX_VISITED) return;
             if (depth > MAX_DEPTH) return;
 
             const names = yield* fs
               .readDirectory(absDir)
               .pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<string>));
 
-            // Sort to keep results stable across runs and so directories
-            // are visited in a predictable order.
             const sorted = [...names].sort((a, b) =>
               a.localeCompare(b, undefined, { sensitivity: "base" }),
             );
 
             for (const name of sorted) {
-              if (hits.length >= cap || visited >= MAX_VISITED) return;
+              if (visited >= MAX_VISITED) return;
               if (SKIP_DIRS.has(name)) continue;
 
               visited++;
@@ -110,13 +103,11 @@ export const FileSearchServiceLive = Layer.effect(
               const kind =
                 stat.value.type === "Directory" ? "directory" : "file";
 
-              if (matches(query, name, childRel)) {
-                hits.push({
-                  relPath: toForwardSlash(childRel),
-                  absPath: childAbs,
-                  kind,
-                });
-              }
+              candidates.push({
+                relPath: toForwardSlash(childRel),
+                absPath: childAbs,
+                kind,
+              });
 
               if (kind === "directory") {
                 yield* walk(childAbs, childRel, depth + 1);
@@ -125,7 +116,18 @@ export const FileSearchServiceLive = Layer.effect(
           });
 
         yield* walk(rootAbs, "", 0);
-        return hits;
+
+        // Empty query: just return the first `cap` candidates as a "what's
+        // here" view. Fuzzysort's `all: true` would do this but we also want
+        // a stable filesystem order which the walker already provides.
+        if (!query) return candidates.slice(0, cap);
+
+        const ranked = fuzzysort.go(query, candidates, {
+          key: "relPath",
+          limit: cap,
+          threshold: 0.3,
+        });
+        return ranked.map((r) => r.obj);
       });
 
     return { search } satisfies FileSearchServiceShape;

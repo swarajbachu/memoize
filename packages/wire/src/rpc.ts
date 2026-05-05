@@ -50,6 +50,7 @@ import {
   SessionStatusStreamRpc,
   SessionUnarchiveRpc,
 } from "./session.ts";
+import { SkillListRpc, SkillStreamRpc } from "./skill.ts";
 import {
   WorkspaceAddRpc,
   WorkspaceGetSelectedRpc,
@@ -112,6 +113,8 @@ export const ForkzeroRpcs = RpcGroup.make(
   MessagesInterruptRpc,
   AttachmentUploadRpc,
   AttachmentTouchRpc,
+  SkillListRpc,
+  SkillStreamRpc,
   PermissionRequestsRpc,
   PermissionDecideRpc,
   PermissionListPendingRpc,

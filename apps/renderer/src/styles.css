@@ -329,4 +329,19 @@ body,
   .fz-chip[data-kind="image"] .fz-chip-divider {
     display: none;
   }
+  /* Skill chips read as a different category from file chips — accent
+     border + sparkles glyph tint. */
+  .fz-chip[data-kind="skill"] {
+    border-color: hsl(var(--accent) / 0.6);
+    background-color: hsl(var(--accent) / 0.18);
+  }
+  .fz-chip[data-kind="skill"] .fz-chip-iconsvg {
+    color: hsl(var(--accent-foreground));
+  }
+  .fz-chip[data-kind="file"] {
+    cursor: pointer;
+  }
+  .fz-chip[data-kind="file"]:hover {
+    background-color: hsl(var(--muted) / 0.7);
+  }
 }

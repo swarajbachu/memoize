@@ -18,6 +18,8 @@ import { MessageStoreLive } from "./provider/layers/message-store.ts";
 import { PermissionServiceLive } from "./provider/layers/permission-service.ts";
 import { ProviderServiceLive } from "./provider/layers/provider-service.ts";
 import { PtyServiceLive } from "./pty/layers/pty-service.ts";
+import { SkillBridgeLive } from "./skill/layers/skill-bridge.ts";
+import { SkillDiscoveryServiceLive } from "./skill/layers/skill-discovery.ts";
 import { FileSearchServiceLive } from "./workspace/layers/file-search.ts";
 import { WorkspaceServiceLive } from "./workspace/layers/workspace-service.ts";
 import { FolderPicker } from "./workspace/services/folder-picker.ts";
@@ -142,6 +144,19 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(NodeContext.layer),
   );
 
+  // SkillBridge surfaces the user's per-provider skill library to the
+  // composer's slash popover. Discovery walks disk; the bridge caches per
+  // (provider, projectCwd) and re-emits on watcher fire so editing a
+  // SKILL.md updates the popover within ~2 s.
+  const SkillDiscoveryLayer = SkillDiscoveryServiceLive.pipe(
+    Layer.provide(NodeContext.layer),
+  );
+  const SkillBridgeLayer = SkillBridgeLive.pipe(
+    Layer.provide(SkillDiscoveryLayer),
+    Layer.provide(MessageStoreLayer),
+    Layer.provide(WorkspaceLayer),
+  );
+
   const Handlers = HandlersLayer.pipe(
     Layer.provide(WorkspaceLayer),
     Layer.provide(PtyServiceLive),
@@ -152,6 +167,7 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(MessageStoreLayer),
     Layer.provide(PermissionLayer),
     Layer.provide(AttachmentLayer),
+    Layer.provide(SkillBridgeLayer),
     Layer.provide(FolderPickerLayer),
   );
 
