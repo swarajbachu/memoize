@@ -8,10 +8,11 @@ import {
   Square,
   Upload,
 } from "lucide-react";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   MODELS_BY_PROVIDER,
+  type Message,
   type ProviderId,
   type RuntimeMode,
   type Session,
@@ -472,6 +473,7 @@ export function ChatComposer({ session }: { session: Session }) {
                   sessionId={sessionId}
                   current={session.runtimeMode}
                 />
+                <SessionTimer sessionId={sessionId} inFlight={inFlight} />
               </div>
             </FrameFooter>
           </Frame>
@@ -666,3 +668,83 @@ function ReasoningPicker({ sessionId }: { sessionId: SessionId }) {
   );
 }
 
+const formatCoarse = (ms: number): string => {
+  const totalSec = Math.floor(ms / 1000);
+  if (totalSec < 60) return `${totalSec}s`;
+  const min = Math.floor(totalSec / 60);
+  if (min < 60) return `${min}m`;
+  const hours = Math.floor(min / 60);
+  const mins = min - hours * 60;
+  return mins === 0 ? `${hours}h` : `${hours}h ${mins}m`;
+};
+
+/**
+ * Sum of every turn's duration in this session — start = user message,
+ * end = last message of that turn (or `now` for the in-flight turn). Idle
+ * gaps between a finished assistant reply and the next user prompt are
+ * NOT counted, so an old session that's been sitting open doesn't claim
+ * "47h" of work.
+ */
+function SessionTimer({
+  sessionId,
+  inFlight,
+}: {
+  sessionId: SessionId;
+  inFlight: boolean;
+}) {
+  const messages = useMessagesStore(
+    (s) => s.messagesBySession[sessionId] ?? EMPTY_MESSAGES,
+  );
+
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!inFlight) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [inFlight]);
+
+  const totalElapsed = useMemo(() => {
+    let total = 0;
+    let turnStart: number | null = null;
+    let turnLastMs: number | null = null;
+    let turnIsLast = false;
+
+    const closeTurn = (endOverride?: number) => {
+      if (turnStart === null) return;
+      const end = endOverride ?? turnLastMs ?? turnStart;
+      total += Math.max(0, end - turnStart);
+    };
+
+    for (let i = 0; i < messages.length; i++) {
+      const m = messages[i]!;
+      if (m.content._tag === "user") {
+        if (turnStart !== null) closeTurn();
+        turnStart = m.createdAt.getTime();
+        turnLastMs = turnStart;
+        turnIsLast = i === messages.length - 1;
+      } else if (turnStart !== null) {
+        turnLastMs = m.createdAt.getTime();
+        turnIsLast = i === messages.length - 1;
+      }
+    }
+    if (turnStart !== null) {
+      // The in-flight turn keeps growing until the next message lands; for
+      // a completed last turn we freeze at its final message timestamp.
+      closeTurn(inFlight && turnIsLast !== false ? now : undefined);
+    }
+    return total;
+  }, [messages, inFlight, now]);
+
+  if (messages.length === 0) return null;
+
+  return (
+    <span
+      className="rounded-md border border-border/60 bg-background px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground"
+      title="Total time spent across all turns in this session"
+    >
+      {formatCoarse(totalElapsed)}
+    </span>
+  );
+}
+
+const EMPTY_MESSAGES: ReadonlyArray<Message> = [];

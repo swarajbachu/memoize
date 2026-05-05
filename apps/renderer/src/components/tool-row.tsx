@@ -27,6 +27,37 @@ import {
 
 type IconHandle = Parameters<typeof HugeiconsIcon>[0]["icon"];
 
+/**
+ * Map a tool name to the same Hugeicon used in its expanded ToolRow. Other
+ * surfaces (e.g. the turn-summary icon preview) reuse this so the icons
+ * stay in lockstep across the timeline.
+ */
+export const iconForTool = (tool: string): IconHandle => {
+  switch (tool) {
+    case "Bash":
+      return TerminalIcon;
+    case "Read":
+      return File01Icon;
+    case "Edit":
+    case "Write":
+    case "MultiEdit":
+      return PencilEdit01Icon;
+    case "Grep":
+    case "Glob":
+      return SearchIcon;
+    case "Task":
+    case "Agent":
+      return Robot01Icon;
+    case "WebFetch":
+    case "WebSearch":
+      return GlobeIcon;
+    case "TodoWrite":
+      return CheckListIcon;
+    default:
+      return Wrench01Icon;
+  }
+};
+
 interface ToolResult {
   readonly output: unknown;
   readonly isError: boolean;

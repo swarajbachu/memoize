@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Fiber, Stream } from "effect";
 import {
   Archive,
   ArchiveRestore,
@@ -30,6 +30,7 @@ import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
 import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
 import { cn, formatCompactNumber } from "~/lib/utils";
 import { getRpcClient } from "../lib/rpc-client.ts";
+import { useMessagesStore } from "../store/messages.ts";
 import { usePrStateStore } from "../store/pr-state.ts";
 import { useProvidersStore } from "../store/providers.ts";
 import { useSessionsStore } from "../store/sessions.ts";
@@ -39,6 +40,7 @@ import { useWorkspaceStore } from "../store/workspace.ts";
 import { BranchIcon, type BranchState } from "./branch-icon.tsx";
 import { PermissionsInspector } from "./permissions-inspector.tsx";
 import { ProviderIcon } from "./provider-icons.tsx";
+import { GradientDescent } from "./ui/gradient-descent.tsx";
 
 const initialsOf = (name: string): string => {
   const parts = name.split(/[-_.\s]+/).filter(Boolean);
@@ -557,6 +559,49 @@ function SessionRow({ session }: { session: Session }) {
   const unarchive = useSessionsStore((s) => s.unarchive);
   const remove = useSessionsStore((s) => s.remove);
   const prInfo = usePrStateStore((s) => s.byFolder[session.projectId] ?? null);
+  // Live "agent is working" signal — replaces the branch icon while running
+  // so users scanning the sidebar see at a glance which sessions are busy
+  // even when they're focused on a different chat. The messages store only
+  // maintains streamStatus for the active session, so each SessionRow owns
+  // its own subscription and writes back into the same map. (Active-session
+  // double-writes converge harmlessly.)
+  const isRunning = useMessagesStore(
+    (s) => s.runningBySession[session.id] === true,
+  );
+  useEffect(() => {
+    let cancelled = false;
+    let fiber: Fiber.RuntimeFiber<unknown, unknown> | null = null;
+    void (async () => {
+      try {
+        const client = await getRpcClient();
+        if (cancelled) return;
+        fiber = Effect.runFork(
+          Stream.runForEach(
+            client.session.streamStatus({ sessionId: session.id }),
+            (event) =>
+              Effect.sync(() => {
+                if (cancelled) return;
+                useMessagesStore.setState((s) => ({
+                  runningBySession: {
+                    ...s.runningBySession,
+                    [session.id]: event.status === "running",
+                  },
+                }));
+              }),
+          ),
+        );
+      } catch {
+        // Best-effort — sidebar still renders the branch icon if the
+        // status stream is unavailable.
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (fiber !== null) {
+        void Effect.runPromise(Fiber.interrupt(fiber)).catch(() => {});
+      }
+    };
+  }, [session.id]);
 
   const isSelected = selectedSessionId === session.id;
   const isArchived = session.archivedAt !== null;
@@ -634,11 +679,31 @@ function SessionRow({ session }: { session: Session }) {
         )}
         title={`${session.providerId} · ${session.model}`}
       >
-        <BranchIcon
-          state={branchState}
-          selected={isSelected}
-          className="ml-3"
-        />
+        {isRunning ? (
+          <span
+            className={cn(
+              "ml-3 inline-flex size-3.5 shrink-0 items-center justify-center",
+              isSelected
+                ? "text-sidebar-accent-foreground"
+                : "text-foreground",
+            )}
+            aria-label="Agent is working"
+            title="Agent is working"
+          >
+            <GradientDescent
+              dotSize={2}
+              cellPadding={0.5}
+              speed={1.4}
+              color="currentColor"
+            />
+          </span>
+        ) : (
+          <BranchIcon
+            state={branchState}
+            selected={isSelected}
+            className="ml-3"
+          />
+        )}
         <span className="min-w-0 flex-1 truncate">{session.title}</span>
         {/* Right-side slot: idle row shows diff stats (if PR open/closed) or
             timestamp (no PR). On hover the slot swaps to a single Archive

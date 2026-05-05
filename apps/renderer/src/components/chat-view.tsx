@@ -1,5 +1,12 @@
 import { MessageSquare } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import type { AgentItemId, Message, SessionId } from "@forkzero/wire";
 
@@ -7,6 +14,7 @@ import { useMessagesStore } from "../store/messages.ts";
 import { useSessionsStore } from "../store/sessions.ts";
 import { useSkillsStore } from "../store/skills.ts";
 import { MessageRow, type ToolResultRecord } from "./message-row.tsx";
+import { TurnSummary } from "./turn-summary.tsx";
 import { GradientDescent } from "./ui/gradient-descent.tsx";
 
 const NEAR_BOTTOM_PX = 80;
@@ -72,6 +80,29 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
   // have a preceding tool_use in this transcript so true orphans (e.g. a
   // dropped tool_use event) still fall through to a standalone error row
   // in MessageRow rather than disappearing silently.
+  // Split the flat message stream into turns: each turn is one user message
+  // (or null for an open response with no preceding user msg) plus every
+  // assistant / thinking / tool message that follows until the next user
+  // message. Used to wrap completed turns in a TurnSummary card.
+  const turns = useMemo(() => {
+    const out: Array<{
+      user: Message | null;
+      body: Message[];
+    }> = [];
+    let current: { user: Message | null; body: Message[] } | null = null;
+    for (const m of messages) {
+      if (m.content._tag === "user") {
+        if (current !== null) out.push(current);
+        current = { user: m, body: [] };
+      } else {
+        if (current === null) current = { user: null, body: [] };
+        current.body.push(m);
+      }
+    }
+    if (current !== null) out.push(current);
+    return out;
+  }, [messages]);
+
   const resultsByItemId = useMemo(() => {
     const seenUseIds = new Set<AgentItemId>();
     const map = new Map<AgentItemId, ToolResultRecord>();
@@ -111,16 +142,48 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
         </div>
       ) : (
         <div className="flex flex-col py-2">
-          {messages.map((message) => (
-            <MessageRow
-              key={message.id}
-              message={message}
-              resultsByItemId={resultsByItemId}
-            />
-          ))}
-          {inFlight && (
-            <WorkingRow messages={messages} />
-          )}
+          {turns.map((turn, idx) => {
+            const isLastTurn = idx === turns.length - 1;
+            const isLive = inFlight && isLastTurn;
+            const hasToolCalls = turn.body.some(
+              (m) => m.content._tag === "tool_use",
+            );
+            // Only collapse into a summary when there's a final assistant
+            // message worth showing as the body — otherwise a turn with
+            // just tool calls would lose its content behind the accordion.
+            const hasFinalText = turn.body.some(
+              (m) =>
+                m.content._tag === "assistant" &&
+                m.content.text.trim().length > 0,
+            );
+            const showSummary = !isLive && hasToolCalls && hasFinalText;
+            const turnKey = turn.user?.id ?? `turn-${idx}`;
+            return (
+              <Fragment key={turnKey}>
+                {turn.user !== null ? (
+                  <MessageRow
+                    message={turn.user}
+                    resultsByItemId={resultsByItemId}
+                  />
+                ) : null}
+                {showSummary ? (
+                  <TurnSummary
+                    body={turn.body}
+                    resultsByItemId={resultsByItemId}
+                  />
+                ) : (
+                  turn.body.map((m) => (
+                    <MessageRow
+                      key={m.id}
+                      message={m}
+                      resultsByItemId={resultsByItemId}
+                    />
+                  ))
+                )}
+              </Fragment>
+            );
+          })}
+          {inFlight && <WorkingRow messages={messages} />}
         </div>
       )}
       {error !== null && (
@@ -155,6 +218,8 @@ function pickDifferent(current: Pattern | null): Pattern {
 }
 
 function WorkingRow({ messages }: { messages: ReadonlyArray<Message> }) {
+  // Anchor to the most recent user message — we want the live "current turn"
+  // elapsed time beside the loader, not the session-wide total.
   const anchorMs = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
       const m = messages[i]!;
