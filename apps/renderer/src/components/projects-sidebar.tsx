@@ -27,11 +27,7 @@ import {
 
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
-import {
-  Tooltip,
-  TooltipPopup,
-  TooltipTrigger,
-} from "~/components/ui/tooltip";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn, formatCompactNumber } from "~/lib/utils";
 import { getRpcClient } from "../lib/rpc-client.ts";
 import { useMessagesStore } from "../store/messages.ts";
@@ -158,7 +154,7 @@ export function ProjectsSidebar() {
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
 
   return (
-    <aside className="flex h-full min-h-0 w-full flex-col bg-sidebar/80 backdrop-blur-3xl text-sidebar-foreground">
+    <aside className="flex h-full min-h-0 w-full flex-col backdrop-blur-3xl text-sidebar-foreground">
       <div className="flex items-center justify-between px-3 py-2 text-xs text-muted-foreground">
         <span>Projects</span>
         <Tooltip>

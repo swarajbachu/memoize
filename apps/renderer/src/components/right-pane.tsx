@@ -1,11 +1,4 @@
-import {
-  CircleCheck,
-  CircleDot,
-  FolderTree,
-  Loader2,
-  TerminalSquare,
-  XCircle,
-} from "lucide-react";
+import { CircleDot, FolderTree, Loader2, TerminalSquare } from "lucide-react";
 import { useState } from "react";
 
 import { usePrStateStore } from "../store/pr-state.ts";
@@ -43,15 +36,17 @@ export function RightPane() {
   );
   if (pr && pr.state === "open" && !pr.isDraft) {
     if (pr.checks === "pending")
-      checksGlyph = <Loader2 className="size-3.5 animate-spin text-amber-300" />;
+      checksGlyph = (
+        <Loader2 className="size-3.5 animate-spin text-amber-300" />
+      );
     else if (pr.checks === "failure")
-      checksGlyph = <XCircle className="size-3.5 text-red-400" />;
+      checksGlyph = <span className="size-2 rounded-full bg-red-400" />;
     else if (pr.checks === "success")
-      checksGlyph = <CircleCheck className="size-3.5 text-emerald-400" />;
+      checksGlyph = <span className="size-2 rounded-full bg-emerald-400" />;
   }
 
   return (
-    <aside className="flex h-full min-h-0 w-full flex-col bg-sidebar/40">
+    <aside className="flex h-full min-h-0 w-full flex-col">
       {selected ? <RightPaneHeader projectName={selected.name} /> : null}
       <div className="flex h-9 shrink-0 items-center gap-0.5 border-b border-border px-1 text-xs">
         <TabButton
