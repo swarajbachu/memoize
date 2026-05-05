@@ -8,11 +8,10 @@ import {
   Square,
   Upload,
 } from "lucide-react";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 
 import {
   MODELS_BY_PROVIDER,
-  type Message,
   type ProviderId,
   type RuntimeMode,
   type Session,
@@ -69,9 +68,6 @@ const MIN_HEIGHT = 56;
 const MAX_HEIGHT = 240;
 const MAX_ATTACHMENTS_PER_TURN = 20;
 
-// Stable empty-array reference; see chat-view.tsx for rationale.
-const EMPTY_MESSAGES: ReadonlyArray<Message> = [];
-
 type ReasoningLevel = "low" | "medium" | "high";
 const REASONING_LEVELS: ReadonlyArray<ReasoningLevel> = [
   "low",
@@ -81,9 +77,6 @@ const REASONING_LEVELS: ReadonlyArray<ReasoningLevel> = [
 
 export function ChatComposer({ session }: { session: Session }) {
   const sessionId: SessionId = session.id;
-  const messages = useMessagesStore(
-    (s) => s.messagesBySession[sessionId] ?? EMPTY_MESSAGES,
-  );
   const inFlight = useMessagesStore(
     (s) => s.runningBySession[sessionId] === true,
   );
@@ -420,7 +413,7 @@ export function ChatComposer({ session }: { session: Session }) {
                           type="button"
                           onClick={() => void interrupt(sessionId)}
                           aria-label="Interrupt"
-                          className="flex size-8 shrink-0 self-end items-center justify-center rounded-lg bg-destructive text-destructive-foreground transition-opacity hover:opacity-90"
+                          className="flex size-8 shrink-0 self-end items-center justify-center rounded-lg border border-border/60 bg-background text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
                         >
                           <Square className="size-3.5" />
                         </button>
@@ -479,7 +472,6 @@ export function ChatComposer({ session }: { session: Session }) {
                   sessionId={sessionId}
                   current={session.runtimeMode}
                 />
-                <TurnTimer messages={messages} inFlight={inFlight} />
               </div>
             </FrameFooter>
           </Frame>
@@ -674,62 +666,3 @@ function ReasoningPicker({ sessionId }: { sessionId: SessionId }) {
   );
 }
 
-const formatElapsed = (ms: number): string => {
-  const totalSec = ms / 1000;
-  if (totalSec < 60) return `${totalSec.toFixed(1)}s`;
-  const min = Math.floor(totalSec / 60);
-  const sec = totalSec - min * 60;
-  return `${min}m ${sec.toFixed(1)}s`;
-};
-
-/**
- * Live elapsed time for the current turn. Anchors to the most recent user
- * message; ticks while the turn is in flight, then freezes the final value
- * once the assistant lands so the user can see how long the turn took.
- */
-function TurnTimer({
-  messages,
-  inFlight,
-}: {
-  messages: ReadonlyArray<Message>;
-  inFlight: boolean;
-}) {
-  const anchorMs = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i]!;
-      if (m.content._tag === "user") return m.createdAt.getTime();
-    }
-    return null;
-  }, [messages]);
-
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!inFlight) return;
-    const id = window.setInterval(() => setNow(Date.now()), 100);
-    return () => window.clearInterval(id);
-  }, [inFlight]);
-
-  if (anchorMs === null) {
-    return <span className="text-[10px] text-muted-foreground">idle</span>;
-  }
-
-  // Freeze on the final assistant/tool-result timestamp once the turn ends, so
-  // the displayed value matches the actual turn duration instead of "time
-  // since user spoke".
-  const endMs = inFlight
-    ? now
-    : (messages[messages.length - 1]?.createdAt.getTime() ?? now);
-  const elapsed = Math.max(0, endMs - anchorMs);
-
-  return (
-    <span
-      className={`tabular-nums text-[10px] ${
-        inFlight ? "text-foreground" : "text-muted-foreground"
-      }`}
-      title={inFlight ? "Time on the current turn" : "Last turn duration"}
-    >
-      {inFlight ? "● " : ""}
-      {formatElapsed(elapsed)}
-    </span>
-  );
-}

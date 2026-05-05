@@ -1,0 +1,10 @@
+@keyframes gradient-descent {
+  0%, 100% { opacity: 0.16; }
+  12%      { opacity: 1; }
+  30%      { opacity: 0.16; }
+}
+
+.loader :global(.dot) {
+  animation: gradient-descent calc(1.4s / var(--speed, 1)) linear infinite;
+  animation-delay: calc(var(--diag, 0) * 120ms / var(--speed, 1));
+}

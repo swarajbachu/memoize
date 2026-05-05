@@ -1,0 +1,10 @@
+@keyframes token-stream {
+  0%, 100% { opacity: 0.16; }
+  10%      { opacity: 1; }
+  25%      { opacity: 0.16; }
+}
+
+.loader :global(.dot) {
+  animation: token-stream calc(2s / var(--speed, 1)) linear infinite;
+  animation-delay: calc(var(--col, 0) * 320ms / var(--speed, 1));
+}

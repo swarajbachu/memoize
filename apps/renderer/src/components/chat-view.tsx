@@ -1,5 +1,5 @@
 import { MessageSquare } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import type { AgentItemId, Message, SessionId } from "@forkzero/wire";
 
@@ -7,6 +7,7 @@ import { useMessagesStore } from "../store/messages.ts";
 import { useSessionsStore } from "../store/sessions.ts";
 import { useSkillsStore } from "../store/skills.ts";
 import { MessageRow, type ToolResultRecord } from "./message-row.tsx";
+import { GradientDescent } from "./ui/gradient-descent.tsx";
 
 const NEAR_BOTTOM_PX = 80;
 
@@ -24,6 +25,9 @@ const EMPTY_MESSAGES: ReadonlyArray<Message> = [];
 export function ChatView({ sessionId }: { sessionId: SessionId }) {
   const messages = useMessagesStore(
     (s) => s.messagesBySession[sessionId] ?? EMPTY_MESSAGES,
+  );
+  const inFlight = useMessagesStore(
+    (s) => s.runningBySession[sessionId] === true,
   );
   const error = useMessagesStore((s) => s.errorBySession[sessionId] ?? null);
   const hydrate = useMessagesStore((s) => s.hydrate);
@@ -114,6 +118,9 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
               resultsByItemId={resultsByItemId}
             />
           ))}
+          {inFlight && (
+            <WorkingRow messages={messages} />
+          )}
         </div>
       )}
       {error !== null && (
@@ -121,6 +128,63 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
           {error}
         </div>
       )}
+    </div>
+  );
+}
+
+const formatElapsed = (ms: number): string => {
+  const totalSec = ms / 1000;
+  if (totalSec < 60) return `${totalSec.toFixed(1)}s`;
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec - min * 60;
+  return `${min}m ${sec.toFixed(1)}s`;
+};
+
+const PATTERNS = [
+  "frame",
+  "corners",
+  "checker",
+  "x",
+  "full",
+] as const;
+type Pattern = (typeof PATTERNS)[number];
+
+function pickDifferent(current: Pattern | null): Pattern {
+  const candidates = PATTERNS.filter((p) => p !== current);
+  return candidates[Math.floor(Math.random() * candidates.length)]!;
+}
+
+function WorkingRow({ messages }: { messages: ReadonlyArray<Message> }) {
+  const anchorMs = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i]!;
+      if (m.content._tag === "user") return m.createdAt.getTime();
+    }
+    return null;
+  }, [messages]);
+
+  const [now, setNow] = useState(() => Date.now());
+  const [pattern, setPattern] = useState<Pattern>(() => pickDifferent(null));
+  useEffect(() => {
+    const tickId = window.setInterval(() => setNow(Date.now()), 100);
+    const patternId = window.setInterval(
+      () => setPattern((prev) => pickDifferent(prev)),
+      2200,
+    );
+    return () => {
+      window.clearInterval(tickId);
+      window.clearInterval(patternId);
+    };
+  }, []);
+
+  const elapsed = anchorMs === null ? 0 : Math.max(0, now - anchorMs);
+
+  return (
+    <div className="flex items-center gap-2 px-4 py-2 text-[11px] text-muted-foreground">
+      <div data-pattern={pattern}>
+        <GradientDescent dotSize={2.5} cellPadding={0.75} speed={1.2} />
+      </div>
+      <span className="tabular-nums">{formatElapsed(elapsed)}</span>
     </div>
   );
 }

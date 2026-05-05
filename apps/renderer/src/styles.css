@@ -3,6 +3,8 @@
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/inter";
 @import "@fontsource-variable/geist-mono";
+@import "./components/ui/loaders/grid.css";
+@import "./components/ui/loaders/reduced-motion.css";
 
 @custom-variant dark (&:is(.dark *));
 
