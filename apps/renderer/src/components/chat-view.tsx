@@ -5,6 +5,7 @@ import type { AgentItemId, Message, SessionId } from "@forkzero/wire";
 
 import { useMessagesStore } from "../store/messages.ts";
 import { useSessionsStore } from "../store/sessions.ts";
+import { useSkillsStore } from "../store/skills.ts";
 import { MessageRow, type ToolResultRecord } from "./message-row.tsx";
 
 const NEAR_BOTTOM_PX = 80;
@@ -26,6 +27,7 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
   );
   const error = useMessagesStore((s) => s.errorBySession[sessionId] ?? null);
   const hydrate = useMessagesStore((s) => s.hydrate);
+  const hydrateSkills = useSkillsStore((s) => s.hydrate);
 
   const session = useSessionsStore((s) => {
     for (const list of Object.values(s.sessionsByProject)) {
@@ -40,7 +42,8 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
 
   useEffect(() => {
     void hydrate(sessionId);
-  }, [sessionId, hydrate]);
+    void hydrateSkills(sessionId);
+  }, [sessionId, hydrate, hydrateSkills]);
 
   // Track whether the user is near the bottom of the timeline; if they
   // scroll up, we stop auto-scrolling so reading older context isn't

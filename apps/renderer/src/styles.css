@@ -106,34 +106,77 @@ body,
     }
   }
   @keyframes caret-blink {
-    0%, 70%, to { opacity: 1; }
-    20%, 50% { opacity: 0; }
+    0%,
+    70%,
+    to {
+      opacity: 1;
+    }
+    20%,
+    50% {
+      opacity: 0;
+    }
   }
   @keyframes toast-success-odd {
-    0% { scale: 1; }
-    30% { scale: 1.025; }
-    60% { scale: 0.99; }
-    100% { scale: 1; }
+    0% {
+      scale: 1;
+    }
+    30% {
+      scale: 1.025;
+    }
+    60% {
+      scale: 0.99;
+    }
+    100% {
+      scale: 1;
+    }
   }
   @keyframes toast-error-odd {
-    0% { translate: 0 0; }
-    25% { translate: -3px 0; }
-    50% { translate: 3px 0; }
-    75% { translate: -3px 0; }
-    100% { translate: 0 0; }
+    0% {
+      translate: 0 0;
+    }
+    25% {
+      translate: -3px 0;
+    }
+    50% {
+      translate: 3px 0;
+    }
+    75% {
+      translate: -3px 0;
+    }
+    100% {
+      translate: 0 0;
+    }
   }
   @keyframes toast-success-even {
-    0% { scale: 1; }
-    30% { scale: 1.025; }
-    60% { scale: 0.99; }
-    100% { scale: 1; }
+    0% {
+      scale: 1;
+    }
+    30% {
+      scale: 1.025;
+    }
+    60% {
+      scale: 0.99;
+    }
+    100% {
+      scale: 1;
+    }
   }
   @keyframes toast-error-even {
-    0% { translate: 0 0; }
-    25% { translate: -3px 0; }
-    50% { translate: 3px 0; }
-    75% { translate: -3px 0; }
-    100% { translate: 0 0; }
+    0% {
+      translate: 0 0;
+    }
+    25% {
+      translate: -3px 0;
+    }
+    50% {
+      translate: 3px 0;
+    }
+    75% {
+      translate: -3px 0;
+    }
+    100% {
+      translate: 0 0;
+    }
   }
 }
 
@@ -267,7 +310,83 @@ body,
        components paint where opacity is needed. */
     background-color: transparent;
   }
-  code, kbd, samp, pre {
+  code,
+  kbd,
+  samp,
+  pre {
     font-family: var(--font-mono);
+  }
+}
+
+/* Composer atomic chips. Outlined pill that visually replaces the underlying
+   token (e.g. `@apps/foo.ts`) with an icon + label. Sized to sit on the
+   prose baseline without disturbing line-height. */
+@layer components {
+  .fz-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.15rem 0.55rem 0.15rem 0.2rem;
+    margin: 0 0.15rem;
+    border: 1px solid color-mix(in srgb, var(--border), transparent 40%);
+    border-radius: 0.375rem;
+    background-color: transparent;
+    color: var(--foreground);
+    font-size: 0.85em;
+    line-height: 1.1;
+    vertical-align: -0.25em;
+    user-select: none;
+    white-space: nowrap;
+  }
+  .fz-chip-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.4em;
+    height: 1.4em;
+    border-radius: 0.25rem;
+    background-color: color-mix(in srgb, var(--muted), transparent 50%);
+    flex-shrink: 0;
+  }
+  .fz-chip-iconimg {
+    width: 1em;
+    height: 1em;
+    object-fit: contain;
+  }
+  .fz-chip-iconsvg {
+    display: inline-flex;
+    align-items: center;
+    color: var(--muted-foreground);
+  }
+  .fz-chip-thumb {
+    width: 1.4em;
+    height: 1.4em;
+    object-fit: cover;
+    border-radius: 0.25rem;
+  }
+  .fz-chip-divider {
+    display: none;
+  }
+  .fz-chip-label {
+    color: var(--foreground);
+  }
+  /* Skill chips read as a different category from file chips — accent
+     border + tint. */
+  .fz-chip[data-kind="skill"] {
+    border-color: color-mix(in srgb, var(--accent), transparent 30%);
+  }
+  .fz-chip[data-kind="skill"] .fz-chip-iconsvg {
+    color: var(--accent-foreground);
+  }
+  .fz-chip[data-kind="file"] {
+    cursor: pointer;
+  }
+  .fz-chip[data-kind="file"]:hover,
+  .fz-chip[data-kind="image"]:hover {
+    background-color: color-mix(in srgb, var(--muted), transparent 60%);
+  }
+  /* Image-thumb chips: thumbnail fills the icon slot with no inner bg. */
+  .fz-chip[data-kind="image"] .fz-chip-icon:has(.fz-chip-thumb) {
+    background-color: transparent;
   }
 }

@@ -9,6 +9,7 @@ import {
   AgentSetCredentialRpc,
   AgentStartRpc,
 } from "./agent.ts";
+import { AttachmentTouchRpc, AttachmentUploadRpc } from "./attachment.ts";
 import { FsReadFileRpc, FsTreeRpc, FsWriteFileRpc } from "./fs.ts";
 import {
   GitHeadChangedRpc,
@@ -49,12 +50,14 @@ import {
   SessionStatusStreamRpc,
   SessionUnarchiveRpc,
 } from "./session.ts";
+import { SkillListRpc, SkillStreamRpc } from "./skill.ts";
 import {
   WorkspaceAddRpc,
   WorkspaceGetSelectedRpc,
   WorkspaceListRpc,
   WorkspacePickFolderRpc,
   WorkspaceRemoveRpc,
+  WorkspaceSearchFilesRpc,
   WorkspaceSetSelectedRpc,
 } from "./workspace.ts";
 
@@ -72,6 +75,7 @@ export const ForkzeroRpcs = RpcGroup.make(
   WorkspacePickFolderRpc,
   WorkspaceGetSelectedRpc,
   WorkspaceSetSelectedRpc,
+  WorkspaceSearchFilesRpc,
   PtyOpenRpc,
   PtyWriteRpc,
   PtyResizeRpc,
@@ -107,6 +111,10 @@ export const ForkzeroRpcs = RpcGroup.make(
   MessagesStreamRpc,
   MessagesSendRpc,
   MessagesInterruptRpc,
+  AttachmentUploadRpc,
+  AttachmentTouchRpc,
+  SkillListRpc,
+  SkillStreamRpc,
   PermissionRequestsRpc,
   PermissionDecideRpc,
   PermissionListPendingRpc,
