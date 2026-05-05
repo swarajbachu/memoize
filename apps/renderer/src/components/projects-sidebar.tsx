@@ -27,6 +27,11 @@ import {
 
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
+import {
+  Tooltip,
+  TooltipPopup,
+  TooltipTrigger,
+} from "~/components/ui/tooltip";
 import { cn, formatCompactNumber } from "~/lib/utils";
 import { getRpcClient } from "../lib/rpc-client.ts";
 import { useMessagesStore } from "../store/messages.ts";
@@ -154,19 +159,23 @@ export function ProjectsSidebar() {
 
   return (
     <aside className="flex h-full min-h-0 w-full flex-col bg-sidebar/80 backdrop-blur-3xl text-sidebar-foreground">
-      <div className="flex h-9 items-center justify-between px-3 text-xs uppercase tracking-wide text-muted-foreground [-webkit-app-region:drag]">
-        <span className="ml-16 select-none">forkzero</span>
-      </div>
       <div className="flex items-center justify-between px-3 py-2 text-xs text-muted-foreground">
         <span>Projects</span>
-        <button
-          type="button"
-          onClick={onAddProject}
-          className="rounded p-1 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          aria-label="Add project"
-        >
-          <Plus className="size-3.5" />
-        </button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                onClick={onAddProject}
+                className="rounded p-1 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                aria-label="Add project"
+              >
+                <Plus className="size-3.5" />
+              </button>
+            }
+          />
+          <TooltipPopup>Add project</TooltipPopup>
+        </Tooltip>
       </div>
 
       {(error ?? sessionsError) !== null && (
@@ -208,19 +217,25 @@ function SidebarFooter() {
   const view = useUiStore((s) => s.view);
   return (
     <div className="border-t border-sidebar-border/40 px-2 py-1.5">
-      <button
-        type="button"
-        onClick={() => setView("settings")}
-        className={cn(
-          "flex w-full items-center gap-2 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
-          view === "settings" &&
-            "bg-sidebar-accent/60 text-sidebar-accent-foreground",
-        )}
-        title="Settings"
-      >
-        <Settings className="size-3.5" />
-        <span>Settings</span>
-      </button>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              onClick={() => setView("settings")}
+              className={cn(
+                "flex w-full items-center gap-2 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
+                view === "settings" &&
+                  "bg-sidebar-accent/60 text-sidebar-accent-foreground",
+              )}
+            >
+              <Settings className="size-3.5" />
+              <span>Settings</span>
+            </button>
+          }
+        />
+        <TooltipPopup side="top">Open settings</TooltipPopup>
+      </Tooltip>
     </div>
   );
 }
@@ -454,15 +469,21 @@ function NewSessionButton({ projectId }: { projectId: FolderId }) {
   };
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="rounded p-0.5 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-      aria-label="New chat"
-      title="New chat"
-    >
-      <SquarePen className="size-3.5" />
-    </button>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            onClick={onClick}
+            className="rounded p-0.5 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            aria-label="New chat"
+          >
+            <SquarePen className="size-3.5" />
+          </button>
+        }
+      />
+      <TooltipPopup>New chat</TooltipPopup>
+    </Tooltip>
   );
 }
 

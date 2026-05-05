@@ -17,14 +17,18 @@ import { PermissionToast } from "./components/permission-toast";
 import { ProjectsSidebar } from "./components/projects-sidebar";
 import { RightPane } from "./components/right-pane";
 import { SettingsPage } from "./components/settings-page";
-import { TopBar } from "./components/top-bar.tsx";
+import {
+  TopBarLeft,
+  TopBarMain,
+  TopBarRight,
+} from "./components/top-bar.tsx";
 import { getRpcClient } from "./lib/rpc-client.ts";
 import { usePermissionsStore } from "./store/permissions.ts";
 import { useSessionsStore } from "./store/sessions.ts";
 import { useUiStore } from "./store/ui.ts";
 import { useWorkspaceStore } from "./store/workspace.ts";
 
-const PANEL_GROUP_ID = "forkzero.shell.v2";
+const PANEL_GROUP_ID = "forkzero.shell.v3";
 const PANEL_IDS = ["projects", "main", "files"];
 
 export function App() {
@@ -52,6 +56,8 @@ export function App() {
   const activeMainTab = useUiStore((s) => s.activeMainTab);
   const openFile = useUiStore((s) => s.openFile);
   const closeFileTab = useUiStore((s) => s.closeFileTab);
+  const leftSidebarOpen = useUiStore((s) => s.leftSidebarOpen);
+  const setLeftSidebarOpen = useUiStore((s) => s.setLeftSidebarOpen);
   const rightSidebarOpen = useUiStore((s) => s.rightSidebarOpen);
   const setRightSidebarOpen = useUiStore((s) => s.setRightSidebarOpen);
 
@@ -99,11 +105,18 @@ export function App() {
     storage: typeof window === "undefined" ? undefined : window.localStorage,
   });
 
-  // Drive the right panel's collapsed state from `useUiStore` so the top-bar
-  // toggle button can collapse/expand it. v4 has no `onCollapse` prop — we
-  // peek the imperative handle through `panelRef` and compare against the
-  // store on every render.
+  // Drive the side panels' collapsed state from `useUiStore`. v4 has no
+  // `onCollapse` prop — we peek the imperative handle through `panelRef` and
+  // sync against the store on every render.
+  const leftPanelRef = usePanelRef();
   const rightPanelRef = usePanelRef();
+  useEffect(() => {
+    const panel = leftPanelRef.current;
+    if (panel === null) return;
+    const collapsed = panel.isCollapsed();
+    if (leftSidebarOpen && collapsed) panel.expand();
+    if (!leftSidebarOpen && !collapsed) panel.collapse();
+  }, [leftPanelRef, leftSidebarOpen]);
   useEffect(() => {
     const panel = rightPanelRef.current;
     if (panel === null) return;
@@ -114,81 +127,103 @@ export function App() {
 
   return (
     <TooltipProvider>
-    <div className="dark flex h-dvh max-h-dvh min-h-0 w-screen flex-col overflow-hidden text-foreground">
-      <TopBar folderId={selectedFolderId} />
-      <Group
-        id={PANEL_GROUP_ID}
-        orientation="horizontal"
-        defaultLayout={defaultLayout}
-        onLayoutChanged={onLayoutChanged}
-        className="min-h-0 flex-1"
-      >
-        <Panel id="projects" defaultSize="18%" minSize="180px" maxSize="40%">
-          <ProjectsSidebar />
-        </Panel>
-        <Separator className="w-px bg-border transition-colors hover:bg-foreground/20 active:bg-foreground/30" />
-        <Panel id="main" minSize="30%">
-          <main className="flex h-full min-h-0 min-w-0 flex-col bg-background">
-            {view === "settings" ? (
-              <SettingsPage />
-            ) : (
-              <>
-                <MainTabs
-                  headerLabel={headerLabel}
-                  headerTitle={selectedFolder?.path}
-                  providerId={selectedSession?.providerId}
-                  model={selectedSession?.model}
-                />
-                <div
-                  hidden={activeMainTab !== "chat"}
-                  className="flex min-h-0 flex-1 flex-col"
-                >
-                  {selectedSessionId !== null && selectedSession !== null ? (
-                    <>
-                      <PermissionToast sessionId={selectedSessionId} />
-                      <ChatView sessionId={selectedSessionId} />
-                      <ChatComposer session={selectedSession} />
-                    </>
-                  ) : (
-                    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
-                      <p>
-                        {selectedFolder === null
-                          ? "Add a project on the left to begin."
-                          : "Pick or create a session in the sidebar."}
-                      </p>
-                    </div>
-                  )}
-                </div>
-                {openFile !== null && (
+      <div className="dark flex h-dvh max-h-dvh min-h-0 w-screen overflow-hidden text-foreground">
+        <Group
+          id={PANEL_GROUP_ID}
+          orientation="horizontal"
+          defaultLayout={defaultLayout}
+          onLayoutChanged={onLayoutChanged}
+          className="flex-1"
+        >
+          <Panel
+            id="projects"
+            defaultSize="18%"
+            minSize="180px"
+            maxSize="40%"
+            collapsible
+            collapsedSize="0%"
+            panelRef={leftPanelRef}
+            onResize={(size) => {
+              const open = size.asPercentage > 0;
+              if (open !== leftSidebarOpen) setLeftSidebarOpen(open);
+            }}
+          >
+            <div className="flex h-full min-h-0 flex-col">
+              <TopBarLeft />
+              <div className="flex min-h-0 flex-1 flex-col">
+                <ProjectsSidebar />
+              </div>
+            </div>
+          </Panel>
+          <Separator className="w-px bg-border transition-colors hover:bg-foreground/20 active:bg-foreground/30" />
+          <Panel id="main" minSize="30%">
+            <main className="flex h-full min-h-0 min-w-0 flex-col bg-background">
+              <TopBarMain folderId={selectedFolderId} />
+              {view === "settings" ? (
+                <SettingsPage />
+              ) : (
+                <>
+                  <MainTabs
+                    headerLabel={headerLabel}
+                    headerTitle={selectedFolder?.path}
+                    providerId={selectedSession?.providerId}
+                    model={selectedSession?.model}
+                  />
                   <div
-                    hidden={activeMainTab !== "file"}
+                    hidden={activeMainTab !== "chat"}
                     className="flex min-h-0 flex-1 flex-col"
                   >
-                    <FileEditor />
+                    {selectedSessionId !== null && selectedSession !== null ? (
+                      <>
+                        <PermissionToast sessionId={selectedSessionId} />
+                        <ChatView sessionId={selectedSessionId} />
+                        <ChatComposer session={selectedSession} />
+                      </>
+                    ) : (
+                      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
+                        <p>
+                          {selectedFolder === null
+                            ? "Add a project on the left to begin."
+                            : "Pick or create a session in the sidebar."}
+                        </p>
+                      </div>
+                    )}
                   </div>
-                )}
-              </>
-            )}
-          </main>
-        </Panel>
-        <Separator className="w-px bg-border transition-colors hover:bg-foreground/20 active:bg-foreground/30" />
-        <Panel
-          id="files"
-          defaultSize="22%"
-          minSize="220px"
-          maxSize="45%"
-          collapsible
-          collapsedSize="0%"
-          panelRef={rightPanelRef}
-          onResize={(size) => {
-            const open = size.asPercentage > 0;
-            if (open !== rightSidebarOpen) setRightSidebarOpen(open);
-          }}
-        >
-          <RightPane />
-        </Panel>
-      </Group>
-    </div>
+                  {openFile !== null && (
+                    <div
+                      hidden={activeMainTab !== "file"}
+                      className="flex min-h-0 flex-1 flex-col"
+                    >
+                      <FileEditor />
+                    </div>
+                  )}
+                </>
+              )}
+            </main>
+          </Panel>
+          <Separator className="w-px bg-border transition-colors hover:bg-foreground/20 active:bg-foreground/30" />
+          <Panel
+            id="files"
+            defaultSize="22%"
+            minSize="220px"
+            maxSize="45%"
+            collapsible
+            collapsedSize="0%"
+            panelRef={rightPanelRef}
+            onResize={(size) => {
+              const open = size.asPercentage > 0;
+              if (open !== rightSidebarOpen) setRightSidebarOpen(open);
+            }}
+          >
+            <div className="flex h-full min-h-0 flex-col bg-background">
+              <TopBarRight folderId={selectedFolderId} />
+              <div className="flex min-h-0 flex-1 flex-col">
+                <RightPane />
+              </div>
+            </div>
+          </Panel>
+        </Group>
+      </div>
     </TooltipProvider>
   );
 }

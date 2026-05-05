@@ -5,6 +5,11 @@ import { useWorkspaceStore } from "../store/workspace.ts";
 import { FileTree } from "./file-tree.tsx";
 import { RightPaneHeader } from "./right-pane-header.tsx";
 import { TerminalPane } from "./terminal-pane.tsx";
+import {
+  Tooltip,
+  TooltipPopup,
+  TooltipTrigger,
+} from "./ui/tooltip.tsx";
 
 type Tab = "files" | "terminal";
 
@@ -31,12 +36,14 @@ export function RightPane() {
           onClick={() => setTab("files")}
           icon={<FolderTree className="size-3.5" />}
           label="Files"
+          tooltip="Browse project files"
         />
         <TabButton
           active={tab === "terminal"}
           onClick={() => setTab("terminal")}
           icon={<TerminalSquare className="size-3.5" />}
           label="Terminal"
+          tooltip="Open a terminal in the project root"
         />
       </div>
       <div className="flex min-h-0 flex-1 flex-col">
@@ -67,24 +74,33 @@ function TabButton({
   onClick,
   icon,
   label,
+  tooltip,
 }: {
   active: boolean;
   onClick: () => void;
   icon: React.ReactNode;
   label: string;
+  tooltip: string;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex items-center gap-1.5 rounded px-2 py-1 text-[11px] transition-colors ${
-        active
-          ? "bg-muted text-foreground"
-          : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-      }`}
-    >
-      {icon}
-      {label}
-    </button>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            onClick={onClick}
+            className={`flex items-center gap-1.5 rounded px-2 py-1 text-[11px] transition-colors ${
+              active
+                ? "bg-muted text-foreground"
+                : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+            }`}
+          >
+            {icon}
+            {label}
+          </button>
+        }
+      />
+      <TooltipPopup>{tooltip}</TooltipPopup>
+    </Tooltip>
   );
 }
