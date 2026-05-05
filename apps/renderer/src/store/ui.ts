@@ -32,12 +32,14 @@ type UiState = {
   readonly autosave: boolean;
   readonly leftSidebarOpen: boolean;
   readonly rightSidebarOpen: boolean;
+  readonly isFullScreen: boolean;
   readonly setActiveMainTab: (tab: MainTab) => void;
   readonly openFileInTab: (file: OpenFile) => void;
   readonly closeFileTab: () => void;
   readonly setFileDirty: (dirty: boolean) => void;
   readonly setLeftSidebarOpen: (open: boolean) => void;
   readonly setRightSidebarOpen: (open: boolean) => void;
+  readonly setFullScreen: (full: boolean) => void;
 };
 
 export const useUiStore = create<UiState>((set) => ({
@@ -49,6 +51,7 @@ export const useUiStore = create<UiState>((set) => ({
   autosave: false,
   leftSidebarOpen: true,
   rightSidebarOpen: true,
+  isFullScreen: false,
   setActiveMainTab: (tab) => set({ activeMainTab: tab }),
   openFileInTab: (file) =>
     set({ openFile: file, activeMainTab: "file", fileDirty: false }),
@@ -57,4 +60,5 @@ export const useUiStore = create<UiState>((set) => ({
   setFileDirty: (dirty) => set({ fileDirty: dirty }),
   setLeftSidebarOpen: (open) => set({ leftSidebarOpen: open }),
   setRightSidebarOpen: (open) => set({ rightSidebarOpen: open }),
+  setFullScreen: (full) => set({ isFullScreen: full }),
 }));

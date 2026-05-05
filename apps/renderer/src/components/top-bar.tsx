@@ -32,14 +32,18 @@ const ICON_BUTTON_CLASS = `${ACTION_CLASS} flex size-6 items-center justify-cent
 
 /**
  * Top bar over the projects panel: product name on the left + a left-pane
- * collapse toggle on the right. The leading `pl-20` preserves space for the
- * macOS traffic-light controls under `titleBarStyle: "hiddenInset"`.
+ * collapse toggle on the right. In windowed mode we leave 80px clear at
+ * the start so the macOS traffic-light controls have room; in fullscreen
+ * the controls are gone, so we hug the edge instead.
  */
 export function TopBarLeft() {
   const setLeftSidebarOpen = useUiStore((s) => s.setLeftSidebarOpen);
+  const isFullScreen = useUiStore((s) => s.isFullScreen);
 
   return (
-    <header className={`${SECTION_CLASS} pr-1 pl-20`}>
+    <header
+      className={`${SECTION_CLASS} pr-1 ${isFullScreen ? "pl-3" : "pl-20"}`}
+    >
       <span className="truncate font-semibold tracking-tight text-foreground">
         forkzero
       </span>
@@ -78,6 +82,7 @@ export function TopBarMain({ folderId }: { folderId: FolderId | null }) {
   const setLeftSidebarOpen = useUiStore((s) => s.setLeftSidebarOpen);
   const rightSidebarOpen = useUiStore((s) => s.rightSidebarOpen);
   const setRightSidebarOpen = useUiStore((s) => s.setRightSidebarOpen);
+  const isFullScreen = useUiStore((s) => s.isFullScreen);
 
   useEffect(() => {
     if (folderId === null) return;
@@ -88,11 +93,16 @@ export function TopBarMain({ folderId }: { folderId: FolderId | null }) {
 
   const branchLabel = status?.branch ?? null;
   const showLeftToggle = !leftSidebarOpen;
-  // When the left panel is open its own header carries the toggle, so this
-  // section starts flush with no left padding. When it's collapsed we slide
-  // the open-toggle into the leading slot (after a traffic-light gutter so
-  // the icon doesn't sit under the macOS window controls).
-  const leftPad = showLeftToggle ? "pl-20" : "pl-2";
+  // When the left panel is open its own header carries the traffic-light
+  // gutter, so this section starts flush. When it's collapsed we slide the
+  // open-toggle into the leading slot — and in windowed mode reserve 80px
+  // for the macOS controls. Native fullscreen hides those controls, so we
+  // skip the reserve.
+  const leftPad = showLeftToggle
+    ? isFullScreen
+      ? "pl-2"
+      : "pl-20"
+    : "pl-2";
 
   return (
     <header className={`${SECTION_CLASS} ${leftPad} pr-1`}>

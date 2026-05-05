@@ -52,6 +52,16 @@ export function App() {
     startPermissionsStream();
   }, [startPermissionsStream]);
 
+  // Mirror the Electron window's fullscreen state into the ui store so the
+  // top bars can drop the macOS traffic-light gutter — there are no traffic
+  // lights to dodge in native fullscreen.
+  const setFullScreen = useUiStore((s) => s.setFullScreen);
+  useEffect(() => {
+    const win = window.forkzero?.window;
+    if (win === undefined) return;
+    return win.onFullScreenChange((value) => setFullScreen(value));
+  }, [setFullScreen]);
+
   const view = useUiStore((s) => s.view);
   const activeMainTab = useUiStore((s) => s.activeMainTab);
   const openFile = useUiStore((s) => s.openFile);
