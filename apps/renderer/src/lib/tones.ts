@@ -85,3 +85,40 @@ export const SOFT_TONE_HOVER: Record<Tone, string> = {
 export const softTone = (tone: Tone): string => SOFT_TONE[tone];
 export const softInteractive = (tone: Tone): string =>
   `${SOFT_TONE[tone]} ${SOFT_TONE_HOVER[tone]}`;
+
+/**
+ * Saturated background + white text for primary actions (the GitHub-style
+ * green Merge button, etc.). Use when a button is the unambiguous primary
+ * call-to-action; lean on `softInteractive` for secondary chips.
+ */
+export const SOLID_TONE: Record<Tone, string> = {
+  red: "bg-red-600 text-white hover:bg-red-500 dark:bg-red-500 dark:hover:bg-red-400",
+  orange:
+    "bg-orange-600 text-white hover:bg-orange-500 dark:bg-orange-500 dark:hover:bg-orange-400",
+  amber:
+    "bg-amber-500 text-amber-950 hover:bg-amber-400 dark:bg-amber-400 dark:text-amber-950 dark:hover:bg-amber-300",
+  yellow:
+    "bg-yellow-500 text-yellow-950 hover:bg-yellow-400 dark:bg-yellow-400 dark:text-yellow-950 dark:hover:bg-yellow-300",
+  lime: "bg-lime-500 text-lime-950 hover:bg-lime-400 dark:bg-lime-400 dark:text-lime-950 dark:hover:bg-lime-300",
+  green:
+    "bg-green-600 text-white hover:bg-green-500 dark:bg-green-500 dark:hover:bg-green-400",
+  emerald:
+    "bg-emerald-600 text-white hover:bg-emerald-500 dark:bg-emerald-500 dark:hover:bg-emerald-400",
+  teal: "bg-teal-600 text-white hover:bg-teal-500 dark:bg-teal-500 dark:hover:bg-teal-400",
+  cyan: "bg-cyan-500 text-cyan-950 hover:bg-cyan-400 dark:bg-cyan-400 dark:text-cyan-950 dark:hover:bg-cyan-300",
+  sky: "bg-sky-600 text-white hover:bg-sky-500 dark:bg-sky-500 dark:hover:bg-sky-400",
+  blue: "bg-blue-600 text-white hover:bg-blue-500 dark:bg-blue-500 dark:hover:bg-blue-400",
+  indigo:
+    "bg-indigo-600 text-white hover:bg-indigo-500 dark:bg-indigo-500 dark:hover:bg-indigo-400",
+  violet:
+    "bg-violet-600 text-white hover:bg-violet-500 dark:bg-violet-500 dark:hover:bg-violet-400",
+  purple:
+    "bg-purple-600 text-white hover:bg-purple-500 dark:bg-purple-500 dark:hover:bg-purple-400",
+  fuchsia:
+    "bg-fuchsia-600 text-white hover:bg-fuchsia-500 dark:bg-fuchsia-500 dark:hover:bg-fuchsia-400",
+  pink: "bg-pink-600 text-white hover:bg-pink-500 dark:bg-pink-500 dark:hover:bg-pink-400",
+  rose: "bg-rose-600 text-white hover:bg-rose-500 dark:bg-rose-500 dark:hover:bg-rose-400",
+  zinc: "bg-zinc-700 text-white hover:bg-zinc-600 dark:bg-zinc-200 dark:text-zinc-900 dark:hover:bg-zinc-100",
+};
+
+export const solidInteractive = (tone: Tone): string => SOLID_TONE[tone];

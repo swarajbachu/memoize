@@ -3,6 +3,7 @@ import {
   GitBranch,
   GitMerge,
   GitPullRequestArrow,
+  Loader2,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
@@ -13,7 +14,12 @@ import { useEffect } from "react";
 
 import type { FolderId } from "@forkzero/wire";
 
-import { softInteractive, softTone, type Tone } from "../lib/tones.ts";
+import {
+  softInteractive,
+  softTone,
+  solidInteractive,
+  type Tone,
+} from "../lib/tones.ts";
 import { useComposerBridge } from "../store/composer-bridge.ts";
 import { useGitStatusStore } from "../store/git-status.ts";
 import { usePrStateStore } from "../store/pr-state.ts";
@@ -170,21 +176,49 @@ type Workflow =
   | { kind: "idle" }
   | { kind: "dirty"; count: number }
   | { kind: "ahead"; count: number }
-  | { kind: "open-pr"; number: number | null; url: string };
+  | {
+      kind: "open-pr";
+      number: number | null;
+      url: string | null;
+      isDraft: boolean;
+      checks: "none" | "pending" | "success" | "failure";
+    };
 
 const deriveWorkflow = (
   status: { dirtyFiles: number; ahead: number } | null,
-  pr: { state: string; number: number | null; url: string | null } | null,
+  pr: {
+    state: string;
+    number: number | null;
+    url: string | null;
+    isDraft?: boolean;
+    checks?: "none" | "pending" | "success" | "failure";
+  } | null,
 ): Workflow => {
   if (status === null) return { kind: "idle" };
   if (status.dirtyFiles > 0) return { kind: "dirty", count: status.dirtyFiles };
-  if (pr && pr.state === "open" && pr.url !== null) {
-    return { kind: "open-pr", number: pr.number, url: pr.url };
+  if (pr && pr.state === "open") {
+    return {
+      kind: "open-pr",
+      number: pr.number,
+      url: pr.url,
+      isDraft: pr.isDraft === true,
+      checks: pr.checks ?? "none",
+    };
   }
   if (status.ahead > 0 && (pr === null || pr.state === "none")) {
     return { kind: "ahead", count: status.ahead };
   }
   return { kind: "idle" };
+};
+
+const openInline = (url: string) => {
+  const bridge = window.forkzero?.app;
+  if (bridge !== undefined) {
+    bridge.openInlineUrl(url);
+    return;
+  }
+  // Web preview / dev fallback — Electron isn't around to host a child.
+  window.open(url, "_blank", "noopener,noreferrer");
 };
 
 /**
@@ -195,9 +229,9 @@ const deriveWorkflow = (
  *   idle     → empty
  *   dirty    → "<n> changes"  · Commit & push   (amber)
  *   ahead    → "<n> ahead"    · Create PR       (sky)
- *   open-pr  → "#<n>"         · View PR         (emerald)
+ *   open-pr  → "#<n>"         · Merge           (emerald)
  *
- * Draft / checks / merge stages need new fields on `GitPrInfo` and are
+ * Draft / checks-pending stages need new fields on `GitPrInfo` and are
  * deferred — the layout already reserves the space.
  */
 export function TopBarRight({ folderId }: { folderId: FolderId | null }) {
@@ -233,13 +267,26 @@ export function TopBarRight({ folderId }: { folderId: FolderId | null }) {
           </Pill>
         ) : null}
         {workflow.kind === "open-pr" ? (
-          <Pill tone="emerald">#{workflow.number ?? "?"}</Pill>
+          <>
+            <Pill tone={prBadgeTone(workflow)}>#{workflow.number ?? "?"}</Pill>
+            {workflow.isDraft ? <Pill tone="zinc">Draft</Pill> : null}
+            {workflow.checks === "pending" ? (
+              <Pill tone="amber">
+                <Loader2 className="mr-1 size-3 animate-spin" />
+                Checks running
+              </Pill>
+            ) : null}
+            {workflow.checks === "failure" ? (
+              <Pill tone="red">Checks failed</Pill>
+            ) : null}
+          </>
         ) : null}
       </div>
       <div className={`flex shrink-0 items-center gap-1 ${ACTION_CLASS}`}>
         {workflow.kind === "dirty" ? (
           <ActionButton
             tone="amber"
+            variant="solid"
             icon={<Upload className="size-3.5" />}
             label="Commit & push"
             disabled={!composerReady}
@@ -249,6 +296,7 @@ export function TopBarRight({ folderId }: { folderId: FolderId | null }) {
         {workflow.kind === "ahead" ? (
           <ActionButton
             tone="sky"
+            variant="solid"
             icon={<GitPullRequestArrow className="size-3.5" />}
             label="Create PR"
             disabled={!composerReady}
@@ -256,15 +304,35 @@ export function TopBarRight({ folderId }: { folderId: FolderId | null }) {
           />
         ) : null}
         {workflow.kind === "open-pr" ? (
-          <ActionButton
-            tone="emerald"
-            icon={<GitMerge className="size-3.5" />}
-            label="View PR"
-            onClick={() =>
-              window.open(workflow.url, "_blank", "noopener,noreferrer")
-            }
-            trailing={<ExternalLink className="size-3 opacity-70" />}
-          />
+          <>
+            {workflow.url !== null ? (
+              <ActionButton
+                tone="zinc"
+                variant="soft"
+                icon={<ExternalLink className="size-3.5" />}
+                label="View PR"
+                onClick={() => openInline(workflow.url!)}
+              />
+            ) : null}
+            <ActionButton
+              tone="emerald"
+              variant="solid"
+              icon={<GitMerge className="size-3.5" />}
+              label={workflow.isDraft ? "Mark ready" : "Merge"}
+              disabled={
+                !composerReady ||
+                workflow.checks === "pending" ||
+                workflow.checks === "failure"
+              }
+              onClick={() =>
+                sendToComposer(
+                  workflow.isDraft
+                    ? "mark this pull request as ready for review"
+                    : "merge this pull request and delete the branch",
+                )
+              }
+            />
+          </>
         ) : null}
       </div>
     </header>
@@ -281,8 +349,11 @@ function Pill({ tone, children }: { tone: Tone; children: React.ReactNode }) {
   );
 }
 
+type Variant = "solid" | "soft";
+
 function ActionButton({
   tone,
+  variant,
   icon,
   label,
   onClick,
@@ -290,18 +361,21 @@ function ActionButton({
   trailing,
 }: {
   tone: Tone;
+  variant: Variant;
   icon: React.ReactNode;
   label: string;
   onClick: () => void;
   disabled?: boolean;
   trailing?: React.ReactNode;
 }) {
+  const palette =
+    variant === "solid" ? solidInteractive(tone) : softInteractive(tone);
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`flex items-center gap-1.5 rounded-sm px-2 py-1 text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${softInteractive(tone)}`}
+      className={`flex items-center gap-1.5 rounded-sm px-2 py-1 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${palette}`}
     >
       {icon}
       {label}
@@ -309,3 +383,12 @@ function ActionButton({
     </button>
   );
 }
+
+const prBadgeTone = (
+  w: Extract<Workflow, { kind: "open-pr" }>,
+): Tone => {
+  if (w.checks === "failure") return "red";
+  if (w.checks === "pending") return "amber";
+  if (w.isDraft) return "zinc";
+  return "emerald";
+};

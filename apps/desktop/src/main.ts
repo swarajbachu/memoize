@@ -1,5 +1,5 @@
 import { RpcSerialization } from "@effect/rpc";
-import { app, BrowserWindow, dialog, net, protocol } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, net, protocol } from "electron";
 import { Effect, Fiber, Layer } from "effect";
 import * as fs from "node:fs/promises";
 import * as Path from "node:path";
@@ -103,6 +103,38 @@ function createMainWindow() {
   mainWindow.on("enter-full-screen", sendFullScreenState);
   mainWindow.on("leave-full-screen", sendFullScreenState);
   mainWindow.webContents.on("did-finish-load", sendFullScreenState);
+
+  // Inline browser: when the renderer asks to "view PR" we open the URL in
+  // a child Chromium window with no node integration rather than handing
+  // off to the user's default browser. Same Chromium process, so the user
+  // doesn't lose context. We allowlist http/https only — any other scheme
+  // is dropped silently to avoid acting as a free `shell.openExternal`.
+  ipcMain.on("app:openInlineUrl", (_event, rawUrl: unknown) => {
+    if (typeof rawUrl !== "string") return;
+    let parsed: URL;
+    try {
+      parsed = new URL(rawUrl);
+    } catch {
+      return;
+    }
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return;
+    const child = new BrowserWindow({
+      width: 1100,
+      height: 800,
+      minWidth: 480,
+      minHeight: 360,
+      parent: mainWindow ?? undefined,
+      title: parsed.host,
+      autoHideMenuBar: true,
+      backgroundColor: "#0b0b0c",
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      },
+    });
+    void child.loadURL(parsed.toString());
+  });
 
   // Boot the Effect runtime once the window's webContents exists. The RPC
   // server protocol is bound to this webContents, so a window restart means

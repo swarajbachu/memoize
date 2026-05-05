@@ -90,6 +90,21 @@ export const GitOriginRpc = Rpc.make("git.origin", {
 export const GitPrState = Schema.Literal("none", "open", "closed", "merged");
 export type GitPrState = typeof GitPrState.Type;
 
+/**
+ * Aggregated CI rollup status for the PR's HEAD commit.
+ *   none    — PR has no required checks, or `gh` couldn't read the rollup.
+ *   pending — at least one check still running / queued.
+ *   success — all checks passed.
+ *   failure — at least one check failed (cancelled / errored counts as fail).
+ */
+export const GitPrChecks = Schema.Literal(
+  "none",
+  "pending",
+  "success",
+  "failure",
+);
+export type GitPrChecks = typeof GitPrChecks.Type;
+
 export class GitPrInfo extends Schema.Class<GitPrInfo>("GitPrInfo")({
   state: GitPrState,
   branch: Schema.NullOr(Schema.String),
@@ -98,6 +113,8 @@ export class GitPrInfo extends Schema.Class<GitPrInfo>("GitPrInfo")({
   deletions: Schema.Number,
   number: Schema.NullOr(Schema.Number),
   url: Schema.NullOr(Schema.String),
+  isDraft: Schema.Boolean,
+  checks: GitPrChecks,
 }) {}
 
 export const GitPrStateRpc = Rpc.make("git.prState", {

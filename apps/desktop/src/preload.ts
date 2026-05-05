@@ -33,6 +33,11 @@ const bridge = {
       };
     },
   },
+  app: {
+    openInlineUrl: (url: string) => {
+      ipcRenderer.send("app:openInlineUrl", url);
+    },
+  },
 };
 
 contextBridge.exposeInMainWorld("forkzero", bridge);
