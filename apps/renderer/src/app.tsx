@@ -83,7 +83,7 @@ export function App() {
       <div className="flex w-[260px] shrink-0 flex-col">
         <ProjectsSidebar />
       </div>
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col border-x border-border bg-zinc-950">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col border-x border-border bg-background">
         {view === "settings" ? (
           <SettingsPage />
         ) : (
@@ -91,6 +91,8 @@ export function App() {
             <MainTabs
               headerLabel={headerLabel}
               headerTitle={selectedFolder?.path}
+              providerId={selectedSession?.providerId}
+              model={selectedSession?.model}
             />
             <div
               hidden={activeMainTab !== "chat"}
@@ -123,7 +125,7 @@ export function App() {
           </>
         )}
       </main>
-      <div className="flex w-[320px] shrink-0 flex-col bg-zinc-950">
+      <div className="flex w-[320px] shrink-0 flex-col bg-background">
         <RightPane />
       </div>
     </div>

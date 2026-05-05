@@ -22,7 +22,7 @@ export function RightPane() {
   const [tab, setTab] = useState<Tab>("files");
 
   return (
-    <aside className="flex h-full min-h-0 w-full flex-col bg-zinc-950">
+    <aside className="flex h-full min-h-0 w-full flex-col">
       <div className="flex h-9 shrink-0 items-center gap-0.5 border-b border-border px-1 text-xs">
         <TabButton
           active={tab === "files"}
