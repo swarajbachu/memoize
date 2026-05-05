@@ -5,23 +5,21 @@ import { SqlClient } from "@effect/sql";
 import { Duration, Effect, Fiber, Layer, Ref, Schedule } from "effect";
 
 import {
-  AttachmentBadMimeError,
   AttachmentTooLargeError,
-  type SessionId,
 } from "@forkzero/wire";
 
 import { AppPaths } from "../../app-paths.ts";
-import { extForMime, isImageMime } from "../image-mime.ts";
+import { extForUpload } from "../image-mime.ts";
 import {
   AttachmentService,
   type AttachmentServiceShape,
 } from "../services/attachment-service.ts";
 
 /**
- * Per-image cap, validated client-side and re-validated here. Matches the
- * spec — see `specs/0.03-MVP/features/composer.md` "Image attachments".
+ * Per-attachment cap, validated client-side and re-validated here. Matches
+ * the spec — see `specs/0.03-MVP/features/composer.md` "Attachments".
  */
-const MAX_IMAGE_BYTES = 100 * 1024 * 1024;
+const MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024;
 
 /** GC keeps a blob if it was last touched within this window. */
 const HEARTBEAT_TTL_MS = 90_000;
@@ -71,17 +69,12 @@ export const AttachmentServiceLive = Layer.scoped(
       originalName,
     ) =>
       Effect.gen(function* () {
-        if (!isImageMime(mimeType)) {
-          return yield* Effect.fail(
-            new AttachmentBadMimeError({ sessionId, mimeType }),
-          );
-        }
-        if (bytes.byteLength > MAX_IMAGE_BYTES) {
+        if (bytes.byteLength > MAX_ATTACHMENT_BYTES) {
           return yield* Effect.fail(
             new AttachmentTooLargeError({
               sessionId,
               sizeBytes: bytes.byteLength,
-              limit: MAX_IMAGE_BYTES,
+              limit: MAX_ATTACHMENT_BYTES,
             }),
           );
         }
@@ -93,7 +86,7 @@ export const AttachmentServiceLive = Layer.scoped(
         // on-disk filename for human-debuggability.
 
         const id = `${sessionSegment(sessionId)}-${randomUUID()}`;
-        const ext = extForMime(mimeType);
+        const ext = extForUpload(mimeType, originalName);
         const filename = blobFilename(id, ext);
         const absPath = pathSvc.join(dir, filename);
 
@@ -147,18 +140,22 @@ export const AttachmentServiceLive = Layer.scoped(
       interface Candidate {
         readonly id: string;
         readonly mime_type: string;
+        readonly original_name: string;
       }
       const candidates = yield* sql<Candidate>`
-        SELECT a.id, a.mime_type
+        SELECT a.id, a.mime_type, a.original_name
         FROM attachments a
         LEFT JOIN message_attachments ma ON ma.attachment_id = a.id
         WHERE ma.attachment_id IS NULL
           AND a.created_at < ${cutoff}
       `.pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<Candidate>));
 
-      for (const { id, mime_type } of candidates) {
+      for (const { id, mime_type, original_name } of candidates) {
         if (!stale(id)) continue;
-        const absPath = pathSvc.join(dir, blobFilename(id, extForMime(mime_type)));
+        const absPath = pathSvc.join(
+          dir,
+          blobFilename(id, extForUpload(mime_type, original_name)),
+        );
         yield* fs
           .remove(absPath, { force: true })
           .pipe(Effect.ignoreLogged);

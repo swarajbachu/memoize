@@ -147,14 +147,11 @@ class ChipWidget extends WidgetType {
     icon.className = "fz-chip-icon";
     icon.appendChild(buildIconNode(this.meta));
 
-    const divider = document.createElement("span");
-    divider.className = "fz-chip-divider";
-
     const label = document.createElement("span");
     label.className = "fz-chip-label";
     label.textContent = chipLabel(this.meta);
 
-    span.append(icon, divider, label);
+    span.append(icon, label);
     return span;
   }
   ignoreEvent(): boolean {
@@ -204,11 +201,25 @@ const buildIconNode = (meta: ChipMeta): Node => {
     }
   }
   if (meta.kind === "image") {
-    const img = document.createElement("img");
-    img.src = meta.previewUrl;
-    img.alt = "";
-    img.className = "fz-chip-thumb";
-    return img;
+    // Image attachment → thumbnail. Non-image attachments share the same
+    // chip kind (so the wire shape stays tidy) but render with the
+    // file-type material icon instead.
+    const isImage = meta.mimeType.startsWith("image/") && meta.previewUrl !== "";
+    if (isImage) {
+      const img = document.createElement("img");
+      img.src = meta.previewUrl;
+      img.alt = "";
+      img.className = "fz-chip-thumb";
+      return img;
+    }
+    const url = getFileIconUrl(meta.originalName);
+    if (url !== null) {
+      const img = document.createElement("img");
+      img.src = url;
+      img.alt = "";
+      img.className = "fz-chip-iconimg";
+      return img;
+    }
   }
   if (meta.kind === "skill") {
     // Lucide icons render as SVG via React; for our DOM widget we inline the

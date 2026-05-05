@@ -1,5 +1,13 @@
 import type { EditorView } from "@codemirror/view";
-import { Check, ChevronDown, Gauge, Paperclip, Send, Square } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  Gauge,
+  Paperclip,
+  Send,
+  Square,
+  Upload,
+} from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -168,30 +176,28 @@ export function ChatComposer({ session }: { session: Session }) {
   };
 
   /**
-   * Insert image chips for `files`. Each chip starts with a blob: preview
-   * URL so the user sees something instantly; the chip's metadata swaps to
-   * a `forkzero://attachments/<id>` URL once the upload resolves. Files
-   * beyond the per-turn cap are dropped with a console warning.
+   * Insert chips for `files`. Image files render with a thumbnail; other types
+   * (PDFs, docs, archives) get a generic file-icon chip. The chip's underlying
+   * token swaps from a temp id to a `forkzero://attachments/<id>` URL once the
+   * upload resolves. Files beyond the per-turn cap are dropped with a warning.
    */
-  const attachImages = (files: readonly File[]): void => {
+  const attachFiles = (files: readonly File[]): void => {
     const view = editorViewRef.current;
     if (view === null || files.length === 0) return;
 
-    const images = files.filter((f) => f.type.startsWith("image/"));
-    if (images.length === 0) return;
-
-    let accepted = images.slice(0, MAX_ATTACHMENTS_PER_TURN);
-    if (images.length > MAX_ATTACHMENTS_PER_TURN) {
+    const accepted = files.slice(0, MAX_ATTACHMENTS_PER_TURN);
+    if (files.length > MAX_ATTACHMENTS_PER_TURN) {
       console.warn(
         `Maximum ${MAX_ATTACHMENTS_PER_TURN} attachments per turn — ${
-          images.length - MAX_ATTACHMENTS_PER_TURN
-        } image(s) dropped`,
+          files.length - MAX_ATTACHMENTS_PER_TURN
+        } file(s) dropped`,
       );
     }
 
     for (const file of accepted) {
       const tempId = `pending-${Math.random().toString(36).slice(2, 10)}`;
-      const blobUrl = URL.createObjectURL(file);
+      const isImage = file.type.startsWith("image/");
+      const blobUrl = isImage ? URL.createObjectURL(file) : "";
       const token = `[image:${tempId}]`;
       const sel = view.state.selection.main;
       const insertText = token + " ";
@@ -207,17 +213,18 @@ export function ChatComposer({ session }: { session: Session }) {
           meta: {
             kind: "image",
             id: tempId,
-            mimeType: file.type,
+            mimeType: file.type || "application/octet-stream",
             originalName: file.name,
             previewUrl: blobUrl,
           },
         }),
       });
 
-      // Kick off the upload; swap the chip's metadata when it resolves.
       void uploadOne(sessionId, file)
         .then((ref) => {
-          const finalUrl = `forkzero://attachments/${ref.id}`;
+          const finalUrl = isImage
+            ? `forkzero://attachments/${ref.id}`
+            : "";
           editorViewRef.current?.dispatch({
             effects: updateImageChipEffect.of({
               previousId: tempId,
@@ -235,7 +242,7 @@ export function ChatComposer({ session }: { session: Session }) {
           console.error("[chat-composer] upload failed", err);
         })
         .finally(() => {
-          URL.revokeObjectURL(blobUrl);
+          if (blobUrl) URL.revokeObjectURL(blobUrl);
         });
     }
   };
@@ -244,12 +251,12 @@ export function ChatComposer({ session }: { session: Session }) {
   const onPickFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files === null) return;
-    attachImages(Array.from(files));
+    attachFiles(Array.from(files));
     e.target.value = "";
   };
 
-  // Paste handler — runs on the composer card so images dropped into the
-  // editor surface (or anywhere on the card) get caught.
+  // Paste handler — accepts any file type pasted into the composer (images,
+  // PDFs, docs, etc.).
   const onPaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
     const items = e.clipboardData?.items;
     if (!items) return;
@@ -257,12 +264,12 @@ export function ChatComposer({ session }: { session: Session }) {
     for (const it of Array.from(items)) {
       if (it.kind === "file") {
         const f = it.getAsFile();
-        if (f && f.type.startsWith("image/")) files.push(f);
+        if (f) files.push(f);
       }
     }
     if (files.length > 0) {
       e.preventDefault();
-      attachImages(files);
+      attachFiles(files);
     }
   };
 
@@ -288,10 +295,8 @@ export function ChatComposer({ session }: { session: Session }) {
     e.preventDefault();
     dragDepthRef.current = 0;
     setIsDragging(false);
-    const files = Array.from(e.dataTransfer.files).filter((f) =>
-      f.type.startsWith("image/"),
-    );
-    if (files.length > 0) attachImages(files);
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) attachFiles(files);
   };
 
   // Forget any stale tempId-keyed attachments when the composer unmounts —
@@ -312,7 +317,7 @@ export function ChatComposer({ session }: { session: Session }) {
     const docText = composerDoc(view).trim();
     if (docText.length === 0) return false;
 
-    const builtin = matchBuiltin(docText);
+    const builtin = matchBuiltin(docText, session.providerId);
     if (builtin !== null) {
       clearComposer(view);
       dispatchBuiltin(builtin);
@@ -334,7 +339,13 @@ export function ChatComposer({ session }: { session: Session }) {
   // Keep the keymap-bound submit pointing at the latest closure so it sees
   // the current sessionId after a session switch / re-render.
   submitRef.current = submit;
-  filesDroppedRef.current = (files) => attachImages(files);
+  filesDroppedRef.current = (files) => {
+    // CM's drop handler stops propagation so our React onDrop never fires —
+    // clear the drag overlay state here instead.
+    dragDepthRef.current = 0;
+    setIsDragging(false);
+    attachFiles(files);
+  };
 
   return (
     <TooltipProvider>
@@ -350,16 +361,18 @@ export function ChatComposer({ session }: { session: Session }) {
               onPaste={onPaste}
             >
               {isDragging && (
-                <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center rounded-xl bg-accent/30 ring-2 ring-accent">
-                  <span className="rounded-md bg-popover px-3 py-1.5 text-xs font-medium text-foreground shadow">
-                    Drop images to attach
-                  </span>
+                <div
+                  className="pointer-events-none absolute inset-1 z-40 flex items-center justify-center rounded-lg border border-dashed border-accent-foreground/40 bg-popover/80 backdrop-blur-sm"
+                >
+                  <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                    <Upload className="size-3.5" />
+                    <span>Drop files to attach</span>
+                  </div>
                 </div>
               )}
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*"
                 multiple
                 hidden
                 onChange={onPickFiles}
@@ -372,6 +385,7 @@ export function ChatComposer({ session }: { session: Session }) {
                       trigger={trigger}
                       view={editorViewRef.current}
                       sessionId={sessionId}
+                      providerId={session.providerId}
                       onClose={() => setTrigger(null)}
                     />
                   ) : (
@@ -440,14 +454,14 @@ export function ChatComposer({ session }: { session: Session }) {
                       <button
                         type="button"
                         onClick={() => fileInputRef.current?.click()}
-                        aria-label="Attach image"
+                        aria-label="Attach files"
                         className="flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/60 hover:text-foreground"
                       >
                         <Paperclip className="size-3.5" />
                       </button>
                     }
                   />
-                  <TooltipPopup>Attach image (paste / drop also work)</TooltipPopup>
+                  <TooltipPopup>Attach files (paste / drop also work)</TooltipPopup>
                 </Tooltip>
                 <ModelPicker
                   sessionId={sessionId}

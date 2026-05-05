@@ -84,6 +84,10 @@ export const createComposerView = ({
         const files = event.dataTransfer?.files;
         if (files === undefined || files.length === 0) return false;
         event.preventDefault();
+        // Stop propagation so the parent Card's React `onDrop` doesn't fire
+        // and double-attach. CM's `return true` only tells CM "handled"; the
+        // native event still bubbles otherwise.
+        event.stopPropagation();
         callbacks.onFilesDropped(Array.from(files));
         return true;
       },

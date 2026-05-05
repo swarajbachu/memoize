@@ -1,9 +1,8 @@
 import { type EditorView } from "@codemirror/view";
 import fuzzysort from "fuzzysort";
-import { Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import type { Skill } from "@forkzero/wire";
+import type { ProviderId, Skill } from "@forkzero/wire";
 
 import {
   filterBuiltins,
@@ -20,6 +19,7 @@ export interface SlashCommandPopoverProps {
   readonly trigger: ActiveTrigger;
   readonly view: EditorView;
   readonly sessionId: string;
+  readonly providerId: ProviderId;
   readonly onClose: () => void;
 }
 
@@ -50,16 +50,15 @@ const filterSkills = (
 };
 
 /**
- * Slash popover. Two sections (top → bottom): client-side built-ins,
- * then provider-discovered skills (Claude Code or Codex). Built-ins keep
- * the text-replace + matchBuiltin dispatch (terminal — Enter executes
- * client-side actions like `/clear`). Skills insert as atomic chips so
- * the user can keep typing additional message context after them.
+ * Slash popover. Single flat list — built-ins first, then disk skills.
+ * No section headers, no leading icon, full-width rows; the screenshot
+ * spec is a clean monospace `/name` followed by description on the same line.
  */
 export function SlashCommandPopover({
   trigger,
   view,
   sessionId,
+  providerId,
   onClose,
 }: SlashCommandPopoverProps) {
   const allSkills = useSkillsStore(
@@ -67,15 +66,14 @@ export function SlashCommandPopover({
   );
 
   const builtins = useMemo(
-    () => filterBuiltins(trigger.query),
-    [trigger.query],
+    () => filterBuiltins(trigger.query, providerId),
+    [trigger.query, providerId],
   );
   const skills = useMemo(
     () => filterSkills(allSkills, trigger.query),
     [allSkills, trigger.query],
   );
 
-  // Flatten into a single index space so ↑/↓/Enter cross sections.
   const rows = useMemo<ReadonlyArray<Row>>(
     () => [
       ...builtins.map((c) => ({ kind: "builtin" as const, command: c })),
@@ -89,18 +87,30 @@ export function SlashCommandPopover({
 
   const confirmRow = (row: Row) => {
     if (row.kind === "builtin") {
-      view.dispatch({
-        changes: {
-          from: trigger.from,
-          to: trigger.to,
-          insert: row.command.token + " ",
-        },
-        selection: { anchor: trigger.from + row.command.token.length + 1 },
-      });
-      view.focus();
+      const cmd = row.command;
+      if (cmd.kind === "client") {
+        // Client-handled built-ins stay as plain text so submit's matchBuiltin
+        // path triggers (`/clear`, `/model`, etc.).
+        view.dispatch({
+          changes: {
+            from: trigger.from,
+            to: trigger.to,
+            insert: `/${cmd.name} `,
+          },
+          selection: { anchor: trigger.from + cmd.name.length + 2 },
+        });
+        view.focus();
+      } else {
+        // Forwarded built-ins (e.g. /compact) become atomic chips so the
+        // user can append context after them — submit forwards the rendered
+        // doc text to the provider.
+        replaceWithChip(view, trigger.from, trigger.to, `/${cmd.name}`, {
+          kind: "skill",
+          name: cmd.name,
+          scope: "global",
+        });
+      }
     } else {
-      // Skill: insert as an atomic chip. The user keeps typing after it;
-      // segment-parser collects the chip + trailing args at submit time.
       replaceWithChip(view, trigger.from, trigger.to, `/${row.skill.name}`, {
         kind: "skill",
         name: row.skill.name,
@@ -143,86 +153,41 @@ export function SlashCommandPopover({
 
   if (rows.length === 0) return null;
 
-  let cursor = 0;
   return (
     <div
       role="listbox"
-      className="absolute bottom-full left-0 z-50 mb-1 max-h-80 w-[26rem] overflow-y-auto rounded-lg border border-border/60 bg-popover p-1 shadow-lg"
+      className="absolute bottom-full left-0 right-0 z-50 mb-1 max-h-80 overflow-y-auto rounded-lg border border-border/60 bg-popover py-1 shadow-lg"
       onMouseDown={(e) => e.preventDefault()}
     >
-      {builtins.length > 0 && (
-        <>
-          <div className="px-2 pb-1 pt-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            Commands
-          </div>
-          {builtins.map((cmd) => {
-            const i = cursor++;
-            const Icon = cmd.Icon;
-            const active = i === highlight;
-            return (
-              <button
-                key={`builtin:${cmd.name}`}
-                type="button"
-                role="option"
-                aria-selected={active}
-                onMouseEnter={() => setHighlight(i)}
-                onClick={() => confirmRow({ kind: "builtin", command: cmd })}
-                className={cn(
-                  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm",
-                  active
-                    ? "bg-accent text-accent-foreground"
-                    : "hover:bg-muted/60",
-                )}
-              >
-                <Icon className="size-3.5 shrink-0 opacity-80" />
-                <span className="font-medium">/{cmd.name}</span>
-                <span className="ml-auto truncate text-xs text-muted-foreground">
-                  {cmd.description}
-                </span>
-              </button>
-            );
-          })}
-        </>
-      )}
-
-      {skills.length > 0 && (
-        <>
-          <div className="mt-1 px-2 pb-1 pt-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            Skills
-          </div>
-          {skills.map((skill) => {
-            const i = cursor++;
-            const active = i === highlight;
-            return (
-              <button
-                key={`skill:${skill.scope}:${skill.name}`}
-                type="button"
-                role="option"
-                aria-selected={active}
-                onMouseEnter={() => setHighlight(i)}
-                onClick={() => confirmRow({ kind: "skill", skill })}
-                className={cn(
-                  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm",
-                  active
-                    ? "bg-accent text-accent-foreground"
-                    : "hover:bg-muted/60",
-                )}
-              >
-                <Sparkles className="size-3.5 shrink-0 text-violet-400/80" />
-                <span className="font-medium">/{skill.name}</span>
-                {skill.scope === "project" && (
-                  <span className="rounded bg-accent/40 px-1 py-0.5 text-[9px] uppercase tracking-wide text-accent-foreground/80">
-                    project
-                  </span>
-                )}
-                <span className="ml-auto truncate text-xs text-muted-foreground">
-                  {skill.description}
-                </span>
-              </button>
-            );
-          })}
-        </>
-      )}
+      {rows.map((row, i) => {
+        const active = i === highlight;
+        const name = row.kind === "builtin" ? row.command.name : row.skill.name;
+        const description =
+          row.kind === "builtin" ? row.command.description : row.skill.description;
+        const key =
+          row.kind === "builtin"
+            ? `b:${row.command.name}`
+            : `s:${row.skill.scope}:${row.skill.name}`;
+        return (
+          <button
+            key={key}
+            type="button"
+            role="option"
+            aria-selected={active}
+            onMouseEnter={() => setHighlight(i)}
+            onClick={() => confirmRow(row)}
+            className={cn(
+              "flex w-full items-center gap-3 px-3 py-1.5 text-left text-sm",
+              active ? "bg-accent text-accent-foreground" : "hover:bg-muted/60",
+            )}
+          >
+            <span className="font-mono text-foreground">/{name}</span>
+            <span className="flex-1 truncate text-xs text-muted-foreground">
+              {description}
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }

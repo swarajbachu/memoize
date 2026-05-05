@@ -16,7 +16,7 @@ import {
 const previewText = (q: QueuedMessage): string => {
   const t = q.input.text.trim();
   if (t.length === 0) {
-    if (q.input.attachments.length > 0) return `(${q.input.attachments.length} image)`;
+    if (q.input.attachments.length > 0) return `(${q.input.attachments.length} file)`;
     return "(empty)";
   }
   return t.replace(/\s+/g, " ");
@@ -45,7 +45,7 @@ export function QueueChip({
       <span className="truncate text-foreground">{text}</span>
       {attachmentCount > 0 && (
         <span className="shrink-0 rounded bg-background px-1 text-[10px] text-muted-foreground">
-          +{attachmentCount} image
+          +{attachmentCount} file
         </span>
       )}
       <Tooltip>

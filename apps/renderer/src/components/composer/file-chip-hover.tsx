@@ -53,9 +53,7 @@ export function FileChipHover({
     const onOver = (e: MouseEvent) => {
       const target = e.target as HTMLElement | null;
       if (target === null) return;
-      const chip = target.closest<HTMLElement>(
-        '.fz-chip[data-kind="file"]',
-      );
+      const chip = target.closest<HTMLElement>('.fz-chip[data-kind="file"]');
       if (chip === null) return;
       const relPath = chip.dataset.relPath;
       const absPath = chip.dataset.absPath;

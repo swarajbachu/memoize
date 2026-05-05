@@ -93,6 +93,32 @@ const stopLiveFiber = async () => {
 const newQueueId = (): string =>
   `q_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 
+/**
+ * Resolve when `runningBySession[sessionId]` becomes false (or stays false),
+ * or when `timeoutMs` elapses. Used by steer to wait for the SDK's
+ * post-interrupt cleanup before issuing the next send.
+ */
+const waitUntilIdle = (sessionId: SessionId, timeoutMs: number): Promise<void> =>
+  new Promise((resolve) => {
+    if (useMessagesStore.getState().runningBySession[sessionId] !== true) {
+      resolve();
+      return;
+    }
+    const timeout = window.setTimeout(() => {
+      unsub();
+      resolve();
+    }, timeoutMs);
+    const unsub = useMessagesStore.subscribe((state, prev) => {
+      const now = state.runningBySession[sessionId] === true;
+      const before = prev.runningBySession[sessionId] === true;
+      if (before && !now) {
+        window.clearTimeout(timeout);
+        unsub();
+        resolve();
+      }
+    });
+  });
+
 export const useMessagesStore = create<MessagesState>((set, get) => ({
   messagesBySession: {},
   errorBySession: {},
@@ -269,13 +295,15 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
         ),
       },
     }));
-    // Renderer-side steer: interrupt → wait briefly for the SDK's
-    // post-interrupt cleanup → send. A driver-side `messages.steer` orchestrator
-    // is a follow-up that lets us await the result-message drain instead of
-    // sleeping; the visible UX is the same.
+    // Steer: interrupt the running turn, then wait for the SDK's post-interrupt
+    // cleanup to land (mirrored by `runningBySession[sessionId] === false`)
+    // before sending. Subscribing to the status mirror is race-free; the prior
+    // 250ms sleep tripped over slow tool_result drains. A 4 s upper bound keeps
+    // a stuck driver from hanging the queue forever.
     try {
+      const wasRunning = get().runningBySession[sessionId] === true;
       await get().interrupt(sessionId);
-      await new Promise((r) => setTimeout(r, 250));
+      if (wasRunning) await waitUntilIdle(sessionId, 4_000);
       await get().send(sessionId, item.input);
     } catch (err) {
       set((s) => ({
