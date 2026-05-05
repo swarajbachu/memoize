@@ -149,7 +149,10 @@ export function ChatComposer({ session }: { session: Session }) {
     setTrigger(null);
   };
 
-  const dispatchBuiltin = (parsed: { command: BuiltinCommand; args: string }): void => {
+  const dispatchBuiltin = (parsed: {
+    command: BuiltinCommand;
+    args: string;
+  }): void => {
     switch (parsed.command.name) {
       case "clear":
         // Editor is already cleared by the caller; nothing else to do.
@@ -222,9 +225,7 @@ export function ChatComposer({ session }: { session: Session }) {
 
       void uploadOne(sessionId, file)
         .then((ref) => {
-          const finalUrl = isImage
-            ? `forkzero://attachments/${ref.id}`
-            : "";
+          const finalUrl = isImage ? `forkzero://attachments/${ref.id}` : "";
           editorViewRef.current?.dispatch({
             effects: updateImageChipEffect.of({
               previousId: tempId,
@@ -302,11 +303,14 @@ export function ChatComposer({ session }: { session: Session }) {
   // Forget any stale tempId-keyed attachments when the composer unmounts —
   // the heartbeat tracks ids, so dropping unattached blobs is enough to
   // let the GC reap them.
-  useEffect(() => () => {
-    // No-op for now: forgetActive is called per-id only when a chip is
-    // dropped explicitly. Server GC handles long-lived orphans.
-    void forgetActive;
-  }, [forgetActive]);
+  useEffect(
+    () => () => {
+      // No-op for now: forgetActive is called per-id only when a chip is
+      // dropped explicitly. Server GC handles long-lived orphans.
+      void forgetActive;
+    },
+    [forgetActive],
+  );
 
   const submit = (): boolean => {
     // Don't submit while a popover is open — Enter belongs to the popover.
@@ -350,10 +354,10 @@ export function ChatComposer({ session }: { session: Session }) {
   return (
     <TooltipProvider>
       <div className="shrink-0 px-3 pb-3 pt-2">
-        <div className="mx-auto max-w-3xl">
-          <Frame className="bg-muted/40">
+        <div className="mx-auto">
+          <Frame>
             <Card
-              className="rounded-xl border-border/50"
+              className="rounded-xl border-border/50 min-h-30"
               onDragEnter={onDragEnter}
               onDragOver={onDragOver}
               onDragLeave={onDragLeave}
@@ -361,9 +365,7 @@ export function ChatComposer({ session }: { session: Session }) {
               onPaste={onPaste}
             >
               {isDragging && (
-                <div
-                  className="pointer-events-none absolute inset-1 z-40 flex items-center justify-center rounded-lg border border-dashed border-accent-foreground/40 bg-popover/80 backdrop-blur-sm"
-                >
+                <div className="pointer-events-none absolute inset-1 z-40 flex items-center justify-center rounded-lg border border-dashed border-accent-foreground/40 bg-popover/80 backdrop-blur-sm">
                   <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
                     <Upload className="size-3.5" />
                     <span>Drop files to attach</span>
@@ -378,7 +380,7 @@ export function ChatComposer({ session }: { session: Session }) {
                 onChange={onPickFiles}
               />
               <QueueTray sessionId={sessionId} />
-              <CardPanel className="relative flex items-end gap-2 px-3 py-2">
+              <CardPanel className="relative flex items-stretch gap-2 px-3 py-2">
                 {trigger !== null && editorViewRef.current !== null ? (
                   trigger.kind === "slash" ? (
                     <SlashCommandPopover
@@ -418,7 +420,7 @@ export function ChatComposer({ session }: { session: Session }) {
                           type="button"
                           onClick={() => void interrupt(sessionId)}
                           aria-label="Interrupt"
-                          className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-destructive text-destructive-foreground transition-opacity hover:opacity-90"
+                          className="flex size-8 shrink-0 self-end items-center justify-center rounded-lg bg-destructive text-destructive-foreground transition-opacity hover:opacity-90"
                         >
                           <Square className="size-3.5" />
                         </button>
@@ -435,7 +437,7 @@ export function ChatComposer({ session }: { session: Session }) {
                           onClick={() => void submit()}
                           disabled={!canSend}
                           aria-label="Send"
-                          className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                          className="flex size-8 shrink-0 self-end items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           <Send className="size-3.5" />
                         </button>
@@ -461,7 +463,9 @@ export function ChatComposer({ session }: { session: Session }) {
                       </button>
                     }
                   />
-                  <TooltipPopup>Attach files (paste / drop also work)</TooltipPopup>
+                  <TooltipPopup>
+                    Attach files (paste / drop also work)
+                  </TooltipPopup>
                 </Tooltip>
                 <ModelPicker
                   sessionId={sessionId}

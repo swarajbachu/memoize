@@ -1,11 +1,30 @@
-import { MessageSquare, X } from "lucide-react";
+import { X } from "lucide-react";
+
+import { MODELS_BY_PROVIDER, type ProviderId } from "@forkzero/wire";
 
 import { useUiStore } from "../store/ui.ts";
 import { FileIcon } from "./file-icon.tsx";
+import { ProviderIcon } from "./provider-icons.tsx";
 
 type Props = {
   readonly headerLabel: string;
   readonly headerTitle?: string;
+  readonly providerId?: ProviderId;
+  readonly model?: string;
+};
+
+const PROVIDER_LABEL: Record<ProviderId, string> = {
+  claude: "Claude",
+  codex: "Codex",
+};
+
+const lookupModelLabel = (
+  providerId: ProviderId | undefined,
+  model: string | undefined,
+): string | null => {
+  if (providerId === undefined || model === undefined) return null;
+  const opt = MODELS_BY_PROVIDER[providerId].find((m) => m.id === model);
+  return opt?.label ?? model;
 };
 
 /**
@@ -13,24 +32,39 @@ type Props = {
  * appears when a file has been opened from the right-side tree. The empty
  * region at the right keeps the macOS window-drag handle alive — the prior
  * static `<header>` did the same with `[-webkit-app-region:drag]`.
+ *
+ * Active state is signalled by a 2px bottom underline on the tab itself,
+ * not a filled background — keeps the strip flat and lets the chat surface
+ * read as one continuous panel with the body below.
  */
-export function MainTabs({ headerLabel, headerTitle }: Props) {
+export function MainTabs({ headerLabel, headerTitle, providerId, model }: Props) {
   const activeMainTab = useUiStore((s) => s.activeMainTab);
   const setActiveMainTab = useUiStore((s) => s.setActiveMainTab);
   const openFile = useUiStore((s) => s.openFile);
   const closeFileTab = useUiStore((s) => s.closeFileTab);
   const fileDirty = useUiStore((s) => s.fileDirty);
 
+  const modelLabel = lookupModelLabel(providerId, model);
+  const tabTitle =
+    providerId && modelLabel
+      ? `${headerTitle ?? headerLabel} — ${PROVIDER_LABEL[providerId]} · ${modelLabel}`
+      : headerTitle;
+
   return (
-    <header className="flex h-9 shrink-0 items-stretch border-b border-border [-webkit-app-region:drag]">
-      <div className="ml-16 flex items-stretch gap-0.5 [-webkit-app-region:no-drag]">
+    <header className="flex h-10 shrink-0 items-stretch border-b border-border [-webkit-app-region:drag]">
+      <div className="ml-16 flex items-stretch gap-1 [-webkit-app-region:no-drag]">
         <TabButton
           active={activeMainTab === "chat"}
           onClick={() => setActiveMainTab("chat")}
           label={headerLabel}
-          title={headerTitle}
-          icon={
-            <MessageSquare className="size-3.5 shrink-0 text-muted-foreground" />
+          title={tabTitle}
+          leading={
+            providerId ? (
+              <ProviderIcon
+                providerId={providerId}
+                className="size-3.5 shrink-0 text-foreground"
+              />
+            ) : null
           }
         />
         {openFile && (
@@ -54,26 +88,26 @@ function TabButton({
   onClick,
   label,
   title,
-  icon,
+  leading,
 }: {
   active: boolean;
   onClick: () => void;
   label: string;
   title?: string;
-  icon: React.ReactNode;
+  leading?: React.ReactNode;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       title={title ?? label}
-      className={`flex max-w-[240px] items-center gap-1.5 px-3 text-[11px] transition-colors ${
+      className={`relative flex max-w-[280px] items-center gap-2 px-3 text-[12px] transition-colors after:pointer-events-none after:absolute after:inset-x-2 after:-bottom-px after:h-[2px] after:rounded-full after:transition-colors ${
         active
-          ? "bg-muted text-foreground"
-          : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+          ? "text-foreground after:bg-foreground"
+          : "text-muted-foreground hover:text-foreground after:bg-transparent"
       }`}
     >
-      {icon}
+      {leading}
       <span className="truncate">{label}</span>
     </button>
   );
@@ -96,10 +130,10 @@ function FileTabButton({
 }) {
   return (
     <div
-      className={`group flex max-w-[280px] items-center gap-1.5 px-2 text-[11px] transition-colors ${
+      className={`group relative flex max-w-[280px] items-center gap-1.5 px-3 text-[12px] transition-colors after:pointer-events-none after:absolute after:inset-x-2 after:-bottom-px after:h-[2px] after:rounded-full after:transition-colors ${
         active
-          ? "bg-muted text-foreground"
-          : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+          ? "text-foreground after:bg-foreground"
+          : "text-muted-foreground hover:text-foreground after:bg-transparent"
       }`}
     >
       <button
@@ -121,7 +155,7 @@ function FileTabButton({
         type="button"
         onClick={onClose}
         aria-label="Close file"
-        className="rounded p-0.5 opacity-0 transition-opacity hover:bg-foreground/10 group-hover:opacity-100"
+        className="relative z-10 rounded p-0.5 opacity-0 transition-opacity hover:bg-foreground/10 group-hover:opacity-100"
       >
         <X className="size-3" />
       </button>
