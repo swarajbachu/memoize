@@ -24,6 +24,7 @@ import { Frame, FrameFooter } from "~/components/ui/frame";
 import {
   composerDoc,
   createComposerView,
+  replaceWithChip,
   setComposerDoc,
   type ActiveTrigger,
 } from "~/lib/codemirror/composer";
@@ -33,6 +34,7 @@ import {
   updateImageChipEffect,
 } from "~/lib/codemirror/composer-chips";
 import { useAttachmentsStore } from "../store/attachments.ts";
+import { useComposerBridge } from "../store/composer-bridge.ts";
 import { cn } from "~/lib/utils";
 import {
   matchBuiltin,
@@ -130,7 +132,38 @@ export function ChatComposer({ session }: { session: Session }) {
     editorViewRef.current = view;
     view.focus();
 
+    // Register imperative entrypoints on the composer bridge so the file tree
+    // (and the top-bar workflow buttons) can drop chips / text into this view
+    // without prop-drilling the EditorView ref.
+    const bridge = useComposerBridge.getState();
+    bridge.setAttachFile((ref) => {
+      const v = editorViewRef.current;
+      if (v === null) return;
+      const sel = v.state.selection.main;
+      const token = `@${ref.relPath}`;
+      replaceWithChip(v, sel.head, sel.head, token, {
+        kind: "file",
+        relPath: ref.relPath,
+        absPath: ref.absPath,
+        entryKind: ref.kind,
+      });
+    });
+    bridge.setInsertText((text) => {
+      const v = editorViewRef.current;
+      if (v === null) return;
+      const sel = v.state.selection.main;
+      const insert = text + " ";
+      v.dispatch({
+        changes: { from: sel.head, to: sel.head, insert },
+        selection: { anchor: sel.head + insert.length },
+      });
+      v.focus();
+    });
+
     return () => {
+      const b = useComposerBridge.getState();
+      b.setAttachFile(null);
+      b.setInsertText(null);
       view.destroy();
       editorViewRef.current = null;
     };
@@ -346,7 +379,7 @@ export function ChatComposer({ session }: { session: Session }) {
   };
 
   return (
-    <TooltipProvider>
+    <TooltipProvider delay={0}>
       <div className="shrink-0 px-3 pb-3 pt-2">
         <div className="mx-auto">
           <Frame>

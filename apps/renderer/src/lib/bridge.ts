@@ -10,8 +10,15 @@ export interface RpcBridge {
   ) => () => void;
 }
 
+export interface WindowBridge {
+  readonly onFullScreenChange: (
+    handler: (fullscreen: boolean) => void,
+  ) => () => void;
+}
+
 export interface ForkzeroBridge {
   readonly rpc: RpcBridge;
+  readonly window?: WindowBridge;
 }
 
 declare global {

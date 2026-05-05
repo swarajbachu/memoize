@@ -89,6 +89,21 @@ function createMainWindow() {
   // Avoid the white flash that transparent windows show before first paint.
   mainWindow.once("ready-to-show", () => mainWindow?.show());
 
+  // Renderer needs to know fullscreen state to drop the macOS traffic-light
+  // gutter (the controls hide in native fullscreen, so the 80px reserve is
+  // dead space). We push the current state on first paint plus on every
+  // toggle — a fresh boot in fullscreen still gets the initial value.
+  const sendFullScreenState = () => {
+    if (mainWindow === null) return;
+    mainWindow.webContents.send(
+      "window:fullscreen",
+      mainWindow.isFullScreen(),
+    );
+  };
+  mainWindow.on("enter-full-screen", sendFullScreenState);
+  mainWindow.on("leave-full-screen", sendFullScreenState);
+  mainWindow.webContents.on("did-finish-load", sendFullScreenState);
+
   // Boot the Effect runtime once the window's webContents exists. The RPC
   // server protocol is bound to this webContents, so a window restart means
   // a fresh runtime — the only Effect.runFork in the main process.

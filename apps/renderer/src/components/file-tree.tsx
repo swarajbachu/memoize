@@ -1,12 +1,19 @@
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus } from "lucide-react";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Effect } from "effect";
 
 import type { FolderId, FsEntry } from "@forkzero/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
+import { useComposerBridge } from "../store/composer-bridge.ts";
 import { useUiStore } from "../store/ui.ts";
+import { useWorkspaceStore } from "../store/workspace.ts";
 import { FileIcon } from "./file-icon.tsx";
+import {
+  Tooltip,
+  TooltipPopup,
+  TooltipTrigger,
+} from "./ui/tooltip.tsx";
 
 type DirState =
   | { status: "loading" }
@@ -102,6 +109,7 @@ export function FileTree({ folderId }: { folderId: FolderId }) {
   );
 
   const openFileInTab = useUiStore((s) => s.openFileInTab);
+  const setActiveMainTab = useUiStore((s) => s.setActiveMainTab);
   const activePath = useUiStore((s) => s.openFile?.path ?? null);
 
   const onActivate = useCallback(
@@ -115,6 +123,25 @@ export function FileTree({ folderId }: { folderId: FolderId }) {
       openFileInTab({ folderId, path: entry.path, name: entry.name });
     },
     [folderId, loadChild, openFileInTab],
+  );
+
+  const folderRoot = useWorkspaceStore(
+    (s) => s.folders.find((f) => f.id === folderId)?.path ?? null,
+  );
+
+  // Translates a tree row's "+" click into a composer chip insertion. The
+  // composer registers `attachFile` on mount via `composer-bridge`; if no
+  // session is active the bridge stays null and the button renders disabled.
+  const onAttach = useCallback(
+    (entry: FsEntry) => {
+      const attach = useComposerBridge.getState().attachFile;
+      if (attach === null) return;
+      setActiveMainTab("chat");
+      const absPath =
+        folderRoot !== null ? `${folderRoot}/${entry.path}` : entry.path;
+      attach({ relPath: entry.path, absPath, kind: entry.kind });
+    },
+    [folderRoot, setActiveMainTab],
   );
 
   const onPrefetch = useCallback(
@@ -146,6 +173,7 @@ export function FileTree({ folderId }: { folderId: FolderId }) {
           childStates={childStates}
           onActivate={onActivate}
           onPrefetch={onPrefetch}
+          onAttach={onAttach}
           activePath={activePath}
         />
       ))}
@@ -160,6 +188,7 @@ type TreeNodeProps = {
   childStates: Record<string, DirState>;
   onActivate: (entry: FsEntry) => void;
   onPrefetch: (entry: FsEntry) => void;
+  onAttach: (entry: FsEntry) => void;
   activePath: string | null;
 };
 
@@ -171,6 +200,7 @@ const TreeNode = memo(
     childStates,
     onActivate,
     onPrefetch,
+    onAttach,
     activePath,
   }: TreeNodeProps) {
     const isDir = entry.kind === "directory";
@@ -181,24 +211,54 @@ const TreeNode = memo(
 
     return (
       <li>
-        <button
-          type="button"
-          onClick={() => onActivate(entry)}
+        <div
+          className="group/row relative px-1.5"
           onMouseEnter={isDir ? () => onPrefetch(entry) : undefined}
-          title={entry.path}
-          style={{ paddingLeft: 8 + depth * 12 }}
-          className={`flex w-full items-center gap-1.5 py-1 pr-2 text-left hover:bg-sidebar-accent/60 ${
-            isActive ? "bg-sidebar-accent text-foreground" : ""
-          }`}
         >
-          {isDir ? (
-            <Chevron className="size-3.5 shrink-0 text-muted-foreground" />
-          ) : (
-            <span className="inline-block w-3.5 shrink-0" />
-          )}
-          <FileIcon name={entry.name} kind={entry.kind} expanded={isOpen} />
-          <span className="min-w-0 flex-1 truncate text-xs">{entry.name}</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => onActivate(entry)}
+            title={entry.path}
+            style={{ paddingLeft: 8 + depth * 12 }}
+            className={`flex w-full items-center gap-1.5 rounded-sm py-1 pr-14 text-left transition-colors group-hover/row:bg-sidebar-accent/60 ${
+              isActive ? "bg-sidebar-accent text-foreground" : ""
+            }`}
+          >
+            <FileIcon name={entry.name} kind={entry.kind} expanded={isOpen} />
+            <span className="min-w-0 flex-1 truncate font-mono text-[12px]">
+              {entry.name}
+            </span>
+          </button>
+          <div className="pointer-events-none absolute top-1/2 right-3 flex -translate-y-1/2 items-center gap-1">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    aria-label="Attach to chat"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onAttach(entry);
+                    }}
+                    className="pointer-events-auto flex size-5 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-foreground/10 hover:text-foreground group-hover/row:opacity-100"
+                  >
+                    <Plus className="size-3.5" />
+                  </button>
+                }
+              />
+              <TooltipPopup>Attach to chat</TooltipPopup>
+            </Tooltip>
+            {isDir ? (
+              <Chevron
+                className={`size-3.5 text-muted-foreground transition-opacity ${
+                  isOpen ? "opacity-100" : "opacity-0 group-hover/row:opacity-100"
+                }`}
+              />
+            ) : (
+              <span className="inline-block size-3.5" />
+            )}
+          </div>
+        </div>
         {isOpen && child !== undefined && (
           <ChildList
             state={child}
@@ -207,6 +267,7 @@ const TreeNode = memo(
             childStates={childStates}
             onActivate={onActivate}
             onPrefetch={onPrefetch}
+            onAttach={onAttach}
             activePath={activePath}
           />
         )}
@@ -222,7 +283,8 @@ const TreeNode = memo(
       prev.depth !== next.depth ||
       prev.activePath !== next.activePath ||
       prev.onActivate !== next.onActivate ||
-      prev.onPrefetch !== next.onPrefetch
+      prev.onPrefetch !== next.onPrefetch ||
+      prev.onAttach !== next.onAttach
     ) {
       return false;
     }
@@ -249,6 +311,7 @@ function ChildList({
   childStates,
   onActivate,
   onPrefetch,
+  onAttach,
   activePath,
 }: {
   state: DirState;
@@ -257,6 +320,7 @@ function ChildList({
   childStates: Record<string, DirState>;
   onActivate: (entry: FsEntry) => void;
   onPrefetch: (entry: FsEntry) => void;
+  onAttach: (entry: FsEntry) => void;
   activePath: string | null;
 }) {
   if (state.status === "loading") {
@@ -295,6 +359,7 @@ function ChildList({
           childStates={childStates}
           onActivate={onActivate}
           onPrefetch={onPrefetch}
+          onAttach={onAttach}
           activePath={activePath}
         />
       ))}

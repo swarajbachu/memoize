@@ -489,20 +489,24 @@ export const MessageStoreLive = Layer.scoped(
         const now = new Date();
         const nowIso = now.toISOString();
         const title = input.title?.trim() || titleFromInitial(input.initialPrompt);
+        // A fresh session is only "running" if the caller handed in an initial
+        // prompt — otherwise the provider has spun up but no turn is in flight,
+        // so the renderer should see `idle` and show Send (not Interrupt).
+        const hasInitial =
+          input.initialPrompt !== undefined &&
+          input.initialPrompt.trim().length > 0;
+        const initialStatus: Session["status"] = hasInitial ? "running" : "idle";
         yield* sql`
           INSERT INTO sessions
             (id, project_id, title, provider_id, model, status, runtime_mode, created_at, updated_at)
           VALUES
             (${sessionId}, ${input.projectId}, ${title}, ${input.providerId},
-             ${input.model}, 'running', ${initialRuntimeMode}, ${nowIso}, ${nowIso})
+             ${input.model}, ${initialStatus}, ${initialRuntimeMode}, ${nowIso}, ${nowIso})
         `.pipe(Effect.orDie);
-        if (
-          input.initialPrompt !== undefined &&
-          input.initialPrompt.trim().length > 0
-        ) {
+        if (hasInitial) {
           yield* persistMessage(sessionId, {
             _tag: "user",
-            text: input.initialPrompt,
+            text: input.initialPrompt!,
           });
         }
         yield* startSubscription(sessionId);
@@ -512,7 +516,7 @@ export const MessageStoreLive = Layer.scoped(
           title,
           providerId: input.providerId,
           model: input.model,
-          status: "running",
+          status: initialStatus,
           archivedAt: null,
           cursor: null,
           resumeStrategy: "none",
