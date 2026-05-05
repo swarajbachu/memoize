@@ -1,9 +1,7 @@
 import {
-  ExternalLink,
   GitBranch,
   GitMerge,
   GitPullRequestArrow,
-  Loader2,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
@@ -211,15 +209,6 @@ const deriveWorkflow = (
   return { kind: "idle" };
 };
 
-const openInline = (url: string) => {
-  const bridge = window.forkzero?.app;
-  if (bridge !== undefined) {
-    bridge.openInlineUrl(url);
-    return;
-  }
-  // Web preview / dev fallback — Electron isn't around to host a child.
-  window.open(url, "_blank", "noopener,noreferrer");
-};
 
 /**
  * Top bar over the files panel: workflow status pill + primary action,
@@ -262,24 +251,10 @@ export function TopBarRight({ folderId }: { folderId: FolderId | null }) {
           </Pill>
         ) : null}
         {workflow.kind === "ahead" ? (
-          <Pill tone="sky">
-            {workflow.count} ahead
-          </Pill>
+          <Pill tone="sky">{workflow.count} ahead</Pill>
         ) : null}
         {workflow.kind === "open-pr" ? (
-          <>
-            <Pill tone={prBadgeTone(workflow)}>#{workflow.number ?? "?"}</Pill>
-            {workflow.isDraft ? <Pill tone="zinc">Draft</Pill> : null}
-            {workflow.checks === "pending" ? (
-              <Pill tone="amber">
-                <Loader2 className="mr-1 size-3 animate-spin" />
-                Checks running
-              </Pill>
-            ) : null}
-            {workflow.checks === "failure" ? (
-              <Pill tone="red">Checks failed</Pill>
-            ) : null}
-          </>
+          <Pill tone={prBadgeTone(workflow)}>#{workflow.number ?? "?"}</Pill>
         ) : null}
       </div>
       <div className={`flex shrink-0 items-center gap-1 ${ACTION_CLASS}`}>
@@ -304,35 +279,24 @@ export function TopBarRight({ folderId }: { folderId: FolderId | null }) {
           />
         ) : null}
         {workflow.kind === "open-pr" ? (
-          <>
-            {workflow.url !== null ? (
-              <ActionButton
-                tone="zinc"
-                variant="soft"
-                icon={<ExternalLink className="size-3.5" />}
-                label="View PR"
-                onClick={() => openInline(workflow.url!)}
-              />
-            ) : null}
-            <ActionButton
-              tone="emerald"
-              variant="solid"
-              icon={<GitMerge className="size-3.5" />}
-              label={workflow.isDraft ? "Mark ready" : "Merge"}
-              disabled={
-                !composerReady ||
-                workflow.checks === "pending" ||
-                workflow.checks === "failure"
-              }
-              onClick={() =>
-                sendToComposer(
-                  workflow.isDraft
-                    ? "mark this pull request as ready for review"
-                    : "merge this pull request and delete the branch",
-                )
-              }
-            />
-          </>
+          <ActionButton
+            tone="emerald"
+            variant="solid"
+            icon={<GitMerge className="size-3.5" />}
+            label={workflow.isDraft ? "Mark ready" : "Merge"}
+            disabled={
+              !composerReady ||
+              workflow.checks === "pending" ||
+              workflow.checks === "failure"
+            }
+            onClick={() =>
+              sendToComposer(
+                workflow.isDraft
+                  ? "mark this pull request as ready for review"
+                  : "merge this pull request and delete the branch",
+              )
+            }
+          />
         ) : null}
       </div>
     </header>

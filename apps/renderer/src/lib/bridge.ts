@@ -17,7 +17,7 @@ export interface WindowBridge {
 }
 
 export interface AppBridge {
-  readonly openInlineUrl: (url: string) => void;
+  readonly openExternal: (url: string) => void;
 }
 
 export interface ForkzeroBridge {

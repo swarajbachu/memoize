@@ -34,8 +34,8 @@ const bridge = {
     },
   },
   app: {
-    openInlineUrl: (url: string) => {
-      ipcRenderer.send("app:openInlineUrl", url);
+    openExternal: (url: string) => {
+      ipcRenderer.send("app:openExternal", url);
     },
   },
 };
