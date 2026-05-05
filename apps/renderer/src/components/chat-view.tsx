@@ -1,5 +1,12 @@
 import { MessageSquare } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import {
+  Fragment,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import type { AgentItemId, Message, SessionId } from "@forkzero/wire";
 
@@ -7,6 +14,8 @@ import { useMessagesStore } from "../store/messages.ts";
 import { useSessionsStore } from "../store/sessions.ts";
 import { useSkillsStore } from "../store/skills.ts";
 import { MessageRow, type ToolResultRecord } from "./message-row.tsx";
+import { TurnSummary } from "./turn-summary.tsx";
+import { GradientDescent } from "./ui/gradient-descent.tsx";
 
 const NEAR_BOTTOM_PX = 80;
 
@@ -24,6 +33,9 @@ const EMPTY_MESSAGES: ReadonlyArray<Message> = [];
 export function ChatView({ sessionId }: { sessionId: SessionId }) {
   const messages = useMessagesStore(
     (s) => s.messagesBySession[sessionId] ?? EMPTY_MESSAGES,
+  );
+  const inFlight = useMessagesStore(
+    (s) => s.runningBySession[sessionId] === true,
   );
   const error = useMessagesStore((s) => s.errorBySession[sessionId] ?? null);
   const hydrate = useMessagesStore((s) => s.hydrate);
@@ -68,6 +80,29 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
   // have a preceding tool_use in this transcript so true orphans (e.g. a
   // dropped tool_use event) still fall through to a standalone error row
   // in MessageRow rather than disappearing silently.
+  // Split the flat message stream into turns: each turn is one user message
+  // (or null for an open response with no preceding user msg) plus every
+  // assistant / thinking / tool message that follows until the next user
+  // message. Used to wrap completed turns in a TurnSummary card.
+  const turns = useMemo(() => {
+    const out: Array<{
+      user: Message | null;
+      body: Message[];
+    }> = [];
+    let current: { user: Message | null; body: Message[] } | null = null;
+    for (const m of messages) {
+      if (m.content._tag === "user") {
+        if (current !== null) out.push(current);
+        current = { user: m, body: [] };
+      } else {
+        if (current === null) current = { user: null, body: [] };
+        current.body.push(m);
+      }
+    }
+    if (current !== null) out.push(current);
+    return out;
+  }, [messages]);
+
   const resultsByItemId = useMemo(() => {
     const seenUseIds = new Set<AgentItemId>();
     const map = new Map<AgentItemId, ToolResultRecord>();
@@ -107,13 +142,48 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
         </div>
       ) : (
         <div className="flex flex-col py-2">
-          {messages.map((message) => (
-            <MessageRow
-              key={message.id}
-              message={message}
-              resultsByItemId={resultsByItemId}
-            />
-          ))}
+          {turns.map((turn, idx) => {
+            const isLastTurn = idx === turns.length - 1;
+            const isLive = inFlight && isLastTurn;
+            const hasToolCalls = turn.body.some(
+              (m) => m.content._tag === "tool_use",
+            );
+            // Only collapse into a summary when there's a final assistant
+            // message worth showing as the body — otherwise a turn with
+            // just tool calls would lose its content behind the accordion.
+            const hasFinalText = turn.body.some(
+              (m) =>
+                m.content._tag === "assistant" &&
+                m.content.text.trim().length > 0,
+            );
+            const showSummary = !isLive && hasToolCalls && hasFinalText;
+            const turnKey = turn.user?.id ?? `turn-${idx}`;
+            return (
+              <Fragment key={turnKey}>
+                {turn.user !== null ? (
+                  <MessageRow
+                    message={turn.user}
+                    resultsByItemId={resultsByItemId}
+                  />
+                ) : null}
+                {showSummary ? (
+                  <TurnSummary
+                    body={turn.body}
+                    resultsByItemId={resultsByItemId}
+                  />
+                ) : (
+                  turn.body.map((m) => (
+                    <MessageRow
+                      key={m.id}
+                      message={m}
+                      resultsByItemId={resultsByItemId}
+                    />
+                  ))
+                )}
+              </Fragment>
+            );
+          })}
+          {inFlight && <WorkingRow messages={messages} />}
         </div>
       )}
       {error !== null && (
@@ -121,6 +191,65 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
           {error}
         </div>
       )}
+    </div>
+  );
+}
+
+const formatElapsed = (ms: number): string => {
+  const totalSec = ms / 1000;
+  if (totalSec < 60) return `${totalSec.toFixed(1)}s`;
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec - min * 60;
+  return `${min}m ${sec.toFixed(1)}s`;
+};
+
+const PATTERNS = [
+  "frame",
+  "corners",
+  "checker",
+  "x",
+  "full",
+] as const;
+type Pattern = (typeof PATTERNS)[number];
+
+function pickDifferent(current: Pattern | null): Pattern {
+  const candidates = PATTERNS.filter((p) => p !== current);
+  return candidates[Math.floor(Math.random() * candidates.length)]!;
+}
+
+function WorkingRow({ messages }: { messages: ReadonlyArray<Message> }) {
+  // Anchor to the most recent user message — we want the live "current turn"
+  // elapsed time beside the loader, not the session-wide total.
+  const anchorMs = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i]!;
+      if (m.content._tag === "user") return m.createdAt.getTime();
+    }
+    return null;
+  }, [messages]);
+
+  const [now, setNow] = useState(() => Date.now());
+  const [pattern, setPattern] = useState<Pattern>(() => pickDifferent(null));
+  useEffect(() => {
+    const tickId = window.setInterval(() => setNow(Date.now()), 100);
+    const patternId = window.setInterval(
+      () => setPattern((prev) => pickDifferent(prev)),
+      2200,
+    );
+    return () => {
+      window.clearInterval(tickId);
+      window.clearInterval(patternId);
+    };
+  }, []);
+
+  const elapsed = anchorMs === null ? 0 : Math.max(0, now - anchorMs);
+
+  return (
+    <div className="flex items-center gap-2 px-4 py-2 text-[11px] text-muted-foreground">
+      <div data-pattern={pattern}>
+        <GradientDescent dotSize={2.5} cellPadding={0.75} speed={1.2} />
+      </div>
+      <span className="tabular-nums">{formatElapsed(elapsed)}</span>
     </div>
   );
 }

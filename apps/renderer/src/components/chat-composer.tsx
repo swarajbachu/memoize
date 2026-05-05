@@ -69,9 +69,6 @@ const MIN_HEIGHT = 56;
 const MAX_HEIGHT = 240;
 const MAX_ATTACHMENTS_PER_TURN = 20;
 
-// Stable empty-array reference; see chat-view.tsx for rationale.
-const EMPTY_MESSAGES: ReadonlyArray<Message> = [];
-
 type ReasoningLevel = "low" | "medium" | "high";
 const REASONING_LEVELS: ReadonlyArray<ReasoningLevel> = [
   "low",
@@ -81,9 +78,6 @@ const REASONING_LEVELS: ReadonlyArray<ReasoningLevel> = [
 
 export function ChatComposer({ session }: { session: Session }) {
   const sessionId: SessionId = session.id;
-  const messages = useMessagesStore(
-    (s) => s.messagesBySession[sessionId] ?? EMPTY_MESSAGES,
-  );
   const inFlight = useMessagesStore(
     (s) => s.runningBySession[sessionId] === true,
   );
@@ -420,7 +414,7 @@ export function ChatComposer({ session }: { session: Session }) {
                           type="button"
                           onClick={() => void interrupt(sessionId)}
                           aria-label="Interrupt"
-                          className="flex size-8 shrink-0 self-end items-center justify-center rounded-lg bg-destructive text-destructive-foreground transition-opacity hover:opacity-90"
+                          className="flex size-8 shrink-0 self-end items-center justify-center rounded-lg border border-border/60 bg-background text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
                         >
                           <Square className="size-3.5" />
                         </button>
@@ -479,7 +473,7 @@ export function ChatComposer({ session }: { session: Session }) {
                   sessionId={sessionId}
                   current={session.runtimeMode}
                 />
-                <TurnTimer messages={messages} inFlight={inFlight} />
+                <SessionTimer sessionId={sessionId} inFlight={inFlight} />
               </div>
             </FrameFooter>
           </Frame>
@@ -674,62 +668,83 @@ function ReasoningPicker({ sessionId }: { sessionId: SessionId }) {
   );
 }
 
-const formatElapsed = (ms: number): string => {
-  const totalSec = ms / 1000;
-  if (totalSec < 60) return `${totalSec.toFixed(1)}s`;
+const formatCoarse = (ms: number): string => {
+  const totalSec = Math.floor(ms / 1000);
+  if (totalSec < 60) return `${totalSec}s`;
   const min = Math.floor(totalSec / 60);
-  const sec = totalSec - min * 60;
-  return `${min}m ${sec.toFixed(1)}s`;
+  if (min < 60) return `${min}m`;
+  const hours = Math.floor(min / 60);
+  const mins = min - hours * 60;
+  return mins === 0 ? `${hours}h` : `${hours}h ${mins}m`;
 };
 
 /**
- * Live elapsed time for the current turn. Anchors to the most recent user
- * message; ticks while the turn is in flight, then freezes the final value
- * once the assistant lands so the user can see how long the turn took.
+ * Sum of every turn's duration in this session — start = user message,
+ * end = last message of that turn (or `now` for the in-flight turn). Idle
+ * gaps between a finished assistant reply and the next user prompt are
+ * NOT counted, so an old session that's been sitting open doesn't claim
+ * "47h" of work.
  */
-function TurnTimer({
-  messages,
+function SessionTimer({
+  sessionId,
   inFlight,
 }: {
-  messages: ReadonlyArray<Message>;
+  sessionId: SessionId;
   inFlight: boolean;
 }) {
-  const anchorMs = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i]!;
-      if (m.content._tag === "user") return m.createdAt.getTime();
-    }
-    return null;
-  }, [messages]);
+  const messages = useMessagesStore(
+    (s) => s.messagesBySession[sessionId] ?? EMPTY_MESSAGES,
+  );
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!inFlight) return;
-    const id = window.setInterval(() => setNow(Date.now()), 100);
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, [inFlight]);
 
-  if (anchorMs === null) {
-    return <span className="text-[10px] text-muted-foreground">idle</span>;
-  }
+  const totalElapsed = useMemo(() => {
+    let total = 0;
+    let turnStart: number | null = null;
+    let turnLastMs: number | null = null;
+    let turnIsLast = false;
 
-  // Freeze on the final assistant/tool-result timestamp once the turn ends, so
-  // the displayed value matches the actual turn duration instead of "time
-  // since user spoke".
-  const endMs = inFlight
-    ? now
-    : (messages[messages.length - 1]?.createdAt.getTime() ?? now);
-  const elapsed = Math.max(0, endMs - anchorMs);
+    const closeTurn = (endOverride?: number) => {
+      if (turnStart === null) return;
+      const end = endOverride ?? turnLastMs ?? turnStart;
+      total += Math.max(0, end - turnStart);
+    };
+
+    for (let i = 0; i < messages.length; i++) {
+      const m = messages[i]!;
+      if (m.content._tag === "user") {
+        if (turnStart !== null) closeTurn();
+        turnStart = m.createdAt.getTime();
+        turnLastMs = turnStart;
+        turnIsLast = i === messages.length - 1;
+      } else if (turnStart !== null) {
+        turnLastMs = m.createdAt.getTime();
+        turnIsLast = i === messages.length - 1;
+      }
+    }
+    if (turnStart !== null) {
+      // The in-flight turn keeps growing until the next message lands; for
+      // a completed last turn we freeze at its final message timestamp.
+      closeTurn(inFlight && turnIsLast !== false ? now : undefined);
+    }
+    return total;
+  }, [messages, inFlight, now]);
+
+  if (messages.length === 0) return null;
 
   return (
     <span
-      className={`tabular-nums text-[10px] ${
-        inFlight ? "text-foreground" : "text-muted-foreground"
-      }`}
-      title={inFlight ? "Time on the current turn" : "Last turn duration"}
+      className="rounded-md border border-border/60 bg-background px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground"
+      title="Total time spent across all turns in this session"
     >
-      {inFlight ? "● " : ""}
-      {formatElapsed(elapsed)}
+      {formatCoarse(totalElapsed)}
     </span>
   );
 }
+
+const EMPTY_MESSAGES: ReadonlyArray<Message> = [];
