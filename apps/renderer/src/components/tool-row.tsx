@@ -17,7 +17,13 @@ import remarkGfm from "remark-gfm";
 
 import { cn } from "~/lib/utils";
 
-import { DiffBody, extractEdits, type FileEdit } from "./inline-diff.tsx";
+import { FileBadge } from "./file-badge.tsx";
+import {
+  DiffBody,
+  diffStats,
+  extractEdits,
+  type FileEdit,
+} from "./inline-diff.tsx";
 
 type IconHandle = Parameters<typeof HugeiconsIcon>[0]["icon"];
 
@@ -271,7 +277,7 @@ function ExpandableIconRow({
         ) : null}
       </button>
       {expanded && hasContent ? (
-        <div className="ml-7 mt-1 space-y-2 border-l border-border/60 pl-3 pr-1">
+        <div className="ml-7 mt-1 max-w-2xl space-y-2 overflow-hidden border-l border-border/60 pl-3 pr-1">
           {body}
         </div>
       ) : null}
@@ -357,10 +363,10 @@ const buildToolView = (
         label: "Read",
         trailing:
           path !== null ? (
-            <>
-              <InlineTextHint value={linesHint} />
-              <InlineCodeChip value={basename(path)} />
-            </>
+            <span className="flex items-center gap-2">
+              <span className="text-muted-foreground">{linesHint}</span>
+              <FileBadge path={path} />
+            </span>
           ) : undefined,
         inputPanel:
           path !== null ? (
@@ -398,12 +404,21 @@ const buildToolView = (
           : tool === "MultiEdit"
             ? `MultiEdit (${edits.length})`
             : "Edit";
+      const stats = edits.length > 0 ? diffStats(edits) : null;
       return {
         icon: PencilEdit01Icon,
         label,
         trailing:
           path !== null ? (
-            <InlineCodeChip value={basename(path)} />
+            <span className="flex items-center gap-2 tabular-nums">
+              <FileBadge path={path} />
+              {stats !== null && stats.added > 0 ? (
+                <span className="text-emerald-400">+{stats.added}</span>
+              ) : null}
+              {stats !== null && stats.removed > 0 ? (
+                <span className="text-red-400">-{stats.removed}</span>
+              ) : null}
+            </span>
           ) : undefined,
         fallbackBody:
           edits.length > 0 ? (

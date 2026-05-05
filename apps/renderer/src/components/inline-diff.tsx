@@ -61,6 +61,41 @@ interface DiffLine {
   readonly newLine: number | null;
 }
 
+/**
+ * Total +/- line counts across a set of edits, without rendering the diff.
+ * For a `Write` (mode === "create") we count every line in newText as an
+ * addition and skip subtraction.
+ */
+export const diffStats = (
+  edits: ReadonlyArray<FileEdit>,
+): { added: number; removed: number } => {
+  let added = 0;
+  let removed = 0;
+  for (const edit of edits) {
+    if (edit.mode === "create") {
+      added += edit.newText === "" ? 0 : edit.newText.split("\n").length;
+      continue;
+    }
+    const patch = structuredPatch(
+      edit.path,
+      edit.path,
+      edit.oldText,
+      edit.newText,
+      "",
+      "",
+      { context: 0 },
+    );
+    for (const hunk of patch.hunks) {
+      for (const raw of hunk.lines) {
+        const m = raw.charAt(0);
+        if (m === "+") added += 1;
+        else if (m === "-") removed += 1;
+      }
+    }
+  }
+  return { added, removed };
+};
+
 const buildDiff = (edit: FileEdit): ReadonlyArray<DiffLine> => {
   const patch = structuredPatch(
     edit.path,
