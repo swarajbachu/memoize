@@ -3,6 +3,7 @@ import { useState } from "react";
 
 import { useWorkspaceStore } from "../store/workspace.ts";
 import { FileTree } from "./file-tree.tsx";
+import { RightPaneHeader } from "./right-pane-header.tsx";
 import { TerminalPane } from "./terminal-pane.tsx";
 
 type Tab = "files" | "terminal";
@@ -22,7 +23,8 @@ export function RightPane() {
   const [tab, setTab] = useState<Tab>("files");
 
   return (
-    <aside className="flex h-full min-h-0 w-full flex-col">
+    <aside className="flex h-full min-h-0 w-full flex-col bg-sidebar/60">
+      {selected ? <RightPaneHeader projectName={selected.name} /> : null}
       <div className="flex h-9 shrink-0 items-center gap-0.5 border-b border-border px-1 text-xs">
         <TabButton
           active={tab === "files"}

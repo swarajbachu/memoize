@@ -51,8 +51,8 @@ export function MainTabs({ headerLabel, headerTitle, providerId, model }: Props)
       : headerTitle;
 
   return (
-    <header className="flex h-10 shrink-0 items-stretch border-b border-border [-webkit-app-region:drag]">
-      <div className="ml-16 flex items-stretch gap-1 [-webkit-app-region:no-drag]">
+    <header className="flex h-10 shrink-0 items-stretch border-b border-border">
+      <div className="flex items-stretch gap-1 px-2">
         <TabButton
           active={activeMainTab === "chat"}
           onClick={() => setActiveMainTab("chat")}

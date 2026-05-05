@@ -27,7 +27,6 @@ import {
 
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
-import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
 import { cn, formatCompactNumber } from "~/lib/utils";
 import { getRpcClient } from "../lib/rpc-client.ts";
 import { useMessagesStore } from "../store/messages.ts";
@@ -39,7 +38,6 @@ import { useUiStore } from "../store/ui.ts";
 import { useWorkspaceStore } from "../store/workspace.ts";
 import { BranchIcon, type BranchState } from "./branch-icon.tsx";
 import { PermissionsInspector } from "./permissions-inspector.tsx";
-import { ProviderIcon } from "./provider-icons.tsx";
 import { GradientDescent } from "./ui/gradient-descent.tsx";
 
 const initialsOf = (name: string): string => {
@@ -435,7 +433,6 @@ const LOGIN_HINT: Record<ProviderId, string> = {
 };
 
 function NewSessionButton({ projectId }: { projectId: FolderId }) {
-  const availability = useProvidersStore((s) => s.availability);
   const refresh = useProvidersStore((s) => s.refresh);
   const create = useSessionsStore((s) => s.create);
   const defaultProviderId = useSettingsStore((s) => s.defaultProviderId);
@@ -443,111 +440,29 @@ function NewSessionButton({ projectId }: { projectId: FolderId }) {
     (s) => s.defaultModelByProvider,
   );
   const defaultRuntimeMode = useSettingsStore((s) => s.defaultRuntimeMode);
-  const [open, setOpen] = useState(false);
-
-  // Refresh availability every time the popover opens — catches the user
-  // running `claude /login` in their terminal without needing to restart.
-  useEffect(() => {
-    if (open) void refresh();
-  }, [open, refresh]);
-
-  const isReady = (providerId: ProviderId): boolean => {
-    const a = availability.find((x) => x.providerId === providerId);
-    if (a === undefined) return false;
-    return a.cliLoggedIn || a.hasApiKey;
-  };
-
-  const startSession = (providerId: ProviderId, model: string) => {
-    void create(projectId, providerId, model, {
-      runtimeMode: defaultRuntimeMode,
-    });
-  };
 
   const onClick = async (e: React.MouseEvent) => {
     e.stopPropagation();
     // Cheap availability refresh in case the user just logged into a CLI.
     await refresh();
-    if (isReady(defaultProviderId)) {
-      const model =
-        defaultModelByProvider[defaultProviderId] ??
-        defaultModelFor(defaultProviderId);
-      startSession(defaultProviderId, model);
-      return;
-    }
-    // Saved default isn't logged in — fall back to the popover so the user
-    // can still pick a provider that works right now.
-    setOpen(true);
-  };
-
-  const onPick = (providerId: ProviderId) => {
-    setOpen(false);
     const model =
-      defaultModelByProvider[providerId] ?? defaultModelFor(providerId);
-    startSession(providerId, model);
+      defaultModelByProvider[defaultProviderId] ??
+      defaultModelFor(defaultProviderId);
+    void create(projectId, defaultProviderId, model, {
+      runtimeMode: defaultRuntimeMode,
+    });
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
-        onClick={onClick}
-        className="rounded p-0.5 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[popup-open]:bg-sidebar-accent data-[popup-open]:text-sidebar-accent-foreground"
-        aria-label="New chat"
-        title="New chat"
-      >
-        <SquarePen className="size-3.5" />
-      </PopoverTrigger>
-      <PopoverPopup side="right" align="start" className="w-64">
-        <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-          {isReady(defaultProviderId)
-            ? "New session"
-            : "Saved default isn't ready — pick another provider"}
-        </div>
-        {availability.length === 0 && (
-          <p className="px-2 py-2 text-xs text-muted-foreground">
-            Loading providers…
-          </p>
-        )}
-        {availability.map((avail) => {
-          const ready = avail.cliLoggedIn || avail.hasApiKey;
-          const hint = !avail.cliInstalled
-            ? `Install the \`${avail.providerId}\` CLI`
-            : !ready
-              ? LOGIN_HINT[avail.providerId]
-              : null;
-          return (
-            <button
-              key={avail.providerId}
-              type="button"
-              disabled={!ready}
-              onClick={() => {
-                if (ready) onPick(avail.providerId);
-              }}
-              className={`flex w-full flex-col items-start gap-0.5 rounded px-2 py-1.5 text-left text-xs ${
-                ready
-                  ? "hover:bg-sidebar-accent"
-                  : "cursor-not-allowed opacity-60"
-              }`}
-            >
-              <div className="flex w-full items-center gap-2">
-                <ProviderIcon
-                  providerId={avail.providerId}
-                  className="size-3.5"
-                />
-                <span className="flex-1 truncate">{avail.displayName}</span>
-                <span className="text-[10px] text-muted-foreground">
-                  {ready ? "ready" : "needs login"}
-                </span>
-              </div>
-              {hint !== null && (
-                <span className="ml-5 text-[10px] text-muted-foreground">
-                  {hint}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </PopoverPopup>
-    </Popover>
+    <button
+      type="button"
+      onClick={onClick}
+      className="rounded p-0.5 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+      aria-label="New chat"
+      title="New chat"
+    >
+      <SquarePen className="size-3.5" />
+    </button>
   );
 }
 
@@ -683,9 +598,7 @@ function SessionRow({ session }: { session: Session }) {
           <span
             className={cn(
               "ml-3 inline-flex size-3.5 shrink-0 items-center justify-center",
-              isSelected
-                ? "text-sidebar-accent-foreground"
-                : "text-foreground",
+              isSelected ? "text-sidebar-accent-foreground" : "text-foreground",
             )}
             aria-label="Agent is working"
             title="Agent is working"
