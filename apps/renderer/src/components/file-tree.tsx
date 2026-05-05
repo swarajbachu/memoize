@@ -220,7 +220,7 @@ const TreeNode = memo(
             onClick={() => onActivate(entry)}
             title={entry.path}
             style={{ paddingLeft: 8 + depth * 12 }}
-            className={`flex w-full items-center gap-1.5 rounded-md py-1 pr-14 text-left transition-colors group-hover/row:bg-sidebar-accent/60 ${
+            className={`flex w-full items-center gap-1.5 rounded-sm py-1 pr-14 text-left transition-colors group-hover/row:bg-sidebar-accent/60 ${
               isActive ? "bg-sidebar-accent text-foreground" : ""
             }`}
           >

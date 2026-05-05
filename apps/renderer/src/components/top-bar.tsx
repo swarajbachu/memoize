@@ -13,6 +13,7 @@ import { useEffect } from "react";
 
 import type { FolderId } from "@forkzero/wire";
 
+import { softInteractive, softTone, type Tone } from "../lib/tones.ts";
 import { useComposerBridge } from "../store/composer-bridge.ts";
 import { useGitStatusStore } from "../store/git-status.ts";
 import { usePrStateStore } from "../store/pr-state.ts";
@@ -27,16 +28,14 @@ import {
 const SECTION_CLASS =
   "flex h-9 shrink-0 items-center gap-1.5 border-b border-border text-xs [-webkit-app-region:drag]";
 const ACTION_CLASS = "[-webkit-app-region:no-drag]";
-const ICON_BUTTON_CLASS = `${ACTION_CLASS} flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground`;
+const ICON_BUTTON_CLASS = `${ACTION_CLASS} flex size-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground`;
 
 /**
- * Top bar over the projects panel: product name on the left + a left-sidebar
- * collapse toggle on the right (when the panel is open). The leading `pl-20`
- * preserves space for the macOS traffic-light controls under
- * `titleBarStyle: "hiddenInset"`.
+ * Top bar over the projects panel: product name on the left + a left-pane
+ * collapse toggle on the right. The leading `pl-20` preserves space for the
+ * macOS traffic-light controls under `titleBarStyle: "hiddenInset"`.
  */
 export function TopBarLeft() {
-  const leftSidebarOpen = useUiStore((s) => s.leftSidebarOpen);
   const setLeftSidebarOpen = useUiStore((s) => s.setLeftSidebarOpen);
 
   return (
@@ -50,7 +49,7 @@ export function TopBarLeft() {
           render={
             <button
               type="button"
-              onClick={() => setLeftSidebarOpen(!leftSidebarOpen)}
+              onClick={() => setLeftSidebarOpen(false)}
               className={ICON_BUTTON_CLASS}
               aria-label="Hide projects panel"
             >
@@ -65,9 +64,10 @@ export function TopBarLeft() {
 }
 
 /**
- * Top bar over the main pane: when the projects panel is collapsed, surface
- * the open-toggle on the left. Branch name in the middle, right-sidebar
- * toggle on the right.
+ * Top bar over the main pane. Holds the projects-panel open-toggle (only
+ * when that panel is collapsed), the branch label, and the right-pane
+ * open/close toggle (always visible — the user expects to find it here
+ * regardless of which way the files panel is currently leaning).
  */
 export function TopBarMain({ folderId }: { folderId: FolderId | null }) {
   const status = useGitStatusStore((s) =>
@@ -129,23 +129,29 @@ export function TopBarMain({ folderId }: { folderId: FolderId | null }) {
           </>
         ) : null}
       </div>
-      {!rightSidebarOpen ? (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                onClick={() => setRightSidebarOpen(true)}
-                className={ICON_BUTTON_CLASS}
-                aria-label="Show files panel"
-              >
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              onClick={() => setRightSidebarOpen(!rightSidebarOpen)}
+              className={ICON_BUTTON_CLASS}
+              aria-label={
+                rightSidebarOpen ? "Hide files panel" : "Show files panel"
+              }
+            >
+              {rightSidebarOpen ? (
+                <PanelRightClose className="size-3.5" />
+              ) : (
                 <PanelRightOpen className="size-3.5" />
-              </button>
-            }
-          />
-          <TooltipPopup>Show files panel</TooltipPopup>
-        </Tooltip>
-      ) : null}
+              )}
+            </button>
+          }
+        />
+        <TooltipPopup>
+          {rightSidebarOpen ? "Hide files panel" : "Show files panel"}
+        </TooltipPopup>
+      </Tooltip>
     </header>
   );
 }
@@ -173,14 +179,13 @@ const deriveWorkflow = (
 
 /**
  * Top bar over the files panel: workflow status pill + primary action,
- * styled per state. Each click prefills the chat composer with a phrasing
- * the user confirms with Enter — we never silently kick off git ops.
+ * styled per state with the shared soft-tone palette.
  *
  * States today:
  *   idle     → empty
- *   dirty    → "<n> changes"  · Commit & push
- *   ahead    → "<n> ahead"    · Create PR
- *   open-pr  → "#<n> Open PR" · View PR
+ *   dirty    → "<n> changes"  · Commit & push   (amber)
+ *   ahead    → "<n> ahead"    · Create PR       (sky)
+ *   open-pr  → "#<n>"         · View PR         (emerald)
  *
  * Draft / checks / merge stages need new fields on `GitPrInfo` and are
  * deferred — the layout already reserves the space.
@@ -195,7 +200,6 @@ export function TopBarRight({ folderId }: { folderId: FolderId | null }) {
   const insertText = useComposerBridge((s) => s.insertText);
   const selectedSessionId = useSessionsStore((s) => s.selectedSessionId);
   const setActiveMainTab = useUiStore((s) => s.setActiveMainTab);
-  const setRightSidebarOpen = useUiStore((s) => s.setRightSidebarOpen);
 
   const sendToComposer = (text: string) => {
     setActiveMainTab("chat");
@@ -206,7 +210,7 @@ export function TopBarRight({ folderId }: { folderId: FolderId | null }) {
   const composerReady = selectedSessionId !== null && insertText !== null;
 
   return (
-    <header className={`${SECTION_CLASS} justify-between pr-1 pl-2`}>
+    <header className={`${SECTION_CLASS} justify-between px-2`}>
       <div className={`flex min-w-0 flex-1 items-center gap-2 ${ACTION_CLASS}`}>
         {workflow.kind === "dirty" ? (
           <Pill tone="amber">
@@ -214,15 +218,12 @@ export function TopBarRight({ folderId }: { folderId: FolderId | null }) {
           </Pill>
         ) : null}
         {workflow.kind === "ahead" ? (
-          <Pill tone="blue">
+          <Pill tone="sky">
             {workflow.count} ahead
           </Pill>
         ) : null}
         {workflow.kind === "open-pr" ? (
-          <>
-            <Pill tone="green">#{workflow.number ?? "?"}</Pill>
-            <span className="truncate text-emerald-300/90">Open PR</span>
-          </>
+          <Pill tone="emerald">#{workflow.number ?? "?"}</Pill>
         ) : null}
       </div>
       <div className={`flex shrink-0 items-center gap-1 ${ACTION_CLASS}`}>
@@ -237,7 +238,7 @@ export function TopBarRight({ folderId }: { folderId: FolderId | null }) {
         ) : null}
         {workflow.kind === "ahead" ? (
           <ActionButton
-            tone="blue"
+            tone="sky"
             icon={<GitPullRequestArrow className="size-3.5" />}
             label="Create PR"
             disabled={!composerReady}
@@ -246,61 +247,29 @@ export function TopBarRight({ folderId }: { folderId: FolderId | null }) {
         ) : null}
         {workflow.kind === "open-pr" ? (
           <ActionButton
-            tone="green"
+            tone="emerald"
             icon={<GitMerge className="size-3.5" />}
             label="View PR"
             onClick={() =>
               window.open(workflow.url, "_blank", "noopener,noreferrer")
             }
-            trailing={<ExternalLink className="size-3" />}
+            trailing={<ExternalLink className="size-3 opacity-70" />}
           />
         ) : null}
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                onClick={() => setRightSidebarOpen(false)}
-                className={ICON_BUTTON_CLASS}
-                aria-label="Hide files panel"
-              >
-                <PanelRightClose className="size-3.5" />
-              </button>
-            }
-          />
-          <TooltipPopup>Hide files panel</TooltipPopup>
-        </Tooltip>
       </div>
     </header>
   );
 }
 
-type Tone = "amber" | "blue" | "green";
-
-const PILL_TONE: Record<Tone, string> = {
-  amber:
-    "border-amber-400/30 bg-amber-500/10 text-amber-200/90",
-  blue: "border-sky-400/30 bg-sky-500/10 text-sky-200/90",
-  green: "border-emerald-400/30 bg-emerald-500/10 text-emerald-200/90",
-};
-
 function Pill({ tone, children }: { tone: Tone; children: React.ReactNode }) {
   return (
     <span
-      className={`flex shrink-0 items-center rounded-md border px-1.5 py-0.5 font-mono text-[10px] tracking-tight ${PILL_TONE[tone]}`}
+      className={`flex shrink-0 items-center rounded-sm px-1.5 py-0.5 font-mono text-[10px] tracking-tight ${softTone(tone)}`}
     >
       {children}
     </span>
   );
 }
-
-const BUTTON_TONE: Record<Tone, string> = {
-  amber:
-    "border-amber-400/30 bg-amber-500/15 text-amber-100 hover:bg-amber-500/25",
-  blue: "border-sky-400/30 bg-sky-500/15 text-sky-100 hover:bg-sky-500/25",
-  green:
-    "border-emerald-400/30 bg-emerald-500/15 text-emerald-100 hover:bg-emerald-500/25",
-};
 
 function ActionButton({
   tone,
@@ -322,7 +291,7 @@ function ActionButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${BUTTON_TONE[tone]}`}
+      className={`flex items-center gap-1.5 rounded-sm px-2 py-1 text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${softInteractive(tone)}`}
     >
       {icon}
       {label}
