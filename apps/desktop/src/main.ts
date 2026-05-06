@@ -1,5 +1,5 @@
 import { RpcSerialization } from "@effect/rpc";
-import { app, BrowserWindow, dialog, net, protocol } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from "electron";
 import { Effect, Fiber, Layer } from "effect";
 import * as fs from "node:fs/promises";
 import * as Path from "node:path";
@@ -103,6 +103,22 @@ function createMainWindow() {
   mainWindow.on("enter-full-screen", sendFullScreenState);
   mainWindow.on("leave-full-screen", sendFullScreenState);
   mainWindow.webContents.on("did-finish-load", sendFullScreenState);
+
+  // Hand off http(s) URLs to the OS default browser via `shell.openExternal`
+  // — the renderer asked to leave Electron, not to host another Chromium
+  // window inside the app. Allowlist scheme so the bridge can't be coaxed
+  // into running arbitrary shell URI handlers.
+  ipcMain.on("app:openExternal", (_event, rawUrl: unknown) => {
+    if (typeof rawUrl !== "string") return;
+    let parsed: URL;
+    try {
+      parsed = new URL(rawUrl);
+    } catch {
+      return;
+    }
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return;
+    void shell.openExternal(parsed.toString());
+  });
 
   // Boot the Effect runtime once the window's webContents exists. The RPC
   // server protocol is bound to this webContents, so a window restart means

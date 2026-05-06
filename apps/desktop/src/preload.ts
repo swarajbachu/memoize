@@ -33,6 +33,11 @@ const bridge = {
       };
     },
   },
+  app: {
+    openExternal: (url: string) => {
+      ipcRenderer.send("app:openExternal", url);
+    },
+  },
 };
 
 contextBridge.exposeInMainWorld("forkzero", bridge);

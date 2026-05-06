@@ -17,11 +17,7 @@ import { PermissionToast } from "./components/permission-toast";
 import { ProjectsSidebar } from "./components/projects-sidebar";
 import { RightPane } from "./components/right-pane";
 import { SettingsPage } from "./components/settings-page";
-import {
-  TopBarLeft,
-  TopBarMain,
-  TopBarRight,
-} from "./components/top-bar.tsx";
+import { TopBarLeft, TopBarMain, TopBarRight } from "./components/top-bar.tsx";
 import { getRpcClient } from "./lib/rpc-client.ts";
 import { usePermissionsStore } from "./store/permissions.ts";
 import { useSessionsStore } from "./store/sessions.ts";
@@ -158,7 +154,7 @@ export function App() {
               if (open !== leftSidebarOpen) setLeftSidebarOpen(open);
             }}
           >
-            <div className="flex h-full min-h-0 flex-col">
+            <div className="flex h-full min-h-0 flex-col bg-background/20">
               <TopBarLeft />
               <div className="flex min-h-0 flex-1 flex-col">
                 <ProjectsSidebar />
@@ -167,7 +163,7 @@ export function App() {
           </Panel>
           <Separator className="w-px bg-border transition-colors hover:bg-foreground/20 active:bg-foreground/30" />
           <Panel id="main" minSize="30%">
-            <main className="flex h-full min-h-0 min-w-0 flex-col bg-background">
+            <main className="flex h-full min-h-0 min-w-0 flex-col bg-background/70 backdrop-blur-3xl">
               <TopBarMain folderId={selectedFolderId} />
               {view === "settings" ? (
                 <SettingsPage />
@@ -225,7 +221,7 @@ export function App() {
               if (open !== rightSidebarOpen) setRightSidebarOpen(open);
             }}
           >
-            <div className="flex h-full min-h-0 flex-col bg-background">
+            <div className="flex h-full min-h-0 flex-col bg-sidebar/40 backdrop-blur-3xl">
               <TopBarRight folderId={selectedFolderId} />
               <div className="flex min-h-0 flex-1 flex-col">
                 <RightPane />

@@ -16,9 +16,14 @@ export interface WindowBridge {
   ) => () => void;
 }
 
+export interface AppBridge {
+  readonly openExternal: (url: string) => void;
+}
+
 export interface ForkzeroBridge {
   readonly rpc: RpcBridge;
   readonly window?: WindowBridge;
+  readonly app?: AppBridge;
 }
 
 declare global {
