@@ -453,6 +453,9 @@ function NewSessionButton({ projectId }: { projectId: FolderId }) {
     (s) => s.defaultModelByProvider,
   );
   const defaultRuntimeMode = useSettingsStore((s) => s.defaultRuntimeMode);
+  const defaultAutoCreateWorktree = useSettingsStore(
+    (s) => s.defaultAutoCreateWorktree,
+  );
   const refreshRepoSettings = useRepositorySettingsStore((s) => s.refresh);
   const createWorktree = useWorktreesStore((s) => s.create);
 
@@ -463,12 +466,15 @@ function NewSessionButton({ projectId }: { projectId: FolderId }) {
     const model =
       defaultModelByProvider[defaultProviderId] ??
       defaultModelFor(defaultProviderId);
-    // Per-repo auto-create-worktree opt-in: pre-create a worktree before
-    // session.create so the new session boots with cwd already pointing at
-    // the worktree path. Failure is non-fatal — fall back to main checkout.
+    // Auto-create a worktree before session.create when either the global
+    // default is on or the per-repo override flips it on. Failure is
+    // non-fatal — fall back to main checkout.
     const repoSettings = await refreshRepoSettings(projectId);
+    const shouldAutoCreate =
+      repoSettings?.autoCreateWorktree === true ||
+      defaultAutoCreateWorktree === true;
     let worktreeId = null;
-    if (repoSettings?.autoCreateWorktree) {
+    if (shouldAutoCreate) {
       const wt = await createWorktree(projectId);
       if (wt !== null) worktreeId = wt.id;
     }

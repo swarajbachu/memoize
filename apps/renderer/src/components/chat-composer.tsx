@@ -65,10 +65,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "~/components/ui/tooltip";
-import { DEFAULT_SUBAGENT_PRESETS } from "../lib/subagent-presets.ts";
 import { useMessagesStore } from "../store/messages.ts";
 import { useSessionsStore } from "../store/sessions.ts";
-import { useSubagentsStore } from "../store/subagents.ts";
 import { useUiStore } from "../store/ui.ts";
 import { EMPTY_WORKTREES, useWorktreesStore } from "../store/worktrees.ts";
 import { ProviderIcon } from "./provider-icons.tsx";
@@ -446,42 +444,13 @@ export function ChatComposer({ session }: { session: Session }) {
                   hostRef={editorHostRef}
                   projectId={session.projectId}
                 />
-                {inFlight ? (
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <button
-                          type="button"
-                          onClick={() => void interrupt(sessionId)}
-                          aria-label="Interrupt"
-                          className="flex size-8 shrink-0 self-end items-center justify-center rounded-lg border border-border/60 bg-background text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-                        >
-                          <Square className="size-3.5" />
-                        </button>
-                      }
-                    />
-                    <TooltipPopup>Interrupt the running turn</TooltipPopup>
-                  </Tooltip>
-                ) : (
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <button
-                          type="button"
-                          onClick={() => void submit()}
-                          disabled={!canSend}
-                          aria-label="Send"
-                          className="flex size-8 shrink-0 self-end items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                          <Send className="size-3.5" />
-                        </button>
-                      }
-                    />
-                    <TooltipPopup>Send (Enter)</TooltipPopup>
-                  </Tooltip>
-                )}
               </CardPanel>
             </Card>
+            {/* Single action row: model + reasoning sit on the left, send /
+                runtime / timer sit on the right — so the user's eye lands on
+                the same line for "what model is this" and "send." Sub-agent
+                config moved to settings; it doesn't belong in the per-turn
+                strip. */}
             <FrameFooter className="flex items-center justify-between gap-2 px-2 py-1.5">
               <div className="flex items-center gap-1.5">
                 <Tooltip>
@@ -507,7 +476,6 @@ export function ChatComposer({ session }: { session: Session }) {
                   currentModel={session.model}
                 />
                 <ReasoningPicker sessionId={sessionId} />
-                {session.providerId === "claude" ? <SubagentsChip /> : null}
               </div>
               <div className="flex items-center gap-2">
                 <RuntimeModeToggle
@@ -515,9 +483,43 @@ export function ChatComposer({ session }: { session: Session }) {
                   current={session.runtimeMode}
                 />
                 <SessionTimer sessionId={sessionId} inFlight={inFlight} />
+                {inFlight ? (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <button
+                          type="button"
+                          onClick={() => void interrupt(sessionId)}
+                          aria-label="Interrupt"
+                          className="flex size-7 items-center justify-center rounded-md border border-border/60 bg-background text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                        >
+                          <Square className="size-3.5" />
+                        </button>
+                      }
+                    />
+                    <TooltipPopup>Interrupt the running turn</TooltipPopup>
+                  </Tooltip>
+                ) : (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <button
+                          type="button"
+                          onClick={() => void submit()}
+                          disabled={!canSend}
+                          aria-label="Send"
+                          className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          <Send className="size-3.5" />
+                        </button>
+                      }
+                    />
+                    <TooltipPopup>Send (Enter)</TooltipPopup>
+                  </Tooltip>
+                )}
               </div>
             </FrameFooter>
-            <div className="flex items-center justify-between gap-2 border-t border-border/40 px-2 py-1.5 text-[11px] text-muted-foreground">
+            <div className="flex items-center justify-between gap-2 border-t border-border/40 px-2 py-1 text-[11px] text-muted-foreground">
               <WorkspacePicker session={session} />
               <WorkspaceBranchLabel session={session} />
             </div>
@@ -789,39 +791,6 @@ function SessionTimer({
     >
       {formatCoarse(totalElapsed)}
     </span>
-  );
-}
-
-/**
- * "↳ Sub-agents: N enabled" chip — surfaces in the composer footer for
- * Claude sessions only and links straight to the settings section. Hidden
- * when the master toggle is off so users who turned it off don't see a
- * "0 enabled" stub on every session.
- */
-function SubagentsChip() {
-  const setView = useUiStore((s) => s.setView);
-  const enableForNewSessions = useSubagentsStore((s) => s.enableForNewSessions);
-  const presets = useSubagentsStore((s) => s.presets);
-
-  if (!enableForNewSessions) return null;
-
-  const enabledCount = DEFAULT_SUBAGENT_PRESETS.reduce((acc, p) => {
-    const ps = presets[p.name];
-    return acc + (ps?.enabled ?? true ? 1 : 0);
-  }, 0);
-
-  if (enabledCount === 0) return null;
-
-  return (
-    <button
-      type="button"
-      onClick={() => setView("settings")}
-      title="Sub-agents — open settings"
-      className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-    >
-      <span aria-hidden>↳</span>
-      <span>Sub-agents: {enabledCount} enabled</span>
-    </button>
   );
 }
 
