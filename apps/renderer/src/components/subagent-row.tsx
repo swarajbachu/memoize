@@ -143,22 +143,48 @@ export function SubagentRow({
 }
 
 function PromptRow({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const Chevron = expanded ? ChevronDown : ChevronRight;
   return (
     <div className="px-4 pt-1">
-      <div className="flex items-start gap-2 rounded px-1.5 py-0.5 text-xs">
-        <div className="grid size-4 shrink-0 place-items-center">
+      <button
+        type="button"
+        onClick={() => setExpanded((e) => !e)}
+        className={cn(
+          "group flex w-full items-center gap-2 rounded px-1.5 py-0.5 text-left text-xs",
+          "hover:bg-muted/40 cursor-pointer",
+        )}
+      >
+        <div className="relative grid size-4 shrink-0 place-items-center">
           <HugeiconsIcon
             icon={ClipboardIcon}
             strokeWidth={2}
             aria-hidden="true"
-            className="size-3.5 text-muted-foreground"
+            className={cn(
+              "col-start-1 row-start-1 size-3.5 text-muted-foreground transition-opacity duration-150 ease-out",
+              "group-hover:opacity-0 motion-reduce:transition-none",
+            )}
+          />
+          <Chevron
+            aria-hidden="true"
+            className={cn(
+              "col-start-1 row-start-1 size-3.5 text-muted-foreground opacity-0 transition-opacity duration-150 ease-out",
+              "group-hover:opacity-100 motion-reduce:transition-none",
+            )}
           />
         </div>
         <span className="shrink-0 font-medium text-foreground/90">Prompt</span>
         <span className="min-w-0 flex-1 truncate text-muted-foreground">
           {text}
         </span>
-      </div>
+      </button>
+      {expanded ? (
+        <div className="ml-7 mt-1 max-w-2xl border-l border-border/60 pl-3 pr-1">
+          <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded bg-zinc-900/70 px-3 py-2 font-mono text-[11px] text-foreground/80">
+            {text || "(empty)"}
+          </pre>
+        </div>
+      ) : null}
     </div>
   );
 }

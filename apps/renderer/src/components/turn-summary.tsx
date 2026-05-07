@@ -10,11 +10,13 @@ import remarkGfm from "remark-gfm";
 
 import type { AgentItemId, Message } from "@forkzero/wire";
 
+import { groupMessages } from "../lib/group-messages.ts";
 import { cn } from "~/lib/utils";
 
 import { FileBadge } from "./file-badge.tsx";
 import { diffStats, extractEdits } from "./inline-diff.tsx";
 import { MessageRow, type ToolResultRecord } from "./message-row.tsx";
+import { SubagentRow } from "./subagent-row.tsx";
 import { iconForTool } from "./tool-row.tsx";
 
 const formatElapsed = (ms: number): string => {
@@ -105,6 +107,12 @@ export function TurnSummary({
     [body, finalAssistant],
   );
 
+  // Group sub-agent runs so each `Agent` tool_use renders as a SubagentRow
+  // with its nested children inside, instead of dumping every nested Bash
+  // / text row at the top level alongside the parent's own work — which
+  // makes parallel sub-agents look like duplicates.
+  const detailGroups = useMemo(() => groupMessages(detailRows), [detailRows]);
+
   // Dedupe by icon identity (not tool name) — Edit/Write/MultiEdit share an
   // icon, as do Grep/Glob, etc. We want one slot per visual, ordered by
   // first appearance in the turn.
@@ -177,15 +185,28 @@ export function TurnSummary({
         ) : null}
       </button>
 
-      {expanded && detailRows.length > 0 ? (
+      {expanded && detailGroups.length > 0 ? (
         <div className="py-1">
-          {detailRows.map((m) => (
-            <MessageRow
-              key={m.id}
-              message={m}
-              resultsByItemId={resultsByItemId}
-            />
-          ))}
+          {detailGroups.map((group) =>
+            group.kind === "single" ? (
+              <MessageRow
+                key={group.message.id}
+                message={group.message}
+                resultsByItemId={resultsByItemId}
+              />
+            ) : (
+              <SubagentRow
+                key={group.parent.id}
+                agentToolUseId={group.parentItemId}
+                agentName={group.agentName}
+                prompt={group.prompt}
+                modelRequested={group.modelRequested}
+                children={group.children}
+                summary={group.summary}
+                resultsByItemId={resultsByItemId}
+              />
+            ),
+          )}
         </div>
       ) : null}
 
