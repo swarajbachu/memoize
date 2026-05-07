@@ -90,6 +90,8 @@ const SessionCreate = ForkzeroRpcs.toLayerHandler("session.create", (input) =>
       agents: input.agents,
       enableSubagents: input.enableSubagents,
       worktreeId: input.worktreeId ?? null,
+      permissionMode: input.permissionMode,
+      toolSearch: input.toolSearch,
     }),
   ),
 );
@@ -135,6 +137,26 @@ const SessionSetRuntimeMode = ForkzeroRpcs.toLayerHandler(
   ({ sessionId, runtimeMode }) =>
     Effect.flatMap(MessageStore, (svc) =>
       svc.setRuntimeMode(sessionId, runtimeMode),
+    ),
+);
+
+const SessionSetPermissionMode = ForkzeroRpcs.toLayerHandler(
+  "session.setPermissionMode",
+  ({ sessionId, mode }) =>
+    Effect.flatMap(MessageStore, (svc) =>
+      svc.setPermissionMode(sessionId, mode),
+    ),
+);
+
+const SessionAnswerQuestion = ForkzeroRpcs.toLayerHandler(
+  "session.answerQuestion",
+  ({ sessionId, itemId, answers }) =>
+    Effect.flatMap(MessageStore, (svc) =>
+      svc.answerQuestion(
+        sessionId,
+        itemId as import("@forkzero/wire").AgentItemId,
+        answers,
+      ),
     ),
 );
 
@@ -257,6 +279,8 @@ export const ProviderHandlersLayer = Layer.mergeAll(
   SessionDelete,
   SessionResume,
   SessionSetRuntimeMode,
+  SessionSetPermissionMode,
+  SessionAnswerQuestion,
   SessionSetWorktree,
   SessionStreamStatus,
   MessagesList,

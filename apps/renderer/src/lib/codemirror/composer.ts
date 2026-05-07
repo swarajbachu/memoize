@@ -27,6 +27,12 @@ export type ComposerCallbacks = {
    * paperclip / paste.
    */
   readonly onFilesDropped: (files: ReadonlyArray<File>) => void;
+  /**
+   * Toggle plan mode. Bound to `Shift+Tab` in the composer keymap. The
+   * caller is responsible for the actual mode flip and any visual
+   * feedback (chip, dashed accent on the composer card).
+   */
+  readonly onTogglePlanMode?: () => void;
 };
 
 export type ComposerCreateParams = {

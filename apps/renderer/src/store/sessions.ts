@@ -2,11 +2,14 @@ import { Effect } from "effect";
 import { create } from "zustand";
 
 import type {
+  AgentItemId,
   FolderId,
+  PermissionMode,
   ProviderId,
   RuntimeMode,
   Session,
   SessionId,
+  UserQuestionAnswer,
   WorktreeId,
 } from "@forkzero/wire";
 
@@ -37,6 +40,8 @@ type SessionsState = {
       initialPrompt?: string;
       runtimeMode?: RuntimeMode;
       worktreeId?: WorktreeId | null;
+      permissionMode?: PermissionMode;
+      toolSearch?: boolean;
     },
   ) => Promise<SessionId | null>;
   readonly rename: (sessionId: SessionId, title: string) => Promise<void>;
@@ -44,6 +49,24 @@ type SessionsState = {
   readonly setRuntimeMode: (
     sessionId: SessionId,
     runtimeMode: RuntimeMode,
+  ) => Promise<void>;
+  /**
+   * Switch the SDK lifecycle mode (plan / default / acceptEdits) on a
+   * live session. Optimistic — patches the local row before the RPC
+   * settles so the chat-header chip flips instantly.
+   */
+  readonly setPermissionMode: (
+    sessionId: SessionId,
+    mode: PermissionMode,
+  ) => Promise<void>;
+  /**
+   * Resolve a pending in-process AskUserQuestion call. Routes the
+   * answers to the driver, which returns them as the tool result.
+   */
+  readonly answerQuestion: (
+    sessionId: SessionId,
+    itemId: AgentItemId,
+    answers: ReadonlyArray<UserQuestionAnswer>,
   ) => Promise<void>;
   /**
    * Switch the worktree the session runs in. Allowed only before the first
@@ -132,6 +155,8 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
           agents,
           enableSubagents,
           worktreeId: opts?.worktreeId ?? null,
+          permissionMode: opts?.permissionMode,
+          toolSearch: opts?.toolSearch,
         }),
       );
       set((s) => {
@@ -222,6 +247,45 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       // Best-effort revert via re-hydrate of the affected project.
       const projectId = findSessionProject(get().sessionsByProject, sessionId);
       if (projectId !== null) await get().hydrate(projectId);
+    }
+  },
+  setPermissionMode: async (sessionId, mode) => {
+    set((s) => {
+      const projectId = findSessionProject(s.sessionsByProject, sessionId);
+      if (projectId === null) return { error: null };
+      const sessions = s.sessionsByProject[projectId] ?? [];
+      return {
+        error: null,
+        sessionsByProject: {
+          ...s.sessionsByProject,
+          [projectId]: sessions.map((session) =>
+            session.id === sessionId
+              ? { ...session, permissionMode: mode }
+              : session,
+          ),
+        },
+      };
+    });
+    try {
+      const client = await getRpcClient();
+      await Effect.runPromise(
+        client.session.setPermissionMode({ sessionId, mode }),
+      );
+    } catch (err) {
+      set({ error: formatError(err) });
+      const projectId = findSessionProject(get().sessionsByProject, sessionId);
+      if (projectId !== null) await get().hydrate(projectId);
+    }
+  },
+  answerQuestion: async (sessionId, itemId, answers) => {
+    set({ error: null });
+    try {
+      const client = await getRpcClient();
+      await Effect.runPromise(
+        client.session.answerQuestion({ sessionId, itemId, answers }),
+      );
+    } catch (err) {
+      set({ error: formatError(err) });
     }
   },
   setWorktree: async (sessionId, worktreeId) => {

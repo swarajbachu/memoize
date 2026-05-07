@@ -2,10 +2,12 @@ import { Context, type Effect, type Stream } from "effect";
 
 import type {
   AgentDefinition,
+  AgentItemId,
   AttachmentRef,
   FileRef,
   FolderId,
   Message,
+  PermissionMode,
   ProviderId,
   RuntimeMode,
   Session,
@@ -15,6 +17,7 @@ import type {
   SessionStartError,
   SessionStatus,
   SkillRef,
+  UserQuestionAnswer,
   WorktreeId,
 } from "@forkzero/wire";
 
@@ -57,6 +60,18 @@ export interface CreateSessionInput {
    * via `worktree.create` for the "auto-create worktree" flow.
    */
   readonly worktreeId?: WorktreeId | null;
+  /**
+   * SDK lifecycle mode. `'plan'` starts the session in plan mode; the
+   * agent is restricted to read-only tools and ends its turn by calling
+   * `ExitPlanMode`. Defaults to `'default'`.
+   */
+  readonly permissionMode?: PermissionMode;
+  /**
+   * Persist the deferred-tools toggle on the session row. No-op today
+   * (the AskUserQuestion server is the only MCP server and is small);
+   * the flag is here so 0.04's code-index MCP servers can ride on it.
+   */
+  readonly toolSearch?: boolean;
 }
 
 export interface MessageStoreShape {
@@ -91,6 +106,28 @@ export interface MessageStoreShape {
   readonly setRuntimeMode: (
     sessionId: SessionId,
     runtimeMode: RuntimeMode,
+  ) => Effect.Effect<void, SessionNotFoundError>;
+
+  /**
+   * Switch the SDK lifecycle mode (plan / default / acceptEdits) on a
+   * live session. Forwards to `ProviderService.setPermissionMode` and
+   * persists the new value so resume restarts in the same mode.
+   */
+  readonly setPermissionMode: (
+    sessionId: SessionId,
+    mode: PermissionMode,
+  ) => Effect.Effect<void, SessionNotFoundError>;
+
+  /**
+   * Resolve a pending in-process AskUserQuestion call by `itemId`.
+   * Persists a `user_question_answer` row before forwarding to the
+   * driver so the renderer's view stays consistent if the SDK turn
+   * unwinds before the row reaches the live stream.
+   */
+  readonly answerQuestion: (
+    sessionId: SessionId,
+    itemId: AgentItemId,
+    answers: ReadonlyArray<UserQuestionAnswer>,
   ) => Effect.Effect<void, SessionNotFoundError>;
 
   /**

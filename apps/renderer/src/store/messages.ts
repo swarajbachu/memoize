@@ -141,10 +141,46 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
             set((s) => {
               const current = s.messagesBySession[sessionId] ?? [];
               if (current.some((m) => m.id === message.id)) return s;
+              const next = [...current, message];
+              // Auto-untoggle plan mode when the SDK runs ExitPlanMode
+              // successfully. The server already persists the flip via
+              // a `PermissionModeChanged` agent-event side-effect; this
+              // patches the renderer's session-store optimistically so
+              // the chip flips without waiting for the next refresh.
+              if (
+                message.content._tag === "tool_result" &&
+                message.content.isError === false
+              ) {
+                const useId = message.content.itemId;
+                const paired = current.find(
+                  (m) =>
+                    m.content._tag === "tool_use" &&
+                    m.content.itemId === useId &&
+                    m.content.tool === "ExitPlanMode",
+                );
+                if (paired !== undefined) {
+                  useSessionsStore.setState((sess) => {
+                    let dirty = false;
+                    const updated: typeof sess.sessionsByProject = {};
+                    for (const [pid, list] of Object.entries(
+                      sess.sessionsByProject,
+                    )) {
+                      updated[pid] = list.map((row) => {
+                        if (row.id === sessionId && row.permissionMode === "plan") {
+                          dirty = true;
+                          return { ...row, permissionMode: "default" };
+                        }
+                        return row;
+                      });
+                    }
+                    return dirty ? { sessionsByProject: updated } : sess;
+                  });
+                }
+              }
               return {
                 messagesBySession: {
                   ...s.messagesBySession,
-                  [sessionId]: [...current, message],
+                  [sessionId]: next,
                 },
               };
             });

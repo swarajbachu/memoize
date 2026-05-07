@@ -12,7 +12,9 @@ import {
   type AgentItemId,
   type AgentSessionId,
   type AttachmentRef,
+  type PermissionMode,
   type StartSessionInput,
+  type UserQuestionAnswer,
 } from "@forkzero/wire";
 
 /**
@@ -32,6 +34,15 @@ export interface CodexSessionHandle {
   ) => Effect.Effect<void>;
   readonly interrupt: () => Effect.Effect<void>;
   readonly close: () => Effect.Effect<void>;
+  /**
+   * Plan mode and `AskUserQuestion` are Claude-only for now. Codex
+   * sessions accept the calls but no-op so RPC routing stays uniform.
+   */
+  readonly setPermissionMode: (mode: PermissionMode) => Effect.Effect<void>;
+  readonly answerQuestion: (
+    itemId: AgentItemId,
+    answers: ReadonlyArray<UserQuestionAnswer>,
+  ) => Effect.Effect<void>;
 }
 
 let itemCounter = 0;
@@ -303,6 +314,8 @@ export const startCodexSession = (
           currentAbort?.abort();
           yield* events.end;
         }),
+      setPermissionMode: () => Effect.void,
+      answerQuestion: () => Effect.void,
     };
     return handle;
   });

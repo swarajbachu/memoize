@@ -10,13 +10,14 @@ import type {
   AttachmentRef,
   FileRef,
   Message,
+  SessionId,
   SkillRef,
 } from "@forkzero/wire";
 
 import { getFileIconUrl } from "~/lib/icons/material-icons";
 import { cn } from "~/lib/utils";
 
-import { ThinkingRow, ToolRow } from "./tool-row.tsx";
+import { ExitPlanModeRow, ThinkingRow, ToolRow } from "./tool-row.tsx";
 
 export interface ToolResultRecord {
   readonly output: unknown;
@@ -43,9 +44,11 @@ const stringifyJson = (value: unknown): string => {
 export function MessageRow({
   message,
   resultsByItemId,
+  sessionId,
 }: {
   message: Message;
   resultsByItemId: ReadonlyMap<AgentItemId, ToolResultRecord>;
+  sessionId?: SessionId;
 }) {
   switch (message.content._tag) {
     case "user":
@@ -69,6 +72,15 @@ export function MessageRow({
         />
       );
     case "tool_use":
+      if (message.content.tool === "ExitPlanMode") {
+        return (
+          <ExitPlanModeRow
+            input={message.content.input}
+            result={resultsByItemId.get(message.content.itemId)}
+            sessionId={sessionId}
+          />
+        );
+      }
       return (
         <ToolRow
           tool={message.content.tool}
@@ -86,6 +98,15 @@ export function MessageRow({
         <ToolErrorRow output={message.content.output} />
       ) : null;
     }
+    case "user_question":
+    case "user_question_answer":
+      // Questions live in the composer slot, not the timeline — pending
+      // ones are rendered by ChatComposer (it swaps the editor for a
+      // QuestionCard); answered ones vanish entirely so the chat scrollback
+      // doesn't accumulate noisy decision rows. The agent's resulting
+      // assistant message is the timeline-visible record of what the
+      // answers led to.
+      return null;
     case "error":
       return <ErrorBubble text={message.content.message} />;
   }

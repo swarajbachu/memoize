@@ -201,6 +201,14 @@ export const ProviderServiceLive = Layer.effect(
         ) as Stream.Stream<AgentEvent, AgentSessionNotFoundError>,
       setCredential: (providerId, apiKey) =>
         credentials.set(providerId, apiKey),
+      setPermissionMode: (sessionId, mode) =>
+        Effect.flatMap(lookup(sessionId), ({ handle }) =>
+          handle.setPermissionMode(mode),
+        ),
+      answerQuestion: (sessionId, itemId, answers) =>
+        Effect.flatMap(lookup(sessionId), ({ handle }) =>
+          handle.answerQuestion(itemId, answers),
+        ),
     };
   }),
 );

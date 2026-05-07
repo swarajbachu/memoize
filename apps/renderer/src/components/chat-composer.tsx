@@ -6,6 +6,7 @@ import {
   GitBranch,
   Gauge,
   Lock,
+  Map,
   Paperclip,
   Send,
   Square,
@@ -16,6 +17,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   MODELS_BY_PROVIDER,
   type Message,
+  type PermissionMode,
   type ProviderId,
   type RuntimeMode,
   type Session,
@@ -69,6 +71,7 @@ import { useMessagesStore } from "../store/messages.ts";
 import { useSessionsStore } from "../store/sessions.ts";
 import { useUiStore } from "../store/ui.ts";
 import { EMPTY_WORKTREES, useWorktreesStore } from "../store/worktrees.ts";
+import { QuestionCard } from "./question-card.tsx";
 import { ProviderIcon } from "./provider-icons.tsx";
 import { MODES_ORDER, MODE_META } from "./runtime-mode-meta.ts";
 
@@ -92,6 +95,43 @@ export function ChatComposer({ session }: { session: Session }) {
   const interrupt = useMessagesStore((s) => s.interrupt);
   const queue = useMessagesStore((s) => s.queue);
 
+  // Pending AskUserQuestion takes over the composer slot — that's where
+  // the user types anyway, and floating it inline above the chat
+  // crowded the timeline. Swap to QuestionCard while one is unanswered;
+  // otherwise render the normal editor.
+  //
+  // Select the stable message-list reference (Zustand interns the array
+  // — same identity until a new message arrives) and derive the
+  // pending-question shape with `useMemo`. Returning a freshly-built
+  // object directly from a Zustand selector breaks
+  // `useSyncExternalStore`'s snapshot-equality check and infinite-loops
+  // the renderer.
+  const sessionMessages = useMessagesStore(
+    (s) => s.messagesBySession[sessionId],
+  );
+  const pendingQuestion = useMemo(() => {
+    const list = sessionMessages ?? [];
+    const answered = new Set<string>();
+    for (const m of list) {
+      if (m.content._tag === "user_question_answer") {
+        answered.add(m.content.itemId as string);
+      }
+    }
+    for (let i = list.length - 1; i >= 0; i--) {
+      const m = list[i]!;
+      if (
+        m.content._tag === "user_question" &&
+        !answered.has(m.content.itemId as string)
+      ) {
+        return {
+          itemId: m.content.itemId,
+          questions: m.content.questions,
+        };
+      }
+    }
+    return null;
+  }, [sessionMessages]);
+
   const [hasText, setHasText] = useState(false);
   const [trigger, setTrigger] = useState<ActiveTrigger | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -110,9 +150,13 @@ export function ChatComposer({ session }: { session: Session }) {
   const filesDroppedRef = useRef<(files: ReadonlyArray<File>) => void>(
     () => undefined,
   );
+  // Same pattern for the Shift+Tab plan-mode toggle. Latest session +
+  // mode without reconstructing the editor on every state change.
+  const togglePlanModeRef = useRef<() => void>(() => undefined);
 
   const setModel = useSessionsStore((s) => s.setModel);
   const setRuntimeMode = useSessionsStore((s) => s.setRuntimeMode);
+  const setPermissionMode = useSessionsStore((s) => s.setPermissionMode);
 
   const canSend = hasText;
 
@@ -132,6 +176,7 @@ export function ChatComposer({ session }: { session: Session }) {
         onChange: (doc) => setHasText(doc.trim().length > 0),
         onTrigger: (t) => setTrigger(t),
         onFilesDropped: (files) => filesDroppedRef.current(files),
+        onTogglePlanMode: () => togglePlanModeRef.current(),
       },
     });
     editorViewRef.current = view;
@@ -200,6 +245,12 @@ export function ChatComposer({ session }: { session: Session }) {
         ) {
           void setRuntimeMode(sessionId, parsed.args);
         }
+        break;
+      case "plan":
+        void setPermissionMode(sessionId, "plan");
+        break;
+      case "run":
+        void setPermissionMode(sessionId, "default");
         break;
       case "new":
       case "help":
@@ -375,6 +426,12 @@ export function ChatComposer({ session }: { session: Session }) {
   // Keep the keymap-bound submit pointing at the latest closure so it sees
   // the current sessionId after a session switch / re-render.
   submitRef.current = submit;
+  togglePlanModeRef.current = () => {
+    void setPermissionMode(
+      sessionId,
+      session.permissionMode === "plan" ? "default" : "plan",
+    );
+  };
   filesDroppedRef.current = (files) => {
     // CM's drop handler stops propagation so our React onDrop never fires —
     // clear the drag overlay state here instead.
@@ -383,13 +440,34 @@ export function ChatComposer({ session }: { session: Session }) {
     attachFiles(files);
   };
 
+  if (pendingQuestion !== null) {
+    return (
+      <div className="shrink-0 px-3 pb-3 pt-2">
+        <div className="mx-auto">
+          <QuestionCard
+            sessionId={sessionId}
+            itemId={pendingQuestion.itemId}
+            questions={pendingQuestion.questions}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  const inPlanMode = session.permissionMode === "plan";
+
   return (
     <TooltipProvider delay={0}>
       <div className="shrink-0 px-3 pb-3 pt-2">
         <div className="mx-auto">
           <Frame>
             <Card
-              className="rounded-xl border-border/50 min-h-30"
+              className={cn(
+                "rounded-xl min-h-30 transition-colors",
+                inPlanMode
+                  ? "border-2 border-dashed border-rose-300/60 dark:border-rose-300/40"
+                  : "border-border/50",
+              )}
               onDragEnter={onDragEnter}
               onDragOver={onDragOver}
               onDragLeave={onDragLeave}
@@ -476,6 +554,10 @@ export function ChatComposer({ session }: { session: Session }) {
                   currentModel={session.model}
                 />
                 <ReasoningPicker sessionId={sessionId} />
+                <PlanModeToggle
+                  sessionId={sessionId}
+                  current={session.permissionMode}
+                />
               </div>
               <div className="flex items-center gap-2">
                 <RuntimeModeToggle
@@ -592,6 +674,59 @@ function RuntimeModeToggle({
         })}
       </MenuPopup>
     </Menu>
+  );
+}
+
+/**
+ * Binary plan-mode toggle. Off → just the map icon (tooltip explains).
+ * On → map icon + "Plan" label with a peach accent so it pops next to
+ * the other small chips. `Shift+Tab` from the composer flips the same
+ * toggle. The runtime-mode (Supervised / Auto-accept / Full access)
+ * chip on the right cluster is independent — plan mode is its own axis.
+ */
+function PlanModeToggle({
+  sessionId,
+  current,
+}: {
+  sessionId: SessionId;
+  current: PermissionMode;
+}) {
+  const setPermissionMode = useSessionsStore((s) => s.setPermissionMode);
+  const isPlan = current === "plan";
+
+  // Toggle is binary: pressing flips between `default` and `plan`. The
+  // wider mode space (`acceptEdits`) lives on the runtime-mode chip — a
+  // user wanting auto-accept-edits goes there, not here.
+  const onClick = () => {
+    void setPermissionMode(sessionId, isPlan ? "default" : "plan");
+  };
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            onClick={onClick}
+            aria-label={isPlan ? "Exit plan mode" : "Enter plan mode"}
+            aria-pressed={isPlan}
+            className={cn(
+              "flex h-6 items-center gap-1.5 rounded-md px-2 text-[11px] transition-colors",
+              isPlan
+                ? "bg-rose-300/15 text-rose-200 dark:text-rose-200 hover:bg-rose-300/25"
+                : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+            )}
+          >
+            <Map className="size-3.5" />
+            {isPlan ? <span>Plan</span> : null}
+          </button>
+        }
+      />
+      <TooltipPopup>
+        {isPlan ? "Exit plan mode" : "Enter plan mode"}
+        <span className="ml-2 opacity-60">⇧Tab</span>
+      </TooltipPopup>
+    </Tooltip>
   );
 }
 

@@ -62,7 +62,14 @@ export function PermissionToast({ sessionId }: { sessionId: SessionId }) {
   const requests = useMemo<ReadonlyArray<PermissionRequest>>(() => {
     const out: PermissionRequest[] = [];
     for (const req of Object.values(requestsById)) {
-      if (req.sessionId === sessionId) out.push(req);
+      if (req.sessionId !== sessionId) continue;
+      // ExitPlanMode is approved inline on the plan card itself — surfacing
+      // the generic toast on top would be redundant noise. The card reads
+      // the same `permissionsStore` entry and dispatches `permission.decide`.
+      if (req.kind._tag === "Other" && req.kind.tool === "ExitPlanMode") {
+        continue;
+      }
+      out.push(req);
     }
     out.sort((a, b) => a.requestedAt.getTime() - b.requestedAt.getTime());
     return out;

@@ -15,9 +15,13 @@ import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import type { SessionId } from "@forkzero/wire";
+
 import { cn } from "~/lib/utils";
 
+import { usePermissionsStore } from "../store/permissions.ts";
 import { FileBadge } from "./file-badge.tsx";
+import { MarkdownBody } from "./markdown-body.tsx";
 import {
   DiffBody,
   diffStats,
@@ -674,6 +678,108 @@ const buildToolView = (
   }
 };
 
+/**
+ * Plan card for the SDK's `ExitPlanMode` tool. The card itself owns
+ * approval — finds the matching pending `permission.request` for this
+ * session and resolves it on click. Approving lets the SDK run
+ * ExitPlanMode, which auto-flips out of plan mode; rejecting keeps the
+ * agent in plan mode to iterate.
+ *
+ * Visual states (kept minimal — no flashy fills, just a subtle border):
+ *   - **Pending** — result undefined; show Approve / Reject.
+ *   - **Approved** — result with `isError: false`; small "Approved" tag.
+ *   - **Rejected** — result with `isError: true`; small "Rejected" tag.
+ */
+export function ExitPlanModeRow({
+  input,
+  result,
+  sessionId,
+}: {
+  input: unknown;
+  result?: ToolResult;
+  sessionId?: SessionId;
+}) {
+  const plan =
+    typeof input === "object" && input !== null && "plan" in input
+      ? typeof (input as { plan?: unknown }).plan === "string"
+        ? ((input as { plan: string }).plan as string)
+        : null
+      : null;
+
+  const status: "pending" | "approved" | "rejected" =
+    result === undefined
+      ? "pending"
+      : result.isError
+        ? "rejected"
+        : "approved";
+
+  // Find the open permission request for this session's ExitPlanMode.
+  // There should be at most one in-flight at a time.
+  const pendingRequest = usePermissionsStore((s) => {
+    if (sessionId === undefined) return null;
+    for (const req of Object.values(s.requestsById)) {
+      if (req.sessionId !== sessionId) continue;
+      if (req.kind._tag !== "Other") continue;
+      if (req.kind.tool !== "ExitPlanMode") continue;
+      return req;
+    }
+    return null;
+  });
+  const decide = usePermissionsStore((s) => s.decide);
+
+  return (
+    <div className="py-2">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+          <HugeiconsIcon icon={CheckListIcon} size={14} strokeWidth={2} />
+          <span>Plan</span>
+        </div>
+        {status !== "pending" ? (
+          <span
+            className={cn(
+              "rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+              status === "approved"
+                ? "text-emerald-500/90"
+                : "text-muted-foreground",
+            )}
+          >
+            {status === "approved" ? "Approved" : "Rejected"}
+          </span>
+        ) : null}
+      </div>
+      {plan === null ? (
+        <p className="text-sm italic text-muted-foreground">
+          (No plan body.)
+        </p>
+      ) : (
+        <MarkdownBody>{plan}</MarkdownBody>
+      )}
+      {status === "pending" && pendingRequest !== null ? (
+        <div className="mt-4 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() =>
+              void decide(pendingRequest.id, { _tag: "Deny" })
+            }
+            className="rounded-md px-3 py-1 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+          >
+            Reject
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              void decide(pendingRequest.id, { _tag: "AllowOnce" })
+            }
+            className="rounded-md bg-foreground px-3 py-1 text-xs font-medium text-background hover:opacity-90"
+          >
+            Approve
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function ToolRow({
   tool,
   input,
@@ -686,8 +792,12 @@ export function ToolRow({
   const view = buildToolView(tool, input, result);
 
   const sections: React.ReactNode[] = [];
-  if (view.inputPanel !== undefined) sections.push(view.inputPanel);
-  if (view.fallbackBody !== undefined) sections.push(view.fallbackBody);
+  if (view.inputPanel !== undefined) {
+    sections.push(<div key="input">{view.inputPanel}</div>);
+  }
+  if (view.fallbackBody !== undefined) {
+    sections.push(<div key="fallback">{view.fallbackBody}</div>);
+  }
   if (result !== undefined && view.resultPanel !== undefined) {
     const rendered = view.resultPanel(result);
     if (rendered !== null) {

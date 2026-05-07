@@ -37,4 +37,18 @@ export const composerKeymap = (
       return true;
     },
   },
+  {
+    key: "Shift-Tab",
+    preventDefault: true,
+    run: () => {
+      // Shift+Tab toggles plan mode without leaving the composer. We
+      // claim Shift+Tab unconditionally inside the composer because the
+      // editor doesn't accept tabs anyway (single-line prose mode), so
+      // there's nothing to outdent.
+      const cb = callbacks.onTogglePlanMode;
+      if (cb === undefined) return false;
+      cb();
+      return true;
+    },
+  },
 ];

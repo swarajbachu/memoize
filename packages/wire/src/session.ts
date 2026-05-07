@@ -1,7 +1,13 @@
 import { Rpc } from "@effect/rpc";
 import { Schema } from "effect";
 
-import { AgentDefinition, ProviderId, RuntimeMode } from "./agent.ts";
+import {
+  AgentDefinition,
+  PermissionMode,
+  ProviderId,
+  RuntimeMode,
+  UserQuestion,
+} from "./agent.ts";
 import { AttachmentRef, ComposerInput, FileRef, SkillRef } from "./composer.ts";
 import {
   AgentItemId,
@@ -11,7 +17,12 @@ import {
   WorktreeId,
 } from "./ids.ts";
 
-export { DEFAULT_RUNTIME_MODE, RuntimeMode } from "./agent.ts";
+export {
+  DEFAULT_PERMISSION_MODE,
+  DEFAULT_RUNTIME_MODE,
+  PermissionMode,
+  RuntimeMode,
+} from "./agent.ts";
 
 /**
  * A session is one chat thread inside a project. The id matches the underlying
@@ -71,6 +82,18 @@ export class Session extends Schema.Class<Session>("Session")({
    * user message is recorded — see `SessionSetWorktreeRpc`.
    */
   worktreeId: Schema.NullOr(WorktreeId),
+  /**
+   * SDK lifecycle mode. Distinct from `runtimeMode` (our own auto-allow
+   * policy). `plan` means the agent is currently restricted to read-only
+   * tools and is expected to end its turn by calling `ExitPlanMode`.
+   */
+  permissionMode: PermissionMode,
+  /**
+   * Whether deferred tool loading was enabled at session start. Mirrors
+   * `StartSessionInput.toolSearch`. No behavioural effect today; reserved
+   * for the 0.04 code-index MCP servers.
+   */
+  toolSearch: Schema.Boolean,
   createdAt: Schema.DateFromString,
   updatedAt: Schema.DateFromString,
 }) {}
@@ -171,6 +194,38 @@ const UsageContent = Schema.TaggedStruct("usage", {
 });
 
 /**
+ * Persisted form of a `UserQuestion` event. `itemId` is the SDK's
+ * `tool_use.id` for the AskUserQuestion call; the paired
+ * `user_question_answer` row uses the same `itemId`.
+ */
+const UserQuestionContent = Schema.TaggedStruct("user_question", {
+  itemId: AgentItemId,
+  questions: Schema.Array(UserQuestion),
+  parentItemId: Schema.optional(AgentItemId),
+});
+
+/**
+ * One answer per question. `questionIndex` indexes into the original
+ * `questions` array. `selected` lists picked option indices (empty when the
+ * user typed free-text); `other` is the free-text "Other" entry. Either
+ * field may be empty, but never both.
+ */
+const UserQuestionAnswerContent = Schema.TaggedStruct(
+  "user_question_answer",
+  {
+    itemId: AgentItemId,
+    answers: Schema.Array(
+      Schema.Struct({
+        questionIndex: Schema.Number,
+        selected: Schema.Array(Schema.Number),
+        other: Schema.optional(Schema.String),
+      }),
+    ),
+    parentItemId: Schema.optional(AgentItemId),
+  },
+);
+
+/**
  * Tagged-union of all renderable message payloads. Persisted as the JSON blob
  * in `messages.content_json`; the `_tag` mirrors the `messages.kind` column.
  * Keep the shape additive — new tags become new rendered variants in the
@@ -186,7 +241,10 @@ export const MessageContent = Schema.Union(
   ErrorContent,
   SubagentSummaryContent,
   UsageContent,
+  UserQuestionContent,
+  UserQuestionAnswerContent,
 );
+export type UserQuestionAnswer = (typeof UserQuestionAnswerContent.Type)["answers"][number];
 export type MessageContent = typeof MessageContent.Type;
 
 export class Message extends Schema.Class<Message>("Message")({
@@ -267,6 +325,17 @@ export const SessionCreateRpc = Rpc.make("session.create", {
      * setting is on.
      */
     worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
+    /**
+     * Start the session in plan mode. The agent will explore read-only
+     * and end its first turn by calling `ExitPlanMode`. Defaults to
+     * `'default'` (immediate execution).
+     */
+    permissionMode: Schema.optional(PermissionMode),
+    /**
+     * Persist the deferred-tools toggle for this session. Reserved for
+     * 0.04 code-index MCP servers; no-op today.
+     */
+    toolSearch: Schema.optional(Schema.Boolean),
   }),
   success: Session,
   error: SessionStartError,
@@ -396,6 +465,45 @@ export const SessionSetRuntimeModeRpc = Rpc.make("session.setRuntimeMode", {
   payload: Schema.Struct({
     sessionId: SessionId,
     runtimeMode: RuntimeMode,
+  }),
+  success: Schema.Void,
+  error: SessionNotFoundError,
+});
+
+/**
+ * Switch the SDK lifecycle mode (plan / default / acceptEdits) on a live
+ * session. Calls `Query.setPermissionMode` under the hood; the driver
+ * emits a `PermissionModeChanged` event so the renderer chip stays in
+ * sync without polling.
+ */
+export const SessionSetPermissionModeRpc = Rpc.make(
+  "session.setPermissionMode",
+  {
+    payload: Schema.Struct({
+      sessionId: SessionId,
+      mode: PermissionMode,
+    }),
+    success: Schema.Void,
+    error: SessionNotFoundError,
+  },
+);
+
+/**
+ * Resolve the pending `AskUserQuestion` tool call identified by `itemId`.
+ * The driver returns the answers as the tool result, the SDK turn unwinds,
+ * and the renderer paints a paired `user_question_answer` row.
+ */
+export const SessionAnswerQuestionRpc = Rpc.make("session.answerQuestion", {
+  payload: Schema.Struct({
+    sessionId: SessionId,
+    itemId: Schema.String,
+    answers: Schema.Array(
+      Schema.Struct({
+        questionIndex: Schema.Number,
+        selected: Schema.Array(Schema.Number),
+        other: Schema.optional(Schema.String),
+      }),
+    ),
   }),
   success: Schema.Void,
   error: SessionNotFoundError,

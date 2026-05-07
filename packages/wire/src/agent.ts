@@ -55,6 +55,30 @@ export type RuntimeMode = typeof RuntimeMode.Type;
 export const DEFAULT_RUNTIME_MODE: RuntimeMode = "approval-required";
 
 /**
+ * SDK-level lifecycle mode. Distinct from `RuntimeMode` (which controls our
+ * own auto-allow policy): this maps onto the Claude Agent SDK's
+ * `Options.permissionMode`.
+ *
+ *   - `default` — normal operation; `canUseTool` decides each call.
+ *   - `plan` — agent reads / explores only and ends turns by calling the
+ *     SDK's built-in `ExitPlanMode` tool with a proposed plan.
+ *   - `acceptEdits` — file edits skip the prompt; everything else goes
+ *     through `canUseTool`. Equivalent to RuntimeMode `auto-accept-edits`.
+ *
+ * The two modes coexist: `permissionMode: 'plan'` short-circuits all
+ * write/exec tools regardless of `RuntimeMode`. Approving the plan
+ * switches `permissionMode` back to `default` and the existing `RuntimeMode`
+ * resumes governing prompts.
+ */
+export const PermissionMode = Schema.Literal(
+  "default",
+  "plan",
+  "acceptEdits",
+);
+export type PermissionMode = typeof PermissionMode.Type;
+export const DEFAULT_PERMISSION_MODE: PermissionMode = "default";
+
+/**
  * Static availability report for a provider — does the user have the CLI on
  * PATH, is the CLI logged in (so the SDK can ride the local OAuth subprocess),
  * is an API key stored in the keychain. Either `cliLoggedIn` or `hasApiKey`
@@ -197,6 +221,41 @@ const SessionCursorEvent = Schema.TaggedStruct("SessionCursor", {
   strategy: Schema.Literal("claude-session-id"),
 });
 
+/**
+ * Structured question shape used by both `UserQuestionEvent` and the
+ * persisted `userQuestion` message row. Mirrors Conductor's
+ * AskUserQuestion: a question with N preset options and optional
+ * multi-select. The renderer always offers an additional "Other" free-text
+ * field — there is no need to include it in `options`.
+ */
+export const UserQuestion = Schema.Struct({
+  question: Schema.String,
+  options: Schema.Array(Schema.String),
+  multiSelect: Schema.optional(Schema.Boolean),
+});
+export type UserQuestion = typeof UserQuestion.Type;
+
+/**
+ * Emitted when the agent calls the in-process `AskUserQuestion` tool. The
+ * renderer subscribes to this and renders a question card. `itemId` is the
+ * SDK's `tool_use.id` so the eventual answer maps back to a single tool
+ * call.
+ */
+const UserQuestionEvent = Schema.TaggedStruct("UserQuestion", {
+  itemId: AgentItemId,
+  questions: Schema.Array(UserQuestion),
+  parentItemId: Schema.optional(AgentItemId),
+});
+
+/**
+ * Emitted when `Query.setPermissionMode` succeeds. The renderer uses it to
+ * keep the chat-header chip in sync without a round-trip.
+ */
+const PermissionModeChangedEvent = Schema.TaggedStruct(
+  "PermissionModeChanged",
+  { mode: PermissionMode },
+);
+
 export const AgentEvent = Schema.Union(
   StartedEvent,
   StatusEvent,
@@ -211,6 +270,8 @@ export const AgentEvent = Schema.Union(
   SubagentSummaryEvent,
   UsageDeltaEvent,
   SessionCursorEvent,
+  UserQuestionEvent,
+  PermissionModeChangedEvent,
   CompletedEvent,
   ErrorEvent,
 );
@@ -272,6 +333,19 @@ export const StartSessionInput = Schema.Struct({
    * created against a worktree, so the SDK runs in the worktree dir.
    */
   cwdOverride: Schema.optional(Schema.String),
+  /**
+   * SDK lifecycle mode passed to `Options.permissionMode`. Defaults to
+   * `default`. Pass `plan` to start the session in plan mode — the agent
+   * will explore read-only and propose a plan via `ExitPlanMode`.
+   */
+  permissionMode: Schema.optional(PermissionMode),
+  /**
+   * When true, future MCP servers register without `alwaysLoad`, letting
+   * the SDK delegate to its built-in tool search instead of inflating the
+   * tool list every turn. No-op today (no MCP tools shipped yet); ready
+   * for 0.04.
+   */
+  toolSearch: Schema.optional(Schema.Boolean),
 });
 export type StartSessionInput = typeof StartSessionInput.Type;
 
