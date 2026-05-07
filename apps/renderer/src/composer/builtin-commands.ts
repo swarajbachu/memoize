@@ -35,6 +35,8 @@ const COMMANDS: readonly BuiltinCommand[] = [
   { name: "new", description: "Start a new session in the current project.", kind: "client", appliesTo: null },
   { name: "model", description: "Switch the session model. Usage: /model <id>", kind: "client", appliesTo: null },
   { name: "mode", description: "Switch the runtime permission mode. Usage: /mode <name>", kind: "client", appliesTo: null },
+  { name: "plan", description: "Switch into plan mode — agent reads only, ends with ExitPlanMode.", kind: "client", appliesTo: null },
+  { name: "run", description: "Leave plan mode and resume normal execution.", kind: "client", appliesTo: null },
   { name: "help", description: "List built-in commands and skills.", kind: "client", appliesTo: null },
 
   // Claude Code provider commands. Forwarded as user text.

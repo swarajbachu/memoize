@@ -16,6 +16,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   MODELS_BY_PROVIDER,
   type Message,
+  type PermissionMode,
   type ProviderId,
   type RuntimeMode,
   type Session,
@@ -69,6 +70,10 @@ import { useMessagesStore } from "../store/messages.ts";
 import { useSessionsStore } from "../store/sessions.ts";
 import { useUiStore } from "../store/ui.ts";
 import { EMPTY_WORKTREES, useWorktreesStore } from "../store/worktrees.ts";
+import {
+  PERMISSION_MODES_ORDER,
+  PERMISSION_MODE_META,
+} from "./permission-mode-meta.ts";
 import { ProviderIcon } from "./provider-icons.tsx";
 import { MODES_ORDER, MODE_META } from "./runtime-mode-meta.ts";
 
@@ -113,6 +118,7 @@ export function ChatComposer({ session }: { session: Session }) {
 
   const setModel = useSessionsStore((s) => s.setModel);
   const setRuntimeMode = useSessionsStore((s) => s.setRuntimeMode);
+  const setPermissionMode = useSessionsStore((s) => s.setPermissionMode);
 
   const canSend = hasText;
 
@@ -200,6 +206,12 @@ export function ChatComposer({ session }: { session: Session }) {
         ) {
           void setRuntimeMode(sessionId, parsed.args);
         }
+        break;
+      case "plan":
+        void setPermissionMode(sessionId, "plan");
+        break;
+      case "run":
+        void setPermissionMode(sessionId, "default");
         break;
       case "new":
       case "help":
@@ -478,6 +490,10 @@ export function ChatComposer({ session }: { session: Session }) {
                 <ReasoningPicker sessionId={sessionId} />
               </div>
               <div className="flex items-center gap-2">
+                <PermissionModeToggle
+                  sessionId={sessionId}
+                  current={session.permissionMode}
+                />
                 <RuntimeModeToggle
                   sessionId={sessionId}
                   current={session.runtimeMode}
@@ -564,6 +580,76 @@ function RuntimeModeToggle({
       <MenuPopup side="top" align="end" className="w-72 p-1">
         {MODES_ORDER.map((mode) => {
           const m = MODE_META[mode];
+          const ItemIcon = m.Icon;
+          const active = mode === current;
+          return (
+            <MenuItem
+              key={mode}
+              onClick={() => onSelect(mode)}
+              className={cn(
+                "grid grid-cols-[1rem_auto_1fr] items-start gap-x-2.5 rounded-md px-2 py-2 text-sm",
+                active
+                  ? "bg-accent/40 text-accent-foreground data-highlighted:bg-accent/60"
+                  : undefined,
+              )}
+            >
+              <span className="col-start-1 row-start-1 flex h-5 items-center justify-center">
+                {active && <Check className="size-3.5 opacity-90" />}
+              </span>
+              <ItemIcon className="col-start-2 row-start-1 mt-0.5 size-4 shrink-0" />
+              <div className="col-start-3 row-start-1 flex flex-col gap-0.5">
+                <span className="font-medium leading-none">{m.label}</span>
+                <span className="text-xs text-muted-foreground leading-snug">
+                  {m.description}
+                </span>
+              </div>
+            </MenuItem>
+          );
+        })}
+      </MenuPopup>
+    </Menu>
+  );
+}
+
+/**
+ * SDK lifecycle mode chip. Sits to the left of the runtime-mode chip;
+ * flipping it calls `Query.setPermissionMode` on the live SDK handle. In
+ * `plan` mode the agent is restricted to read-only tools and ends its
+ * turn by calling `ExitPlanMode` — see `tool-row.tsx`.
+ */
+function PermissionModeToggle({
+  sessionId,
+  current,
+}: {
+  sessionId: SessionId;
+  current: PermissionMode;
+}) {
+  const setPermissionMode = useSessionsStore((s) => s.setPermissionMode);
+  const meta = PERMISSION_MODE_META[current];
+  const TriggerIcon = meta.Icon;
+
+  const onSelect = (mode: PermissionMode) => {
+    if (mode !== current) void setPermissionMode(sessionId, mode);
+  };
+
+  return (
+    <Menu>
+      <MenuTrigger
+        className={cn(
+          "flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] shadow-xs/5 transition-colors data-[popup-open]:bg-muted/60",
+          current === "plan"
+            ? "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400"
+            : "border-border/60 bg-background text-foreground hover:bg-muted/60",
+        )}
+        aria-label={`Mode: ${meta.label}`}
+      >
+        <TriggerIcon className="size-3.5" />
+        <span>{meta.label}</span>
+        <ChevronDown className="size-3 opacity-60" />
+      </MenuTrigger>
+      <MenuPopup side="top" align="end" className="w-72 p-1">
+        {PERMISSION_MODES_ORDER.map((mode) => {
+          const m = PERMISSION_MODE_META[mode];
           const ItemIcon = m.Icon;
           const active = mode === current;
           return (

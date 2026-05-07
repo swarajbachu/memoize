@@ -8,7 +8,12 @@ import {
   useState,
 } from "react";
 
-import type { AgentItemId, Message, SessionId } from "@forkzero/wire";
+import type {
+  AgentItemId,
+  Message,
+  SessionId,
+  UserQuestionAnswer,
+} from "@forkzero/wire";
 
 import { groupMessages } from "../lib/group-messages.ts";
 import { useMessagesStore } from "../store/messages.ts";
@@ -125,6 +130,22 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
     return map;
   }, [messages]);
 
+  /**
+   * Pair `user_question` rows to their answers by `itemId`. The
+   * QuestionCard reads from this and switches between interactive and
+   * answered renderings; the answer row itself is then suppressed in
+   * MessageRow to avoid double-painting.
+   */
+  const answersByItemId = useMemo(() => {
+    const map = new Map<AgentItemId, ReadonlyArray<UserQuestionAnswer>>();
+    for (const m of messages) {
+      if (m.content._tag === "user_question_answer") {
+        map.set(m.content.itemId, m.content.answers);
+      }
+    }
+    return map;
+  }, [messages]);
+
   return (
     <div
       ref={scrollRef}
@@ -172,6 +193,8 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
                   <MessageRow
                     message={turn.user}
                     resultsByItemId={resultsByItemId}
+                    answersByItemId={answersByItemId}
+                    sessionId={sessionId}
                   />
                 ) : null}
                 {showSummary ? (
@@ -186,6 +209,8 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
                         key={group.message.id}
                         message={group.message}
                         resultsByItemId={resultsByItemId}
+                        answersByItemId={answersByItemId}
+                        sessionId={sessionId}
                       />
                     ) : (
                       <SubagentRow

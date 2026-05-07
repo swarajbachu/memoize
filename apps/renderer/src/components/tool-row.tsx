@@ -674,6 +674,89 @@ const buildToolView = (
   }
 };
 
+/**
+ * Dedicated visual for the SDK's `ExitPlanMode` tool. Pulls `input.plan`
+ * (markdown string) and renders it in its own card. Approval/rejection
+ * is handled by the existing permission toast — putting buttons here too
+ * would diverge state.
+ *
+ * The card has three visual states:
+ *   - **Pending** — `result` undefined; the toast is asking the user.
+ *   - **Approved** — `result.isError === false`; agent is now in
+ *     `default` mode and continuing.
+ *   - **Rejected** — `result.isError === true`; agent stayed in plan
+ *     mode and will iterate.
+ */
+export function ExitPlanModeRow({
+  input,
+  result,
+}: {
+  input: unknown;
+  result?: ToolResult;
+}) {
+  const plan =
+    typeof input === "object" && input !== null && "plan" in input
+      ? typeof (input as { plan?: unknown }).plan === "string"
+        ? ((input as { plan: string }).plan as string)
+        : null
+      : null;
+
+  const status: "pending" | "approved" | "rejected" =
+    result === undefined
+      ? "pending"
+      : result.isError
+        ? "rejected"
+        : "approved";
+
+  const statusLabel: Record<typeof status, string> = {
+    pending: "Plan ready — review and approve to execute",
+    approved: "Plan approved — agent is executing",
+    rejected: "Plan rejected — agent will iterate",
+  };
+
+  return (
+    <div
+      className={cn(
+        "rounded-2xl border p-5 shadow-sm",
+        status === "pending"
+          ? "border-blue-500/40 bg-blue-500/5"
+          : status === "approved"
+            ? "border-green-500/40 bg-green-500/5"
+            : "border-amber-500/40 bg-amber-500/5",
+      )}
+    >
+      <div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <HugeiconsIcon
+          icon={CheckListIcon}
+          size={14}
+          strokeWidth={2}
+          className={cn(
+            status === "pending"
+              ? "text-blue-600 dark:text-blue-400"
+              : status === "approved"
+                ? "text-green-600 dark:text-green-400"
+                : "text-amber-600 dark:text-amber-400",
+          )}
+        />
+        <span>Plan</span>
+        <span className="text-muted-foreground/70">·</span>
+        <span className="normal-case tracking-normal text-muted-foreground">
+          {statusLabel[status]}
+        </span>
+      </div>
+      {plan === null ? (
+        <p className="text-sm italic text-muted-foreground">
+          (No plan body — the agent called ExitPlanMode without text.)
+        </p>
+      ) : (
+        <div className="prose prose-sm dark:prose-invert max-w-none">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{plan}</ReactMarkdown>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ToolRow({
   tool,
   input,
