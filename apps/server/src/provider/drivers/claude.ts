@@ -134,15 +134,58 @@ interface ThinkingAccumulator {
   signatureLength: number;
 }
 
+interface PendingAgent {
+  readonly agentName: string;
+  readonly model: string;
+  readonly startedAt: number;
+  turnCount: number;
+}
+
 interface TranslateState {
   thinkingByIndex: Map<number, ThinkingAccumulator>;
   emittedThinkingThisTurn: boolean;
+  /**
+   * Tracks `Agent` / `Task` tool_uses awaiting their paired tool_result
+   * so we can emit a `SubagentSummary` event when the result lands.
+   * Keyed by the parent's tool_use id.
+   */
+  pendingAgents: Map<string, PendingAgent>;
+  /**
+   * Most recent `parent_tool_use_id` seen on an SDK message. The Claude
+   * SDK's `canUseTool` callback signature does not include a parent id,
+   * so the driver attributes a permission request to the parent of the
+   * latest in-flight assistant message. SDK currently runs sub-agents
+   * serially; if it ever parallelises, this attribution races.
+   */
+  latestParentItemId: AgentItemId | undefined;
 }
 
 const newTranslateState = (): TranslateState => ({
   thinkingByIndex: new Map(),
   emittedThinkingThisTurn: false,
+  pendingAgents: new Map(),
+  latestParentItemId: undefined,
 });
+
+const isAgentToolUse = (block: { type?: string; name?: string }): boolean =>
+  block.type === "tool_use" && (block.name === "Agent" || block.name === "Task");
+
+const extractTextFromContent = (content: unknown): string => {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((block) => {
+        if (typeof block === "string") return block;
+        if (block && typeof block === "object" && "text" in block) {
+          const t = (block as { text?: unknown }).text;
+          return typeof t === "string" ? t : "";
+        }
+        return "";
+      })
+      .join("\n");
+  }
+  return "";
+};
 
 // Off by default; enable with FORKZERO_DEBUG_THINKING=1 when diagnosing
 // thinking-block delivery. One JSON object per line so terminal
@@ -185,10 +228,29 @@ const translate = (
     hasMessage: "message" in (msg as object),
     sessionId: (msg as { session_id?: unknown }).session_id,
   });
+  // Pull `parent_tool_use_id` off the SDK message — when set, every event
+  // we emit for this message is happening inside a sub-agent and gets
+  // tagged so the renderer can group nested rows.
+  const parentItemId =
+    typeof (msg as { parent_tool_use_id?: unknown }).parent_tool_use_id ===
+    "string"
+      ? ((msg as { parent_tool_use_id: string })
+          .parent_tool_use_id as AgentItemId)
+      : undefined;
+  state.latestParentItemId = parentItemId;
+
   if (msg.type === "assistant") {
     const out: AgentEvent[] = [];
     const content = msg.message.content;
     const blockTypes: string[] = [];
+    // Each assistant message inside a sub-agent counts as one of its
+    // turns. The SDK exposes only the parent's `Agent` tool_use start
+    // and the eventual tool_result; we tally turns here so the
+    // SubagentSummary reflects how much work the sub-agent did.
+    if (parentItemId !== undefined) {
+      const pending = state.pendingAgents.get(parentItemId);
+      if (pending !== undefined) pending.turnCount += 1;
+    }
     if (Array.isArray(content)) {
       for (const block of content) {
         blockTypes.push(String((block as { type?: unknown }).type));
@@ -197,17 +259,41 @@ const translate = (
             _tag: "AssistantMessage",
             itemId: nextItemId(),
             text: block.text,
+            parentItemId,
           });
         } else if (block.type === "tool_use") {
           const id =
             typeof (block as { id?: unknown }).id === "string"
               ? ((block as { id: string }).id as AgentItemId)
               : nextItemId();
+          // If this tool_use is the parent agent kicking off a sub-agent,
+          // remember it so the eventual paired tool_result can pop a
+          // SubagentSummary event.
+          if (isAgentToolUse(block)) {
+            const inputObj = (block as { input?: unknown }).input as
+              | Record<string, unknown>
+              | undefined;
+            const subagentType =
+              typeof inputObj?.subagent_type === "string"
+                ? (inputObj.subagent_type as string)
+                : "agent";
+            const requestedModel =
+              typeof inputObj?.model === "string"
+                ? (inputObj.model as string)
+                : "inherit";
+            state.pendingAgents.set(id as string, {
+              agentName: subagentType,
+              model: requestedModel,
+              startedAt: Date.now(),
+              turnCount: 0,
+            });
+          }
           out.push({
             _tag: "ToolUse",
             itemId: id,
             tool: block.name,
             input: block.input,
+            parentItemId,
           });
         } else if (
           block.type === "thinking" &&
@@ -229,6 +315,7 @@ const translate = (
               itemId: nextItemId(),
               text,
               redacted: false,
+              parentItemId,
             });
           }
         } else if (block.type === "redacted_thinking") {
@@ -241,6 +328,7 @@ const translate = (
               itemId: nextItemId(),
               text: "",
               redacted: true,
+              parentItemId,
             });
           }
         }
@@ -347,6 +435,7 @@ const translate = (
             itemId: nextItemId(),
             text: "",
             redacted: true,
+            parentItemId,
           },
         ];
       }
@@ -358,6 +447,7 @@ const translate = (
             itemId: nextItemId(),
             text: acc.text,
             redacted: false,
+            parentItemId,
           },
         ];
       }
@@ -372,6 +462,7 @@ const translate = (
             itemId: nextItemId(),
             text: "",
             redacted: false,
+            parentItemId,
           },
         ];
       }
@@ -400,17 +491,69 @@ const translate = (
             itemId: id,
             output: block.content ?? null,
             isError: block.is_error === true,
+            parentItemId,
           });
+          // Was this the parent's `Agent` tool_result? Pop a closing
+          // SubagentSummary that the wrapper-row footer reads when
+          // collapsed. The summary's text is the sub-agent's final
+          // assistant message that the SDK packs into `tool_result.content`.
+          const pending = state.pendingAgents.get(id as string);
+          if (pending !== undefined) {
+            state.pendingAgents.delete(id as string);
+            out.push({
+              _tag: "SubagentSummary",
+              itemId: id,
+              agentName: pending.agentName,
+              model: pending.model,
+              turns: pending.turnCount,
+              durationMs: Date.now() - pending.startedAt,
+              summary: extractTextFromContent(block.content),
+              isError: block.is_error === true,
+            });
+          }
         }
       }
     }
     return out;
   }
   if (msg.type === "result") {
-    if (msg.subtype === "success") {
-      return [{ _tag: "Completed", reason: "ended" }];
+    const out: AgentEvent[] = [];
+    // `result` carries usage; emit a UsageDelta tagged with parentItemId
+    // when the result belongs to a sub-agent. Cumulative numbers are
+    // accumulated renderer-side from the deltas.
+    const usage = (msg as { usage?: unknown }).usage as
+      | Record<string, unknown>
+      | undefined;
+    const modelOnResult =
+      typeof (msg as unknown as { model?: unknown }).model === "string"
+        ? ((msg as unknown as { model: string }).model)
+        : "unknown";
+    if (usage !== undefined) {
+      const num = (key: string): number => {
+        const v = usage[key];
+        return typeof v === "number" ? v : 0;
+      };
+      out.push({
+        _tag: "UsageDelta",
+        parentItemId,
+        inputTokens: num("input_tokens"),
+        outputTokens: num("output_tokens"),
+        cacheReadTokens: num("cache_read_input_tokens"),
+        cacheCreationTokens: num("cache_creation_input_tokens"),
+        model: modelOnResult,
+      });
     }
-    return [{ _tag: "Completed", reason: "error" }];
+    // The session-level `result` (no parent_tool_use_id) closes the turn.
+    // A sub-agent's `result` does NOT close the parent's turn — the SDK
+    // continues running until the parent emits its own top-level result.
+    if (parentItemId === undefined) {
+      out.push(
+        msg.subtype === "success"
+          ? { _tag: "Completed", reason: "ended" }
+          : { _tag: "Completed", reason: "error" },
+      );
+    }
+    return out;
   }
   return [];
 };
@@ -642,8 +785,29 @@ export const startClaudeSession = (
     // `claude`. Without it, the SDK falls back to its bundled native CLI —
     // shipped as an optional native dep that doesn't always install (yields
     // "Native CLI binary for darwin-arm64 not found").
+    // Shared driver-side state. Lives outside `options` so the pump (which
+    // calls `translate`) and the `canUseTool` callback see the same map of
+    // pending Agent invocations and the same `latestParentItemId`. Built
+    // here, populated by `translate`, read by `canUseTool`.
+    const translateState = newTranslateState();
+
     const env = scrubInheritedClaudeMarkers(process.env);
     if (apiKey !== null) env.ANTHROPIC_API_KEY = apiKey;
+    // Sub-agent map → SDK Options.agents. When at least one preset is
+    // present and the master toggle is on, also add `Agent` to
+    // allowedTools so the model can actually call it. Sessions without
+    // sub-agents leave allowedTools alone and behave identically to the
+    // pre-feature path.
+    const agentsMap = input.agents ?? {};
+    const subagentsEffective =
+      (input.enableSubagents ?? Object.keys(agentsMap).length > 0) &&
+      Object.keys(agentsMap).length > 0;
+    const subagentOptions = subagentsEffective
+      ? ({
+          agents: agentsMap,
+          allowedTools: ["Agent"],
+        } as Pick<Options, "agents" | "allowedTools">)
+      : {};
     const options: Options = {
       cwd,
       abortController: abort,
@@ -651,6 +815,7 @@ export const startClaudeSession = (
         ? { pathToClaudeCodeExecutable: claudeExecutablePath }
         : {}),
       ...(input.model !== undefined ? { model: input.model } : {}),
+      ...subagentOptions,
       // `effort: "high"` enables deep reasoning. We pair it with an
       // explicit `display: "summarized"` because Opus 4.7 defaults the
       // adaptive-thinking display to "omitted" — meaning the API
@@ -685,6 +850,11 @@ export const startClaudeSession = (
           itemId: nextItemId(),
           kind: toolName,
           details: toolInput,
+          // Best-effort attribution. SDK's `canUseTool` callback doesn't
+          // include `parent_tool_use_id`, so we tag with the most recent
+          // value seen on an SDK message. Sub-agents currently run
+          // serially in the SDK; if that changes, this attribution races.
+          parentItemId: translateState.latestParentItemId,
         });
         const decision = await requestPermission(sessionId, kind, {
           forcePrompt: policy.forcePrompt,
@@ -735,7 +905,6 @@ export const startClaudeSession = (
     // populated `session_id` we surface it as `SessionCursor` so MessageStore
     // can persist it for resume.
     let cursorAnnounced = false;
-    const translateState = newTranslateState();
     const pump = Effect.tryPromise({
       try: async () => {
         for await (const msg of q) {
