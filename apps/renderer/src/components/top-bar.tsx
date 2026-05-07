@@ -18,9 +18,10 @@ import {
   solidInteractive,
   type Tone,
 } from "../lib/tones.ts";
+import { useActiveWorktreeId } from "../store/active-workspace.ts";
 import { useComposerBridge } from "../store/composer-bridge.ts";
-import { useGitStatusStore } from "../store/git-status.ts";
-import { usePrStateStore } from "../store/pr-state.ts";
+import { gitStatusKey, useGitStatusStore } from "../store/git-status.ts";
+import { prStateKey, usePrStateStore } from "../store/pr-state.ts";
 import { useSessionsStore } from "../store/sessions.ts";
 import { useUiStore } from "../store/ui.ts";
 import {
@@ -78,8 +79,14 @@ export function TopBarLeft() {
  * regardless of which way the files panel is currently leaning).
  */
 export function TopBarMain({ folderId }: { folderId: FolderId | null }) {
+  // The branch label follows the active session's worktree so users see the
+  // worktree's branch (e.g. happy-otter-42) when they're chatting against it,
+  // not the main checkout's branch.
+  const worktreeId = useActiveWorktreeId();
   const status = useGitStatusStore((s) =>
-    folderId ? (s.byFolder[folderId] ?? null) : null,
+    folderId
+      ? (s.byKey[gitStatusKey(folderId, worktreeId)] ?? null)
+      : null,
   );
   const refresh = useGitStatusStore((s) => s.refresh);
   const leftSidebarOpen = useUiStore((s) => s.leftSidebarOpen);
@@ -90,10 +97,13 @@ export function TopBarMain({ folderId }: { folderId: FolderId | null }) {
 
   useEffect(() => {
     if (folderId === null) return;
-    void refresh(folderId);
-    const id = window.setInterval(() => void refresh(folderId), 5000);
+    void refresh(folderId, worktreeId);
+    const id = window.setInterval(
+      () => void refresh(folderId, worktreeId),
+      5000,
+    );
     return () => window.clearInterval(id);
-  }, [folderId, refresh]);
+  }, [folderId, refresh, worktreeId]);
 
   const branchLabel = status?.branch ?? null;
   const showLeftToggle = !leftSidebarOpen;
@@ -224,11 +234,16 @@ const deriveWorkflow = (
  * deferred — the layout already reserves the space.
  */
 export function TopBarRight({ folderId }: { folderId: FolderId | null }) {
+  const worktreeId = useActiveWorktreeId();
   const status = useGitStatusStore((s) =>
-    folderId ? (s.byFolder[folderId] ?? null) : null,
+    folderId
+      ? (s.byKey[gitStatusKey(folderId, worktreeId)] ?? null)
+      : null,
   );
   const pr = usePrStateStore((s) =>
-    folderId ? (s.byFolder[folderId] ?? null) : null,
+    folderId
+      ? (s.byKey[prStateKey(folderId, worktreeId)] ?? null)
+      : null,
   );
   const insertText = useComposerBridge((s) => s.insertText);
   const selectedSessionId = useSessionsStore((s) => s.selectedSessionId);

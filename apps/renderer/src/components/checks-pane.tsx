@@ -10,8 +10,9 @@ import {
 import type { FolderId, GitPrInfo } from "@forkzero/wire";
 
 import { softTone, type Tone } from "../lib/tones.ts";
-import { useGitStatusStore } from "../store/git-status.ts";
-import { usePrStateStore } from "../store/pr-state.ts";
+import { useActiveWorktreeId } from "../store/active-workspace.ts";
+import { gitStatusKey, useGitStatusStore } from "../store/git-status.ts";
+import { prStateKey, usePrStateStore } from "../store/pr-state.ts";
 
 const openExternal = (url: string) => {
   const bridge = window.forkzero?.app;
@@ -30,11 +31,16 @@ const openExternal = (url: string) => {
  * (Commit & push / Create PR / Merge) so the chrome stays uncluttered.
  */
 export function ChecksPane({ folderId }: { folderId: FolderId | null }) {
+  const worktreeId = useActiveWorktreeId();
   const status = useGitStatusStore((s) =>
-    folderId ? (s.byFolder[folderId] ?? null) : null,
+    folderId
+      ? (s.byKey[gitStatusKey(folderId, worktreeId)] ?? null)
+      : null,
   );
   const pr = usePrStateStore((s) =>
-    folderId ? (s.byFolder[folderId] ?? null) : null,
+    folderId
+      ? (s.byKey[prStateKey(folderId, worktreeId)] ?? null)
+      : null,
   );
 
   if (folderId === null) {

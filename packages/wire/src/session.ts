@@ -8,6 +8,7 @@ import {
   AgentSessionId,
   FolderId,
   MessageId,
+  WorktreeId,
 } from "./ids.ts";
 
 export { DEFAULT_RUNTIME_MODE, RuntimeMode } from "./agent.ts";
@@ -64,6 +65,12 @@ export class Session extends Schema.Class<Session>("Session")({
   cursor: Schema.NullOr(Schema.String),
   resumeStrategy: ResumeStrategy,
   runtimeMode: RuntimeMode,
+  /**
+   * Optional git worktree the session runs in. When null, the session runs
+   * in the project's main checkout (`projects.path`). Locked once the first
+   * user message is recorded — see `SessionSetWorktreeRpc`.
+   */
+  worktreeId: Schema.NullOr(WorktreeId),
   createdAt: Schema.DateFromString,
   updatedAt: Schema.DateFromString,
 }) {}
@@ -210,6 +217,16 @@ export class SteerUnsupportedError extends Schema.TaggedError<SteerUnsupportedEr
   { providerId: ProviderId },
 ) {}
 
+/**
+ * Raised by `session.setWorktree` when the session already has at least one
+ * recorded user message. cwd cannot be changed mid-conversation — the
+ * renderer collapses the picker to a read-only chip in this case.
+ */
+export class SessionAlreadyStartedError extends Schema.TaggedError<SessionAlreadyStartedError>()(
+  "SessionAlreadyStartedError",
+  { sessionId: SessionId },
+) {}
+
 // ---------------------------------------------------------------------------
 // Session RPCs
 // ---------------------------------------------------------------------------
@@ -243,9 +260,30 @@ export const SessionCreateRpc = Rpc.make("session.create", {
       Schema.Record({ key: Schema.String, value: AgentDefinition }),
     ),
     enableSubagents: Schema.optional(Schema.Boolean),
+    /**
+     * Optional worktree to run the session in. When omitted (or null), the
+     * session runs in the project's main checkout. The renderer pre-creates
+     * the worktree and passes its id when the per-repo `autoCreateWorktree`
+     * setting is on.
+     */
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
   }),
   success: Session,
   error: SessionStartError,
+});
+
+/**
+ * Switch the worktree a session runs in. Allowed only before the first user
+ * message is recorded — `SessionAlreadyStartedError` otherwise. `null` means
+ * "run in the main checkout."
+ */
+export const SessionSetWorktreeRpc = Rpc.make("session.setWorktree", {
+  payload: Schema.Struct({
+    sessionId: SessionId,
+    worktreeId: Schema.NullOr(WorktreeId),
+  }),
+  success: Schema.Void,
+  error: Schema.Union(SessionNotFoundError, SessionAlreadyStartedError),
 });
 
 export const SessionRenameRpc = Rpc.make("session.rename", {

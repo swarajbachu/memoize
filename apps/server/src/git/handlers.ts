@@ -7,8 +7,10 @@ const Log = ForkzeroRpcs.toLayerHandler("git.log", ({ folderId, limit }) =>
   Effect.flatMap(GitService, (svc) => svc.log(folderId, limit)),
 );
 
-const Status = ForkzeroRpcs.toLayerHandler("git.status", ({ folderId }) =>
-  Effect.flatMap(GitService, (svc) => svc.status(folderId)),
+const Status = ForkzeroRpcs.toLayerHandler(
+  "git.status",
+  ({ folderId, worktreeId }) =>
+    Effect.flatMap(GitService, (svc) => svc.status(folderId, worktreeId ?? null)),
 );
 
 const HeadChanged = ForkzeroRpcs.toLayerHandler(
@@ -23,8 +25,12 @@ const Origin = ForkzeroRpcs.toLayerHandler("git.origin", ({ folderId }) =>
   Effect.flatMap(GitService, (svc) => svc.origin(folderId)),
 );
 
-const PrState = ForkzeroRpcs.toLayerHandler("git.prState", ({ folderId }) =>
-  Effect.flatMap(GitService, (svc) => svc.prState(folderId)),
+const PrState = ForkzeroRpcs.toLayerHandler(
+  "git.prState",
+  ({ folderId, worktreeId }) =>
+    Effect.flatMap(GitService, (svc) =>
+      svc.prState(folderId, worktreeId ?? null),
+    ),
 );
 
 export const GitHandlersLayer = Layer.mergeAll(

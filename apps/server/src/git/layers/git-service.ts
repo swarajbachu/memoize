@@ -20,9 +20,11 @@ import {
   GitPrInfo,
   GitStatusSummary,
   type FolderId,
+  type WorktreeId,
 } from "@forkzero/wire";
 
 import { WorkspaceService } from "../../workspace/services/workspace-service.ts";
+import { WorktreeService } from "../../worktree/services/worktree-service.ts";
 import { GitService } from "../services/git-service.ts";
 
 type GitFailure =
@@ -176,6 +178,7 @@ export const GitServiceLive = Layer.effect(
   GitService,
   Effect.gen(function* () {
     const workspace = yield* WorkspaceService;
+    const worktrees = yield* WorktreeService;
     const executor = yield* CommandExecutor.CommandExecutor;
 
     const resolvePath = (
@@ -186,6 +189,23 @@ export const GitServiceLive = Layer.effect(
           ? Effect.fail(new GitFolderNotFoundError({ folderId }))
           : Effect.succeed(folder.path),
       );
+
+    /**
+     * Resolve cwd for a folder, swapping to a worktree's path when the
+     * caller passes a `worktreeId` that belongs to the project. Used by
+     * `status` so the top-bar branch + dirty/ahead counts follow the
+     * active session's worktree instead of always showing the main checkout.
+     */
+    const resolvePathForWorktree = (
+      folderId: FolderId,
+      worktreeId: WorktreeId | null | undefined,
+    ): Effect.Effect<string, GitFolderNotFoundError> =>
+      Effect.gen(function* () {
+        const base = yield* resolvePath(folderId);
+        if (!worktreeId) return base;
+        const wt = yield* worktrees.get(worktreeId);
+        return wt !== null && wt.projectId === folderId ? wt.path : base;
+      });
 
     // Run `git ...` in `cwd`, collect stdout + stderr + exit code, and map
     // failures to our domain errors. Exit-zero returns stdout. Non-zero with
@@ -259,8 +279,8 @@ export const GitServiceLive = Layer.effect(
         ]).pipe(Effect.map(parseLogOutput)),
       );
 
-    const status: GitService["Type"]["status"] = (folderId) =>
-      Effect.flatMap(resolvePath(folderId), (cwd) =>
+    const status: GitService["Type"]["status"] = (folderId, worktreeId) =>
+      Effect.flatMap(resolvePathForWorktree(folderId, worktreeId), (cwd) =>
         run(folderId, cwd, [
           "status",
           "--porcelain=v2",
@@ -332,8 +352,8 @@ export const GitServiceLive = Layer.effect(
         }),
       );
 
-    const prState: GitService["Type"]["prState"] = (folderId) =>
-      Effect.flatMap(resolvePath(folderId), (cwd) =>
+    const prState: GitService["Type"]["prState"] = (folderId, worktreeId) =>
+      Effect.flatMap(resolvePathForWorktree(folderId, worktreeId), (cwd) =>
         Effect.gen(function* () {
           const empty: GitPrInfo = GitPrInfo.make({
             state: "none",

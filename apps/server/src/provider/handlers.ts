@@ -79,7 +79,19 @@ const SessionGet = ForkzeroRpcs.toLayerHandler(
 );
 
 const SessionCreate = ForkzeroRpcs.toLayerHandler("session.create", (input) =>
-  Effect.flatMap(MessageStore, (svc) => svc.createSession(input)),
+  Effect.flatMap(MessageStore, (svc) =>
+    svc.createSession({
+      projectId: input.projectId,
+      providerId: input.providerId,
+      model: input.model,
+      title: input.title,
+      initialPrompt: input.initialPrompt,
+      runtimeMode: input.runtimeMode,
+      agents: input.agents,
+      enableSubagents: input.enableSubagents,
+      worktreeId: input.worktreeId ?? null,
+    }),
+  ),
 );
 
 const SessionRename = ForkzeroRpcs.toLayerHandler(
@@ -123,6 +135,14 @@ const SessionSetRuntimeMode = ForkzeroRpcs.toLayerHandler(
   ({ sessionId, runtimeMode }) =>
     Effect.flatMap(MessageStore, (svc) =>
       svc.setRuntimeMode(sessionId, runtimeMode),
+    ),
+);
+
+const SessionSetWorktree = ForkzeroRpcs.toLayerHandler(
+  "session.setWorktree",
+  ({ sessionId, worktreeId }) =>
+    Effect.flatMap(MessageStore, (svc) =>
+      svc.setWorktree(sessionId, worktreeId),
     ),
 );
 
@@ -237,6 +257,7 @@ export const ProviderHandlersLayer = Layer.mergeAll(
   SessionDelete,
   SessionResume,
   SessionSetRuntimeMode,
+  SessionSetWorktree,
   SessionStreamStatus,
   MessagesList,
   MessagesStream,

@@ -7,6 +7,7 @@ import { Migration0004PermissionScope } from "./migrations/0004_permission_scope
 import { Migration0005RuntimeMode } from "./migrations/0005_runtime_mode.ts";
 import { Migration0006Attachments } from "./migrations/0006_attachments.ts";
 import { Migration0007Subagents } from "./migrations/0007_subagents.ts";
+import { Migration0008WorktreesAndRepoSettings } from "./migrations/0008_worktrees_and_repo_settings.ts";
 
 /**
  * Runs every numbered migration on boot. `fromRecord` keys must match
@@ -25,5 +26,6 @@ export const MigrationsLive = SqliteMigrator.layer({
     "0005_runtime_mode": Migration0005RuntimeMode,
     "0006_attachments": Migration0006Attachments,
     "0007_subagents": Migration0007Subagents,
+    "0008_worktrees_and_repo_settings": Migration0008WorktreesAndRepoSettings,
   }),
 });
