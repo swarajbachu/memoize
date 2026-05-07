@@ -12,6 +12,7 @@ import {
   DEFAULT_RUNTIME_MODE,
   Message,
   MessageId,
+  type AgentDefinition,
   type AgentEvent,
   type FolderId,
   type MessageContent,
@@ -46,9 +47,21 @@ interface SessionRow {
   readonly cursor: string | null;
   readonly resume_strategy: string;
   readonly runtime_mode: string;
+  readonly agents_json: string | null;
   readonly created_at: string;
   readonly updated_at: string;
 }
+
+const parseAgents = (
+  raw: string | null,
+): Readonly<Record<string, AgentDefinition>> | null => {
+  if (raw === null || raw.length === 0) return null;
+  try {
+    return JSON.parse(raw) as Record<string, AgentDefinition>;
+  } catch {
+    return null;
+  }
+};
 
 const RUNTIME_MODES: ReadonlySet<RuntimeMode> = new Set([
   "approval-required",
@@ -67,6 +80,7 @@ interface MessageRow {
   readonly role: string;
   readonly kind: string;
   readonly content_json: string;
+  readonly parent_item_id: string | null;
   readonly created_at: string;
 }
 
@@ -98,6 +112,28 @@ const messageFromRow = (row: MessageRow): Message => {
   });
 };
 
+/**
+ * Pull `parentItemId` off a content payload for the dedicated SQL column.
+ * The same value is also embedded in `content_json`; the column exists for
+ * indexed lookups (e.g. "all rows nested under item X").
+ */
+const parentItemIdOfContent = (content: MessageContent): string | null => {
+  switch (content._tag) {
+    case "assistant":
+    case "thinking":
+    case "tool_use":
+    case "tool_result":
+    case "usage":
+      return content.parentItemId ?? null;
+    case "subagent_summary":
+      // The summary row IS the wrapper; it sits at the top level next to
+      // its `Agent` tool_use. No parent.
+      return null;
+    default:
+      return null;
+  }
+};
+
 const roleForContent = (content: MessageContent): MessageRole => {
   switch (content._tag) {
     case "user":
@@ -124,13 +160,18 @@ const roleForContent = (content: MessageContent): MessageRole => {
 const eventToContent = (event: AgentEvent): MessageContent | null => {
   switch (event._tag) {
     case "AssistantMessage":
-      return { _tag: "assistant", text: event.text };
+      return {
+        _tag: "assistant",
+        text: event.text,
+        parentItemId: event.parentItemId,
+      };
     case "Thinking":
       return {
         _tag: "thinking",
         itemId: event.itemId,
         text: event.text,
         redacted: event.redacted,
+        parentItemId: event.parentItemId,
       };
     case "ToolUse":
       return {
@@ -138,6 +179,7 @@ const eventToContent = (event: AgentEvent): MessageContent | null => {
         itemId: event.itemId,
         tool: event.tool,
         input: event.input,
+        parentItemId: event.parentItemId,
       };
     case "ToolResult":
       return {
@@ -145,6 +187,28 @@ const eventToContent = (event: AgentEvent): MessageContent | null => {
         itemId: event.itemId,
         output: event.output,
         isError: event.isError,
+        parentItemId: event.parentItemId,
+      };
+    case "SubagentSummary":
+      return {
+        _tag: "subagent_summary",
+        itemId: event.itemId,
+        agentName: event.agentName,
+        model: event.model,
+        turns: event.turns,
+        durationMs: event.durationMs,
+        summary: event.summary,
+        isError: event.isError,
+      };
+    case "UsageDelta":
+      return {
+        _tag: "usage",
+        parentItemId: event.parentItemId,
+        inputTokens: event.inputTokens,
+        outputTokens: event.outputTokens,
+        cacheReadTokens: event.cacheReadTokens,
+        cacheCreationTokens: event.cacheCreationTokens,
+        model: event.model,
       };
     case "Error":
       return { _tag: "error", message: event.message };
@@ -185,6 +249,17 @@ export const MessageStoreLive = Layer.scoped(
     const runtimeModeBySession = new Map<SessionId, RuntimeMode>();
     const getRuntimeModeFor = (sessionId: SessionId): RuntimeMode =>
       runtimeModeBySession.get(sessionId) ?? DEFAULT_RUNTIME_MODE;
+
+    /**
+     * Sub-agents config cached per session. Populated on `createSession`
+     * and on the first `lookupSession` after boot; consumed by
+     * `restartProviderSession` and `resumeSession` so the resumed SDK
+     * session sees the same `agents` map the original creation chose.
+     */
+    const agentsBySession = new Map<
+      SessionId,
+      { agents: Readonly<Record<string, AgentDefinition>>; enableSubagents: boolean }
+    >();
     const ndjsonAppend = (
       sessionId: SessionId,
       message: Message,
@@ -259,14 +334,34 @@ export const MessageStoreLive = Layer.scoped(
         const rows = yield* sql<SessionRow>`
           SELECT id, project_id, title, provider_id, model, status,
                  archived_at, cursor, resume_strategy, runtime_mode,
-                 created_at, updated_at
+                 agents_json, created_at, updated_at
           FROM sessions WHERE id = ${sessionId} LIMIT 1
         `.pipe(Effect.orDie);
         if (rows.length === 0) {
           return yield* Effect.fail(new SessionNotFoundError({ sessionId }));
         }
-        return sessionFromRow(rows[0]!);
+        const row = rows[0]!;
+        // Hydrate the agents cache from the row on first sight after boot
+        // so resume / lazy-restart pick up the same roster the session was
+        // created with.
+        if (!agentsBySession.has(sessionId)) {
+          const parsed = parseAgents(row.agents_json);
+          if (parsed !== null && "agents" in parsed) {
+            const hydrated = parsed as unknown as {
+              agents: Record<string, AgentDefinition>;
+              enableSubagents?: boolean;
+            };
+            agentsBySession.set(sessionId, {
+              agents: hydrated.agents,
+              enableSubagents: hydrated.enableSubagents ?? true,
+            });
+          }
+        }
+        return sessionFromRow(row);
       });
+
+    const agentsFor = (sessionId: SessionId) =>
+      agentsBySession.get(sessionId);
 
     const persistMessage = (
       sessionId: SessionId,
@@ -277,9 +372,13 @@ export const MessageStoreLive = Layer.scoped(
         const role = roleForContent(content);
         const now = new Date();
         const nowIso = now.toISOString();
+        const parentItemId = parentItemIdOfContent(content);
         yield* sql`
-          INSERT INTO messages (id, session_id, role, kind, content_json, created_at)
-          VALUES (${id}, ${sessionId}, ${role}, ${content._tag}, ${JSON.stringify(content)}, ${nowIso})
+          INSERT INTO messages
+            (id, session_id, role, kind, content_json, parent_item_id, created_at)
+          VALUES
+            (${id}, ${sessionId}, ${role}, ${content._tag},
+             ${JSON.stringify(content)}, ${parentItemId}, ${nowIso})
         `.pipe(Effect.orDie);
         yield* sql`
           UPDATE sessions SET updated_at = ${nowIso} WHERE id = ${sessionId}
@@ -429,14 +528,14 @@ export const MessageStoreLive = Layer.scoped(
           ? yield* sql<SessionRow>`
               SELECT id, project_id, title, provider_id, model, status,
                      archived_at, cursor, resume_strategy, runtime_mode,
-                     created_at, updated_at
+                     agents_json, created_at, updated_at
               FROM sessions WHERE project_id = ${projectId}
               ORDER BY updated_at DESC
             `.pipe(Effect.orDie)
           : yield* sql<SessionRow>`
               SELECT id, project_id, title, provider_id, model, status,
                      archived_at, cursor, resume_strategy, runtime_mode,
-                     created_at, updated_at
+                     agents_json, created_at, updated_at
               FROM sessions
               WHERE project_id = ${projectId} AND archived_at IS NULL
               ORDER BY updated_at DESC
@@ -458,6 +557,9 @@ export const MessageStoreLive = Layer.scoped(
           mintedSessionId === null
             ? DEFAULT_RUNTIME_MODE
             : getRuntimeModeFor(mintedSessionId);
+        const effectiveEnableSubagents =
+          input.enableSubagents ??
+          (input.agents !== undefined && Object.keys(input.agents).length > 0);
         const started = yield* provider
           .start(
             {
@@ -466,6 +568,8 @@ export const MessageStoreLive = Layer.scoped(
               mode: "sdk",
               initialPrompt: input.initialPrompt,
               model: input.model,
+              agents: input.agents,
+              enableSubagents: effectiveEnableSubagents,
             },
             null,
             newSessionRuntimeMode,
@@ -487,15 +591,30 @@ export const MessageStoreLive = Layer.scoped(
         mintedSessionId = sessionId;
         const initialRuntimeMode = input.runtimeMode ?? DEFAULT_RUNTIME_MODE;
         runtimeModeBySession.set(sessionId, initialRuntimeMode);
+        if (input.agents !== undefined && Object.keys(input.agents).length > 0) {
+          agentsBySession.set(sessionId, {
+            agents: input.agents,
+            enableSubagents: effectiveEnableSubagents,
+          });
+        }
         const now = new Date();
         const nowIso = now.toISOString();
         const title = input.title?.trim() || titleFromInitial(input.initialPrompt);
+        const agentsJson =
+          input.agents !== undefined && Object.keys(input.agents).length > 0
+            ? JSON.stringify({
+                agents: input.agents,
+                enableSubagents: effectiveEnableSubagents,
+              })
+            : null;
         yield* sql`
           INSERT INTO sessions
-            (id, project_id, title, provider_id, model, status, runtime_mode, created_at, updated_at)
+            (id, project_id, title, provider_id, model, status, runtime_mode,
+             agents_json, created_at, updated_at)
           VALUES
             (${sessionId}, ${input.projectId}, ${title}, ${input.providerId},
-             ${input.model}, 'running', ${initialRuntimeMode}, ${nowIso}, ${nowIso})
+             ${input.model}, 'running', ${initialRuntimeMode},
+             ${agentsJson}, ${nowIso}, ${nowIso})
         `.pipe(Effect.orDie);
         if (
           input.initialPrompt !== undefined &&
@@ -616,7 +735,7 @@ export const MessageStoreLive = Layer.scoped(
       Effect.gen(function* () {
         yield* lookupSession(sessionId);
         const rows = yield* sql<MessageRow>`
-          SELECT id, session_id, role, kind, content_json, created_at
+          SELECT id, session_id, role, kind, content_json, parent_item_id, created_at
           FROM messages WHERE session_id = ${sessionId}
           ORDER BY created_at ASC
         `.pipe(Effect.orDie);
@@ -634,7 +753,7 @@ export const MessageStoreLive = Layer.scoped(
           const pubsub = yield* getOrMakePubsub(sessionId);
           const dequeue = yield* pubsub.subscribe;
           const rows = yield* sql<MessageRow>`
-            SELECT id, session_id, role, kind, content_json, created_at
+            SELECT id, session_id, role, kind, content_json, parent_item_id, created_at
             FROM messages WHERE session_id = ${sessionId}
             ORDER BY created_at ASC
           `.pipe(Effect.orDie);
@@ -676,6 +795,7 @@ export const MessageStoreLive = Layer.scoped(
       initialPrompt: string,
     ): Effect.Effect<void, SessionNotFoundError> => {
       runtimeModeBySession.set(session.id, session.runtimeMode);
+      const subagents = agentsFor(session.id);
       return provider
         .start(
           {
@@ -685,6 +805,8 @@ export const MessageStoreLive = Layer.scoped(
             sessionId: session.id,
             initialPrompt,
             model: session.model,
+            agents: subagents?.agents,
+            enableSubagents: subagents?.enableSubagents,
           },
           // Re-attach to the upstream conversation when we have a cursor.
           // The driver passes it as `options.resume`; SDK reloads history
@@ -714,6 +836,7 @@ export const MessageStoreLive = Layer.scoped(
         yield* provider.close(sessionId).pipe(Effect.catchAll(() => Effect.void));
         yield* teardownSubscription(sessionId);
         runtimeModeBySession.set(session.id, session.runtimeMode);
+        const subagents = agentsFor(session.id);
         yield* provider
           .start(
             {
@@ -722,6 +845,8 @@ export const MessageStoreLive = Layer.scoped(
               mode: "sdk",
               sessionId: session.id,
               model: session.model,
+              agents: subagents?.agents,
+              enableSubagents: subagents?.enableSubagents,
             },
             session.cursor,
             () => getRuntimeModeFor(session.id),
