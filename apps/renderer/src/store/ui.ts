@@ -9,6 +9,17 @@ import type { FolderId } from "@forkzero/wire";
 export type View = "chat" | "settings";
 
 /**
+ * Which sub-surface of the settings page is active. `general`/`models`/`git`
+ * are global; a `repository` section pins to a specific project so its
+ * overrides + worktree list render in the right pane.
+ */
+export type SettingsSection =
+  | { readonly kind: "general" }
+  | { readonly kind: "models" }
+  | { readonly kind: "git" }
+  | { readonly kind: "repository"; readonly projectId: FolderId };
+
+/**
  * Which surface the main pane is showing. The chat tab is always available;
  * the file tab only exists when `openFile !== null`. Opening a different file
  * replaces (never stacks) the file tab — see specs/0.02-MVP/features/file-viewer.md.
@@ -24,6 +35,8 @@ export type OpenFile = {
 type UiState = {
   readonly view: View;
   readonly setView: (view: View) => void;
+  readonly settingsSection: SettingsSection;
+  readonly setSettingsSection: (section: SettingsSection) => void;
   readonly activeMainTab: MainTab;
   readonly openFile: OpenFile | null;
   readonly fileDirty: boolean;
@@ -45,6 +58,8 @@ type UiState = {
 export const useUiStore = create<UiState>((set) => ({
   view: "chat",
   setView: (view) => set({ view }),
+  settingsSection: { kind: "general" },
+  setSettingsSection: (section) => set({ settingsSection: section }),
   activeMainTab: "chat",
   openFile: null,
   fileDirty: false,

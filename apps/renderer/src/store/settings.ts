@@ -20,6 +20,12 @@ type Persisted = {
   readonly defaultProviderId: ProviderId;
   readonly defaultModelByProvider: Record<ProviderId, string>;
   readonly defaultRuntimeMode: RuntimeMode;
+  /**
+   * Global preference for "create a fresh worktree on new chat." Per-repo
+   * `autoCreateWorktree` overrides this; the Repositories pane in Settings
+   * seeds new repos from this value.
+   */
+  readonly defaultAutoCreateWorktree: boolean;
 };
 
 const isProviderId = (v: unknown): v is ProviderId =>
@@ -34,6 +40,7 @@ const loadPersisted = (): Persisted => {
       defaultProviderId: DEFAULT_PROVIDER,
       defaultModelByProvider: seedModels(),
       defaultRuntimeMode: DEFAULT_RUNTIME_MODE,
+      defaultAutoCreateWorktree: false,
     };
   }
   try {
@@ -43,6 +50,7 @@ const loadPersisted = (): Persisted => {
         defaultProviderId: DEFAULT_PROVIDER,
         defaultModelByProvider: seedModels(),
         defaultRuntimeMode: DEFAULT_RUNTIME_MODE,
+        defaultAutoCreateWorktree: false,
       };
     }
     const parsed = JSON.parse(raw) as Partial<Persisted>;
@@ -65,12 +73,17 @@ const loadPersisted = (): Persisted => {
       defaultRuntimeMode: isRuntimeMode(parsed.defaultRuntimeMode)
         ? parsed.defaultRuntimeMode
         : DEFAULT_RUNTIME_MODE,
+      defaultAutoCreateWorktree:
+        typeof parsed.defaultAutoCreateWorktree === "boolean"
+          ? parsed.defaultAutoCreateWorktree
+          : false,
     };
   } catch {
     return {
       defaultProviderId: DEFAULT_PROVIDER,
       defaultModelByProvider: seedModels(),
       defaultRuntimeMode: DEFAULT_RUNTIME_MODE,
+      defaultAutoCreateWorktree: false,
     };
   }
 };
@@ -88,6 +101,7 @@ type SettingsState = Persisted & {
   readonly setDefaultProvider: (providerId: ProviderId) => void;
   readonly setDefaultModel: (providerId: ProviderId, model: string) => void;
   readonly setDefaultRuntimeMode: (mode: RuntimeMode) => void;
+  readonly setDefaultAutoCreateWorktree: (value: boolean) => void;
 };
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
@@ -99,6 +113,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       defaultProviderId: s.defaultProviderId,
       defaultModelByProvider: s.defaultModelByProvider,
       defaultRuntimeMode: s.defaultRuntimeMode,
+      defaultAutoCreateWorktree: s.defaultAutoCreateWorktree,
     });
   },
   setDefaultModel: (providerId, model) => {
@@ -110,6 +125,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       defaultProviderId: s.defaultProviderId,
       defaultModelByProvider: s.defaultModelByProvider,
       defaultRuntimeMode: s.defaultRuntimeMode,
+      defaultAutoCreateWorktree: s.defaultAutoCreateWorktree,
     });
   },
   setDefaultRuntimeMode: (mode) => {
@@ -119,6 +135,17 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       defaultProviderId: s.defaultProviderId,
       defaultModelByProvider: s.defaultModelByProvider,
       defaultRuntimeMode: s.defaultRuntimeMode,
+      defaultAutoCreateWorktree: s.defaultAutoCreateWorktree,
+    });
+  },
+  setDefaultAutoCreateWorktree: (value) => {
+    set({ defaultAutoCreateWorktree: value });
+    const s = get();
+    persist({
+      defaultProviderId: s.defaultProviderId,
+      defaultModelByProvider: s.defaultModelByProvider,
+      defaultRuntimeMode: s.defaultRuntimeMode,
+      defaultAutoCreateWorktree: s.defaultAutoCreateWorktree,
     });
   },
 }));
