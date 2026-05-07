@@ -9,9 +9,11 @@ import {
 } from "effect";
 
 import {
+  DEFAULT_PERMISSION_MODE,
   DEFAULT_RUNTIME_MODE,
   Message,
   MessageId,
+  type PermissionMode,
   SessionAlreadyStartedError,
   type AgentDefinition,
   type AgentEvent,
@@ -56,6 +58,8 @@ interface SessionRow {
   readonly runtime_mode: string;
   readonly agents_json: string | null;
   readonly worktree_id: string | null;
+  readonly permission_mode: string;
+  readonly tool_search: number;
   readonly created_at: string;
   readonly updated_at: string;
 }
@@ -81,6 +85,17 @@ const runtimeModeFromRow = (raw: string): RuntimeMode =>
   RUNTIME_MODES.has(raw as RuntimeMode)
     ? (raw as RuntimeMode)
     : DEFAULT_RUNTIME_MODE;
+
+const PERMISSION_MODES: ReadonlySet<PermissionMode> = new Set([
+  "default",
+  "plan",
+  "acceptEdits",
+]);
+
+const permissionModeFromRow = (raw: string): PermissionMode =>
+  PERMISSION_MODES.has(raw as PermissionMode)
+    ? (raw as PermissionMode)
+    : DEFAULT_PERMISSION_MODE;
 
 interface MessageRow {
   readonly id: string;
@@ -109,6 +124,8 @@ const sessionFromRow = (row: SessionRow): Session =>
       row.worktree_id === null
         ? null
         : (row.worktree_id as unknown as WorktreeId),
+    permissionMode: permissionModeFromRow(row.permission_mode),
+    toolSearch: row.tool_search === 1,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   });
@@ -136,6 +153,8 @@ const parentItemIdOfContent = (content: MessageContent): string | null => {
     case "tool_use":
     case "tool_result":
     case "usage":
+    case "user_question":
+    case "user_question_answer":
       return content.parentItemId ?? null;
     case "subagent_summary":
       // The summary row IS the wrapper; it sits at the top level next to
@@ -150,11 +169,13 @@ const roleForContent = (content: MessageContent): MessageRole => {
   switch (content._tag) {
     case "user":
     case "user_rich":
+    case "user_question_answer":
       return "user";
     case "assistant":
     case "thinking":
     case "tool_use":
     case "subagent_summary":
+    case "user_question":
       return "assistant";
     case "tool_result":
       return "tool";
@@ -671,6 +692,8 @@ export const MessageStoreLive = Layer.scoped(
           resumeStrategy: "none",
           runtimeMode: initialRuntimeMode,
           worktreeId,
+          permissionMode: DEFAULT_PERMISSION_MODE,
+          toolSearch: false,
           createdAt: now,
           updatedAt: now,
         });
