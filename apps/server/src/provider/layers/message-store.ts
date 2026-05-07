@@ -811,11 +811,18 @@ export const MessageStoreLive = Layer.scoped(
     ) =>
       Effect.gen(function* () {
         yield* lookupSession(sessionId);
-        yield* persistMessage(sessionId, {
+        const persisted = yield* persistMessage(sessionId, {
           _tag: "user_question_answer",
           itemId,
           answers,
         });
+        // Broadcast so the renderer sees the answer arrive on
+        // `messages.stream` and the ChatComposer's `pendingQuestion`
+        // selector flips to null — switching the composer slot back
+        // from the QuestionCard to the regular editor. Without this,
+        // the row sits in the DB until the next hydrate.
+        yield* broadcastMessage(sessionId, persisted);
+        yield* ndjsonAppend(sessionId, persisted);
         yield* provider.answerQuestion(sessionId, itemId, answers).pipe(
           Effect.catchAll(() => Effect.void),
         );
