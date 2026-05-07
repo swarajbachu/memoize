@@ -251,11 +251,114 @@ function ToolErrorRow({ output }: { output: unknown }) {
   );
 }
 
-function ErrorBubble({ text }: { text: string }) {
+type RateLimitInfo = {
+  readonly resetText?: string;
+  readonly period?: "weekly" | "monthly" | "daily";
+};
+
+// Parse rate-limit / usage-limit messages emitted by Claude Code, the
+// Anthropic SDK, or other providers. We see them as plain strings (the
+// wire ErrorEvent carries no structured metadata) so this is best-effort
+// pattern matching against the human-readable text.
+const parseRateLimit = (text: string): RateLimitInfo | null => {
+  const isRateLimit =
+    /usage limit|rate[-\s]?limit|quota|429|too many requests|overloaded|hit your limit/i.test(
+      text,
+    );
+  if (!isRateLimit) return null;
+
+  const resetMatch =
+    text.match(
+      /reset(?:s|ing)?(?:\s+at)?\s+(\d{1,2}(?::\d{2})?\s*[ap]m(?:\s*\([^)]+\))?)/i,
+    ) ??
+    text.match(
+      /try again at\s+(\d{1,2}(?::\d{2})?\s*[ap]m(?:\s*\([^)]+\))?)/i,
+    ) ??
+    text.match(/reset(?:s|ing)?(?:\s+at)?\s+(\d{4}-\d{2}-\d{2}[T0-9:.Z+\-]*)/i);
+
+  const lower = text.toLowerCase();
+  const period: RateLimitInfo["period"] = lower.includes("monthly")
+    ? "monthly"
+    : lower.includes("weekly")
+      ? "weekly"
+      : lower.includes("daily")
+        ? "daily"
+        : undefined;
+
+  return { resetText: resetMatch?.[1], period };
+};
+
+const formatResetDetail = (info: RateLimitInfo): string => {
+  if (info.resetText !== undefined) return `Resets ${info.resetText}`;
+  if (info.period !== undefined) {
+    const label = info.period.charAt(0).toUpperCase() + info.period.slice(1);
+    return `${label} limit`;
+  }
+  return "Try again later";
+};
+
+export function ErrorBubble({
+  text,
+  onDismiss,
+}: {
+  text: string;
+  onDismiss?: () => void;
+}) {
+  const rateLimit = parseRateLimit(text);
+  if (rateLimit !== null) {
+    return (
+      <div className="px-4 py-2">
+        <div className="max-w-[88%] rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+          <div className="flex items-center gap-2">
+            <HugeiconsIcon
+              icon={AlertCircleIcon}
+              strokeWidth={2}
+              aria-hidden="true"
+              className="size-3.5 shrink-0 text-amber-300"
+            />
+            <span className="font-medium text-amber-100">
+              Rate limit reached
+            </span>
+            <span className="text-amber-200/50">·</span>
+            <span className="text-amber-200/90">
+              {formatResetDetail(rateLimit)}
+            </span>
+            {onDismiss !== undefined && (
+              <button
+                type="button"
+                onClick={onDismiss}
+                className="ml-auto rounded px-1.5 py-0.5 text-amber-200/70 hover:bg-amber-500/15 hover:text-amber-100"
+              >
+                Dismiss
+              </button>
+            )}
+          </div>
+          <div className="mt-1 break-words text-amber-200/70">{text}</div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="px-4 py-2">
       <div className="max-w-[88%] rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-200">
-        {text}
+        <div className="flex items-start gap-2">
+          <HugeiconsIcon
+            icon={AlertCircleIcon}
+            strokeWidth={2}
+            aria-hidden="true"
+            className="mt-px size-3.5 shrink-0 text-red-400"
+          />
+          <span className="break-words">{text}</span>
+          {onDismiss !== undefined && (
+            <button
+              type="button"
+              onClick={onDismiss}
+              className="ml-auto rounded px-1.5 py-0.5 text-red-200/70 hover:bg-red-500/15 hover:text-red-100"
+            >
+              Dismiss
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
