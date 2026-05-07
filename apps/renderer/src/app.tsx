@@ -132,6 +132,16 @@ export function App() {
     if (!rightSidebarOpen && !collapsed) panel.collapse();
   }, [rightPanelRef, rightSidebarOpen]);
 
+  if (view === "settings") {
+    return (
+      <TooltipProvider>
+        <div className="dark flex h-dvh max-h-dvh min-h-0 w-screen overflow-hidden bg-background/70 text-foreground">
+          <SettingsPage />
+        </div>
+      </TooltipProvider>
+    );
+  }
+
   return (
     <TooltipProvider>
       <div className="dark flex h-dvh max-h-dvh min-h-0 w-screen overflow-hidden text-foreground">
@@ -166,46 +176,40 @@ export function App() {
           <Panel id="main" minSize="30%">
             <main className="flex h-full min-h-0 min-w-0 flex-col bg-background/70 backdrop-blur-3xl">
               <TopBarMain folderId={selectedFolderId} />
-              {view === "settings" ? (
-                <SettingsPage />
-              ) : (
-                <>
-                  <MainTabs
-                    headerLabel={headerLabel}
-                    headerTitle={selectedFolder?.path}
-                    providerId={selectedSession?.providerId}
-                    model={selectedSession?.model}
-                  />
-                  <div
-                    hidden={activeMainTab !== "chat"}
-                    className="flex min-h-0 flex-1 flex-col"
-                  >
-                    {selectedSessionId !== null && selectedSession !== null ? (
-                      <>
-                        <PermissionToast sessionId={selectedSessionId} />
-                        <ChatView sessionId={selectedSessionId} />
-                        <CostFooter sessionId={selectedSessionId} />
-                        <ChatComposer session={selectedSession} />
-                      </>
-                    ) : (
-                      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
-                        <p>
-                          {selectedFolder === null
-                            ? "Add a project on the left to begin."
-                            : "Pick or create a session in the sidebar."}
-                        </p>
-                      </div>
-                    )}
+              <MainTabs
+                headerLabel={headerLabel}
+                headerTitle={selectedFolder?.path}
+                providerId={selectedSession?.providerId}
+                model={selectedSession?.model}
+              />
+              <div
+                hidden={activeMainTab !== "chat"}
+                className="flex min-h-0 flex-1 flex-col"
+              >
+                {selectedSessionId !== null && selectedSession !== null ? (
+                  <>
+                    <PermissionToast sessionId={selectedSessionId} />
+                    <ChatView sessionId={selectedSessionId} />
+                    <CostFooter sessionId={selectedSessionId} />
+                    <ChatComposer session={selectedSession} />
+                  </>
+                ) : (
+                  <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
+                    <p>
+                      {selectedFolder === null
+                        ? "Add a project on the left to begin."
+                        : "Pick or create a session in the sidebar."}
+                    </p>
                   </div>
-                  {openFile !== null && (
-                    <div
-                      hidden={activeMainTab !== "file"}
-                      className="flex min-h-0 flex-1 flex-col"
-                    >
-                      <FileEditor />
-                    </div>
-                  )}
-                </>
+                )}
+              </div>
+              {openFile !== null && (
+                <div
+                  hidden={activeMainTab !== "file"}
+                  className="flex min-h-0 flex-1 flex-col"
+                >
+                  <FileEditor />
+                </div>
               )}
             </main>
           </Panel>

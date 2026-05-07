@@ -6,6 +6,7 @@ import { Effect, Fiber, Stream } from "effect";
 import type { Folder, PtyId } from "@forkzero/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
+import { useActiveWorkspaceRoot } from "../store/active-workspace.ts";
 import { useWorkspaceStore } from "../store/workspace.ts";
 
 export function TerminalPane() {
@@ -14,6 +15,9 @@ export function TerminalPane() {
   const selected = selectedFolderId
     ? (folders.find((f) => f.id === selectedFolderId) ?? null)
     : null;
+  const activeRoot = useActiveWorkspaceRoot(
+    selectedFolderId ?? ("" as Folder["id"]),
+  );
 
   if (selected === null) {
     return (
@@ -23,7 +27,13 @@ export function TerminalPane() {
     );
   }
 
-  return <PtyTerminal key={selected.id} folder={selected} />;
+  // `key` includes the resolved cwd so toggling a session's worktree
+  // re-mounts the pane with a fresh PTY rooted in the new path. Live cwd
+  // migration of an existing PTY is out of scope.
+  const cwd = activeRoot ?? selected.path;
+  return (
+    <PtyTerminal key={`${selected.id}:${cwd}`} folder={selected} cwd={cwd} />
+  );
 }
 
 // xterm's canvas/webgl renderer takes literal color strings, not CSS vars,
@@ -40,7 +50,7 @@ function readToken(el: HTMLElement, cssVar: string, fallback: string): string {
   return computed || fallback;
 }
 
-function PtyTerminal({ folder }: { folder: Folder }) {
+function PtyTerminal({ folder, cwd }: { folder: Folder; cwd: string }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -99,7 +109,7 @@ function PtyTerminal({ folder }: { folder: Folder }) {
 
         const { ptyId: id } = await Effect.runPromise(
           client.pty.open({
-            cwd: folder.path,
+            cwd,
             cols: term.cols,
             rows: term.rows,
           }),
@@ -185,7 +195,7 @@ function PtyTerminal({ folder }: { folder: Folder }) {
       }
       term.dispose();
     };
-  }, [folder.id, folder.path]);
+  }, [folder.id, cwd]);
 
   return (
     <div ref={containerRef} className="h-full w-full bg-background p-2" />

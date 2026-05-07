@@ -169,17 +169,21 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
                 },
               }));
               if (wasRunning && !isRunning) {
-                const session = useSessionsStore
+                // Refresh PR state for this session's specific (project,
+                // worktree) pair — a turn that pushed commits on a worktree's
+                // branch shouldn't touch the main checkout's cache entry.
+                const sessions = useSessionsStore
                   .getState()
                   .sessionsByProject;
-                for (const [projectId, sessions] of Object.entries(session)) {
-                  if (sessions.some((sess) => sess.id === sessionId)) {
+                for (const list of Object.values(sessions)) {
+                  const sess = list.find((s) => s.id === sessionId);
+                  if (sess !== undefined) {
                     void usePrStateStore
                       .getState()
-                      .refresh(projectId as never);
+                      .refresh(sess.projectId, sess.worktreeId);
                     void usePrDetailsStore
                       .getState()
-                      .refresh(projectId as never);
+                      .refresh(sess.projectId, sess.worktreeId);
                     break;
                   }
                 }

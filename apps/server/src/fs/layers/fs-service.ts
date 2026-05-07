@@ -11,9 +11,11 @@ import {
   FsReadError,
   FsTooLargeError,
   type FolderId,
+  type WorktreeId,
 } from "@forkzero/wire";
 
 import { WorkspaceService } from "../../workspace/services/workspace-service.ts";
+import { WorktreeService } from "../../worktree/services/worktree-service.ts";
 import { FsService } from "../services/fs-service.ts";
 
 // Skip directories that are large, irrelevant, or just noise in a code-tree
@@ -39,20 +41,33 @@ export const FsServiceLive = Layer.effect(
   FsService,
   Effect.gen(function* () {
     const workspace = yield* WorkspaceService;
+    const worktrees = yield* WorktreeService;
     const fs = yield* FileSystem.FileSystem;
     const pathSvc = yield* Path.Path;
 
     // Resolve a project-root-relative request path to an absolute path,
     // failing with the appropriate wire error if the folder is unknown or
-    // the path escapes the project root. Shared by tree / readFile /
-    // writeFile so path-validation lives in exactly one place.
-    const resolveInsideFolder = (folderId: FolderId, relPath: string) =>
+    // the path escapes the project root. When `worktreeId` is set and the
+    // worktree belongs to `folderId`, root-swaps to the worktree's path so
+    // every fs surface (tree / read / write) follows the active session.
+    // Shared by tree / readFile / writeFile so path-validation lives in
+    // exactly one place.
+    const resolveInsideFolder = (
+      folderId: FolderId,
+      relPath: string,
+      worktreeId?: WorktreeId | null,
+    ) =>
       Effect.gen(function* () {
         const folder = yield* workspace.findById(folderId);
         if (folder === null) {
           return yield* Effect.fail(new FsFolderNotFoundError({ folderId }));
         }
-        const rootAbs = pathSvc.resolve(folder.path);
+        let rootPath = folder.path;
+        if (worktreeId) {
+          const wt = yield* worktrees.get(worktreeId);
+          if (wt !== null && wt.projectId === folderId) rootPath = wt.path;
+        }
+        const rootAbs = pathSvc.resolve(rootPath);
         const requestedAbs = pathSvc.resolve(rootAbs, relPath);
         const rel = pathSvc.relative(rootAbs, requestedAbs);
         if (rel.startsWith("..") || pathSvc.isAbsolute(rel)) {
@@ -63,9 +78,13 @@ export const FsServiceLive = Layer.effect(
         return { rootAbs, requestedAbs } as const;
       });
 
-    const tree: FsService["Type"]["tree"] = (folderId, relPath) =>
+    const tree: FsService["Type"]["tree"] = (folderId, relPath, worktreeId) =>
       Effect.gen(function* () {
-        const { requestedAbs } = yield* resolveInsideFolder(folderId, relPath);
+        const { requestedAbs } = yield* resolveInsideFolder(
+          folderId,
+          relPath,
+          worktreeId,
+        );
 
         const names = yield* fs.readDirectory(requestedAbs).pipe(
           Effect.mapError(
@@ -111,9 +130,17 @@ export const FsServiceLive = Layer.effect(
         return entries;
       });
 
-    const readFile: FsService["Type"]["readFile"] = (folderId, relPath) =>
+    const readFile: FsService["Type"]["readFile"] = (
+      folderId,
+      relPath,
+      worktreeId,
+    ) =>
       Effect.gen(function* () {
-        const { requestedAbs } = yield* resolveInsideFolder(folderId, relPath);
+        const { requestedAbs } = yield* resolveInsideFolder(
+          folderId,
+          relPath,
+          worktreeId,
+        );
 
         const stat = yield* fs.stat(requestedAbs).pipe(
           Effect.mapError(
@@ -170,9 +197,14 @@ export const FsServiceLive = Layer.effect(
       relPath,
       content,
       expectedMtime,
+      worktreeId,
     ) =>
       Effect.gen(function* () {
-        const { requestedAbs } = yield* resolveInsideFolder(folderId, relPath);
+        const { requestedAbs } = yield* resolveInsideFolder(
+          folderId,
+          relPath,
+          worktreeId,
+        );
 
         const byteLen = new TextEncoder().encode(content).byteLength;
         if (byteLen > MAX_FILE_BYTES) {

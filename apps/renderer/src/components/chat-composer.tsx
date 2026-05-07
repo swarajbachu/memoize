@@ -2,7 +2,10 @@ import type { EditorView } from "@codemirror/view";
 import {
   Check,
   ChevronDown,
+  FolderClosed,
+  GitBranch,
   Gauge,
+  Lock,
   Paperclip,
   Send,
   Square,
@@ -62,11 +65,10 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "~/components/ui/tooltip";
-import { DEFAULT_SUBAGENT_PRESETS } from "../lib/subagent-presets.ts";
 import { useMessagesStore } from "../store/messages.ts";
 import { useSessionsStore } from "../store/sessions.ts";
-import { useSubagentsStore } from "../store/subagents.ts";
 import { useUiStore } from "../store/ui.ts";
+import { EMPTY_WORKTREES, useWorktreesStore } from "../store/worktrees.ts";
 import { ProviderIcon } from "./provider-icons.tsx";
 import { MODES_ORDER, MODE_META } from "./runtime-mode-meta.ts";
 
@@ -442,42 +444,13 @@ export function ChatComposer({ session }: { session: Session }) {
                   hostRef={editorHostRef}
                   projectId={session.projectId}
                 />
-                {inFlight ? (
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <button
-                          type="button"
-                          onClick={() => void interrupt(sessionId)}
-                          aria-label="Interrupt"
-                          className="flex size-8 shrink-0 self-end items-center justify-center rounded-lg border border-border/60 bg-background text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-                        >
-                          <Square className="size-3.5" />
-                        </button>
-                      }
-                    />
-                    <TooltipPopup>Interrupt the running turn</TooltipPopup>
-                  </Tooltip>
-                ) : (
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <button
-                          type="button"
-                          onClick={() => void submit()}
-                          disabled={!canSend}
-                          aria-label="Send"
-                          className="flex size-8 shrink-0 self-end items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                          <Send className="size-3.5" />
-                        </button>
-                      }
-                    />
-                    <TooltipPopup>Send (Enter)</TooltipPopup>
-                  </Tooltip>
-                )}
               </CardPanel>
             </Card>
+            {/* Single action row: model + reasoning sit on the left, send /
+                runtime / timer sit on the right — so the user's eye lands on
+                the same line for "what model is this" and "send." Sub-agent
+                config moved to settings; it doesn't belong in the per-turn
+                strip. */}
             <FrameFooter className="flex items-center justify-between gap-2 px-2 py-1.5">
               <div className="flex items-center gap-1.5">
                 <Tooltip>
@@ -503,7 +476,6 @@ export function ChatComposer({ session }: { session: Session }) {
                   currentModel={session.model}
                 />
                 <ReasoningPicker sessionId={sessionId} />
-                {session.providerId === "claude" ? <SubagentsChip /> : null}
               </div>
               <div className="flex items-center gap-2">
                 <RuntimeModeToggle
@@ -511,8 +483,46 @@ export function ChatComposer({ session }: { session: Session }) {
                   current={session.runtimeMode}
                 />
                 <SessionTimer sessionId={sessionId} inFlight={inFlight} />
+                {inFlight ? (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <button
+                          type="button"
+                          onClick={() => void interrupt(sessionId)}
+                          aria-label="Interrupt"
+                          className="flex size-7 items-center justify-center rounded-md border border-border/60 bg-background text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                        >
+                          <Square className="size-3.5" />
+                        </button>
+                      }
+                    />
+                    <TooltipPopup>Interrupt the running turn</TooltipPopup>
+                  </Tooltip>
+                ) : (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <button
+                          type="button"
+                          onClick={() => void submit()}
+                          disabled={!canSend}
+                          aria-label="Send"
+                          className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          <Send className="size-3.5" />
+                        </button>
+                      }
+                    />
+                    <TooltipPopup>Send (Enter)</TooltipPopup>
+                  </Tooltip>
+                )}
               </div>
             </FrameFooter>
+            <div className="flex items-center justify-between gap-2 border-t border-border/40 px-2 py-1 text-[11px] text-muted-foreground">
+              <WorkspacePicker session={session} />
+              <WorkspaceBranchLabel session={session} />
+            </div>
           </Frame>
         </div>
       </div>
@@ -785,35 +795,150 @@ function SessionTimer({
 }
 
 /**
- * "↳ Sub-agents: N enabled" chip — surfaces in the composer footer for
- * Claude sessions only and links straight to the settings section. Hidden
- * when the master toggle is off so users who turned it off don't see a
- * "0 enabled" stub on every session.
+ * Pick the workspace this session runs in: the project's main checkout or
+ * a freshly-created git worktree. Editable only on a brand-new session
+ * (zero user messages); once the first message is sent, the chip becomes
+ * a read-only label with a lock glyph — cwd cannot move under a running
+ * agent.
  */
-function SubagentsChip() {
-  const setView = useUiStore((s) => s.setView);
-  const enableForNewSessions = useSubagentsStore((s) => s.enableForNewSessions);
-  const presets = useSubagentsStore((s) => s.presets);
+function WorkspacePicker({ session }: { session: Session }) {
+  const sessionId = session.id;
+  const setWorktree = useSessionsStore((s) => s.setWorktree);
+  const create = useWorktreesStore((s) => s.create);
+  const refresh = useWorktreesStore((s) => s.refresh);
+  const worktrees = useWorktreesStore(
+    (s) => s.byProject[session.projectId] ?? EMPTY_WORKTREES,
+  );
+  const userMessageCount = useMessagesStore((s) => {
+    const list = s.messagesBySession[sessionId] ?? [];
+    let count = 0;
+    for (const m of list) {
+      if (m.role === "user") count += 1;
+    }
+    return count;
+  });
+  const locked = userMessageCount > 0;
 
-  if (!enableForNewSessions) return null;
+  // Hydrate the worktree list once per session so the popover renders
+  // names (not just "New worktree") on first open.
+  useEffect(() => {
+    void refresh(session.projectId);
+  }, [refresh, session.projectId]);
 
-  const enabledCount = DEFAULT_SUBAGENT_PRESETS.reduce((acc, p) => {
-    const ps = presets[p.name];
-    return acc + (ps?.enabled ?? true ? 1 : 0);
-  }, 0);
+  const current = useMemo(
+    () =>
+      session.worktreeId === null
+        ? null
+        : worktrees.find((w) => w.id === session.worktreeId) ?? null,
+    [session.worktreeId, worktrees],
+  );
 
-  if (enabledCount === 0) return null;
+  const triggerLabel =
+    session.worktreeId === null
+      ? "Current checkout"
+      : current?.name ?? "Worktree";
+  const TriggerIcon =
+    session.worktreeId === null ? FolderClosed : GitBranch;
+
+  if (locked) {
+    return (
+      <span
+        className="flex items-center gap-1.5 rounded-md px-2 py-1"
+        title="Workspace locked — first message already sent"
+      >
+        <TriggerIcon className="size-3.5" />
+        <span>{triggerLabel}</span>
+        <Lock className="size-3 opacity-60" />
+      </span>
+    );
+  }
+
+  const onPickCurrent = () => {
+    if (session.worktreeId === null) return;
+    void setWorktree(sessionId, null);
+  };
+  const onPickNewWorktree = async () => {
+    const wt = await create(session.projectId);
+    if (wt === null) return;
+    await setWorktree(sessionId, wt.id);
+  };
 
   return (
-    <button
-      type="button"
-      onClick={() => setView("settings")}
-      title="Sub-agents — open settings"
-      className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+    <Menu>
+      <MenuTrigger
+        className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-foreground hover:bg-muted/60 data-[popup-open]:bg-muted/60"
+        aria-label="Change workspace"
+        title="Change workspace — locks once the first message is sent"
+      >
+        <TriggerIcon className="size-3.5" />
+        <span>{triggerLabel}</span>
+        <ChevronDown className="size-3 opacity-60" />
+      </MenuTrigger>
+      <MenuPopup side="top" align="start" className="w-64 p-1">
+        <MenuItem
+          onClick={onPickCurrent}
+          className={cn(
+            "grid grid-cols-[1rem_auto_1fr] items-start gap-x-2.5 rounded-md px-2 py-2 text-sm",
+            session.worktreeId === null
+              ? "bg-accent/40 text-accent-foreground data-highlighted:bg-accent/60"
+              : undefined,
+          )}
+        >
+          <span className="col-start-1 row-start-1 flex h-5 items-center justify-center">
+            {session.worktreeId === null && (
+              <Check className="size-3.5 opacity-90" />
+            )}
+          </span>
+          <FolderClosed className="col-start-2 row-start-1 mt-0.5 size-4 shrink-0" />
+          <div className="col-start-3 row-start-1 flex flex-col gap-0.5">
+            <span className="font-medium leading-none">Current checkout</span>
+            <span className="text-xs text-muted-foreground leading-snug">
+              Run in the project's main working tree.
+            </span>
+          </div>
+        </MenuItem>
+        <MenuItem
+          onClick={() => void onPickNewWorktree()}
+          className="grid grid-cols-[1rem_auto_1fr] items-start gap-x-2.5 rounded-md px-2 py-2 text-sm"
+        >
+          <span className="col-start-1 row-start-1 flex h-5 items-center justify-center">
+            {session.worktreeId !== null && (
+              <Check className="size-3.5 opacity-90" />
+            )}
+          </span>
+          <GitBranch className="col-start-2 row-start-1 mt-0.5 size-4 shrink-0" />
+          <div className="col-start-3 row-start-1 flex flex-col gap-0.5">
+            <span className="font-medium leading-none">New worktree</span>
+            <span className="text-xs text-muted-foreground leading-snug">
+              Branch off the current HEAD into a fresh worktree.
+            </span>
+          </div>
+        </MenuItem>
+      </MenuPopup>
+    </Menu>
+  );
+}
+
+/**
+ * Right-aligned label that surfaces the worktree's branch when the session
+ * is running on one. Empty when running in the main checkout — the file
+ * tree / status pane already shows the project's HEAD branch in that case.
+ */
+function WorkspaceBranchLabel({ session }: { session: Session }) {
+  const worktrees = useWorktreesStore(
+    (s) => s.byProject[session.projectId] ?? EMPTY_WORKTREES,
+  );
+  if (session.worktreeId === null) return null;
+  const wt = worktrees.find((w) => w.id === session.worktreeId);
+  if (wt === undefined) return null;
+  return (
+    <span
+      className="flex items-center gap-1 truncate font-mono text-foreground/80"
+      title={`Branch ${wt.branch}`}
     >
-      <span aria-hidden>↳</span>
-      <span>Sub-agents: {enabledCount} enabled</span>
-    </button>
+      <GitBranch className="size-3 shrink-0 opacity-70" />
+      <span className="truncate font-medium">{wt.branch}</span>
+    </span>
   );
 }
 

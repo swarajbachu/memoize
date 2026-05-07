@@ -6,8 +6,10 @@ import { GitHandlersLayer } from "./git/handlers.ts";
 import { PingHandlersLayer } from "./ping/handlers.ts";
 import { ProviderHandlersLayer } from "./provider/handlers.ts";
 import { PtyHandlersLayer } from "./pty/handlers.ts";
+import { RepositorySettingsHandlersLayer } from "./repository-settings/handlers.ts";
 import { SkillHandlersLayer } from "./skill/handlers.ts";
 import { WorkspaceHandlersLayer } from "./workspace/handlers.ts";
+import { WorktreeHandlersLayer } from "./worktree/handlers.ts";
 
 /**
  * Top-level merge of every domain's RPC handlers. New domains add a line
@@ -20,6 +22,8 @@ export const HandlersLayer = Layer.mergeAll(
   WorkspaceHandlersLayer,
   PtyHandlersLayer,
   GitHandlersLayer,
+  WorktreeHandlersLayer,
+  RepositorySettingsHandlersLayer,
   ProviderHandlersLayer,
   FsHandlersLayer,
   AttachmentHandlersLayer,

@@ -5,9 +5,12 @@ import { Effect } from "effect";
 import type { FolderId, FsEntry } from "@forkzero/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
+import {
+  useActiveWorkspaceRoot,
+  useActiveWorktreeId,
+} from "../store/active-workspace.ts";
 import { useComposerBridge } from "../store/composer-bridge.ts";
 import { useUiStore } from "../store/ui.ts";
-import { useWorkspaceStore } from "../store/workspace.ts";
 import { FileIcon } from "./file-icon.tsx";
 import {
   Tooltip,
@@ -43,6 +46,10 @@ const formatError = (err: unknown): string => {
  *   siblings (which can dominate large projects) bail out.
  */
 export function FileTree({ folderId }: { folderId: FolderId }) {
+  // Follow the selected session's worktree when it has one. The reset effect
+  // depends on `worktreeId` so toggling worktrees re-roots the tree without
+  // unmounting; passing it through `fs.tree` swaps the server-side root.
+  const worktreeId = useActiveWorktreeId();
   const [rootState, setRootState] = useState<DirState>({ status: "loading" });
   const [childStates, setChildStates] = useState<Record<string, DirState>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -54,8 +61,8 @@ export function FileTree({ folderId }: { folderId: FolderId }) {
   const expandedRef = useRef(expanded);
   expandedRef.current = expanded;
 
-  // Reset everything when the project changes — the previous tree's paths
-  // wouldn't resolve under the new root.
+  // Reset everything when the project or active worktree changes — the
+  // previous tree's paths wouldn't resolve under the new root.
   useEffect(() => {
     let cancelled = false;
     setRootState({ status: "loading" });
@@ -65,7 +72,7 @@ export function FileTree({ folderId }: { folderId: FolderId }) {
       try {
         const client = await getRpcClient();
         const entries = await Effect.runPromise(
-          client.fs.tree({ folderId, path: "" }),
+          client.fs.tree({ folderId, path: "", worktreeId }),
         );
         if (cancelled) return;
         setRootState({ status: "ready", entries });
@@ -77,7 +84,7 @@ export function FileTree({ folderId }: { folderId: FolderId }) {
     return () => {
       cancelled = true;
     };
-  }, [folderId]);
+  }, [folderId, worktreeId]);
 
   const loadChild = useCallback(
     async (path: string) => {
@@ -92,7 +99,7 @@ export function FileTree({ folderId }: { folderId: FolderId }) {
       try {
         const client = await getRpcClient();
         const entries = await Effect.runPromise(
-          client.fs.tree({ folderId, path }),
+          client.fs.tree({ folderId, path, worktreeId }),
         );
         setChildStates((prev) => ({
           ...prev,
@@ -105,7 +112,7 @@ export function FileTree({ folderId }: { folderId: FolderId }) {
         }));
       }
     },
-    [folderId],
+    [folderId, worktreeId],
   );
 
   const openFileInTab = useUiStore((s) => s.openFileInTab);
@@ -120,14 +127,20 @@ export function FileTree({ folderId }: { folderId: FolderId }) {
         if (!isOpen) void loadChild(entry.path);
         return;
       }
-      openFileInTab({ folderId, path: entry.path, name: entry.name });
+      openFileInTab({
+        folderId,
+        path: entry.path,
+        name: entry.name,
+        worktreeId,
+      });
     },
-    [folderId, loadChild, openFileInTab],
+    [folderId, loadChild, openFileInTab, worktreeId],
   );
 
-  const folderRoot = useWorkspaceStore(
-    (s) => s.folders.find((f) => f.id === folderId)?.path ?? null,
-  );
+  // Root path used to build absolute paths for file chips attached to the
+  // composer. Follows the active worktree so chip-attached file paths point
+  // at the worktree, not the main checkout.
+  const folderRoot = useActiveWorkspaceRoot(folderId);
 
   // Translates a tree row's "+" click into a composer chip insertion. The
   // composer registers `attachFile` on mount via `composer-bridge`; if no

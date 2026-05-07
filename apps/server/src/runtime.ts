@@ -20,9 +20,11 @@ import { ProviderServiceLive } from "./provider/layers/provider-service.ts";
 import { PtyServiceLive } from "./pty/layers/pty-service.ts";
 import { SkillBridgeLive } from "./skill/layers/skill-bridge.ts";
 import { SkillDiscoveryServiceLive } from "./skill/layers/skill-discovery.ts";
+import { RepositorySettingsServiceLive } from "./repository-settings/layers/repository-settings-service.ts";
 import { FileSearchServiceLive } from "./workspace/layers/file-search.ts";
 import { WorkspaceServiceLive } from "./workspace/layers/workspace-service.ts";
 import { FolderPicker } from "./workspace/services/folder-picker.ts";
+import { WorktreeServiceLive } from "./worktree/layers/worktree-service.ts";
 
 /**
  * Inputs to `makeMainLayer`. The host shell (today: Electron in
@@ -78,17 +80,34 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(NodeContext.layer),
   );
 
-  // GitService yields WorkspaceService for folderId → path resolution and
-  // CommandExecutor (via NodeContext) for spawning git. Provide both.
-  const GitLayer = GitServiceLive.pipe(
+  // WorktreeService manages forkzero-owned `git worktree` checkouts. Same
+  // shape as GitLayer + the SqlClient for persisting the rows.
+  const WorktreeLayer = WorktreeServiceLive.pipe(
     Layer.provide(WorkspaceLayer),
+    Layer.provide(MigratedSqlite),
     Layer.provide(NodeContext.layer),
   );
 
+  // GitService yields WorkspaceService for folderId → path, WorktreeService
+  // so `git.status` can resolve cwd to the active worktree when set, and
+  // CommandExecutor (via NodeContext) for spawning git.
+  const GitLayer = GitServiceLive.pipe(
+    Layer.provide(WorkspaceLayer),
+    Layer.provide(WorktreeLayer),
+    Layer.provide(NodeContext.layer),
+  );
+
+  // Per-repo settings overrides on top of the global defaults.
+  const RepositorySettingsLayer = RepositorySettingsServiceLive.pipe(
+    Layer.provide(MigratedSqlite),
+  );
+
   // FsService walks the project tree one directory at a time. WorkspaceService
-  // resolves folderId → path; FileSystem (via NodeContext) reads dirs/stats.
+  // resolves folderId → path; WorktreeService swaps the root to a worktree's
+  // path when the renderer passes `worktreeId`; FileSystem reads dirs/stats.
   const FsLayer = FsServiceLive.pipe(
     Layer.provide(WorkspaceLayer),
+    Layer.provide(WorktreeLayer),
     Layer.provide(NodeContext.layer),
   );
 
@@ -143,6 +162,7 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
   // low-level testing.
   const MessageStoreLayer = MessageStoreLive.pipe(
     Layer.provide(ProviderLayer),
+    Layer.provide(WorktreeLayer),
     Layer.provide(MigratedSqlite),
     Layer.provide(NdjsonLoggerLayer),
   );
@@ -164,6 +184,8 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(WorkspaceLayer),
     Layer.provide(PtyServiceLive),
     Layer.provide(GitLayer),
+    Layer.provide(WorktreeLayer),
+    Layer.provide(RepositorySettingsLayer),
     Layer.provide(FsLayer),
     Layer.provide(FileSearchLayer),
     Layer.provide(ProviderLayer),

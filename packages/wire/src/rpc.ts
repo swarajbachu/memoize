@@ -31,6 +31,10 @@ import {
 } from "./permission.ts";
 import { PingRpc } from "./ping.ts";
 import {
+  RepositorySettingsGetRpc,
+  RepositorySettingsUpdateRpc,
+} from "./repository-settings.ts";
+import {
   PtyCloseRpc,
   PtyOpenRpc,
   PtyOutputRpc,
@@ -51,6 +55,7 @@ import {
   SessionResumeRpc,
   SessionSetModelRpc,
   SessionSetRuntimeModeRpc,
+  SessionSetWorktreeRpc,
   SessionStatusStreamRpc,
   SessionUnarchiveRpc,
 } from "./session.ts";
@@ -64,6 +69,12 @@ import {
   WorkspaceSearchFilesRpc,
   WorkspaceSetSelectedRpc,
 } from "./workspace.ts";
+import {
+  WorktreeCreateRpc,
+  WorktreeGetRpc,
+  WorktreeListRpc,
+  WorktreeRemoveRpc,
+} from "./worktree.ts";
 
 /**
  * The single source of truth for every RPC method exposed by the main process.
@@ -114,6 +125,7 @@ export const ForkzeroRpcs = RpcGroup.make(
   SessionDeleteRpc,
   SessionResumeRpc,
   SessionSetRuntimeModeRpc,
+  SessionSetWorktreeRpc,
   SessionStatusStreamRpc,
   MessagesListRpc,
   MessagesStreamRpc,
@@ -128,6 +140,13 @@ export const ForkzeroRpcs = RpcGroup.make(
   PermissionListPendingRpc,
   PermissionListDecisionsRpc,
   PermissionRevokeDecisionRpc,
+  WorktreeCreateRpc,
+  WorktreeListRpc,
+  WorktreeGetRpc,
+  WorktreeRemoveRpc,
+  RepositorySettingsGetRpc,
+  RepositorySettingsUpdateRpc,
+  SessionSetWorktreeRpc,
 );
 export type ForkzeroRpcs = typeof ForkzeroRpcs;
 

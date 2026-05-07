@@ -12,6 +12,7 @@ import {
   type GitPrDetails,
   type GitPrInfo,
   type GitStatusSummary,
+  type WorktreeId,
 } from "@forkzero/wire";
 
 type GitFailure =
@@ -27,6 +28,7 @@ export interface GitServiceShape {
   ) => Effect.Effect<ReadonlyArray<GitCommit>, GitFailure>;
   readonly status: (
     folderId: FolderId,
+    worktreeId?: WorktreeId | null,
   ) => Effect.Effect<GitStatusSummary, GitFailure>;
   readonly subscribeHeadChanges: (
     folderId: FolderId,
@@ -36,19 +38,24 @@ export interface GitServiceShape {
   ) => Effect.Effect<GitOriginInfo | null, GitFailure>;
   readonly prState: (
     folderId: FolderId,
+    worktreeId?: WorktreeId | null,
   ) => Effect.Effect<GitPrInfo, GitFailure>;
   readonly prDetails: (
     folderId: FolderId,
+    worktreeId?: WorktreeId | null,
   ) => Effect.Effect<GitPrDetails, GitFailure>;
   readonly changes: (
     folderId: FolderId,
+    worktreeId?: WorktreeId | null,
   ) => Effect.Effect<ReadonlyArray<GitChange>, GitFailure>;
   readonly commit: (
     folderId: FolderId,
     message: string,
+    worktreeId?: WorktreeId | null,
   ) => Effect.Effect<{ readonly sha: string }, GitFailure>;
   readonly push: (
     folderId: FolderId,
+    worktreeId?: WorktreeId | null,
   ) => Effect.Effect<{ readonly output: string }, GitFailure>;
 }
 

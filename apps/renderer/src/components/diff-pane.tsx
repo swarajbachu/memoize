@@ -2,13 +2,18 @@ import { Effect } from "effect";
 import { CornerDownLeft, Loader2, Upload } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import type { FolderId, GitChange, GitChangeKind } from "@forkzero/wire";
+import type {
+  FolderId,
+  GitChange,
+  GitChangeKind,
+  WorktreeId,
+} from "@forkzero/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
-import { useGitChangesStore } from "../store/git-changes.ts";
-import { useGitStatusStore } from "../store/git-status.ts";
-import { usePrDetailsStore } from "../store/pr-details.ts";
-import { usePrStateStore } from "../store/pr-state.ts";
+import { gitChangesKey, useGitChangesStore } from "../store/git-changes.ts";
+import { gitStatusKey, useGitStatusStore } from "../store/git-status.ts";
+import { prDetailsKey, usePrDetailsStore } from "../store/pr-details.ts";
+import { prStateKey, usePrStateStore } from "../store/pr-state.ts";
 import { useUiStore } from "../store/ui.ts";
 
 const basename = (path: string): string => {
@@ -22,29 +27,41 @@ const dirname = (path: string): string => {
 };
 
 /**
- * Right-pane "Diff" tab. Combines the working-tree change list (with a real
- * commit composer at the bottom) and, when a PR is open, the PR's
+ * Right-pane "Changes" tab. Combines the working-tree change list (with a
+ * real commit composer at the bottom) and, when a PR is open, the PR's
  * files-changed list. Clicking any file opens it in the main file editor —
- * same flow as the file tree.
+ * same flow as the file tree. Worktree-aware: every store lookup and RPC
+ * call is keyed by `(folderId, worktreeId)` so a session running inside a
+ * worktree sees its own branch's changes, not the main checkout.
  */
-export function DiffPane({ folderId }: { folderId: FolderId | null }) {
+export function DiffPane({
+  folderId,
+  worktreeId,
+}: {
+  folderId: FolderId | null;
+  worktreeId: WorktreeId | null;
+}) {
   const status = useGitStatusStore((s) =>
-    folderId ? (s.byFolder[folderId] ?? null) : null,
+    folderId ? (s.byKey[gitStatusKey(folderId, worktreeId)] ?? null) : null,
   );
   const pr = usePrStateStore((s) =>
-    folderId ? (s.byFolder[folderId] ?? null) : null,
+    folderId ? (s.byKey[prStateKey(folderId, worktreeId)] ?? null) : null,
   );
   const prDetails = usePrDetailsStore((s) =>
-    folderId ? (s.byFolder[folderId] ?? null) : null,
+    folderId ? (s.byKey[prDetailsKey(folderId, worktreeId)] ?? null) : null,
   );
   const changes = useGitChangesStore((s) =>
-    folderId ? (s.byFolder[folderId] ?? null) : null,
+    folderId ? (s.byKey[gitChangesKey(folderId, worktreeId)] ?? null) : null,
   );
   const changesLoading = useGitChangesStore((s) =>
-    folderId ? s.loadingByFolder[folderId] === true : false,
+    folderId
+      ? s.loadingByKey[gitChangesKey(folderId, worktreeId)] === true
+      : false,
   );
   const changesError = useGitChangesStore((s) =>
-    folderId ? (s.errorByFolder[folderId] ?? null) : null,
+    folderId
+      ? (s.errorByKey[gitChangesKey(folderId, worktreeId)] ?? null)
+      : null,
   );
   const refreshChanges = useGitChangesStore((s) => s.refresh);
   const refreshStatus = useGitStatusStore((s) => s.refresh);
@@ -52,13 +69,16 @@ export function DiffPane({ folderId }: { folderId: FolderId | null }) {
   const refreshPrDetails = usePrDetailsStore((s) => s.refresh);
 
   // Poll the working tree on the same 5s cadence the top bar uses for
-  // `git status`, so the Diff tab stays in sync with the dirty-count badge.
+  // `git status`, so the Changes tab stays in sync with the dirty-count badge.
   useEffect(() => {
     if (folderId === null) return;
-    void refreshChanges(folderId);
-    const id = window.setInterval(() => void refreshChanges(folderId), 5000);
+    void refreshChanges(folderId, worktreeId);
+    const id = window.setInterval(
+      () => void refreshChanges(folderId, worktreeId),
+      5000,
+    );
     return () => window.clearInterval(id);
-  }, [folderId, refreshChanges]);
+  }, [folderId, worktreeId, refreshChanges]);
 
   if (folderId === null) {
     return <Empty>Select a project to see its changes.</Empty>;
@@ -66,10 +86,10 @@ export function DiffPane({ folderId }: { folderId: FolderId | null }) {
 
   const refreshAll = async () => {
     await Promise.all([
-      refreshChanges(folderId),
-      refreshStatus(folderId),
-      refreshPrState(folderId),
-      refreshPrDetails(folderId),
+      refreshChanges(folderId, worktreeId),
+      refreshStatus(folderId, worktreeId),
+      refreshPrState(folderId, worktreeId),
+      refreshPrDetails(folderId, worktreeId),
     ]);
   };
 
@@ -107,6 +127,7 @@ export function DiffPane({ folderId }: { folderId: FolderId | null }) {
                 <ChangeList
                   label="Tracked"
                   folderId={folderId}
+                  worktreeId={worktreeId}
                   entries={tracked}
                 />
               ) : null}
@@ -114,6 +135,7 @@ export function DiffPane({ folderId }: { folderId: FolderId | null }) {
                 <ChangeList
                   label="Untracked"
                   folderId={folderId}
+                  worktreeId={worktreeId}
                   entries={untracked}
                 />
               ) : null}
@@ -131,6 +153,7 @@ export function DiffPane({ folderId }: { folderId: FolderId | null }) {
                 <FileRow
                   key={f.path}
                   folderId={folderId}
+                  worktreeId={worktreeId}
                   path={f.path}
                   badge={
                     <span className="shrink-0 font-mono text-[10px]">
@@ -147,6 +170,7 @@ export function DiffPane({ folderId }: { folderId: FolderId | null }) {
 
       <CommitComposer
         folderId={folderId}
+        worktreeId={worktreeId}
         branch={status?.branch ?? null}
         ahead={status?.ahead ?? 0}
         canCommit={tracked.length + untracked.length > 0}
@@ -161,10 +185,12 @@ export function DiffPane({ folderId }: { folderId: FolderId | null }) {
 function ChangeList({
   label,
   folderId,
+  worktreeId,
   entries,
 }: {
   label: string;
   folderId: FolderId;
+  worktreeId: WorktreeId | null;
   entries: ReadonlyArray<GitChange>;
 }) {
   return (
@@ -177,6 +203,7 @@ function ChangeList({
           <FileRow
             key={c.path}
             folderId={folderId}
+            worktreeId={worktreeId}
             path={c.path}
             badge={<KindBadge kind={c.kind} />}
           />
@@ -188,10 +215,12 @@ function ChangeList({
 
 function FileRow({
   folderId,
+  worktreeId,
   path,
   badge,
 }: {
   folderId: FolderId;
+  worktreeId: WorktreeId | null;
   path: string;
   badge: React.ReactNode;
 }) {
@@ -202,7 +231,7 @@ function FileRow({
       <button
         type="button"
         onClick={() =>
-          openFileInTab({ folderId, path, name: basename(path) })
+          openFileInTab({ folderId, worktreeId, path, name: basename(path) })
         }
         className="-mx-1 flex w-[calc(100%+0.5rem)] items-center justify-between gap-2 rounded-sm px-1 py-0.5 text-left transition-colors hover:bg-foreground/5"
         title={path}
@@ -254,6 +283,7 @@ function KindBadge({ kind }: { kind: GitChangeKind }) {
  */
 function CommitComposer({
   folderId,
+  worktreeId,
   branch,
   ahead,
   canCommit,
@@ -262,6 +292,7 @@ function CommitComposer({
   onAfterPush,
 }: {
   folderId: FolderId;
+  worktreeId: WorktreeId | null;
   branch: string | null;
   ahead: number;
   canCommit: boolean;
@@ -280,7 +311,9 @@ function CommitComposer({
     setError(null);
     try {
       const client = await getRpcClient();
-      await Effect.runPromise(client.git.commit({ folderId, message: trimmed }));
+      await Effect.runPromise(
+        client.git.commit({ folderId, worktreeId, message: trimmed }),
+      );
       setMessage("");
       await onAfterCommit();
     } catch (err) {
@@ -296,7 +329,7 @@ function CommitComposer({
     setError(null);
     try {
       const client = await getRpcClient();
-      await Effect.runPromise(client.git.push({ folderId }));
+      await Effect.runPromise(client.git.push({ folderId, worktreeId }));
       await onAfterPush();
     } catch (err) {
       setError(formatErr(err));

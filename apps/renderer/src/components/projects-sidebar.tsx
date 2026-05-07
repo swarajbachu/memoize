@@ -31,10 +31,12 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn, formatCompactNumber } from "~/lib/utils";
 import { getRpcClient } from "../lib/rpc-client.ts";
 import { useMessagesStore } from "../store/messages.ts";
-import { usePrStateStore } from "../store/pr-state.ts";
+import { prStateKey, usePrStateStore } from "../store/pr-state.ts";
 import { useProvidersStore } from "../store/providers.ts";
+import { useRepositorySettingsStore } from "../store/repository-settings.ts";
 import { useSessionsStore } from "../store/sessions.ts";
 import { useSettingsStore } from "../store/settings.ts";
+import { useWorktreesStore } from "../store/worktrees.ts";
 import { useUiStore } from "../store/ui.ts";
 import { useWorkspaceStore } from "../store/workspace.ts";
 import { BranchIcon, type BranchState } from "./branch-icon.tsx";
@@ -112,16 +114,10 @@ export function ProjectsSidebar() {
     }
   }, [expanded, folders, sessionsByProject, hydrateSessions]);
 
-  // Lazy-hydrate per-project PR state for every expanded project. The store
-  // is keyed by FolderId and dedupes requests so this is safe to over-call.
-  const hydratePrState = usePrStateStore((s) => s.hydrate);
-  useEffect(() => {
-    for (const folder of folders) {
-      if (expanded[folder.id]) {
-        void hydratePrState(folder.id);
-      }
-    }
-  }, [expanded, folders, hydratePrState]);
+  // PR state is keyed per-session by `(folderId, worktreeId)` because each
+  // worktree has its own branch and therefore its own PR. Hydration happens
+  // inside `SessionRow` so each row pulls the entry that matches its
+  // session — no per-project bulk hydrate.
 
   // Resolve git origin for avatar rendering. Lookups that fail stay `null`
   // and the row falls back to initials.
@@ -451,6 +447,11 @@ function NewSessionButton({ projectId }: { projectId: FolderId }) {
     (s) => s.defaultModelByProvider,
   );
   const defaultRuntimeMode = useSettingsStore((s) => s.defaultRuntimeMode);
+  const defaultAutoCreateWorktree = useSettingsStore(
+    (s) => s.defaultAutoCreateWorktree,
+  );
+  const refreshRepoSettings = useRepositorySettingsStore((s) => s.refresh);
+  const createWorktree = useWorktreesStore((s) => s.create);
 
   const onClick = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -459,8 +460,21 @@ function NewSessionButton({ projectId }: { projectId: FolderId }) {
     const model =
       defaultModelByProvider[defaultProviderId] ??
       defaultModelFor(defaultProviderId);
+    // Auto-create a worktree before session.create when either the global
+    // default is on or the per-repo override flips it on. Failure is
+    // non-fatal — fall back to main checkout.
+    const repoSettings = await refreshRepoSettings(projectId);
+    const shouldAutoCreate =
+      repoSettings?.autoCreateWorktree === true ||
+      defaultAutoCreateWorktree === true;
+    let worktreeId = null;
+    if (shouldAutoCreate) {
+      const wt = await createWorktree(projectId);
+      if (wt !== null) worktreeId = wt.id;
+    }
     void create(projectId, defaultProviderId, model, {
       runtimeMode: defaultRuntimeMode,
+      worktreeId,
     });
   };
 
@@ -490,7 +504,18 @@ function SessionRow({ session }: { session: Session }) {
   const archive = useSessionsStore((s) => s.archive);
   const unarchive = useSessionsStore((s) => s.unarchive);
   const remove = useSessionsStore((s) => s.remove);
-  const prInfo = usePrStateStore((s) => s.byFolder[session.projectId] ?? null);
+  // Each session's PR state lives behind its (project, worktree) pair —
+  // sessions on a worktree show that worktree's branch's PR; sessions on
+  // the main checkout share the project-level entry. Hydrated lazily on
+  // first render so the diff stats / branch tone reflect the right branch.
+  const prInfo = usePrStateStore(
+    (s) =>
+      s.byKey[prStateKey(session.projectId, session.worktreeId)] ?? null,
+  );
+  const hydratePrState = usePrStateStore((s) => s.hydrate);
+  useEffect(() => {
+    void hydratePrState(session.projectId, session.worktreeId);
+  }, [hydratePrState, session.projectId, session.worktreeId]);
   // Live "agent is working" signal — replaces the branch icon while running
   // so users scanning the sidebar see at a glance which sessions are busy
   // even when they're focused on a different chat. The messages store only

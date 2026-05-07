@@ -7,6 +7,7 @@ import type {
   RuntimeMode,
   Session,
   SessionId,
+  WorktreeId,
 } from "@forkzero/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
@@ -32,7 +33,11 @@ type SessionsState = {
     projectId: FolderId,
     providerId: ProviderId,
     model: string,
-    opts?: { initialPrompt?: string; runtimeMode?: RuntimeMode },
+    opts?: {
+      initialPrompt?: string;
+      runtimeMode?: RuntimeMode;
+      worktreeId?: WorktreeId | null;
+    },
   ) => Promise<SessionId | null>;
   readonly rename: (sessionId: SessionId, title: string) => Promise<void>;
   readonly setModel: (sessionId: SessionId, model: string) => Promise<void>;
@@ -40,6 +45,16 @@ type SessionsState = {
     sessionId: SessionId,
     runtimeMode: RuntimeMode,
   ) => Promise<void>;
+  /**
+   * Switch the worktree the session runs in. Allowed only before the first
+   * user message has been recorded — server returns
+   * `SessionAlreadyStartedError` otherwise. Returns `{ ok: false, reason }`
+   * with a renderer-friendly message in that case.
+   */
+  readonly setWorktree: (
+    sessionId: SessionId,
+    worktreeId: WorktreeId | null,
+  ) => Promise<{ readonly ok: true } | { readonly ok: false; reason: string }>;
   readonly refreshOne: (sessionId: SessionId) => Promise<void>;
   readonly archive: (sessionId: SessionId) => Promise<void>;
   readonly unarchive: (sessionId: SessionId) => Promise<void>;
@@ -116,6 +131,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
           runtimeMode: opts?.runtimeMode,
           agents,
           enableSubagents,
+          worktreeId: opts?.worktreeId ?? null,
         }),
       );
       set((s) => {
@@ -206,6 +222,33 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       // Best-effort revert via re-hydrate of the affected project.
       const projectId = findSessionProject(get().sessionsByProject, sessionId);
       if (projectId !== null) await get().hydrate(projectId);
+    }
+  },
+  setWorktree: async (sessionId, worktreeId) => {
+    set({ error: null });
+    try {
+      const client = await getRpcClient();
+      await Effect.runPromise(
+        client.session.setWorktree({ sessionId, worktreeId }),
+      );
+      set((s) => {
+        const projectId = findSessionProject(s.sessionsByProject, sessionId);
+        if (projectId === null) return {};
+        const sessions = s.sessionsByProject[projectId] ?? [];
+        return {
+          sessionsByProject: {
+            ...s.sessionsByProject,
+            [projectId]: sessions.map((session) =>
+              session.id === sessionId ? { ...session, worktreeId } : session,
+            ),
+          },
+        };
+      });
+      return { ok: true } as const;
+    } catch (err) {
+      const reason = formatError(err);
+      set({ error: reason });
+      return { ok: false, reason } as const;
     }
   },
   archive: async (sessionId) => {

@@ -265,6 +265,13 @@ export const StartSessionInput = Schema.Struct({
   // Defaults true when `agents` is non-empty; the driver only adds `Agent`
   // to `allowedTools` when the effective value is true.
   enableSubagents: Schema.optional(Schema.Boolean),
+  /**
+   * Optional absolute path the agent should run in. When omitted, the
+   * provider resolves cwd from `folderId` (the project's main checkout).
+   * `MessageStore` populates this with a worktree path when a session was
+   * created against a worktree, so the SDK runs in the worktree dir.
+   */
+  cwdOverride: Schema.optional(Schema.String),
 });
 export type StartSessionInput = typeof StartSessionInput.Type;
 

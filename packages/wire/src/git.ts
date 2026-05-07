@@ -1,7 +1,7 @@
 import { Rpc } from "@effect/rpc";
 import { Schema } from "effect";
 
-import { FolderId } from "./ids.ts";
+import { FolderId, WorktreeId } from "./ids.ts";
 
 export class GitCommit extends Schema.Class<GitCommit>("GitCommit")({
   sha: Schema.String,
@@ -55,7 +55,14 @@ export const GitLogRpc = Rpc.make("git.log", {
 });
 
 export const GitStatusRpc = Rpc.make("git.status", {
-  payload: Schema.Struct({ folderId: FolderId }),
+  payload: Schema.Struct({
+    folderId: FolderId,
+    /**
+     * When set, run `git status` inside the worktree path so the branch +
+     * dirty/ahead counts reflect the worktree, not the main checkout.
+     */
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
+  }),
   success: GitStatusSummary,
   error: GitErrors,
 });
@@ -118,7 +125,15 @@ export class GitPrInfo extends Schema.Class<GitPrInfo>("GitPrInfo")({
 }) {}
 
 export const GitPrStateRpc = Rpc.make("git.prState", {
-  payload: Schema.Struct({ folderId: FolderId }),
+  payload: Schema.Struct({
+    folderId: FolderId,
+    /**
+     * When set, runs `gh pr view` inside the worktree's path so the result
+     * reflects the worktree's branch — each worktree has its own branch,
+     * each branch has its own PR (or none).
+     */
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
+  }),
   success: GitPrInfo,
   error: GitErrors,
 });
@@ -202,7 +217,10 @@ export class GitPrDetails extends Schema.Class<GitPrDetails>("GitPrDetails")({
 }) {}
 
 export const GitPrDetailsRpc = Rpc.make("git.prDetails", {
-  payload: Schema.Struct({ folderId: FolderId }),
+  payload: Schema.Struct({
+    folderId: FolderId,
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
+  }),
   success: GitPrDetails,
   error: GitErrors,
 });
@@ -233,7 +251,10 @@ export class GitChange extends Schema.Class<GitChange>("GitChange")({
 }) {}
 
 export const GitChangesRpc = Rpc.make("git.changes", {
-  payload: Schema.Struct({ folderId: FolderId }),
+  payload: Schema.Struct({
+    folderId: FolderId,
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
+  }),
   success: Schema.Array(GitChange),
   error: GitErrors,
 });
@@ -241,6 +262,7 @@ export const GitChangesRpc = Rpc.make("git.changes", {
 export const GitCommitRpc = Rpc.make("git.commit", {
   payload: Schema.Struct({
     folderId: FolderId,
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
     message: Schema.String,
   }),
   success: Schema.Struct({ sha: Schema.String }),
@@ -248,7 +270,10 @@ export const GitCommitRpc = Rpc.make("git.commit", {
 });
 
 export const GitPushRpc = Rpc.make("git.push", {
-  payload: Schema.Struct({ folderId: FolderId }),
+  payload: Schema.Struct({
+    folderId: FolderId,
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
+  }),
   success: Schema.Struct({ output: Schema.String }),
   error: GitErrors,
 });

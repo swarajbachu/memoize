@@ -128,6 +128,7 @@ export const ProviderServiceLive = Layer.effect(
               }),
             );
           }
+          const cwd = input.cwdOverride ?? folder.path;
           const apiKey = yield* credentials.get(input.providerId).pipe(
             Effect.catchAll(() => Effect.succeed<string | null>(null)),
           );
@@ -142,7 +143,7 @@ export const ProviderServiceLive = Layer.effect(
             );
             handle = yield* startClaudeSession(
               input,
-              folder.path,
+              cwd,
               apiKey,
               claudePath,
               sessionId,
@@ -164,7 +165,7 @@ export const ProviderServiceLive = Layer.effect(
             }
             handle = yield* startCodexSession(
               input,
-              folder.path,
+              cwd,
               apiKey,
               sessionId,
             );

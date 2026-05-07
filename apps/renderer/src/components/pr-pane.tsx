@@ -16,12 +16,13 @@ import type {
   GitPrDetails,
   GitPrInfo,
   GitPrReviewState,
+  WorktreeId,
 } from "@forkzero/wire";
 
 import { softTone, type Tone } from "../lib/tones.ts";
-import { useGitStatusStore } from "../store/git-status.ts";
-import { usePrDetailsStore } from "../store/pr-details.ts";
-import { usePrStateStore } from "../store/pr-state.ts";
+import { gitStatusKey, useGitStatusStore } from "../store/git-status.ts";
+import { prDetailsKey, usePrDetailsStore } from "../store/pr-details.ts";
+import { prStateKey, usePrStateStore } from "../store/pr-state.ts";
 import { MarkdownBody } from "./markdown-body.tsx";
 
 const openExternal = (url: string) => {
@@ -48,26 +49,36 @@ const formatRelative = (date: Date): string => {
 
 /**
  * Right-pane "PR" tab. Title, state, description, reviews, comments, and CI
- * checks for the branch's open PR. Files-changed lives in the Diff tab.
+ * checks for the branch's open PR. Files-changed lives in the Changes tab.
+ * Worktree-aware — each worktree has its own branch and PR, so all
+ * lookups + the lazy details fetch are keyed by `(folderId, worktreeId)`.
  */
-export function PrPane({ folderId }: { folderId: FolderId | null }) {
+export function PrPane({
+  folderId,
+  worktreeId,
+}: {
+  folderId: FolderId | null;
+  worktreeId: WorktreeId | null;
+}) {
   const status = useGitStatusStore((s) =>
-    folderId ? (s.byFolder[folderId] ?? null) : null,
+    folderId ? (s.byKey[gitStatusKey(folderId, worktreeId)] ?? null) : null,
   );
   const pr = usePrStateStore((s) =>
-    folderId ? (s.byFolder[folderId] ?? null) : null,
+    folderId ? (s.byKey[prStateKey(folderId, worktreeId)] ?? null) : null,
   );
   const details = usePrDetailsStore((s) =>
-    folderId ? (s.byFolder[folderId] ?? null) : null,
+    folderId ? (s.byKey[prDetailsKey(folderId, worktreeId)] ?? null) : null,
   );
   const detailsLoading = usePrDetailsStore((s) =>
-    folderId ? s.loadingByFolder[folderId] === true : false,
+    folderId
+      ? s.loadingByKey[prDetailsKey(folderId, worktreeId)] === true
+      : false,
   );
   const hydrateDetails = usePrDetailsStore((s) => s.hydrate);
 
   useEffect(() => {
-    if (folderId !== null) void hydrateDetails(folderId);
-  }, [folderId, hydrateDetails]);
+    if (folderId !== null) void hydrateDetails(folderId, worktreeId);
+  }, [folderId, worktreeId, hydrateDetails]);
 
   if (folderId === null) {
     return <Empty>Select a project to see its PR here.</Empty>;

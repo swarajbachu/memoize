@@ -3,21 +3,27 @@ import { Effect, Layer } from "effect";
 
 import { FsService } from "./services/fs-service.ts";
 
-const Tree = ForkzeroRpcs.toLayerHandler("fs.tree", ({ folderId, path }) =>
-  Effect.flatMap(FsService, (svc) => svc.tree(folderId, path ?? "")),
+const Tree = ForkzeroRpcs.toLayerHandler(
+  "fs.tree",
+  ({ folderId, path, worktreeId }) =>
+    Effect.flatMap(FsService, (svc) =>
+      svc.tree(folderId, path ?? "", worktreeId ?? null),
+    ),
 );
 
 const ReadFile = ForkzeroRpcs.toLayerHandler(
   "fs.readFile",
-  ({ folderId, path }) =>
-    Effect.flatMap(FsService, (svc) => svc.readFile(folderId, path)),
+  ({ folderId, path, worktreeId }) =>
+    Effect.flatMap(FsService, (svc) =>
+      svc.readFile(folderId, path, worktreeId ?? null),
+    ),
 );
 
 const WriteFile = ForkzeroRpcs.toLayerHandler(
   "fs.writeFile",
-  ({ folderId, path, content, expectedMtime }) =>
+  ({ folderId, path, content, expectedMtime, worktreeId }) =>
     Effect.flatMap(FsService, (svc) =>
-      svc.writeFile(folderId, path, content, expectedMtime),
+      svc.writeFile(folderId, path, content, expectedMtime, worktreeId ?? null),
     ),
 );
 
