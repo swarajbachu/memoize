@@ -2,12 +2,14 @@ import { Context, type Effect, type Stream } from "effect";
 
 import {
   type FolderId,
+  type GitChange,
   type GitCommandError,
   type GitCommit,
   type GitFolderNotFoundError,
   type GitNotARepoError,
   type GitNotInstalledError,
   type GitOriginInfo,
+  type GitPrDetails,
   type GitPrInfo,
   type GitStatusSummary,
   type WorktreeId,
@@ -38,6 +40,23 @@ export interface GitServiceShape {
     folderId: FolderId,
     worktreeId?: WorktreeId | null,
   ) => Effect.Effect<GitPrInfo, GitFailure>;
+  readonly prDetails: (
+    folderId: FolderId,
+    worktreeId?: WorktreeId | null,
+  ) => Effect.Effect<GitPrDetails, GitFailure>;
+  readonly changes: (
+    folderId: FolderId,
+    worktreeId?: WorktreeId | null,
+  ) => Effect.Effect<ReadonlyArray<GitChange>, GitFailure>;
+  readonly commit: (
+    folderId: FolderId,
+    message: string,
+    worktreeId?: WorktreeId | null,
+  ) => Effect.Effect<{ readonly sha: string }, GitFailure>;
+  readonly push: (
+    folderId: FolderId,
+    worktreeId?: WorktreeId | null,
+  ) => Effect.Effect<{ readonly output: string }, GitFailure>;
 }
 
 export class GitService extends Context.Tag("forkzero/GitService")<

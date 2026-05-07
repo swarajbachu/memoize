@@ -33,10 +33,44 @@ const PrState = ForkzeroRpcs.toLayerHandler(
     ),
 );
 
+const PrDetails = ForkzeroRpcs.toLayerHandler(
+  "git.prDetails",
+  ({ folderId, worktreeId }) =>
+    Effect.flatMap(GitService, (svc) =>
+      svc.prDetails(folderId, worktreeId ?? null),
+    ),
+);
+
+const Changes = ForkzeroRpcs.toLayerHandler(
+  "git.changes",
+  ({ folderId, worktreeId }) =>
+    Effect.flatMap(GitService, (svc) =>
+      svc.changes(folderId, worktreeId ?? null),
+    ),
+);
+
+const Commit = ForkzeroRpcs.toLayerHandler(
+  "git.commit",
+  ({ folderId, worktreeId, message }) =>
+    Effect.flatMap(GitService, (svc) =>
+      svc.commit(folderId, message, worktreeId ?? null),
+    ),
+);
+
+const Push = ForkzeroRpcs.toLayerHandler(
+  "git.push",
+  ({ folderId, worktreeId }) =>
+    Effect.flatMap(GitService, (svc) => svc.push(folderId, worktreeId ?? null)),
+);
+
 export const GitHandlersLayer = Layer.mergeAll(
   Log,
   Status,
   HeadChanged,
   Origin,
   PrState,
+  PrDetails,
+  Changes,
+  Commit,
+  Push,
 );

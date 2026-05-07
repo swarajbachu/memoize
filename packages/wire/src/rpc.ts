@@ -12,10 +12,14 @@ import {
 import { AttachmentTouchRpc, AttachmentUploadRpc } from "./attachment.ts";
 import { FsReadFileRpc, FsTreeRpc, FsWriteFileRpc } from "./fs.ts";
 import {
+  GitChangesRpc,
+  GitCommitRpc,
   GitHeadChangedRpc,
   GitLogRpc,
   GitOriginRpc,
+  GitPrDetailsRpc,
   GitPrStateRpc,
+  GitPushRpc,
   GitStatusRpc,
 } from "./git.ts";
 import {
@@ -97,6 +101,10 @@ export const ForkzeroRpcs = RpcGroup.make(
   GitHeadChangedRpc,
   GitOriginRpc,
   GitPrStateRpc,
+  GitPrDetailsRpc,
+  GitChangesRpc,
+  GitCommitRpc,
+  GitPushRpc,
   FsTreeRpc,
   FsReadFileRpc,
   FsWriteFileRpc,

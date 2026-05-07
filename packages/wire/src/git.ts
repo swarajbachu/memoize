@@ -137,3 +137,149 @@ export const GitPrStateRpc = Rpc.make("git.prState", {
   success: GitPrInfo,
   error: GitErrors,
 });
+
+export class GitPrComment extends Schema.Class<GitPrComment>("GitPrComment")({
+  author: Schema.String,
+  body: Schema.String,
+  createdAt: Schema.DateFromString,
+}) {}
+
+export const GitPrReviewState = Schema.Literal(
+  "approved",
+  "changes_requested",
+  "commented",
+  "dismissed",
+  "pending",
+);
+export type GitPrReviewState = typeof GitPrReviewState.Type;
+
+export class GitPrReview extends Schema.Class<GitPrReview>("GitPrReview")({
+  author: Schema.String,
+  state: GitPrReviewState,
+  body: Schema.String,
+  submittedAt: Schema.NullOr(Schema.DateFromString),
+}) {}
+
+export class GitPrFile extends Schema.Class<GitPrFile>("GitPrFile")({
+  path: Schema.String,
+  additions: Schema.Number,
+  deletions: Schema.Number,
+}) {}
+
+export const GitPrCheckRunStatus = Schema.Literal(
+  "queued",
+  "in_progress",
+  "completed",
+  "pending",
+);
+export type GitPrCheckRunStatus = typeof GitPrCheckRunStatus.Type;
+
+export const GitPrCheckRunConclusion = Schema.Literal(
+  "success",
+  "failure",
+  "cancelled",
+  "skipped",
+  "neutral",
+  "timed_out",
+  "action_required",
+);
+export type GitPrCheckRunConclusion = typeof GitPrCheckRunConclusion.Type;
+
+export class GitPrCheckRun extends Schema.Class<GitPrCheckRun>("GitPrCheckRun")({
+  name: Schema.String,
+  status: GitPrCheckRunStatus,
+  conclusion: Schema.NullOr(GitPrCheckRunConclusion),
+  url: Schema.NullOr(Schema.String),
+}) {}
+
+/**
+ * Heavier per-PR payload than {@link GitPrInfo}: title, body, reviews, comments,
+ * files changed, and the per-run check breakdown. Fetched lazily when the PR
+ * pane is open — `git.prState` keeps its lightweight contract for the sidebar.
+ */
+export class GitPrDetails extends Schema.Class<GitPrDetails>("GitPrDetails")({
+  state: GitPrState,
+  number: Schema.NullOr(Schema.Number),
+  url: Schema.NullOr(Schema.String),
+  isDraft: Schema.Boolean,
+  checks: GitPrChecks,
+  additions: Schema.Number,
+  deletions: Schema.Number,
+  title: Schema.String,
+  body: Schema.String,
+  author: Schema.String,
+  baseBranch: Schema.NullOr(Schema.String),
+  headBranch: Schema.NullOr(Schema.String),
+  comments: Schema.Array(GitPrComment),
+  reviews: Schema.Array(GitPrReview),
+  files: Schema.Array(GitPrFile),
+  checkRuns: Schema.Array(GitPrCheckRun),
+}) {}
+
+export const GitPrDetailsRpc = Rpc.make("git.prDetails", {
+  payload: Schema.Struct({
+    folderId: FolderId,
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
+  }),
+  success: GitPrDetails,
+  error: GitErrors,
+});
+
+/**
+ * One entry from `git status --porcelain=v2`. `staged` means the index has
+ * changes (X column ≠ '.'); `kind` is the dominant working-tree state. We
+ * collapse renames/copies to a path that matches the working-tree side so the
+ * Diff tab can wire a click to "open this file in the editor."
+ */
+export const GitChangeKind = Schema.Literal(
+  "modified",
+  "added",
+  "deleted",
+  "renamed",
+  "copied",
+  "untracked",
+  "ignored",
+  "unmerged",
+  "type_changed",
+);
+export type GitChangeKind = typeof GitChangeKind.Type;
+
+export class GitChange extends Schema.Class<GitChange>("GitChange")({
+  path: Schema.String,
+  /**
+   * Original path for renamed / copied files (the location HEAD knew the
+   * file under). `null` for every other kind. Lets the renderer surface
+   * "old → new" so a move doesn't silently look like an unrelated edit.
+   */
+  oldPath: Schema.NullOr(Schema.String),
+  staged: Schema.Boolean,
+  kind: GitChangeKind,
+}) {}
+
+export const GitChangesRpc = Rpc.make("git.changes", {
+  payload: Schema.Struct({
+    folderId: FolderId,
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
+  }),
+  success: Schema.Array(GitChange),
+  error: GitErrors,
+});
+
+export const GitCommitRpc = Rpc.make("git.commit", {
+  payload: Schema.Struct({
+    folderId: FolderId,
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
+    message: Schema.String,
+  }),
+  success: Schema.Struct({ sha: Schema.String }),
+  error: GitErrors,
+});
+
+export const GitPushRpc = Rpc.make("git.push", {
+  payload: Schema.Struct({
+    folderId: FolderId,
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
+  }),
+  success: Schema.Struct({ output: Schema.String }),
+  error: GitErrors,
+});
