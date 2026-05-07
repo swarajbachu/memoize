@@ -6,6 +6,7 @@ import fuzzysort from "fuzzysort";
 
 import { FsFolderNotFoundError } from "@forkzero/wire";
 
+import { WorktreeService } from "../../worktree/services/worktree-service.ts";
 import {
   FileSearchService,
   type FileSearchHit,
@@ -48,6 +49,7 @@ export const FileSearchServiceLive = Layer.effect(
   FileSearchService,
   Effect.gen(function* () {
     const workspace = yield* WorkspaceService;
+    const worktrees = yield* WorktreeService;
     const fs = yield* FileSystem.FileSystem;
     const pathSvc = yield* Path.Path;
 
@@ -55,6 +57,7 @@ export const FileSearchServiceLive = Layer.effect(
       folderId,
       query,
       limit,
+      worktreeId,
     ) =>
       Effect.gen(function* () {
         const folder = yield* workspace.findById(folderId);
@@ -62,7 +65,18 @@ export const FileSearchServiceLive = Layer.effect(
           return yield* Effect.fail(new FsFolderNotFoundError({ folderId }));
         }
         const cap = limit && limit > 0 ? limit : DEFAULT_LIMIT;
-        const rootAbs = pathSvc.resolve(folder.path);
+
+        // Reroot at the worktree's path when one is supplied and it belongs
+        // to this project. Mismatched worktree → silent fallback to the
+        // project root; matches `FsTreeRpc`'s contract.
+        let root = folder.path;
+        if (worktreeId) {
+          const wt = yield* worktrees.get(worktreeId);
+          if (wt !== null && wt.projectId === folderId) {
+            root = wt.path;
+          }
+        }
+        const rootAbs = pathSvc.resolve(root);
 
         // Collect every candidate (subject to depth/visit caps), then rank
         // with fuzzysort. The substring matcher we used previously couldn't

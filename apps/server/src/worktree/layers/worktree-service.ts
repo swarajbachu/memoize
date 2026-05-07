@@ -38,7 +38,6 @@ const rowToWorktree = (row: WorktreeRow): Worktree =>
     createdAt: new Date(row.created_at),
   });
 
-const DEFAULT_BASE_REL = Path.join(".forkzero", "repo-worktree");
 const EXCLUDE_LINE = ".forkzero/";
 
 export const WorktreeServiceLive = Layer.effect(
@@ -95,8 +94,8 @@ export const WorktreeServiceLive = Layer.effect(
     /**
      * Append `.forkzero/` to the repo's `.git/info/exclude` if it isn't
      * already there. Idempotent. We patch this on first worktree create so
-     * the in-repo `.forkzero/repo-worktree/` tree doesn't show up as
-     * untracked, without touching the user's `.gitignore`.
+     * the in-repo `.forkzero/` tree doesn't show up as untracked, without
+     * touching the user's `.gitignore`.
      */
     const ensureExclude = (repoPath: string) =>
       Effect.gen(function* () {
@@ -159,7 +158,10 @@ export const WorktreeServiceLive = Layer.effect(
           );
         }
         const repoPath = folder.path;
-        const baseDir = Path.join(repoPath, DEFAULT_BASE_REL);
+        // Layout: <repo>/.forkzero/<repo-name>/<branch>/. Grouping by repo
+        // name keeps `ls .forkzero/` legible when a project hosts many
+        // worktrees ("branches of pangyo") instead of a generic bucket.
+        const baseDir = Path.join(repoPath, ".forkzero", folder.name);
 
         yield* ensureExclude(repoPath);
         yield* fs

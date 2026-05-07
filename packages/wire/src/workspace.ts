@@ -2,7 +2,7 @@ import { Rpc } from "@effect/rpc";
 import { Schema } from "effect";
 
 import { FsFolderNotFoundError } from "./fs.ts";
-import { FolderId } from "./ids.ts";
+import { FolderId, WorktreeId } from "./ids.ts";
 
 export class Folder extends Schema.Class<Folder>("Folder")({
   id: FolderId,
@@ -62,12 +62,19 @@ export const WorkspaceSetSelectedRpc = Rpc.make("workspace.setSelected", {
  * Walk the project's file tree honouring `.gitignore` and return up to
  * `limit` matches against `query`. Backs the composer's `@` file picker.
  * Empty `query` returns the most recently touched entries (server's call).
+ *
+ * When `worktreeId` is set the walk is rooted at the worktree's path instead
+ * of the project's main checkout, so a session running on a worktree only
+ * surfaces files that actually live in that worktree. Mirrors the optional
+ * `worktreeId` on the `fs.*` RPCs; the server falls back to the project root
+ * silently if the worktree doesn't belong to `projectId`.
  */
 export const WorkspaceSearchFilesRpc = Rpc.make("workspace.searchFiles", {
   payload: Schema.Struct({
     projectId: FolderId,
     query: Schema.String,
     limit: Schema.optional(Schema.Number),
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
   }),
   success: Schema.Array(
     Schema.Struct({

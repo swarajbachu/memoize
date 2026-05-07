@@ -3,6 +3,7 @@ import { Context, type Effect } from "effect";
 import {
   type FolderId,
   type FsFolderNotFoundError,
+  type WorktreeId,
 } from "@forkzero/wire";
 
 export interface FileSearchHit {
@@ -18,11 +19,16 @@ export interface FileSearchServiceShape {
    * other heavyweight directories. Caps results at `limit` (default 20).
    * An empty `query` returns the first `limit` entries from a depth-first
    * walk — handy as a "what's in here" view when the popover first opens.
+   *
+   * `worktreeId`, when set, reroots the walk at the worktree's path so a
+   * session running on a worktree only sees that worktree's files. Falls
+   * back to the project root if the worktree doesn't belong to `folderId`.
    */
   readonly search: (
     folderId: FolderId,
     query: string,
     limit?: number,
+    worktreeId?: WorktreeId | null,
   ) => Effect.Effect<ReadonlyArray<FileSearchHit>, FsFolderNotFoundError>;
 }
 

@@ -545,6 +545,7 @@ export function ChatComposer({ session }: { session: Session }) {
                       trigger={trigger}
                       view={editorViewRef.current}
                       projectId={session.projectId}
+                      worktreeId={session.worktreeId}
                       onClose={() => setTrigger(null)}
                     />
                   )

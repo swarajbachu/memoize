@@ -3,7 +3,7 @@ import { Effect } from "effect";
 import { Folder } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import type { FolderId } from "@forkzero/wire";
+import type { FolderId, WorktreeId } from "@forkzero/wire";
 
 import {
   getFileIconUrl,
@@ -20,6 +20,7 @@ export interface FileTagPopoverProps {
   readonly trigger: ActiveTrigger;
   readonly view: EditorView;
   readonly projectId: FolderId;
+  readonly worktreeId: WorktreeId | null;
   readonly onClose: () => void;
 }
 
@@ -38,6 +39,7 @@ export function FileTagPopover({
   trigger,
   view,
   projectId,
+  worktreeId,
   onClose,
 }: FileTagPopoverProps) {
   const [hits, setHits] = useState<readonly SearchHit[]>([]);
@@ -55,6 +57,7 @@ export function FileTagPopover({
             projectId,
             query,
             limit: 20,
+            worktreeId,
           }),
         );
         if (!cancelled) {
@@ -70,7 +73,7 @@ export function FileTagPopover({
       cancelled = true;
       window.clearTimeout(id);
     };
-  }, [projectId, query]);
+  }, [projectId, worktreeId, query]);
 
   const confirm = (hit: SearchHit) => {
     const token = `@${hit.relPath}`;

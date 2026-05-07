@@ -14,7 +14,10 @@ import type {
   SkillRef,
 } from "@forkzero/wire";
 
-import { getFileIconUrl } from "~/lib/icons/material-icons";
+import {
+  getFileIconUrl,
+  getFolderIconUrl,
+} from "~/lib/icons/material-icons";
 import { cn } from "~/lib/utils";
 
 import { ExitPlanModeRow, ThinkingRow, ToolRow } from "./tool-row.tsx";
@@ -23,6 +26,11 @@ export interface ToolResultRecord {
   readonly output: unknown;
   readonly isError: boolean;
 }
+
+const basename = (p: string): string => {
+  const i = p.lastIndexOf("/");
+  return i === -1 ? p : p.slice(i + 1);
+};
 
 const stringifyJson = (value: unknown): string => {
   try {
@@ -134,7 +142,7 @@ const stripChipTokens = (
   // `[image:pending-xxx]`.
   out = out.replace(/\[image:pending-[a-z0-9]+\]/gi, "");
   for (const f of fileRefs) {
-    out = out.replaceAll(`@${f.relPath}`, f.relPath);
+    out = out.replaceAll(`@${f.relPath}`, "");
   }
   for (const s of skillRefs) {
     out = out.replaceAll(`/${s.name}`, `/${s.name}`);
@@ -192,14 +200,25 @@ function UserBubble({
                 </a>
               );
             })}
-            {(fileRefs ?? []).map((f) => (
-              <span
-                key={f.relPath}
-                className="inline-flex items-center rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 text-xs text-muted-foreground"
-              >
-                @{f.relPath}
-              </span>
-            ))}
+            {(fileRefs ?? []).map((f) => {
+              const name = basename(f.relPath);
+              const iconUrl =
+                f.kind === "directory"
+                  ? getFolderIconUrl(name, false)
+                  : getFileIconUrl(name);
+              return (
+                <span
+                  key={f.relPath}
+                  title={f.relPath}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 text-xs text-muted-foreground"
+                >
+                  {iconUrl !== null ? (
+                    <img src={iconUrl} alt="" className="size-4" />
+                  ) : null}
+                  <span className="truncate">{truncate(name)}</span>
+                </span>
+              );
+            })}
             {(skillRefs ?? []).map((s) => (
               <span
                 key={s.name}
