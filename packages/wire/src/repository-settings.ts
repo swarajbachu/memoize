@@ -44,13 +44,13 @@ export const RepositorySettingsPatch = Schema.Struct({
 });
 export type RepositorySettingsPatch = typeof RepositorySettingsPatch.Type;
 
-export const RepositorySettingsGetRpc = Rpc.make("repository.settings.get", {
+export const RepositorySettingsGetRpc = Rpc.make("repositorySettings.get", {
   payload: Schema.Struct({ projectId: FolderId }),
   success: RepositorySettings,
 });
 
 export const RepositorySettingsUpdateRpc = Rpc.make(
-  "repository.settings.update",
+  "repositorySettings.update",
   {
     payload: Schema.Struct({
       projectId: FolderId,

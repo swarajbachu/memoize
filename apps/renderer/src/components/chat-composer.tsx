@@ -2,7 +2,10 @@ import type { EditorView } from "@codemirror/view";
 import {
   Check,
   ChevronDown,
+  FolderClosed,
+  GitBranch,
   Gauge,
+  Lock,
   Paperclip,
   Send,
   Square,
@@ -67,6 +70,7 @@ import { useMessagesStore } from "../store/messages.ts";
 import { useSessionsStore } from "../store/sessions.ts";
 import { useSubagentsStore } from "../store/subagents.ts";
 import { useUiStore } from "../store/ui.ts";
+import { useWorktreesStore } from "../store/worktrees.ts";
 import { ProviderIcon } from "./provider-icons.tsx";
 import { MODES_ORDER, MODE_META } from "./runtime-mode-meta.ts";
 
@@ -513,6 +517,10 @@ export function ChatComposer({ session }: { session: Session }) {
                 <SessionTimer sessionId={sessionId} inFlight={inFlight} />
               </div>
             </FrameFooter>
+            <div className="flex items-center justify-between gap-2 border-t border-border/40 px-2 py-1.5 text-[11px] text-muted-foreground">
+              <WorkspacePicker session={session} />
+              <WorkspaceBranchLabel session={session} />
+            </div>
           </Frame>
         </div>
       </div>
@@ -814,6 +822,151 @@ function SubagentsChip() {
       <span aria-hidden>↳</span>
       <span>Sub-agents: {enabledCount} enabled</span>
     </button>
+  );
+}
+
+/**
+ * Pick the workspace this session runs in: the project's main checkout or
+ * a freshly-created git worktree. Editable only on a brand-new session
+ * (zero user messages); once the first message is sent, the chip becomes
+ * a read-only label with a lock glyph — cwd cannot move under a running
+ * agent.
+ */
+function WorkspacePicker({ session }: { session: Session }) {
+  const sessionId = session.id;
+  const setWorktree = useSessionsStore((s) => s.setWorktree);
+  const create = useWorktreesStore((s) => s.create);
+  const refresh = useWorktreesStore((s) => s.refresh);
+  const worktrees = useWorktreesStore(
+    (s) => s.byProject[session.projectId] ?? [],
+  );
+  const userMessageCount = useMessagesStore((s) => {
+    const list = s.messagesBySession[sessionId] ?? [];
+    let count = 0;
+    for (const m of list) {
+      if (m.role === "user") count += 1;
+    }
+    return count;
+  });
+  const locked = userMessageCount > 0;
+
+  // Hydrate the worktree list once per session so the popover renders
+  // names (not just "New worktree") on first open.
+  useEffect(() => {
+    void refresh(session.projectId);
+  }, [refresh, session.projectId]);
+
+  const current = useMemo(
+    () =>
+      session.worktreeId === null
+        ? null
+        : worktrees.find((w) => w.id === session.worktreeId) ?? null,
+    [session.worktreeId, worktrees],
+  );
+
+  const triggerLabel =
+    session.worktreeId === null
+      ? "Current checkout"
+      : current?.name ?? "Worktree";
+  const TriggerIcon =
+    session.worktreeId === null ? FolderClosed : GitBranch;
+
+  if (locked) {
+    return (
+      <span
+        className="flex items-center gap-1.5 rounded-md px-2 py-1"
+        title="Workspace locked — first message already sent"
+      >
+        <TriggerIcon className="size-3.5" />
+        <span>{triggerLabel}</span>
+        <Lock className="size-3 opacity-60" />
+      </span>
+    );
+  }
+
+  const onPickCurrent = () => {
+    if (session.worktreeId === null) return;
+    void setWorktree(sessionId, null);
+  };
+  const onPickNewWorktree = async () => {
+    const wt = await create(session.projectId);
+    if (wt === null) return;
+    await setWorktree(sessionId, wt.id);
+  };
+
+  return (
+    <Menu>
+      <MenuTrigger
+        className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-foreground hover:bg-muted/60 data-[popup-open]:bg-muted/60"
+        aria-label="Change workspace"
+        title="Change workspace — locks once the first message is sent"
+      >
+        <TriggerIcon className="size-3.5" />
+        <span>{triggerLabel}</span>
+        <ChevronDown className="size-3 opacity-60" />
+      </MenuTrigger>
+      <MenuPopup side="top" align="start" className="w-64 p-1">
+        <MenuItem
+          onClick={onPickCurrent}
+          className={cn(
+            "grid grid-cols-[1rem_auto_1fr] items-start gap-x-2.5 rounded-md px-2 py-2 text-sm",
+            session.worktreeId === null
+              ? "bg-accent/40 text-accent-foreground data-highlighted:bg-accent/60"
+              : undefined,
+          )}
+        >
+          <span className="col-start-1 row-start-1 flex h-5 items-center justify-center">
+            {session.worktreeId === null && (
+              <Check className="size-3.5 opacity-90" />
+            )}
+          </span>
+          <FolderClosed className="col-start-2 row-start-1 mt-0.5 size-4 shrink-0" />
+          <div className="col-start-3 row-start-1 flex flex-col gap-0.5">
+            <span className="font-medium leading-none">Current checkout</span>
+            <span className="text-xs text-muted-foreground leading-snug">
+              Run in the project's main working tree.
+            </span>
+          </div>
+        </MenuItem>
+        <MenuItem
+          onClick={() => void onPickNewWorktree()}
+          className="grid grid-cols-[1rem_auto_1fr] items-start gap-x-2.5 rounded-md px-2 py-2 text-sm"
+        >
+          <span className="col-start-1 row-start-1 flex h-5 items-center justify-center">
+            {session.worktreeId !== null && (
+              <Check className="size-3.5 opacity-90" />
+            )}
+          </span>
+          <GitBranch className="col-start-2 row-start-1 mt-0.5 size-4 shrink-0" />
+          <div className="col-start-3 row-start-1 flex flex-col gap-0.5">
+            <span className="font-medium leading-none">New worktree</span>
+            <span className="text-xs text-muted-foreground leading-snug">
+              Branch off HEAD into a fresh forkzero/&lt;name&gt; worktree.
+            </span>
+          </div>
+        </MenuItem>
+      </MenuPopup>
+    </Menu>
+  );
+}
+
+/**
+ * Right-aligned label that surfaces the worktree's branch when the session
+ * is running on one. Empty when running in the main checkout — the file
+ * tree / status pane already shows the project's HEAD branch in that case.
+ */
+function WorkspaceBranchLabel({ session }: { session: Session }) {
+  const worktrees = useWorktreesStore(
+    (s) => s.byProject[session.projectId] ?? [],
+  );
+  if (session.worktreeId === null) return null;
+  const wt = worktrees.find((w) => w.id === session.worktreeId);
+  if (wt === undefined) return null;
+  return (
+    <span className="flex items-center gap-1 truncate font-mono">
+      <GitBranch className="size-3 shrink-0 opacity-60" />
+      <span className="truncate">{wt.branch}</span>
+    </span>
   );
 }
 

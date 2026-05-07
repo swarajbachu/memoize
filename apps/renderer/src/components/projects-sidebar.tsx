@@ -33,8 +33,10 @@ import { getRpcClient } from "../lib/rpc-client.ts";
 import { useMessagesStore } from "../store/messages.ts";
 import { usePrStateStore } from "../store/pr-state.ts";
 import { useProvidersStore } from "../store/providers.ts";
+import { useRepositorySettingsStore } from "../store/repository-settings.ts";
 import { useSessionsStore } from "../store/sessions.ts";
 import { useSettingsStore } from "../store/settings.ts";
+import { useWorktreesStore } from "../store/worktrees.ts";
 import { useUiStore } from "../store/ui.ts";
 import { useWorkspaceStore } from "../store/workspace.ts";
 import { BranchIcon, type BranchState } from "./branch-icon.tsx";
@@ -451,6 +453,8 @@ function NewSessionButton({ projectId }: { projectId: FolderId }) {
     (s) => s.defaultModelByProvider,
   );
   const defaultRuntimeMode = useSettingsStore((s) => s.defaultRuntimeMode);
+  const refreshRepoSettings = useRepositorySettingsStore((s) => s.refresh);
+  const createWorktree = useWorktreesStore((s) => s.create);
 
   const onClick = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -459,8 +463,18 @@ function NewSessionButton({ projectId }: { projectId: FolderId }) {
     const model =
       defaultModelByProvider[defaultProviderId] ??
       defaultModelFor(defaultProviderId);
+    // Per-repo auto-create-worktree opt-in: pre-create a worktree before
+    // session.create so the new session boots with cwd already pointing at
+    // the worktree path. Failure is non-fatal — fall back to main checkout.
+    const repoSettings = await refreshRepoSettings(projectId);
+    let worktreeId = null;
+    if (repoSettings?.autoCreateWorktree) {
+      const wt = await createWorktree(projectId);
+      if (wt !== null) worktreeId = wt.id;
+    }
     void create(projectId, defaultProviderId, model, {
       runtimeMode: defaultRuntimeMode,
+      worktreeId,
     });
   };
 
