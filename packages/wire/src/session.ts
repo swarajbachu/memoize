@@ -1,7 +1,7 @@
 import { Rpc } from "@effect/rpc";
 import { Schema } from "effect";
 
-import { ProviderId, RuntimeMode } from "./agent.ts";
+import { AgentDefinition, ProviderId, RuntimeMode } from "./agent.ts";
 import {
   AgentItemId,
   AgentSessionId,
@@ -211,6 +211,13 @@ export const SessionCreateRpc = Rpc.make("session.create", {
     title: Schema.optional(Schema.String),
     initialPrompt: Schema.optional(Schema.String),
     runtimeMode: Schema.optional(RuntimeMode),
+    // Sub-agents the new session may delegate to. The renderer reads
+    // these from the user's preset settings and injects them at create
+    // time so the wire stays the single source of truth.
+    agents: Schema.optional(
+      Schema.Record({ key: Schema.String, value: AgentDefinition }),
+    ),
+    enableSubagents: Schema.optional(Schema.Boolean),
   }),
   success: Session,
   error: SessionStartError,
