@@ -15,9 +15,13 @@ import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import type { SessionId } from "@forkzero/wire";
+
 import { cn } from "~/lib/utils";
 
+import { usePermissionsStore } from "../store/permissions.ts";
 import { FileBadge } from "./file-badge.tsx";
+import { MarkdownBody } from "./markdown-body.tsx";
 import {
   DiffBody,
   diffStats,
@@ -675,24 +679,25 @@ const buildToolView = (
 };
 
 /**
- * Dedicated visual for the SDK's `ExitPlanMode` tool. Pulls `input.plan`
- * (markdown string) and renders it in its own card. Approval/rejection
- * is handled by the existing permission toast — putting buttons here too
- * would diverge state.
+ * Plan card for the SDK's `ExitPlanMode` tool. The card itself owns
+ * approval — finds the matching pending `permission.request` for this
+ * session and resolves it on click. Approving lets the SDK run
+ * ExitPlanMode, which auto-flips out of plan mode; rejecting keeps the
+ * agent in plan mode to iterate.
  *
- * The card has three visual states:
- *   - **Pending** — `result` undefined; the toast is asking the user.
- *   - **Approved** — `result.isError === false`; agent is now in
- *     `default` mode and continuing.
- *   - **Rejected** — `result.isError === true`; agent stayed in plan
- *     mode and will iterate.
+ * Visual states (kept minimal — no flashy fills, just a subtle border):
+ *   - **Pending** — result undefined; show Approve / Reject.
+ *   - **Approved** — result with `isError: false`; small "Approved" tag.
+ *   - **Rejected** — result with `isError: true`; small "Rejected" tag.
  */
 export function ExitPlanModeRow({
   input,
   result,
+  sessionId,
 }: {
   input: unknown;
   result?: ToolResult;
+  sessionId?: SessionId;
 }) {
   const plan =
     typeof input === "object" && input !== null && "plan" in input
@@ -708,51 +713,69 @@ export function ExitPlanModeRow({
         ? "rejected"
         : "approved";
 
-  const statusLabel: Record<typeof status, string> = {
-    pending: "Plan ready — review and approve to execute",
-    approved: "Plan approved — agent is executing",
-    rejected: "Plan rejected — agent will iterate",
-  };
+  // Find the open permission request for this session's ExitPlanMode.
+  // There should be at most one in-flight at a time.
+  const pendingRequest = usePermissionsStore((s) => {
+    if (sessionId === undefined) return null;
+    for (const req of Object.values(s.requestsById)) {
+      if (req.sessionId !== sessionId) continue;
+      if (req.kind._tag !== "Other") continue;
+      if (req.kind.tool !== "ExitPlanMode") continue;
+      return req;
+    }
+    return null;
+  });
+  const decide = usePermissionsStore((s) => s.decide);
 
   return (
-    <div
-      className={cn(
-        "rounded-2xl border p-5 shadow-sm",
-        status === "pending"
-          ? "border-blue-500/40 bg-blue-500/5"
-          : status === "approved"
-            ? "border-green-500/40 bg-green-500/5"
-            : "border-amber-500/40 bg-amber-500/5",
-      )}
-    >
-      <div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        <HugeiconsIcon
-          icon={CheckListIcon}
-          size={14}
-          strokeWidth={2}
-          className={cn(
-            status === "pending"
-              ? "text-blue-600 dark:text-blue-400"
-              : status === "approved"
-                ? "text-green-600 dark:text-green-400"
-                : "text-amber-600 dark:text-amber-400",
-          )}
-        />
-        <span>Plan</span>
-        <span className="text-muted-foreground/70">·</span>
-        <span className="normal-case tracking-normal text-muted-foreground">
-          {statusLabel[status]}
-        </span>
+    <div className="rounded-xl border border-border/60 bg-background p-4">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+          <HugeiconsIcon icon={CheckListIcon} size={14} strokeWidth={2} />
+          <span>Plan</span>
+        </div>
+        {status !== "pending" ? (
+          <span
+            className={cn(
+              "rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+              status === "approved"
+                ? "text-emerald-500/90"
+                : "text-muted-foreground",
+            )}
+          >
+            {status === "approved" ? "Approved" : "Rejected"}
+          </span>
+        ) : null}
       </div>
       {plan === null ? (
         <p className="text-sm italic text-muted-foreground">
-          (No plan body — the agent called ExitPlanMode without text.)
+          (No plan body.)
         </p>
       ) : (
-        <div className="prose prose-sm dark:prose-invert max-w-none">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{plan}</ReactMarkdown>
-        </div>
+        <MarkdownBody>{plan}</MarkdownBody>
       )}
+      {status === "pending" && pendingRequest !== null ? (
+        <div className="mt-4 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() =>
+              void decide(pendingRequest.id, { _tag: "Deny" })
+            }
+            className="rounded-md px-3 py-1 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+          >
+            Reject
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              void decide(pendingRequest.id, { _tag: "AllowOnce" })
+            }
+            className="rounded-md bg-foreground px-3 py-1 text-xs font-medium text-background hover:opacity-90"
+          >
+            Approve
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

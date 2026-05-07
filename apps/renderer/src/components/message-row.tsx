@@ -10,6 +10,7 @@ import type {
   AttachmentRef,
   FileRef,
   Message,
+  SessionId,
   SkillRef,
 } from "@forkzero/wire";
 
@@ -43,9 +44,11 @@ const stringifyJson = (value: unknown): string => {
 export function MessageRow({
   message,
   resultsByItemId,
+  sessionId,
 }: {
   message: Message;
   resultsByItemId: ReadonlyMap<AgentItemId, ToolResultRecord>;
+  sessionId?: SessionId;
 }) {
   switch (message.content._tag) {
     case "user":
@@ -74,6 +77,7 @@ export function MessageRow({
           <ExitPlanModeRow
             input={message.content.input}
             result={resultsByItemId.get(message.content.itemId)}
+            sessionId={sessionId}
           />
         );
       }

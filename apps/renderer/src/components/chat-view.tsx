@@ -173,6 +173,7 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
                   <MessageRow
                     message={turn.user}
                     resultsByItemId={resultsByItemId}
+                    sessionId={sessionId}
                   />
                 ) : null}
                 {showSummary ? (
@@ -187,6 +188,7 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
                         key={group.message.id}
                         message={group.message}
                         resultsByItemId={resultsByItemId}
+                        sessionId={sessionId}
                       />
                     ) : (
                       <SubagentRow
