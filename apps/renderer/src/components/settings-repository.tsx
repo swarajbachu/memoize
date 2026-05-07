@@ -11,7 +11,7 @@ import { cn } from "~/lib/utils";
 import { useRepositorySettingsStore } from "../store/repository-settings.ts";
 import { useSettingsStore } from "../store/settings.ts";
 import { useWorkspaceStore } from "../store/workspace.ts";
-import { useWorktreesStore } from "../store/worktrees.ts";
+import { EMPTY_WORKTREES, useWorktreesStore } from "../store/worktrees.ts";
 import { ProviderIcon } from "./provider-icons.tsx";
 import { MODES_ORDER, MODE_META } from "./runtime-mode-meta.ts";
 import { ModelSelect, Section } from "./settings-page.tsx";
@@ -251,7 +251,9 @@ function WorktreeSection({
   autoCreate: boolean;
   onAutoCreateChange: (v: boolean) => void;
 }) {
-  const worktrees = useWorktreesStore((s) => s.byProject[projectId] ?? []);
+  const worktrees = useWorktreesStore(
+    (s) => s.byProject[projectId] ?? EMPTY_WORKTREES,
+  );
   const refresh = useWorktreesStore((s) => s.refresh);
   const remove = useWorktreesStore((s) => s.remove);
   const [pendingDirty, setPendingDirty] = useState<string | null>(null);

@@ -9,14 +9,14 @@ import type { FolderId } from "@forkzero/wire";
 export type View = "chat" | "settings";
 
 /**
- * Which sub-surface of the settings page is active. `general`/`models`/`git`
- * are global; a `repository` section pins to a specific project so its
- * overrides + worktree list render in the right pane.
+ * Which sub-surface of the settings page is active. `general` / `models` /
+ * `workspace` are global; a `repository` section pins to a specific project
+ * so its overrides + worktree list render in the right pane.
  */
 export type SettingsSection =
   | { readonly kind: "general" }
   | { readonly kind: "models" }
-  | { readonly kind: "git" }
+  | { readonly kind: "workspace" }
   | { readonly kind: "repository"; readonly projectId: FolderId };
 
 /**

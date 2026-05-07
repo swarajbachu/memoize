@@ -1,10 +1,10 @@
 import {
   ArrowLeft,
+  Box,
   Check,
   FolderClosed,
   GitBranch,
   Settings as SettingsIcon,
-  Sparkles,
   X,
 } from "lucide-react";
 import { useEffect, useMemo } from "react";
@@ -49,14 +49,14 @@ const TOP_RAIL: ReadonlyArray<RailItemBase> = [
   {
     id: "models",
     label: "Models & Providers",
-    Icon: Sparkles,
+    Icon: Box,
     section: { kind: "models" },
   },
   {
-    id: "git",
-    label: "Git",
+    id: "workspace",
+    label: "Workspace",
     Icon: GitBranch,
-    section: { kind: "git" },
+    section: { kind: "workspace" },
   },
 ];
 
@@ -203,7 +203,7 @@ function SectionTitle({
   const title = useMemo(() => {
     if (section.kind === "general") return "General";
     if (section.kind === "models") return "Models & Providers";
-    if (section.kind === "git") return "Git";
+    if (section.kind === "workspace") return "Workspace";
     const f = folders.find((x) => x.id === section.projectId);
     return f?.name ?? "Repository";
   }, [section, folders]);
@@ -215,7 +215,7 @@ function SectionTitle({
 function Pane({ section }: { section: SettingsSection }) {
   if (section.kind === "general") return <GeneralPane />;
   if (section.kind === "models") return <ModelsPane />;
-  if (section.kind === "git") return <GitPane />;
+  if (section.kind === "workspace") return <WorkspacePane />;
   return <RepositorySettings projectId={section.projectId} />;
 }
 
@@ -317,7 +317,7 @@ function ModelsPane() {
   );
 }
 
-function GitPane() {
+function WorkspacePane() {
   const defaultAutoCreateWorktree = useSettingsStore(
     (s) => s.defaultAutoCreateWorktree,
   );
@@ -326,8 +326,8 @@ function GitPane() {
   );
   return (
     <Section
-      title="Worktrees"
-      description="Forkzero can run each chat in its own git worktree under .forkzero/repo-worktree/, branched off the project's HEAD. Per-repo settings can override this."
+      title="New chat workspace"
+      description="Forkzero can run each chat in its own git worktree under .forkzero/repo-worktree/<name>/, branched off the project's HEAD as forkzero/<name>. Per-repo settings under Repositories override this default."
     >
       <label className="flex items-center gap-3 rounded-md border border-border/60 px-3 py-2.5 text-sm">
         <input
@@ -338,11 +338,12 @@ function GitPane() {
         />
         <span className="flex flex-1 flex-col gap-0.5">
           <span className="font-medium leading-none">
-            Default to creating a new worktree for new chats
+            Create a new worktree for new chats by default
           </span>
           <span className="text-xs text-muted-foreground leading-snug">
-            Newly added repositories inherit this preference; existing repos
-            keep whatever you set on their per-repo page.
+            Pre-selects "New worktree" in the composer's workspace picker on
+            each new chat. You can still flip back to "Current checkout"
+            before sending the first message.
           </span>
         </span>
       </label>
@@ -410,7 +411,6 @@ function SubagentsSection() {
                 }
                 className="size-4 accent-foreground"
               />
-              <Sparkles className="size-3.5 shrink-0 text-muted-foreground" />
               <div className="flex flex-1 flex-col gap-0.5">
                 <span className="text-sm font-medium">
                   {preset.displayName}

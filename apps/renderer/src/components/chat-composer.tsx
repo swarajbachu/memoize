@@ -70,7 +70,7 @@ import { useMessagesStore } from "../store/messages.ts";
 import { useSessionsStore } from "../store/sessions.ts";
 import { useSubagentsStore } from "../store/subagents.ts";
 import { useUiStore } from "../store/ui.ts";
-import { useWorktreesStore } from "../store/worktrees.ts";
+import { EMPTY_WORKTREES, useWorktreesStore } from "../store/worktrees.ts";
 import { ProviderIcon } from "./provider-icons.tsx";
 import { MODES_ORDER, MODE_META } from "./runtime-mode-meta.ts";
 
@@ -838,7 +838,7 @@ function WorkspacePicker({ session }: { session: Session }) {
   const create = useWorktreesStore((s) => s.create);
   const refresh = useWorktreesStore((s) => s.refresh);
   const worktrees = useWorktreesStore(
-    (s) => s.byProject[session.projectId] ?? [],
+    (s) => s.byProject[session.projectId] ?? EMPTY_WORKTREES,
   );
   const userMessageCount = useMessagesStore((s) => {
     const list = s.messagesBySession[sessionId] ?? [];
@@ -957,7 +957,7 @@ function WorkspacePicker({ session }: { session: Session }) {
  */
 function WorkspaceBranchLabel({ session }: { session: Session }) {
   const worktrees = useWorktreesStore(
-    (s) => s.byProject[session.projectId] ?? [],
+    (s) => s.byProject[session.projectId] ?? EMPTY_WORKTREES,
   );
   if (session.worktreeId === null) return null;
   const wt = worktrees.find((w) => w.id === session.worktreeId);

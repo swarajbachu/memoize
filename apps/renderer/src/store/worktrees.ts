@@ -7,6 +7,14 @@ import { getRpcClient } from "../lib/rpc-client.ts";
 
 type WorktreesByProject = Readonly<Record<string, ReadonlyArray<Worktree>>>;
 
+/**
+ * Stable reference for "no worktrees yet" so selectors written as
+ * `s.byProject[projectId] ?? EMPTY` don't return a new array each render
+ * — that would invalidate zustand's `Object.is` snapshot and trigger a
+ * `getSnapshot` infinite loop in React 19.
+ */
+export const EMPTY_WORKTREES: ReadonlyArray<Worktree> = Object.freeze([]);
+
 type WorktreesState = {
   readonly byProject: WorktreesByProject;
   readonly loading: ReadonlySet<FolderId>;
