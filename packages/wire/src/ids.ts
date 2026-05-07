@@ -22,3 +22,6 @@ export type AgentItemId = typeof AgentItemId.Type;
 
 export const MessageId = makeEntityId("MessageId");
 export type MessageId = typeof MessageId.Type;
+
+export const WorktreeId = makeEntityId("WorktreeId");
+export type WorktreeId = typeof WorktreeId.Type;

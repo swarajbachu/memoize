@@ -12,6 +12,7 @@ import {
   DEFAULT_RUNTIME_MODE,
   Message,
   MessageId,
+  SessionAlreadyStartedError,
   type AgentDefinition,
   type AgentEvent,
   type AttachmentRef,
@@ -26,7 +27,10 @@ import {
   SessionNotFoundError,
   SessionStartError,
   type SkillRef,
+  type WorktreeId,
 } from "@forkzero/wire";
+
+import { WorktreeService } from "../../worktree/services/worktree-service.ts";
 
 import { NdjsonLogger } from "../../persistence/ndjson-logger.ts";
 import {
@@ -51,6 +55,7 @@ interface SessionRow {
   readonly resume_strategy: string;
   readonly runtime_mode: string;
   readonly agents_json: string | null;
+  readonly worktree_id: string | null;
   readonly created_at: string;
   readonly updated_at: string;
 }
@@ -100,6 +105,10 @@ const sessionFromRow = (row: SessionRow): Session =>
     resumeStrategy:
       row.resume_strategy === "claude-session-id" ? "claude-session-id" : "none",
     runtimeMode: runtimeModeFromRow(row.runtime_mode),
+    worktreeId:
+      row.worktree_id === null
+        ? null
+        : (row.worktree_id as unknown as WorktreeId),
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   });
@@ -239,6 +248,19 @@ export const MessageStoreLive = Layer.scoped(
     const sql = yield* SqlClient.SqlClient;
     const provider = yield* ProviderService;
     const ndjson = yield* NdjsonLogger;
+    const worktrees = yield* WorktreeService;
+
+    /**
+     * Resolve the cwd a session should run in. NULL `worktreeId` falls
+     * through to the project's main checkout (handled by `provider.start`
+     * when `cwdOverride` is omitted). Missing rows also fall through.
+     */
+    const cwdForWorktree = (
+      worktreeId: WorktreeId | null,
+    ): Effect.Effect<string | undefined> =>
+      worktreeId === null
+        ? Effect.succeed(undefined)
+        : Effect.map(worktrees.get(worktreeId), (wt) => wt?.path ?? undefined);
 
     // Project-id cache so the per-message NDJSON append doesn't hit the DB
     // for every event. Populated lazily on first append per session.
@@ -338,7 +360,7 @@ export const MessageStoreLive = Layer.scoped(
         const rows = yield* sql<SessionRow>`
           SELECT id, project_id, title, provider_id, model, status,
                  archived_at, cursor, resume_strategy, runtime_mode,
-                 agents_json, created_at, updated_at
+                 agents_json, worktree_id, created_at, updated_at
           FROM sessions WHERE id = ${sessionId} LIMIT 1
         `.pipe(Effect.orDie);
         if (rows.length === 0) {
@@ -532,14 +554,14 @@ export const MessageStoreLive = Layer.scoped(
           ? yield* sql<SessionRow>`
               SELECT id, project_id, title, provider_id, model, status,
                      archived_at, cursor, resume_strategy, runtime_mode,
-                     agents_json, created_at, updated_at
+                     agents_json, worktree_id, created_at, updated_at
               FROM sessions WHERE project_id = ${projectId}
               ORDER BY updated_at DESC
             `.pipe(Effect.orDie)
           : yield* sql<SessionRow>`
               SELECT id, project_id, title, provider_id, model, status,
                      archived_at, cursor, resume_strategy, runtime_mode,
-                     agents_json, created_at, updated_at
+                     agents_json, worktree_id, created_at, updated_at
               FROM sessions
               WHERE project_id = ${projectId} AND archived_at IS NULL
               ORDER BY updated_at DESC
@@ -564,6 +586,8 @@ export const MessageStoreLive = Layer.scoped(
         const effectiveEnableSubagents =
           input.enableSubagents ??
           (input.agents !== undefined && Object.keys(input.agents).length > 0);
+        const worktreeId = input.worktreeId ?? null;
+        const cwdOverride = yield* cwdForWorktree(worktreeId);
         const started = yield* provider
           .start(
             {
@@ -574,6 +598,7 @@ export const MessageStoreLive = Layer.scoped(
               model: input.model,
               agents: input.agents,
               enableSubagents: effectiveEnableSubagents,
+              cwdOverride,
             },
             null,
             newSessionRuntimeMode,
@@ -621,11 +646,11 @@ export const MessageStoreLive = Layer.scoped(
         yield* sql`
           INSERT INTO sessions
             (id, project_id, title, provider_id, model, status, runtime_mode,
-             agents_json, created_at, updated_at)
+             agents_json, worktree_id, created_at, updated_at)
           VALUES
             (${sessionId}, ${input.projectId}, ${title}, ${input.providerId},
              ${input.model}, ${initialStatus}, ${initialRuntimeMode},
-             ${agentsJson}, ${nowIso}, ${nowIso})
+             ${agentsJson}, ${worktreeId}, ${nowIso}, ${nowIso})
         `.pipe(Effect.orDie);
         if (hasInitial) {
           yield* persistMessage(sessionId, {
@@ -645,6 +670,7 @@ export const MessageStoreLive = Layer.scoped(
           cursor: null,
           resumeStrategy: "none",
           runtimeMode: initialRuntimeMode,
+          worktreeId,
           createdAt: now,
           updatedAt: now,
         });
@@ -681,6 +707,36 @@ export const MessageStoreLive = Layer.scoped(
         // Poke the in-memory cache so the next `canUseTool` invocation picks
         // up the new mode without restarting the SDK.
         runtimeModeBySession.set(sessionId, runtimeMode);
+      });
+
+    /**
+     * Switch the worktree the session runs in. Allowed only before the
+     * first user message is recorded — cwd cannot move under a running
+     * agent. The renderer guards via `messagesCount > 0`, but we re-check
+     * server-side so a stale client can't race past the lock.
+     */
+    const setWorktree: MessageStoreShape["setWorktree"] = (
+      sessionId,
+      worktreeId,
+    ) =>
+      Effect.gen(function* () {
+        yield* lookupSession(sessionId);
+        const existing = yield* sql<{ readonly id: string }>`
+          SELECT id FROM messages
+          WHERE session_id = ${sessionId} AND role = 'user'
+          LIMIT 1
+        `.pipe(Effect.orDie);
+        if (existing.length > 0) {
+          return yield* Effect.fail(
+            new SessionAlreadyStartedError({ sessionId }),
+          );
+        }
+        const nowIso = new Date().toISOString();
+        yield* sql`
+          UPDATE sessions
+          SET worktree_id = ${worktreeId}, updated_at = ${nowIso}
+          WHERE id = ${sessionId}
+        `.pipe(Effect.orDie);
       });
 
     /**
@@ -811,28 +867,37 @@ export const MessageStoreLive = Layer.scoped(
     ): Effect.Effect<void, SessionNotFoundError> => {
       runtimeModeBySession.set(session.id, session.runtimeMode);
       const subagents = agentsFor(session.id);
-      return provider
-        .start(
-          {
-            folderId: session.projectId,
-            providerId: session.providerId,
-            mode: "sdk",
-            sessionId: session.id,
-            model: session.model,
-            agents: subagents?.agents,
-            enableSubagents: subagents?.enableSubagents,
-          },
-          // Re-attach to the upstream conversation when we have a cursor.
-          // The driver passes it as `options.resume`; SDK reloads history
-          // and continues from there.
-          session.cursor,
-          () => getRuntimeModeFor(session.id),
-        )
-        .pipe(
-          Effect.flatMap(() => startSubscription(session.id)),
-          Effect.flatMap(() => provider.send(session.id, text, attachments)),
-          Effect.mapError(() => new SessionNotFoundError({ sessionId: session.id })),
-        );
+      return cwdForWorktree(session.worktreeId).pipe(
+        Effect.flatMap((cwdOverride) =>
+          provider
+            .start(
+              {
+                folderId: session.projectId,
+                providerId: session.providerId,
+                mode: "sdk",
+                sessionId: session.id,
+                model: session.model,
+                agents: subagents?.agents,
+                enableSubagents: subagents?.enableSubagents,
+                cwdOverride,
+              },
+              // Re-attach to the upstream conversation when we have a
+              // cursor. The driver passes it as `options.resume`; SDK
+              // reloads history and continues from there.
+              session.cursor,
+              () => getRuntimeModeFor(session.id),
+            )
+            .pipe(
+              Effect.flatMap(() => startSubscription(session.id)),
+              Effect.flatMap(() =>
+                provider.send(session.id, text, attachments),
+              ),
+              Effect.mapError(
+                () => new SessionNotFoundError({ sessionId: session.id }),
+              ),
+            ),
+        ),
+      );
     };
 
     const resumeSession: MessageStoreShape["resumeSession"] = (sessionId) =>
@@ -852,6 +917,7 @@ export const MessageStoreLive = Layer.scoped(
         yield* teardownSubscription(sessionId);
         runtimeModeBySession.set(session.id, session.runtimeMode);
         const subagents = agentsFor(session.id);
+        const cwdOverride = yield* cwdForWorktree(session.worktreeId);
         yield* provider
           .start(
             {
@@ -862,6 +928,7 @@ export const MessageStoreLive = Layer.scoped(
               model: session.model,
               agents: subagents?.agents,
               enableSubagents: subagents?.enableSubagents,
+              cwdOverride,
             },
             session.cursor,
             () => getRuntimeModeFor(session.id),
@@ -981,6 +1048,7 @@ export const MessageStoreLive = Layer.scoped(
       renameSession,
       setModel,
       setRuntimeMode,
+      setWorktree,
       archiveSession,
       unarchiveSession,
       deleteSession,

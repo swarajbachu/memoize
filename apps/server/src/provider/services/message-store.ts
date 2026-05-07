@@ -9,11 +9,13 @@ import type {
   ProviderId,
   RuntimeMode,
   Session,
+  SessionAlreadyStartedError,
   SessionId,
   SessionNotFoundError,
   SessionStartError,
   SessionStatus,
   SkillRef,
+  WorktreeId,
 } from "@forkzero/wire";
 
 /**
@@ -49,6 +51,12 @@ export interface CreateSessionInput {
    * `allowedTools` when the effective value is true.
    */
   readonly enableSubagents?: boolean;
+  /**
+   * Optional git worktree the session runs in. When omitted, runs in the
+   * project's main checkout. The renderer passes a `WorktreeId` it created
+   * via `worktree.create` for the "auto-create worktree" flow.
+   */
+  readonly worktreeId?: WorktreeId | null;
 }
 
 export interface MessageStoreShape {
@@ -84,6 +92,19 @@ export interface MessageStoreShape {
     sessionId: SessionId,
     runtimeMode: RuntimeMode,
   ) => Effect.Effect<void, SessionNotFoundError>;
+
+  /**
+   * Switch the worktree this session runs in. Allowed only before the first
+   * user message has been recorded — fails with `SessionAlreadyStartedError`
+   * otherwise. `null` means "run in the main checkout."
+   */
+  readonly setWorktree: (
+    sessionId: SessionId,
+    worktreeId: WorktreeId | null,
+  ) => Effect.Effect<
+    void,
+    SessionNotFoundError | SessionAlreadyStartedError
+  >;
 
   readonly archiveSession: (
     sessionId: SessionId,
