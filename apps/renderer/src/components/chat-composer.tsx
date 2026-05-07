@@ -6,6 +6,7 @@ import {
   GitBranch,
   Gauge,
   Lock,
+  Map,
   Paperclip,
   Send,
   Square,
@@ -70,10 +71,6 @@ import { useMessagesStore } from "../store/messages.ts";
 import { useSessionsStore } from "../store/sessions.ts";
 import { useUiStore } from "../store/ui.ts";
 import { EMPTY_WORKTREES, useWorktreesStore } from "../store/worktrees.ts";
-import {
-  PERMISSION_MODES_ORDER,
-  PERMISSION_MODE_META,
-} from "./permission-mode-meta.ts";
 import { QuestionCard } from "./question-card.tsx";
 import { ProviderIcon } from "./provider-icons.tsx";
 import { MODES_ORDER, MODE_META } from "./runtime-mode-meta.ts";
@@ -143,6 +140,9 @@ export function ChatComposer({ session }: { session: Session }) {
   const filesDroppedRef = useRef<(files: ReadonlyArray<File>) => void>(
     () => undefined,
   );
+  // Same pattern for the Shift+Tab plan-mode toggle. Latest session +
+  // mode without reconstructing the editor on every state change.
+  const togglePlanModeRef = useRef<() => void>(() => undefined);
 
   const setModel = useSessionsStore((s) => s.setModel);
   const setRuntimeMode = useSessionsStore((s) => s.setRuntimeMode);
@@ -166,6 +166,7 @@ export function ChatComposer({ session }: { session: Session }) {
         onChange: (doc) => setHasText(doc.trim().length > 0),
         onTrigger: (t) => setTrigger(t),
         onFilesDropped: (files) => filesDroppedRef.current(files),
+        onTogglePlanMode: () => togglePlanModeRef.current(),
       },
     });
     editorViewRef.current = view;
@@ -415,6 +416,12 @@ export function ChatComposer({ session }: { session: Session }) {
   // Keep the keymap-bound submit pointing at the latest closure so it sees
   // the current sessionId after a session switch / re-render.
   submitRef.current = submit;
+  togglePlanModeRef.current = () => {
+    void setPermissionMode(
+      sessionId,
+      session.permissionMode === "plan" ? "default" : "plan",
+    );
+  };
   filesDroppedRef.current = (files) => {
     // CM's drop handler stops propagation so our React onDrop never fires —
     // clear the drag overlay state here instead.
@@ -437,13 +444,20 @@ export function ChatComposer({ session }: { session: Session }) {
     );
   }
 
+  const inPlanMode = session.permissionMode === "plan";
+
   return (
     <TooltipProvider delay={0}>
       <div className="shrink-0 px-3 pb-3 pt-2">
         <div className="mx-auto">
           <Frame>
             <Card
-              className="rounded-xl border-border/50 min-h-30"
+              className={cn(
+                "rounded-xl min-h-30 transition-colors",
+                inPlanMode
+                  ? "border-2 border-dashed border-rose-300/60 dark:border-rose-300/40"
+                  : "border-border/50",
+              )}
               onDragEnter={onDragEnter}
               onDragOver={onDragOver}
               onDragLeave={onDragLeave}
@@ -530,12 +544,12 @@ export function ChatComposer({ session }: { session: Session }) {
                   currentModel={session.model}
                 />
                 <ReasoningPicker sessionId={sessionId} />
-              </div>
-              <div className="flex items-center gap-2">
-                <PermissionModeToggle
+                <PlanModeToggle
                   sessionId={sessionId}
                   current={session.permissionMode}
                 />
+              </div>
+              <div className="flex items-center gap-2">
                 <RuntimeModeToggle
                   sessionId={sessionId}
                   current={session.runtimeMode}
@@ -654,12 +668,13 @@ function RuntimeModeToggle({
 }
 
 /**
- * SDK lifecycle mode chip. Sits to the left of the runtime-mode chip;
- * flipping it calls `Query.setPermissionMode` on the live SDK handle. In
- * `plan` mode the agent is restricted to read-only tools and ends its
- * turn by calling `ExitPlanMode` — see `tool-row.tsx`.
+ * Binary plan-mode toggle. Off → just the map icon (tooltip explains).
+ * On → map icon + "Plan" label with a peach accent so it pops next to
+ * the other small chips. `Shift+Tab` from the composer flips the same
+ * toggle. The runtime-mode (Supervised / Auto-accept / Full access)
+ * chip on the right cluster is independent — plan mode is its own axis.
  */
-function PermissionModeToggle({
+function PlanModeToggle({
   sessionId,
   current,
 }: {
@@ -667,59 +682,41 @@ function PermissionModeToggle({
   current: PermissionMode;
 }) {
   const setPermissionMode = useSessionsStore((s) => s.setPermissionMode);
-  const meta = PERMISSION_MODE_META[current];
-  const TriggerIcon = meta.Icon;
+  const isPlan = current === "plan";
 
-  const onSelect = (mode: PermissionMode) => {
-    if (mode !== current) void setPermissionMode(sessionId, mode);
+  // Toggle is binary: pressing flips between `default` and `plan`. The
+  // wider mode space (`acceptEdits`) lives on the runtime-mode chip — a
+  // user wanting auto-accept-edits goes there, not here.
+  const onClick = () => {
+    void setPermissionMode(sessionId, isPlan ? "default" : "plan");
   };
 
   return (
-    <Menu>
-      <MenuTrigger
-        className={cn(
-          "flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] shadow-xs/5 transition-colors data-[popup-open]:bg-muted/60",
-          current === "plan"
-            ? "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400"
-            : "border-border/60 bg-background text-foreground hover:bg-muted/60",
-        )}
-        aria-label={`Mode: ${meta.label}`}
-      >
-        <TriggerIcon className="size-3.5" />
-        <span>{meta.label}</span>
-        <ChevronDown className="size-3 opacity-60" />
-      </MenuTrigger>
-      <MenuPopup side="top" align="end" className="w-72 p-1">
-        {PERMISSION_MODES_ORDER.map((mode) => {
-          const m = PERMISSION_MODE_META[mode];
-          const ItemIcon = m.Icon;
-          const active = mode === current;
-          return (
-            <MenuItem
-              key={mode}
-              onClick={() => onSelect(mode)}
-              className={cn(
-                "grid grid-cols-[1rem_auto_1fr] items-start gap-x-2.5 rounded-md px-2 py-2 text-sm",
-                active
-                  ? "bg-accent/40 text-accent-foreground data-highlighted:bg-accent/60"
-                  : undefined,
-              )}
-            >
-              <span className="col-start-1 row-start-1 flex h-5 items-center justify-center">
-                {active && <Check className="size-3.5 opacity-90" />}
-              </span>
-              <ItemIcon className="col-start-2 row-start-1 mt-0.5 size-4 shrink-0" />
-              <div className="col-start-3 row-start-1 flex flex-col gap-0.5">
-                <span className="font-medium leading-none">{m.label}</span>
-                <span className="text-xs text-muted-foreground leading-snug">
-                  {m.description}
-                </span>
-              </div>
-            </MenuItem>
-          );
-        })}
-      </MenuPopup>
-    </Menu>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            onClick={onClick}
+            aria-label={isPlan ? "Exit plan mode" : "Enter plan mode"}
+            aria-pressed={isPlan}
+            className={cn(
+              "flex h-6 items-center gap-1.5 rounded-md px-2 text-[11px] transition-colors",
+              isPlan
+                ? "bg-rose-300/15 text-rose-200 dark:text-rose-200 hover:bg-rose-300/25"
+                : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+            )}
+          >
+            <Map className="size-3.5" />
+            {isPlan ? <span>Plan</span> : null}
+          </button>
+        }
+      />
+      <TooltipPopup>
+        {isPlan ? "Exit plan mode" : "Enter plan mode"}
+        <span className="ml-2 opacity-60">⇧Tab</span>
+      </TooltipPopup>
+    </Tooltip>
   );
 }
 
