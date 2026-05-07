@@ -18,6 +18,7 @@ import {
   MODELS_BY_PROVIDER,
   type Message,
   type PermissionMode,
+  type PermissionRequest,
   type ProviderId,
   type RuntimeMode,
   type Session,
@@ -68,9 +69,11 @@ import {
   TooltipTrigger,
 } from "~/components/ui/tooltip";
 import { useMessagesStore } from "../store/messages.ts";
+import { usePermissionsStore } from "../store/permissions.ts";
 import { useSessionsStore } from "../store/sessions.ts";
 import { useUiStore } from "../store/ui.ts";
 import { EMPTY_WORKTREES, useWorktreesStore } from "../store/worktrees.ts";
+import { PermissionCard } from "./permission-card.tsx";
 import { QuestionCard } from "./question-card.tsx";
 import { ProviderIcon } from "./provider-icons.tsx";
 import { MODES_ORDER, MODE_META } from "./runtime-mode-meta.ts";
@@ -131,6 +134,30 @@ export function ChatComposer({ session }: { session: Session }) {
     }
     return null;
   }, [sessionMessages]);
+
+  // Pending permission requests also take over the composer slot. Same
+  // motivation as AskUserQuestion: the user's eyes are already on the
+  // composer, so put the decision there. Permissions outrank questions
+  // because the agent is already mid-tool-call.
+  const requestsById = usePermissionsStore((s) => s.requestsById);
+  const hydratePermissions = usePermissionsStore((s) => s.hydrate);
+  const pendingPermissions = useMemo(() => {
+    const out: PermissionRequest[] = [];
+    for (const req of Object.values(requestsById)) {
+      if (req.sessionId !== sessionId) continue;
+      // ExitPlanMode is approved on the plan card itself.
+      if (req.kind._tag === "Other" && req.kind.tool === "ExitPlanMode") {
+        continue;
+      }
+      out.push(req);
+    }
+    out.sort((a, b) => a.requestedAt.getTime() - b.requestedAt.getTime());
+    return out;
+  }, [requestsById, sessionId]);
+  useEffect(() => {
+    void hydratePermissions(sessionId);
+  }, [sessionId, hydratePermissions]);
+  const headPermission = pendingPermissions[0];
 
   const [hasText, setHasText] = useState(false);
   const [trigger, setTrigger] = useState<ActiveTrigger | null>(null);
@@ -439,6 +466,19 @@ export function ChatComposer({ session }: { session: Session }) {
     setIsDragging(false);
     attachFiles(files);
   };
+
+  if (headPermission !== undefined) {
+    return (
+      <div className="shrink-0 px-3 pb-3 pt-2">
+        <div className="mx-auto">
+          <PermissionCard
+            head={headPermission}
+            queueSize={pendingPermissions.length}
+          />
+        </div>
+      </div>
+    );
+  }
 
   if (pendingQuestion !== null) {
     return (

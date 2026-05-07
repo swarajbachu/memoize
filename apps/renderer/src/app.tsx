@@ -14,7 +14,6 @@ import { ChatView } from "./components/chat-view";
 import { CostFooter } from "./components/cost-footer";
 import { FileEditor } from "./components/file-editor.tsx";
 import { MainTabs } from "./components/main-tabs.tsx";
-import { PermissionToast } from "./components/permission-toast";
 import { ProjectsSidebar } from "./components/projects-sidebar";
 import { RightPane } from "./components/right-pane";
 import { SettingsPage } from "./components/settings-page";
@@ -188,7 +187,6 @@ export function App() {
               >
                 {selectedSessionId !== null && selectedSession !== null ? (
                   <>
-                    <PermissionToast sessionId={selectedSessionId} />
                     <ChatView sessionId={selectedSessionId} />
                     <CostFooter sessionId={selectedSessionId} />
                     <ChatComposer session={selectedSession} />
