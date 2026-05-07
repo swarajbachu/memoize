@@ -99,8 +99,18 @@ export function ChatComposer({ session }: { session: Session }) {
   // the user types anyway, and floating it inline above the chat
   // crowded the timeline. Swap to QuestionCard while one is unanswered;
   // otherwise render the normal editor.
-  const pendingQuestion = useMessagesStore((s) => {
-    const list = s.messagesBySession[sessionId] ?? [];
+  //
+  // Select the stable message-list reference (Zustand interns the array
+  // — same identity until a new message arrives) and derive the
+  // pending-question shape with `useMemo`. Returning a freshly-built
+  // object directly from a Zustand selector breaks
+  // `useSyncExternalStore`'s snapshot-equality check and infinite-loops
+  // the renderer.
+  const sessionMessages = useMessagesStore(
+    (s) => s.messagesBySession[sessionId],
+  );
+  const pendingQuestion = useMemo(() => {
+    const list = sessionMessages ?? [];
     const answered = new Set<string>();
     for (const m of list) {
       if (m.content._tag === "user_question_answer") {
@@ -120,7 +130,7 @@ export function ChatComposer({ session }: { session: Session }) {
       }
     }
     return null;
-  });
+  }, [sessionMessages]);
 
   const [hasText, setHasText] = useState(false);
   const [trigger, setTrigger] = useState<ActiveTrigger | null>(null);

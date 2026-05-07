@@ -792,8 +792,12 @@ export function ToolRow({
   const view = buildToolView(tool, input, result);
 
   const sections: React.ReactNode[] = [];
-  if (view.inputPanel !== undefined) sections.push(view.inputPanel);
-  if (view.fallbackBody !== undefined) sections.push(view.fallbackBody);
+  if (view.inputPanel !== undefined) {
+    sections.push(<div key="input">{view.inputPanel}</div>);
+  }
+  if (view.fallbackBody !== undefined) {
+    sections.push(<div key="fallback">{view.fallbackBody}</div>);
+  }
   if (result !== undefined && view.resultPanel !== undefined) {
     const rendered = view.resultPanel(result);
     if (rendered !== null) {
