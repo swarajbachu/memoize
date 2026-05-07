@@ -325,6 +325,17 @@ export const SessionCreateRpc = Rpc.make("session.create", {
      * setting is on.
      */
     worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
+    /**
+     * Start the session in plan mode. The agent will explore read-only
+     * and end its first turn by calling `ExitPlanMode`. Defaults to
+     * `'default'` (immediate execution).
+     */
+    permissionMode: Schema.optional(PermissionMode),
+    /**
+     * Persist the deferred-tools toggle for this session. Reserved for
+     * 0.04 code-index MCP servers; no-op today.
+     */
+    toolSearch: Schema.optional(Schema.Boolean),
   }),
   success: Session,
   error: SessionStartError,

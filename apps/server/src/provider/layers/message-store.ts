@@ -246,6 +246,13 @@ const eventToContent = (event: AgentEvent): MessageContent | null => {
       };
     case "Error":
       return { _tag: "error", message: event.message };
+    case "UserQuestion":
+      return {
+        _tag: "user_question",
+        itemId: event.itemId,
+        questions: event.questions,
+        parentItemId: event.parentItemId,
+      };
     default:
       return null;
   }
@@ -296,6 +303,13 @@ export const MessageStoreLive = Layer.scoped(
     const runtimeModeBySession = new Map<SessionId, RuntimeMode>();
     const getRuntimeModeFor = (sessionId: SessionId): RuntimeMode =>
       runtimeModeBySession.get(sessionId) ?? DEFAULT_RUNTIME_MODE;
+
+    /**
+     * Live permission-mode cache. Persisted alongside the row so resume
+     * brings the session back in the same mode; the in-memory map is the
+     * fast path the chip uses to render without a round-trip.
+     */
+    const permissionModeBySession = new Map<SessionId, PermissionMode>();
 
     /**
      * Sub-agents config cached per session. Populated on `createSession`
@@ -381,7 +395,8 @@ export const MessageStoreLive = Layer.scoped(
         const rows = yield* sql<SessionRow>`
           SELECT id, project_id, title, provider_id, model, status,
                  archived_at, cursor, resume_strategy, runtime_mode,
-                 agents_json, worktree_id, created_at, updated_at
+                 agents_json, worktree_id, permission_mode, tool_search,
+                 created_at, updated_at
           FROM sessions WHERE id = ${sessionId} LIMIT 1
         `.pipe(Effect.orDie);
         if (rows.length === 0) {
@@ -575,14 +590,16 @@ export const MessageStoreLive = Layer.scoped(
           ? yield* sql<SessionRow>`
               SELECT id, project_id, title, provider_id, model, status,
                      archived_at, cursor, resume_strategy, runtime_mode,
-                     agents_json, worktree_id, created_at, updated_at
+                     agents_json, worktree_id, permission_mode, tool_search,
+                     created_at, updated_at
               FROM sessions WHERE project_id = ${projectId}
               ORDER BY updated_at DESC
             `.pipe(Effect.orDie)
           : yield* sql<SessionRow>`
               SELECT id, project_id, title, provider_id, model, status,
                      archived_at, cursor, resume_strategy, runtime_mode,
-                     agents_json, worktree_id, created_at, updated_at
+                     agents_json, worktree_id, permission_mode, tool_search,
+                     created_at, updated_at
               FROM sessions
               WHERE project_id = ${projectId} AND archived_at IS NULL
               ORDER BY updated_at DESC
@@ -609,6 +626,9 @@ export const MessageStoreLive = Layer.scoped(
           (input.agents !== undefined && Object.keys(input.agents).length > 0);
         const worktreeId = input.worktreeId ?? null;
         const cwdOverride = yield* cwdForWorktree(worktreeId);
+        const initialPermissionMode =
+          input.permissionMode ?? DEFAULT_PERMISSION_MODE;
+        const initialToolSearch = input.toolSearch ?? false;
         const started = yield* provider
           .start(
             {
@@ -620,6 +640,8 @@ export const MessageStoreLive = Layer.scoped(
               agents: input.agents,
               enableSubagents: effectiveEnableSubagents,
               cwdOverride,
+              permissionMode: initialPermissionMode,
+              toolSearch: initialToolSearch,
             },
             null,
             newSessionRuntimeMode,
@@ -641,6 +663,7 @@ export const MessageStoreLive = Layer.scoped(
         mintedSessionId = sessionId;
         const initialRuntimeMode = input.runtimeMode ?? DEFAULT_RUNTIME_MODE;
         runtimeModeBySession.set(sessionId, initialRuntimeMode);
+        permissionModeBySession.set(sessionId, initialPermissionMode);
         if (input.agents !== undefined && Object.keys(input.agents).length > 0) {
           agentsBySession.set(sessionId, {
             agents: input.agents,
@@ -667,11 +690,13 @@ export const MessageStoreLive = Layer.scoped(
         yield* sql`
           INSERT INTO sessions
             (id, project_id, title, provider_id, model, status, runtime_mode,
-             agents_json, worktree_id, created_at, updated_at)
+             agents_json, worktree_id, permission_mode, tool_search,
+             created_at, updated_at)
           VALUES
             (${sessionId}, ${input.projectId}, ${title}, ${input.providerId},
              ${input.model}, ${initialStatus}, ${initialRuntimeMode},
-             ${agentsJson}, ${worktreeId}, ${nowIso}, ${nowIso})
+             ${agentsJson}, ${worktreeId}, ${initialPermissionMode},
+             ${initialToolSearch ? 1 : 0}, ${nowIso}, ${nowIso})
         `.pipe(Effect.orDie);
         if (hasInitial) {
           yield* persistMessage(sessionId, {
@@ -692,8 +717,8 @@ export const MessageStoreLive = Layer.scoped(
           resumeStrategy: "none",
           runtimeMode: initialRuntimeMode,
           worktreeId,
-          permissionMode: DEFAULT_PERMISSION_MODE,
-          toolSearch: false,
+          permissionMode: initialPermissionMode,
+          toolSearch: initialToolSearch,
           createdAt: now,
           updatedAt: now,
         });
@@ -730,6 +755,56 @@ export const MessageStoreLive = Layer.scoped(
         // Poke the in-memory cache so the next `canUseTool` invocation picks
         // up the new mode without restarting the SDK.
         runtimeModeBySession.set(sessionId, runtimeMode);
+      });
+
+    /**
+     * Switch SDK lifecycle mode mid-session. Persists, updates the cache,
+     * then forwards to `provider.setPermissionMode` which calls
+     * `Query.setPermissionMode` on the live SDK handle and emits a
+     * `PermissionModeChanged` event the renderer subscribes to.
+     */
+    const setPermissionMode: MessageStoreShape["setPermissionMode"] = (
+      sessionId,
+      mode,
+    ) =>
+      Effect.gen(function* () {
+        yield* lookupSession(sessionId);
+        const nowIso = new Date().toISOString();
+        yield* sql`
+          UPDATE sessions SET permission_mode = ${mode}, updated_at = ${nowIso}
+          WHERE id = ${sessionId}
+        `.pipe(Effect.orDie);
+        permissionModeBySession.set(sessionId, mode);
+        yield* provider.setPermissionMode(sessionId, mode).pipe(
+          // The SDK session may have been closed (idle / closed status).
+          // Persisting the mode is enough — when the renderer hits Send,
+          // `restartProviderSession` will pass the persisted value back
+          // into `provider.start`'s Options.
+          Effect.catchAll(() => Effect.void),
+        );
+      });
+
+    /**
+     * Resolve a pending AskUserQuestion. Persist the answer first so a
+     * crash mid-flight doesn't leave the renderer with no record; then
+     * forward to the driver, which resolves the deferred Promise and
+     * lets the SDK turn unwind with the answers as the tool result.
+     */
+    const answerQuestion: MessageStoreShape["answerQuestion"] = (
+      sessionId,
+      itemId,
+      answers,
+    ) =>
+      Effect.gen(function* () {
+        yield* lookupSession(sessionId);
+        yield* persistMessage(sessionId, {
+          _tag: "user_question_answer",
+          itemId,
+          answers,
+        });
+        yield* provider.answerQuestion(sessionId, itemId, answers).pipe(
+          Effect.catchAll(() => Effect.void),
+        );
       });
 
     /**
@@ -889,6 +964,7 @@ export const MessageStoreLive = Layer.scoped(
       attachments: ReadonlyArray<AttachmentRef>,
     ): Effect.Effect<void, SessionNotFoundError> => {
       runtimeModeBySession.set(session.id, session.runtimeMode);
+      permissionModeBySession.set(session.id, session.permissionMode);
       const subagents = agentsFor(session.id);
       return cwdForWorktree(session.worktreeId).pipe(
         Effect.flatMap((cwdOverride) =>
@@ -903,6 +979,8 @@ export const MessageStoreLive = Layer.scoped(
                 agents: subagents?.agents,
                 enableSubagents: subagents?.enableSubagents,
                 cwdOverride,
+                permissionMode: session.permissionMode,
+                toolSearch: session.toolSearch,
               },
               // Re-attach to the upstream conversation when we have a
               // cursor. The driver passes it as `options.resume`; SDK
@@ -939,6 +1017,7 @@ export const MessageStoreLive = Layer.scoped(
         yield* provider.close(sessionId).pipe(Effect.catchAll(() => Effect.void));
         yield* teardownSubscription(sessionId);
         runtimeModeBySession.set(session.id, session.runtimeMode);
+        permissionModeBySession.set(session.id, session.permissionMode);
         const subagents = agentsFor(session.id);
         const cwdOverride = yield* cwdForWorktree(session.worktreeId);
         yield* provider
@@ -952,6 +1031,8 @@ export const MessageStoreLive = Layer.scoped(
               agents: subagents?.agents,
               enableSubagents: subagents?.enableSubagents,
               cwdOverride,
+              permissionMode: session.permissionMode,
+              toolSearch: session.toolSearch,
             },
             session.cursor,
             () => getRuntimeModeFor(session.id),
@@ -1071,6 +1152,8 @@ export const MessageStoreLive = Layer.scoped(
       renameSession,
       setModel,
       setRuntimeMode,
+      setPermissionMode,
+      answerQuestion,
       setWorktree,
       archiveSession,
       unarchiveSession,
