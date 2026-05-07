@@ -3,15 +3,18 @@ import { Context, type Effect, type Stream } from "effect";
 import type {
   AgentAvailability,
   AgentEvent,
+  AgentItemId,
   AgentSessionId,
   AgentSessionNotFoundError,
   AgentSessionStartError,
   AgentTurnId,
   AttachmentRef,
+  PermissionMode,
   ProviderId,
   ProviderNotAvailableError,
   RuntimeMode,
   StartSessionInput,
+  UserQuestionAnswer,
 } from "@forkzero/wire";
 
 import type { CredentialsError } from "../errors.ts";
@@ -64,6 +67,25 @@ export interface ProviderServiceShape {
     providerId: ProviderId,
     apiKey: string,
   ) => Effect.Effect<void, CredentialsError>;
+
+  /**
+   * Switch the SDK lifecycle mode on a live session. Claude only — Codex
+   * sessions accept the call but no-op.
+   */
+  readonly setPermissionMode: (
+    sessionId: AgentSessionId,
+    mode: PermissionMode,
+  ) => Effect.Effect<void, AgentSessionNotFoundError>;
+
+  /**
+   * Resolve the pending in-process AskUserQuestion call identified by
+   * `itemId`. Claude only — Codex sessions accept the call but no-op.
+   */
+  readonly answerQuestion: (
+    sessionId: AgentSessionId,
+    itemId: AgentItemId,
+    answers: ReadonlyArray<UserQuestionAnswer>,
+  ) => Effect.Effect<void, AgentSessionNotFoundError>;
 }
 
 export class ProviderService extends Context.Tag("forkzero/ProviderService")<

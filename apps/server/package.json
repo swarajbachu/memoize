@@ -33,7 +33,8 @@
     "effect": "catalog:",
     "fuzzysort": "catalog:",
     "keytar": "^7.9.0",
-    "node-pty": "^1.1.0"
+    "node-pty": "^1.1.0",
+    "zod": "^4.0.0"
   },
   "devDependencies": {
     "@repo/typescript-config": "*",

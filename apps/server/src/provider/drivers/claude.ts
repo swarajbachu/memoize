@@ -1,11 +1,15 @@
 import {
+  createSdkMcpServer,
   query,
+  tool,
   type Options,
+  type PermissionMode as SdkPermissionMode,
   type Query,
   type SDKMessage,
   type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import { Effect, Mailbox, Stream } from "effect";
+import { z } from "zod";
 
 import {
   AgentSessionStartError,
@@ -15,8 +19,11 @@ import {
   type AttachmentRef,
   type PermissionDecision,
   type PermissionKind,
+  type PermissionMode,
   type RuntimeMode,
   type StartSessionInput,
+  type UserQuestion,
+  type UserQuestionAnswer,
 } from "@forkzero/wire";
 
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
@@ -34,7 +41,42 @@ export interface ClaudeSessionHandle {
   ) => Effect.Effect<void>;
   readonly interrupt: () => Effect.Effect<void>;
   readonly close: () => Effect.Effect<void>;
+  /**
+   * Switch SDK lifecycle mode (plan / default / acceptEdits) on a live
+   * session. Emits `PermissionModeChanged` as a side-effect so the
+   * renderer chip stays in sync without polling.
+   */
+  readonly setPermissionMode: (mode: PermissionMode) => Effect.Effect<void>;
+  /**
+   * Resolve the pending `AskUserQuestion` tool call identified by `itemId`
+   * with the user's answers. The SDK turn unwinds with the answers as the
+   * tool result. No-op if the question is unknown (already cancelled or
+   * answered).
+   */
+  readonly answerQuestion: (
+    itemId: AgentItemId,
+    answers: ReadonlyArray<UserQuestionAnswer>,
+  ) => Effect.Effect<void>;
 }
+
+/**
+ * Map our PermissionMode literal onto the SDK's. Identical at present
+ * (the SDK union is wider — `dontAsk`, `auto`, `bypassPermissions` —
+ * but we only expose the three the renderer chip surfaces).
+ */
+const toSdkPermissionMode = (mode: PermissionMode): SdkPermissionMode =>
+  mode satisfies SdkPermissionMode;
+
+/**
+ * Name we register the in-process AskUserQuestion tool under. The SDK
+ * exposes MCP tools to the model as `mcp__<server>__<tool>`, so the
+ * model sees `mcp__forkzero__ask_user_question` and the translator
+ * matches on that exact prefix to emit `UserQuestion` instead of a
+ * generic `ToolUse`.
+ */
+const FORKZERO_MCP_NAME = "forkzero";
+const ASK_USER_QUESTION_TOOL = "ask_user_question";
+const ASK_USER_QUESTION_FQN = `mcp__${FORKZERO_MCP_NAME}__${ASK_USER_QUESTION_TOOL}`;
 
 /**
  * Anthropic accepts these media types as image content blocks. Anything else
@@ -206,6 +248,14 @@ interface TranslateState {
    * serially; if it ever parallelises, this attribution races.
    */
   latestParentItemId: AgentItemId | undefined;
+  /**
+   * Tool-use ids for in-flight AskUserQuestion calls. The translator
+   * suppresses the generic `ToolUse` and matching `ToolResult` events for
+   * these ids — the question + answer are surfaced via dedicated
+   * `UserQuestion` events and the persisted `user_question` /
+   * `user_question_answer` rows instead.
+   */
+  askUserQuestionIds: Set<string>;
 }
 
 const newTranslateState = (): TranslateState => ({
@@ -213,6 +263,7 @@ const newTranslateState = (): TranslateState => ({
   emittedThinkingThisTurn: false,
   pendingAgents: new Map(),
   latestParentItemId: undefined,
+  askUserQuestionIds: new Set(),
 });
 
 const isAgentToolUse = (block: { type?: string; name?: string }): boolean =>
@@ -314,6 +365,16 @@ const translate = (
             typeof (block as { id?: unknown }).id === "string"
               ? ((block as { id: string }).id as AgentItemId)
               : nextItemId();
+          // AskUserQuestion: suppress the generic ToolUse row. The MCP
+          // handler emits a dedicated `UserQuestion` event with the
+          // matching itemId, which the renderer paints as a question
+          // card. Track the id so the paired tool_result is suppressed
+          // too — the user's answer surfaces via the persisted
+          // `user_question_answer` row, not a noisy tool_result.
+          if (block.name === ASK_USER_QUESTION_FQN) {
+            state.askUserQuestionIds.add(id as string);
+            continue;
+          }
           // If this tool_use is the parent agent kicking off a sub-agent,
           // remember it so the eventual paired tool_result can pop a
           // SubagentSummary event.
@@ -541,6 +602,13 @@ const translate = (
               ? ((block as { tool_use_id: string })
                   .tool_use_id as AgentItemId)
               : nextItemId();
+          // Suppress tool_result rows for AskUserQuestion — the answer is
+          // already persisted as a `user_question_answer` row via
+          // `answerQuestion`. Showing both would double-paint.
+          if (state.askUserQuestionIds.has(id as string)) {
+            state.askUserQuestionIds.delete(id as string);
+            continue;
+          }
           out.push({
             _tag: "ToolResult",
             itemId: id,
@@ -909,6 +977,106 @@ export const startClaudeSession = (
     // here, populated by `translate`, read by `canUseTool`.
     const translateState = newTranslateState();
 
+    /**
+     * Outstanding `AskUserQuestion` calls. Keyed by the MCP tool's
+     * generated itemId (= the `tool_use.id` the model emitted) so the
+     * renderer's `answerQuestion(itemId, …)` resolves the right one.
+     * Resolves with the answers (which our handler returns as the tool
+     * result) or with `null` for cancellation (the SDK turn unwinds
+     * with an `is_error: true` row).
+     */
+    type QuestionResolver = (
+      answers: ReadonlyArray<UserQuestionAnswer> | null,
+    ) => void;
+    const pendingQuestions = new Map<string, QuestionResolver>();
+
+    /**
+     * Map from question `itemId` → its `tool_use.id` if known. The MCP
+     * SDK doesn't pass the tool_use_id into our handler, so we mint our
+     * own id and surface it on the `UserQuestion` event. The handle's
+     * `answerQuestion` then looks the id up here. (The SDK's translator
+     * sees the underlying `tool_use.id` separately and uses *that* to
+     * suppress the matching tool_result row — see
+     * `state.askUserQuestionIds`.)
+     */
+    const askUserQuestionToolDefinition = tool(
+      ASK_USER_QUESTION_TOOL,
+      "Ask the user a structured multiple-choice question, with optional 'Other' free-text. Use when implementation requires a decision the agent cannot infer from context (preferred direction, taste call, scope cut). Each question carries `options[]` the user picks from; the renderer always offers an additional 'Other' free-text field — never include 'Other' in `options`.",
+      {
+        questions: z
+          .array(
+            z.object({
+              question: z.string(),
+              options: z.array(z.string()),
+              multiSelect: z.boolean().optional(),
+            }),
+          )
+          .min(1),
+      },
+      async (args) => {
+        const itemId = nextItemId();
+        const userQuestions: ReadonlyArray<UserQuestion> = args.questions.map(
+          (q) => ({
+            question: q.question,
+            options: q.options,
+            ...(q.multiSelect !== undefined
+              ? { multiSelect: q.multiSelect }
+              : {}),
+          }),
+        );
+        events.unsafeOffer({
+          _tag: "UserQuestion",
+          itemId,
+          questions: userQuestions,
+          parentItemId: translateState.latestParentItemId,
+        });
+        const answers = await new Promise<
+          ReadonlyArray<UserQuestionAnswer> | null
+        >((resolve) => {
+          pendingQuestions.set(itemId, resolve);
+        });
+        if (answers === null) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "User cancelled the question.",
+              },
+            ],
+            isError: true,
+          };
+        }
+        // Render the answers compactly for the model. Per question:
+        //   - "Q: <text> → <selected option labels>" if any options picked
+        //   - "  (other: <free text>)" appended if free-text given
+        // The structured JSON is included too for unambiguous parsing.
+        const lines: string[] = [];
+        for (const a of answers) {
+          const q = userQuestions[a.questionIndex];
+          if (q === undefined) continue;
+          const picks = a.selected.map((i) => q.options[i] ?? `#${i}`);
+          const head = picks.length > 0 ? picks.join(", ") : "(no preset)";
+          lines.push(`Q: ${q.question}\nA: ${head}`);
+          if (typeof a.other === "string" && a.other.length > 0) {
+            lines.push(`  (other: ${a.other})`);
+          }
+        }
+        return {
+          content: [
+            { type: "text", text: lines.join("\n\n") },
+            { type: "text", text: JSON.stringify({ answers }) },
+          ],
+        };
+      },
+      { alwaysLoad: true },
+    );
+
+    const forkzeroMcpServer = createSdkMcpServer({
+      name: FORKZERO_MCP_NAME,
+      tools: [askUserQuestionToolDefinition],
+      alwaysLoad: !(input.toolSearch ?? false),
+    });
+
     const env = scrubInheritedClaudeMarkers(process.env);
     if (apiKey !== null) env.ANTHROPIC_API_KEY = apiKey;
     // Sub-agent map → SDK Options.agents. When at least one preset is
@@ -920,12 +1088,16 @@ export const startClaudeSession = (
     const subagentsEffective =
       (input.enableSubagents ?? Object.keys(agentsMap).length > 0) &&
       Object.keys(agentsMap).length > 0;
+    // `allowedTools` is a strict allow-list when set: anything not listed
+    // gets disallowed. So when sub-agents are on we must also list our
+    // in-process AskUserQuestion tool by its fully-qualified name.
     const subagentOptions = subagentsEffective
       ? ({
           agents: agentsMap,
-          allowedTools: ["Agent"],
+          allowedTools: ["Agent", ASK_USER_QUESTION_FQN],
         } as Pick<Options, "agents" | "allowedTools">)
       : {};
+    const initialPermissionMode = input.permissionMode ?? "default";
     const options: Options = {
       cwd,
       abortController: abort,
@@ -934,6 +1106,18 @@ export const startClaudeSession = (
         : {}),
       ...(input.model !== undefined ? { model: input.model } : {}),
       ...subagentOptions,
+      mcpServers: { [FORKZERO_MCP_NAME]: forkzeroMcpServer },
+      permissionMode: toSdkPermissionMode(initialPermissionMode),
+      // Trim the SDK's stock plan-mode body to nudge the agent toward
+      // forkzero's two structured-interaction tools. The SDK still wraps
+      // this with its read-only enforcement preamble + ExitPlanMode
+      // protocol footer.
+      planModeInstructions: [
+        "Phase 1 — Explore. Use only read-only tools (Read, Glob, Grep).",
+        "Phase 2 — Track. Maintain a TodoWrite list as you discover work; keep it crisp.",
+        `Phase 3 — Ask. When a real fork in the road exists (which library, which scope, which approach), call ${ASK_USER_QUESTION_FQN} with the choices instead of guessing.`,
+        "Phase 4 — Propose. Call ExitPlanMode with a concise plan: what changes, where, and how to verify.",
+      ].join("\n"),
       // `effort: "high"` enables deep reasoning. We pair it with an
       // explicit `display: "summarized"` because Opus 4.7 defaults the
       // adaptive-thinking display to "omitted" — meaning the API
@@ -1090,8 +1274,32 @@ export const startClaudeSession = (
         }).pipe(Effect.catchAll(() => Effect.void)),
       close: () =>
         Effect.sync(() => {
+          // Unblock any in-flight AskUserQuestion calls so the SDK turn
+          // can unwind cleanly instead of leaking the MCP handler's
+          // pending Promise.
+          for (const resolve of pendingQuestions.values()) resolve(null);
+          pendingQuestions.clear();
           inputChannel.close();
           abort.abort();
+        }),
+      setPermissionMode: (mode) =>
+        Effect.tryPromise({
+          try: () => q.setPermissionMode(toSdkPermissionMode(mode)),
+          catch: (cause) => cause,
+        }).pipe(
+          Effect.tap(() =>
+            Effect.sync(() => {
+              events.unsafeOffer({ _tag: "PermissionModeChanged", mode });
+            }),
+          ),
+          Effect.catchAll(() => Effect.void),
+        ),
+      answerQuestion: (itemId, answers) =>
+        Effect.sync(() => {
+          const resolve = pendingQuestions.get(itemId as string);
+          if (resolve === undefined) return;
+          pendingQuestions.delete(itemId as string);
+          resolve(answers);
         }),
     };
     return handle;
