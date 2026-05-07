@@ -38,9 +38,9 @@ const SetSelected = ForkzeroRpcs.toLayerHandler(
 
 const SearchFiles = ForkzeroRpcs.toLayerHandler(
   "workspace.searchFiles",
-  ({ projectId, query, limit }) =>
+  ({ projectId, query, limit, worktreeId }) =>
     Effect.flatMap(FileSearchService, (svc) =>
-      svc.search(projectId, query, limit),
+      svc.search(projectId, query, limit, worktreeId ?? null),
     ),
 );
 

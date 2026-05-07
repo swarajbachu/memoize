@@ -112,9 +112,12 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
   );
 
   // FileSearchService backs the composer's `@` file picker. Same deps as
-  // FsLayer — recursive walk skipping common heavy directories.
+  // FsLayer — recursive walk skipping common heavy directories. WorktreeLayer
+  // lets the search reroot at a worktree's path when the renderer passes
+  // `worktreeId`, so a session on a worktree only sees its own files.
   const FileSearchLayer = FileSearchServiceLive.pipe(
     Layer.provide(WorkspaceLayer),
+    Layer.provide(WorktreeLayer),
     Layer.provide(NodeContext.layer),
   );
 
