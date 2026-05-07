@@ -11,15 +11,25 @@ import {
 } from "effect";
 
 import {
+  GitChange,
   GitCommandError,
   GitCommit,
   GitFolderNotFoundError,
   GitNotARepoError,
   GitNotInstalledError,
   GitOriginInfo,
+  GitPrCheckRun,
+  GitPrComment,
+  GitPrDetails,
+  GitPrFile,
   GitPrInfo,
+  GitPrReview,
   GitStatusSummary,
   type FolderId,
+  type GitChangeKind,
+  type GitPrCheckRunConclusion,
+  type GitPrCheckRunStatus,
+  type GitPrReviewState,
 } from "@forkzero/wire";
 
 import { WorkspaceService } from "../../workspace/services/workspace-service.ts";
@@ -100,6 +110,87 @@ const parseStatusOutput = (out: string): GitStatusSummary => {
   }
 
   return GitStatusSummary.make({ branch, ahead, behind, dirtyFiles });
+};
+
+// Map a single porcelain-v2 status code (per `git status --porcelain=v2`):
+//   '.' unmodified, 'M' modified, 'A' added, 'D' deleted, 'R' renamed,
+//   'C' copied, 'U' unmerged, 'T' type changed.
+const STATUS_CODE_TO_KIND: Record<string, GitChangeKind> = {
+  M: "modified",
+  A: "added",
+  D: "deleted",
+  R: "renamed",
+  C: "copied",
+  U: "unmerged",
+  T: "type_changed",
+};
+
+const codeToKind = (code: string): GitChangeKind | null => {
+  const k = STATUS_CODE_TO_KIND[code];
+  return k ?? null;
+};
+
+/**
+ * Parse `git status --porcelain=v2` file entries into our wire shape.
+ * Header lines (`# branch.*`) are skipped; this function focuses on the
+ * file-entry lines.
+ *
+ * Format reference (git-scm):
+ *   1 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <path>
+ *   2 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <X><score> <path><tab><origPath>
+ *   u <XY> ...                                                    (unmerged)
+ *   ? <path>                                                      (untracked)
+ *   ! <path>                                                      (ignored)
+ *
+ * The XY pair encodes (index, working-tree) state. If working-tree is
+ * unchanged we report the index state (so a staged-only file still appears
+ * as modified). `staged` is true whenever index ≠ '.'.
+ */
+const parseChangesOutput = (out: string): ReadonlyArray<GitChange> => {
+  const changes: GitChange[] = [];
+  for (const line of out.split("\n")) {
+    if (line.length === 0) continue;
+    const tag = line[0];
+    if (tag === "1") {
+      // "1 XY sub mH mI mW hH hI path"
+      const parts = line.split(" ");
+      const xy = parts[1] ?? "..";
+      const x = xy[0] ?? ".";
+      const y = xy[1] ?? ".";
+      const path = parts.slice(8).join(" ");
+      if (path.length === 0) continue;
+      const kind = codeToKind(y === "." ? x : y);
+      if (kind === null) continue;
+      changes.push(GitChange.make({ path, staged: x !== ".", kind }));
+    } else if (tag === "2") {
+      // "2 XY sub mH mI mW hH hI Xscore path<TAB>origPath"
+      const tabIdx = line.indexOf("\t");
+      const head = tabIdx === -1 ? line : line.slice(0, tabIdx);
+      const parts = head.split(" ");
+      const xy = parts[1] ?? "..";
+      const x = xy[0] ?? ".";
+      const y = xy[1] ?? ".";
+      const path = parts.slice(9).join(" ");
+      if (path.length === 0) continue;
+      const code = y === "." ? x : y;
+      const kind: GitChangeKind = code === "C" ? "copied" : "renamed";
+      changes.push(GitChange.make({ path, staged: x !== ".", kind: codeToKind(code) ?? kind }));
+    } else if (tag === "u") {
+      const parts = line.split(" ");
+      const path = parts.slice(10).join(" ");
+      if (path.length === 0) continue;
+      changes.push(GitChange.make({ path, staged: false, kind: "unmerged" }));
+    } else if (tag === "?") {
+      const path = line.slice(2);
+      if (path.length === 0) continue;
+      changes.push(GitChange.make({ path, staged: false, kind: "untracked" }));
+    } else if (tag === "!") {
+      const path = line.slice(2);
+      if (path.length === 0) continue;
+      changes.push(GitChange.make({ path, staged: false, kind: "ignored" }));
+    }
+  }
+  return changes;
 };
 
 // Accepts the common shapes that `git remote get-url` emits:
@@ -419,6 +510,282 @@ export const GitServiceLive = Layer.effect(
         }),
       );
 
+    // Map gh's review state vocabulary (`APPROVED`, `CHANGES_REQUESTED`, ...)
+    // to the wire's lowercase literal. Anything we don't recognize collapses
+    // to "commented" — gh sometimes emits review entries with no state when
+    // the review is just inline comments without a top-level summary verdict.
+    const mapReviewState = (raw: string): GitPrReviewState => {
+      switch (raw.toUpperCase()) {
+        case "APPROVED":
+          return "approved";
+        case "CHANGES_REQUESTED":
+          return "changes_requested";
+        case "DISMISSED":
+          return "dismissed";
+        case "PENDING":
+          return "pending";
+        default:
+          return "commented";
+      }
+    };
+
+    const mapCheckStatus = (raw: string): GitPrCheckRunStatus => {
+      switch (raw.toUpperCase()) {
+        case "QUEUED":
+          return "queued";
+        case "IN_PROGRESS":
+          return "in_progress";
+        case "COMPLETED":
+          return "completed";
+        default:
+          return "pending";
+      }
+    };
+
+    const mapCheckConclusion = (
+      raw: string,
+    ): GitPrCheckRunConclusion | null => {
+      switch (raw.toUpperCase()) {
+        case "SUCCESS":
+          return "success";
+        case "FAILURE":
+        case "ERROR":
+          return "failure";
+        case "CANCELLED":
+          return "cancelled";
+        case "SKIPPED":
+          return "skipped";
+        case "NEUTRAL":
+          return "neutral";
+        case "TIMED_OUT":
+          return "timed_out";
+        case "ACTION_REQUIRED":
+          return "action_required";
+        default:
+          return null;
+      }
+    };
+
+    const emptyDetails: GitPrDetails = GitPrDetails.make({
+      state: "none",
+      number: null,
+      url: null,
+      isDraft: false,
+      checks: "none",
+      additions: 0,
+      deletions: 0,
+      title: "",
+      body: "",
+      author: "",
+      baseBranch: null,
+      headBranch: null,
+      comments: [],
+      reviews: [],
+      files: [],
+      checkRuns: [],
+    });
+
+    const prDetails: GitService["Type"]["prDetails"] = (folderId) =>
+      Effect.flatMap(resolvePath(folderId), (cwd) =>
+        Effect.gen(function* () {
+          const stdout = yield* ghRun(folderId, cwd, [
+            "pr",
+            "view",
+            "--json",
+            "state,additions,deletions,number,url,headRefName,baseRefName,isDraft,statusCheckRollup,title,body,author,comments,reviews,files",
+          ]).pipe(
+            Effect.catchTags({
+              GitNotInstalledError: () => Effect.succeed(""),
+              GitCommandError: () => Effect.succeed(""),
+            }),
+          );
+
+          if (stdout.trim().length === 0) return emptyDetails;
+
+          let parsed: {
+            state?: string;
+            additions?: number;
+            deletions?: number;
+            number?: number;
+            url?: string;
+            headRefName?: string;
+            baseRefName?: string;
+            isDraft?: boolean;
+            title?: string;
+            body?: string;
+            author?: { login?: string };
+            comments?: ReadonlyArray<{
+              author?: { login?: string };
+              body?: string;
+              createdAt?: string;
+            }>;
+            reviews?: ReadonlyArray<{
+              author?: { login?: string };
+              state?: string;
+              body?: string;
+              submittedAt?: string | null;
+            }>;
+            files?: ReadonlyArray<{
+              path?: string;
+              additions?: number;
+              deletions?: number;
+            }>;
+            statusCheckRollup?: ReadonlyArray<{
+              name?: string;
+              status?: string;
+              state?: string;
+              conclusion?: string;
+              detailsUrl?: string;
+              targetUrl?: string;
+            }>;
+          };
+          try {
+            parsed = JSON.parse(stdout) as typeof parsed;
+          } catch {
+            return emptyDetails;
+          }
+
+          const raw = (parsed.state ?? "").toLowerCase();
+          const state: GitPrInfo["state"] =
+            raw === "open"
+              ? "open"
+              : raw === "merged"
+                ? "merged"
+                : raw === "closed"
+                  ? "closed"
+                  : "none";
+
+          const rollup = parsed.statusCheckRollup ?? [];
+          const checks = aggregateChecks(rollup);
+
+          const checkRuns = rollup.map((c) =>
+            GitPrCheckRun.make({
+              name: c.name ?? "(unnamed check)",
+              // External "state" checks don't have a separate `status` field;
+              // treat them as completed with the state mapped via conclusion.
+              status: mapCheckStatus(
+                c.status ?? (c.state !== undefined ? "completed" : "pending"),
+              ),
+              conclusion: mapCheckConclusion(
+                c.conclusion !== undefined && c.conclusion.length > 0
+                  ? c.conclusion
+                  : (c.state ?? ""),
+              ),
+              url: c.detailsUrl ?? c.targetUrl ?? null,
+            }),
+          );
+
+          const comments = (parsed.comments ?? [])
+            .filter((c) => typeof c.createdAt === "string")
+            .map((c) =>
+              GitPrComment.make({
+                author: c.author?.login ?? "",
+                body: c.body ?? "",
+                createdAt: new Date(c.createdAt as string),
+              }),
+            );
+
+          const reviews = (parsed.reviews ?? []).map((r) =>
+            GitPrReview.make({
+              author: r.author?.login ?? "",
+              state: mapReviewState(r.state ?? ""),
+              body: r.body ?? "",
+              submittedAt:
+                typeof r.submittedAt === "string" && r.submittedAt.length > 0
+                  ? new Date(r.submittedAt)
+                  : null,
+            }),
+          );
+
+          const files = (parsed.files ?? [])
+            .filter((f) => typeof f.path === "string" && f.path.length > 0)
+            .map((f) =>
+              GitPrFile.make({
+                path: f.path as string,
+                additions: typeof f.additions === "number" ? f.additions : 0,
+                deletions: typeof f.deletions === "number" ? f.deletions : 0,
+              }),
+            );
+
+          return GitPrDetails.make({
+            state,
+            number: typeof parsed.number === "number" ? parsed.number : null,
+            url: parsed.url ?? null,
+            isDraft: parsed.isDraft === true,
+            checks,
+            additions:
+              typeof parsed.additions === "number" ? parsed.additions : 0,
+            deletions:
+              typeof parsed.deletions === "number" ? parsed.deletions : 0,
+            title: parsed.title ?? "",
+            body: parsed.body ?? "",
+            author: parsed.author?.login ?? "",
+            baseBranch: parsed.baseRefName ?? null,
+            headBranch: parsed.headRefName ?? null,
+            comments,
+            reviews,
+            files,
+            checkRuns,
+          });
+        }),
+      );
+
+    const changes: GitService["Type"]["changes"] = (folderId) =>
+      Effect.flatMap(resolvePath(folderId), (cwd) =>
+        run(folderId, cwd, [
+          "status",
+          "--porcelain=v2",
+          "--untracked-files=all",
+        ]).pipe(Effect.map(parseChangesOutput)),
+      );
+
+    /**
+     * Auto-stage everything tracked + untracked, then create a single commit
+     * with the user's message. Mirrors what the user would do in a basic
+     * "commit all" UI; matches the GitHub Desktop "Commit Tracked + Untracked"
+     * default. Returns the new HEAD sha so the caller can refresh status.
+     */
+    const commit: GitService["Type"]["commit"] = (folderId, message) =>
+      Effect.flatMap(resolvePath(folderId), (cwd) =>
+        Effect.gen(function* () {
+          yield* run(folderId, cwd, ["add", "-A"]);
+          yield* run(folderId, cwd, ["commit", "-m", message]);
+          const sha = (yield* run(folderId, cwd, ["rev-parse", "HEAD"])).trim();
+          return { sha };
+        }),
+      );
+
+    /**
+     * Push the current branch to its upstream. Sets upstream on first push so
+     * a freshly-created branch lands on origin without an extra step. The
+     * combined stdout+stderr is returned so the renderer can surface it.
+     */
+    const push: GitService["Type"]["push"] = (folderId) =>
+      Effect.flatMap(resolvePath(folderId), (cwd) =>
+        Effect.gen(function* () {
+          const branch = (yield* run(folderId, cwd, [
+            "rev-parse",
+            "--abbrev-ref",
+            "HEAD",
+          ])).trim();
+          if (branch.length === 0 || branch === "HEAD") {
+            return yield* Effect.fail(
+              new GitCommandError({
+                folderId,
+                reason: "Cannot push: HEAD is detached.",
+              }),
+            );
+          }
+          const out = yield* run(folderId, cwd, [
+            "push",
+            "--set-upstream",
+            "origin",
+            branch,
+          ]);
+          return { output: out };
+        }),
+      );
+
     // Per-subscription stream: a forked fiber polls HEAD every 2s and pushes
     // into a Mailbox only when the SHA changes. The fiber is scoped to the
     // stream's lifetime, so interrupting the renderer's subscription stops
@@ -455,6 +822,16 @@ export const GitServiceLive = Layer.effect(
         }),
       );
 
-    return { log, status, subscribeHeadChanges, origin, prState } as const;
+    return {
+      log,
+      status,
+      subscribeHeadChanges,
+      origin,
+      prState,
+      prDetails,
+      changes,
+      commit,
+      push,
+    } as const;
   }),
 );

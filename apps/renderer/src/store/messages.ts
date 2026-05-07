@@ -4,6 +4,7 @@ import { create } from "zustand";
 import type { ComposerInput, Message, SessionId } from "@forkzero/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
+import { usePrDetailsStore } from "./pr-details.ts";
 import { usePrStateStore } from "./pr-state.ts";
 import { useSessionsStore } from "./sessions.ts";
 
@@ -174,6 +175,9 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
                 for (const [projectId, sessions] of Object.entries(session)) {
                   if (sessions.some((sess) => sess.id === sessionId)) {
                     void usePrStateStore
+                      .getState()
+                      .refresh(projectId as never);
+                    void usePrDetailsStore
                       .getState()
                       .refresh(projectId as never);
                     break;
