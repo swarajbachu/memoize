@@ -1,6 +1,7 @@
 import { ArrowUp01Icon, Cancel01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import type React from "react";
 import { useMemo, useState } from "react";
 
 import type {
@@ -80,11 +81,49 @@ function InteractiveQuestionCard({
 
   const active = questions[activeIdx]!;
   const draft = drafts[activeIdx] ?? emptyDraft();
-  const complete = useMemo(() => isComplete(questions, drafts), [questions, drafts]);
   const multi = active.multiSelect === true;
 
   const setDraft = (idx: number, next: DraftAnswer): void => {
     setDrafts((prev) => prev.map((d, i) => (i === idx ? next : d)));
+  };
+
+  /**
+   * Submit a specific drafts state. Pulled out of `submit` so `toggleOption`
+   * and the Other-input Enter handler can call it with the freshly-updated
+   * drafts without waiting for React state to flush.
+   */
+  const submitWith = async (
+    finalDrafts: ReadonlyArray<DraftAnswer>,
+  ): Promise<void> => {
+    if (submitting) return;
+    if (!isComplete(questions, finalDrafts)) return;
+    setSubmitting(true);
+    const answers: ReadonlyArray<UserQuestionAnswer> = finalDrafts.map(
+      (d, i) => ({
+        questionIndex: i,
+        selected: d.selected,
+        ...(d.other.trim().length > 0 ? { other: d.other.trim() } : {}),
+      }),
+    );
+    await answerQuestion(sessionId, itemId, answers);
+    // No need to clear submitting — once answered, the parent unmounts us.
+  };
+
+  /**
+   * Commit an updated draft for the active question and decide whether to
+   * advance to the next question or submit. Auto-advance fires for
+   * single-select picks and for Enter-on-Other; multi-select keeps the
+   * card visible so the user can pick more or hit submit explicitly.
+   */
+  const commitAndAdvance = (next: DraftAnswer): void => {
+    const nextDrafts = drafts.map((d, i) => (i === activeIdx ? next : d));
+    setDrafts(nextDrafts);
+    const isLast = activeIdx === questions.length - 1;
+    if (isLast) {
+      void submitWith(nextDrafts);
+    } else {
+      setActiveIdx(activeIdx + 1);
+    }
   };
 
   const toggleOption = (optionIdx: number): void => {
@@ -94,15 +133,17 @@ function InteractiveQuestionCard({
         ? draft.selected.filter((i) => i !== optionIdx)
         : [...draft.selected, optionIdx];
       setDraft(activeIdx, { ...draft, selected });
-    } else {
-      // Single-select: clicking any option replaces; clicking the same
-      // option a second time clears it (lets user re-pick "Other" easily).
-      const selected =
-        draft.selected.length === 1 && draft.selected[0] === optionIdx
-          ? []
-          : [optionIdx];
-      setDraft(activeIdx, { ...draft, selected });
+      return;
     }
+    // Single-select: clicking the already-selected option clears it
+    // (lets the user re-pick "Other" easily). Otherwise replace the
+    // selection AND auto-advance — the user shouldn't have to hit submit
+    // for an unambiguous single pick.
+    if (draft.selected.length === 1 && draft.selected[0] === optionIdx) {
+      setDraft(activeIdx, { ...draft, selected: [] });
+      return;
+    }
+    commitAndAdvance({ ...draft, selected: [optionIdx], other: "" });
   };
 
   const setOther = (text: string): void => {
@@ -110,16 +151,26 @@ function InteractiveQuestionCard({
     setDraft(activeIdx, { ...draft, other: text });
   };
 
-  const submit = async (): Promise<void> => {
-    if (!complete || submitting) return;
-    setSubmitting(true);
-    const answers: ReadonlyArray<UserQuestionAnswer> = drafts.map((d, i) => ({
-      questionIndex: i,
-      selected: d.selected,
-      ...(d.other.trim().length > 0 ? { other: d.other.trim() } : {}),
-    }));
-    await answerQuestion(sessionId, itemId, answers);
-    // No need to clear submitting — the answered row will replace this card.
+  /**
+   * Pressing Enter inside the Other field commits the typed text as the
+   * answer for the active question. Mirrors the click-an-option flow:
+   * single-question or last-question submits, otherwise advances.
+   */
+  const onOtherKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
+    if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
+    const trimmed = draft.other.trim();
+    if (trimmed.length === 0) return;
+    e.preventDefault();
+    commitAndAdvance({ selected: [], other: trimmed });
+  };
+
+  const complete = useMemo(
+    () => isComplete(questions, drafts),
+    [questions, drafts],
+  );
+
+  const submit = (): void => {
+    void submitWith(drafts);
   };
 
   return (
@@ -177,8 +228,10 @@ function InteractiveQuestionCard({
             type="text"
             value={draft.other}
             onChange={(e) => setOther(e.target.value)}
-            placeholder="Type something…"
+            onKeyDown={onOtherKeyDown}
+            placeholder="Type something… (press Enter)"
             className="flex-1 bg-transparent py-1 text-sm text-foreground placeholder:text-muted-foreground/70 outline-none"
+            autoFocus
           />
         </label>
       </div>
@@ -232,7 +285,7 @@ function InteractiveQuestionCard({
           type="button"
           aria-label="Submit answer"
           disabled={!complete || submitting}
-          onClick={() => void submit()}
+          onClick={submit}
           className={cn(
             "flex h-8 w-8 items-center justify-center rounded-md transition-colors",
             complete && !submitting

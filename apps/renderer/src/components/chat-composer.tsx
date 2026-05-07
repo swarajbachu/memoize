@@ -74,6 +74,7 @@ import {
   PERMISSION_MODES_ORDER,
   PERMISSION_MODE_META,
 } from "./permission-mode-meta.ts";
+import { QuestionCard } from "./question-card.tsx";
 import { ProviderIcon } from "./provider-icons.tsx";
 import { MODES_ORDER, MODE_META } from "./runtime-mode-meta.ts";
 
@@ -96,6 +97,33 @@ export function ChatComposer({ session }: { session: Session }) {
   const send = useMessagesStore((s) => s.send);
   const interrupt = useMessagesStore((s) => s.interrupt);
   const queue = useMessagesStore((s) => s.queue);
+
+  // Pending AskUserQuestion takes over the composer slot — that's where
+  // the user types anyway, and floating it inline above the chat
+  // crowded the timeline. Swap to QuestionCard while one is unanswered;
+  // otherwise render the normal editor.
+  const pendingQuestion = useMessagesStore((s) => {
+    const list = s.messagesBySession[sessionId] ?? [];
+    const answered = new Set<string>();
+    for (const m of list) {
+      if (m.content._tag === "user_question_answer") {
+        answered.add(m.content.itemId as string);
+      }
+    }
+    for (let i = list.length - 1; i >= 0; i--) {
+      const m = list[i]!;
+      if (
+        m.content._tag === "user_question" &&
+        !answered.has(m.content.itemId as string)
+      ) {
+        return {
+          itemId: m.content.itemId,
+          questions: m.content.questions,
+        };
+      }
+    }
+    return null;
+  });
 
   const [hasText, setHasText] = useState(false);
   const [trigger, setTrigger] = useState<ActiveTrigger | null>(null);
@@ -394,6 +422,20 @@ export function ChatComposer({ session }: { session: Session }) {
     setIsDragging(false);
     attachFiles(files);
   };
+
+  if (pendingQuestion !== null) {
+    return (
+      <div className="shrink-0 px-3 pb-3 pt-2">
+        <div className="mx-auto">
+          <QuestionCard
+            sessionId={sessionId}
+            itemId={pendingQuestion.itemId}
+            questions={pendingQuestion.questions}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <TooltipProvider delay={0}>

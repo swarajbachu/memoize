@@ -10,15 +10,12 @@ import type {
   AttachmentRef,
   FileRef,
   Message,
-  SessionId,
   SkillRef,
-  UserQuestionAnswer,
 } from "@forkzero/wire";
 
 import { getFileIconUrl } from "~/lib/icons/material-icons";
 import { cn } from "~/lib/utils";
 
-import { QuestionCard } from "./question-card.tsx";
 import { ExitPlanModeRow, ThinkingRow, ToolRow } from "./tool-row.tsx";
 
 export interface ToolResultRecord {
@@ -46,13 +43,9 @@ const stringifyJson = (value: unknown): string => {
 export function MessageRow({
   message,
   resultsByItemId,
-  answersByItemId,
-  sessionId,
 }: {
   message: Message;
   resultsByItemId: ReadonlyMap<AgentItemId, ToolResultRecord>;
-  answersByItemId?: ReadonlyMap<AgentItemId, ReadonlyArray<UserQuestionAnswer>>;
-  sessionId?: SessionId;
 }) {
   switch (message.content._tag) {
     case "user":
@@ -101,25 +94,14 @@ export function MessageRow({
         <ToolErrorRow output={message.content.output} />
       ) : null;
     }
-    case "user_question": {
-      // The card switches between interactive and answered states based on
-      // whether a paired `user_question_answer` row exists. Without a
-      // sessionId we can't dispatch answers — fall back to the answered
-      // shape (this branch only fires for non-chat surfaces, e.g. a future
-      // search-result view).
-      if (sessionId === undefined) return null;
-      return (
-        <QuestionCard
-          sessionId={sessionId}
-          itemId={message.content.itemId}
-          questions={message.content.questions}
-          answer={answersByItemId?.get(message.content.itemId)}
-        />
-      );
-    }
+    case "user_question":
     case "user_question_answer":
-      // Rendered inline by the paired `user_question` card. Suppress the
-      // standalone row so we don't double-paint.
+      // Questions live in the composer slot, not the timeline — pending
+      // ones are rendered by ChatComposer (it swaps the editor for a
+      // QuestionCard); answered ones vanish entirely so the chat scrollback
+      // doesn't accumulate noisy decision rows. The agent's resulting
+      // assistant message is the timeline-visible record of what the
+      // answers led to.
       return null;
     case "error":
       return <ErrorBubble text={message.content.message} />;
