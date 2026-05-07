@@ -728,7 +728,7 @@ export function ExitPlanModeRow({
   const decide = usePermissionsStore((s) => s.decide);
 
   return (
-    <div className="rounded-xl border border-border/60 bg-background p-4">
+    <div className="rounded-xl border border-border/40 p-4">
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
           <HugeiconsIcon icon={CheckListIcon} size={14} strokeWidth={2} />
