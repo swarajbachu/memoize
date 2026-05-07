@@ -517,6 +517,20 @@ export const MessageStoreLive = Layer.scoped(
                 `.pipe(Effect.asVoid, Effect.orDie);
                 return;
               }
+              if (event._tag === "PermissionModeChanged") {
+                // SDK flipped its lifecycle mode (typically because
+                // ExitPlanMode just ran successfully). Persist + cache
+                // so the chat-header chip auto-untoggles and a future
+                // `provider.start` resume passes the new mode through.
+                yield* sql`
+                  UPDATE sessions
+                     SET permission_mode = ${event.mode},
+                         updated_at = ${new Date().toISOString()}
+                  WHERE id = ${sessionId}
+                `.pipe(Effect.asVoid, Effect.orDie);
+                permissionModeBySession.set(sessionId, event.mode);
+                return;
+              }
               const content = eventToContent(event);
               if (content === null) return;
               const persisted = yield* persistMessage(sessionId, content);

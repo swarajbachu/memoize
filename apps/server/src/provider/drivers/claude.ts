@@ -256,6 +256,14 @@ interface TranslateState {
    * `user_question_answer` rows instead.
    */
   askUserQuestionIds: Set<string>;
+  /**
+   * Tool-use ids for in-flight `ExitPlanMode` calls. When the matching
+   * `tool_result` lands with `is_error === false`, the SDK has already
+   * flipped its internal `permissionMode` to `default`; we mirror that
+   * by emitting a `PermissionModeChanged` event so MessageStore
+   * persists the new mode and the chip auto-untoggles.
+   */
+  exitPlanModeIds: Set<string>;
 }
 
 const newTranslateState = (): TranslateState => ({
@@ -264,6 +272,7 @@ const newTranslateState = (): TranslateState => ({
   pendingAgents: new Map(),
   latestParentItemId: undefined,
   askUserQuestionIds: new Set(),
+  exitPlanModeIds: new Set(),
 });
 
 const isAgentToolUse = (block: { type?: string; name?: string }): boolean =>
@@ -374,6 +383,13 @@ const translate = (
           if (block.name === ASK_USER_QUESTION_FQN) {
             state.askUserQuestionIds.add(id as string);
             continue;
+          }
+          // ExitPlanMode: track so we can detect the paired tool_result
+          // and emit `PermissionModeChanged` when it succeeds. The SDK
+          // flips its internal permissionMode to `default` once the
+          // tool runs; we mirror that into our session row.
+          if (block.name === "ExitPlanMode") {
+            state.exitPlanModeIds.add(id as string);
           }
           // If this tool_use is the parent agent kicking off a sub-agent,
           // remember it so the eventual paired tool_result can pop a
@@ -608,6 +624,20 @@ const translate = (
           if (state.askUserQuestionIds.has(id as string)) {
             state.askUserQuestionIds.delete(id as string);
             continue;
+          }
+          // Successful ExitPlanMode → SDK is now in `default` mode.
+          // Emit PermissionModeChanged so MessageStore persists the
+          // flip and the chip auto-untoggles. We still emit the
+          // ToolResult itself so the plan card sees `result` and
+          // switches to its "Approved" state.
+          if (state.exitPlanModeIds.has(id as string)) {
+            state.exitPlanModeIds.delete(id as string);
+            if (block.is_error !== true) {
+              out.push({
+                _tag: "PermissionModeChanged",
+                mode: "default",
+              });
+            }
           }
           out.push({
             _tag: "ToolResult",
