@@ -717,6 +717,10 @@ const translate = (
  * `Read` exception for sensitive paths is enforced separately in
  * `policyFor` — even read-only tools force a prompt when the target looks
  * like a secret.
+ *
+ * `ASK_USER_QUESTION_FQN` is here because asking the user a question IS
+ * the user-facing prompt — gating it behind a separate "Use tool
+ * AskUserQuestion?" toast is double prompting.
  */
 const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
   "Read",
@@ -726,6 +730,7 @@ const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
   "NotebookRead",
   "BashOutput",
   "TodoWrite",
+  ASK_USER_QUESTION_FQN,
 ]);
 
 /**
