@@ -127,6 +127,51 @@ const parseRemoteUrl = (url: string): GitOriginInfo | null => {
   return null;
 };
 
+/**
+ * Collapse `gh`'s `statusCheckRollup` into the wire's four-state aggregate.
+ *
+ * A check is "in flight" if its status is anything other than COMPLETED, and
+ * its conclusion (when present) tells us how a completed run landed. External
+ * status checks expose `state` instead and skip `status` entirely. A single
+ * failure beats every other state; otherwise pending beats success; otherwise
+ * if every entry passed it's success. Empty list means no checks defined.
+ */
+const aggregateChecks = (
+  rollup: ReadonlyArray<{
+    status?: string;
+    state?: string;
+    conclusion?: string;
+  }>,
+): GitPrInfo["checks"] => {
+  if (rollup.length === 0) return "none";
+  let pending = false;
+  for (const entry of rollup) {
+    const conclusion = (entry.conclusion ?? "").toUpperCase();
+    const status = (entry.status ?? "").toUpperCase();
+    const state = (entry.state ?? "").toUpperCase();
+    if (
+      conclusion === "FAILURE" ||
+      conclusion === "CANCELLED" ||
+      conclusion === "TIMED_OUT" ||
+      conclusion === "ACTION_REQUIRED" ||
+      state === "FAILURE" ||
+      state === "ERROR"
+    ) {
+      return "failure";
+    }
+    if (
+      status === "QUEUED" ||
+      status === "IN_PROGRESS" ||
+      status === "PENDING" ||
+      state === "PENDING" ||
+      (status !== "COMPLETED" && conclusion === "" && state === "")
+    ) {
+      pending = true;
+    }
+  }
+  return pending ? "pending" : "success";
+};
+
 export const GitServiceLive = Layer.effect(
   GitService,
   Effect.gen(function* () {
@@ -298,6 +343,8 @@ export const GitServiceLive = Layer.effect(
             deletions: 0,
             number: null,
             url: null,
+            isDraft: false,
+            checks: "none",
           });
 
           // `gh pr view --json` returns the PR for the current branch. Exits
@@ -307,7 +354,7 @@ export const GitServiceLive = Layer.effect(
             "pr",
             "view",
             "--json",
-            "state,additions,deletions,number,url,headRefName,baseRefName",
+            "state,additions,deletions,number,url,headRefName,baseRefName,isDraft,statusCheckRollup",
           ]).pipe(
             Effect.catchTags({
               GitNotInstalledError: () => Effect.succeed(""),
@@ -325,6 +372,12 @@ export const GitServiceLive = Layer.effect(
             url?: string;
             headRefName?: string;
             baseRefName?: string;
+            isDraft?: boolean;
+            statusCheckRollup?: ReadonlyArray<{
+              status?: string;
+              state?: string;
+              conclusion?: string;
+            }>;
           };
           try {
             parsed = JSON.parse(stdout) as typeof parsed;
@@ -343,6 +396,13 @@ export const GitServiceLive = Layer.effect(
                   ? "closed"
                   : "none";
 
+          // statusCheckRollup is a heterogeneous array — gh actions use
+          // `status` + `conclusion`, external checks use `state`. We collapse
+          // both into a four-state aggregate.
+          const checks: GitPrInfo["checks"] = aggregateChecks(
+            parsed.statusCheckRollup ?? [],
+          );
+
           return GitPrInfo.make({
             state,
             branch: parsed.headRefName ?? null,
@@ -353,6 +413,8 @@ export const GitServiceLive = Layer.effect(
               typeof parsed.deletions === "number" ? parsed.deletions : 0,
             number: typeof parsed.number === "number" ? parsed.number : null,
             url: parsed.url ?? null,
+            isDraft: parsed.isDraft === true,
+            checks,
           });
         }),
       );

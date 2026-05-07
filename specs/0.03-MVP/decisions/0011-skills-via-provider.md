@@ -113,3 +113,33 @@ inherits those improvements without code changes.
   switches from Claude to Codex on the same session is signaling that
   the conversation is now Codex-flavored, and the Codex skills are
   what should appear.
+
+## Amendment (2026-05-05): how drivers discover
+
+The original wording assumed the underlying tool exposes discovery via
+its SDK or RPC interface (`init.commands` for Claude, `skills/list` for
+Codex). In practice the Claude Agent SDK only exposes
+`Query.supportedCommands()` once a `query()` call is in flight, which
+forkzero doesn't have at popover-open time — sessions are started
+lazily on first send. Spawning an ephemeral `query()` purely to list
+skills costs a real model handshake.
+
+We're relaxing the boundary: **drivers own discovery, by whatever
+means.** Reading provider skill directories from disk is acceptable
+when no live SDK channel exists. The renderer still never touches disk
+for skills, and the wire `Skill` shape is unchanged. The driver
+remains the authority and is the single place to update if a provider
+moves its discovery format.
+
+Concretely for 0.03:
+
+- **Claude driver** scans `~/.claude/skills/`,
+  `~/.claude/plugins/*/skills/`, and `<projectCwd>/.claude/skills/`
+  directly, parsing `SKILL.md` frontmatter (`name`, `description`,
+  `argument-hint`, `allowed-tools`).
+- **Codex driver** scans `~/.codex/prompts/` and
+  `<projectCwd>/.codex/prompts/`, accepting either YAML frontmatter or
+  filename-derived names.
+- A future iteration may swap to SDK / RPC discovery (e.g. when the
+  Claude SDK exposes a session-less listing) — the renderer surface
+  doesn't change.

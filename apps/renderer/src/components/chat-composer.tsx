@@ -1,4 +1,13 @@
-import { Check, ChevronDown, Gauge, Send, Square } from "lucide-react";
+import type { EditorView } from "@codemirror/view";
+import {
+  Check,
+  ChevronDown,
+  Gauge,
+  Paperclip,
+  Send,
+  Square,
+  Upload,
+} from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -12,7 +21,30 @@ import {
 
 import { Card, CardPanel } from "~/components/ui/card";
 import { Frame, FrameFooter } from "~/components/ui/frame";
+import {
+  composerDoc,
+  createComposerView,
+  replaceWithChip,
+  setComposerDoc,
+  type ActiveTrigger,
+} from "~/lib/codemirror/composer";
+import {
+  addChipEffect,
+  clearChipsEffect,
+  updateImageChipEffect,
+} from "~/lib/codemirror/composer-chips";
+import { useAttachmentsStore } from "../store/attachments.ts";
+import { useComposerBridge } from "../store/composer-bridge.ts";
 import { cn } from "~/lib/utils";
+import {
+  matchBuiltin,
+  type BuiltinCommand,
+} from "../composer/builtin-commands.ts";
+import { parseComposerInput } from "../composer/segment-parser.ts";
+import { FileChipHover } from "./composer/file-chip-hover.tsx";
+import { FileTagPopover } from "./composer/file-tag-popover.tsx";
+import { QueueTray } from "./composer/queue-tray.tsx";
+import { SlashCommandPopover } from "./composer/slash-command-popover.tsx";
 import {
   Menu,
   MenuGroup,
@@ -40,9 +72,7 @@ import { MODES_ORDER, MODE_META } from "./runtime-mode-meta.ts";
 
 const MIN_HEIGHT = 56;
 const MAX_HEIGHT = 240;
-
-// Stable empty-array reference; see chat-view.tsx for rationale.
-const EMPTY_MESSAGES: ReadonlyArray<Message> = [];
+const MAX_ATTACHMENTS_PER_TURN = 20;
 
 type ReasoningLevel = "low" | "medium" | "high";
 const REASONING_LEVELS: ReadonlyArray<ReasoningLevel> = [
@@ -53,63 +83,364 @@ const REASONING_LEVELS: ReadonlyArray<ReasoningLevel> = [
 
 export function ChatComposer({ session }: { session: Session }) {
   const sessionId: SessionId = session.id;
-  const messages = useMessagesStore(
-    (s) => s.messagesBySession[sessionId] ?? EMPTY_MESSAGES,
-  );
   const inFlight = useMessagesStore(
     (s) => s.runningBySession[sessionId] === true,
   );
   const send = useMessagesStore((s) => s.send);
   const interrupt = useMessagesStore((s) => s.interrupt);
+  const queue = useMessagesStore((s) => s.queue);
 
-  const [value, setValue] = useState("");
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [hasText, setHasText] = useState(false);
+  const [trigger, setTrigger] = useState<ActiveTrigger | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const editorHostRef = useRef<HTMLDivElement | null>(null);
+  const editorViewRef = useRef<EditorView | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const dragDepthRef = useRef(0);
+  const uploadOne = useAttachmentsStore((s) => s.uploadOne);
+  const forgetActive = useAttachmentsStore((s) => s.forgetActive);
+  // Submit reads through a ref so the keymap, captured at editor creation
+  // time, always sees the current sessionId / send / inFlight without
+  // recreating the editor on every render.
+  const submitRef = useRef<() => boolean>(() => false);
+  // Same indirection for file drops — the editor extension is bound once
+  // and we want it to call the latest closure with the current sessionId.
+  const filesDroppedRef = useRef<(files: ReadonlyArray<File>) => void>(
+    () => undefined,
+  );
 
-  // Send is gated only on having text. The composer also swaps to an Interrupt
-  // button while in-flight, so users always have one valid action visible.
-  const canSend = value.trim().length > 0;
+  const setModel = useSessionsStore((s) => s.setModel);
+  const setRuntimeMode = useSessionsStore((s) => s.setRuntimeMode);
 
-  const submit = async () => {
-    const text = value.trim();
-    if (text.length === 0) return;
-    setValue("");
-    if (textareaRef.current !== null) {
-      textareaRef.current.style.height = `${MIN_HEIGHT}px`;
-    }
-    await send(sessionId, text);
+  const canSend = hasText;
+
+  // Mount the CodeMirror view once per ChatComposer instance. Switching
+  // sessions remounts the component (`session.id` is the chat-view key),
+  // so we don't have to swap docs in-place here.
+  useEffect(() => {
+    const host = editorHostRef.current;
+    if (host === null) return;
+
+    const view = createComposerView({
+      parent: host,
+      placeholderText:
+        "Ask to make changes at the @ mentioned files or run slash commands, shift enter for next line.",
+      callbacks: {
+        onSubmit: () => submitRef.current(),
+        onChange: (doc) => setHasText(doc.trim().length > 0),
+        onTrigger: (t) => setTrigger(t),
+        onFilesDropped: (files) => filesDroppedRef.current(files),
+      },
+    });
+    editorViewRef.current = view;
+    view.focus();
+
+    // Register imperative entrypoints on the composer bridge so the file tree
+    // (and the top-bar workflow buttons) can drop chips / text into this view
+    // without prop-drilling the EditorView ref.
+    const bridge = useComposerBridge.getState();
+    bridge.setAttachFile((ref) => {
+      const v = editorViewRef.current;
+      if (v === null) return;
+      const sel = v.state.selection.main;
+      const token = `@${ref.relPath}`;
+      replaceWithChip(v, sel.head, sel.head, token, {
+        kind: "file",
+        relPath: ref.relPath,
+        absPath: ref.absPath,
+        entryKind: ref.kind,
+      });
+    });
+    bridge.setInsertText((text) => {
+      const v = editorViewRef.current;
+      if (v === null) return;
+      const sel = v.state.selection.main;
+      const insert = text + " ";
+      v.dispatch({
+        changes: { from: sel.head, to: sel.head, insert },
+        selection: { anchor: sel.head + insert.length },
+      });
+      v.focus();
+    });
+
+    return () => {
+      const b = useComposerBridge.getState();
+      b.setAttachFile(null);
+      b.setInsertText(null);
+      view.destroy();
+      editorViewRef.current = null;
+    };
+  }, []);
+
+  const clearComposer = (view: EditorView): void => {
+    setComposerDoc(view, "");
+    view.dispatch({ effects: clearChipsEffect.of() });
+    setHasText(false);
+    setTrigger(null);
   };
 
-  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+  const dispatchBuiltin = (parsed: {
+    command: BuiltinCommand;
+    args: string;
+  }): void => {
+    switch (parsed.command.name) {
+      case "clear":
+        // Editor is already cleared by the caller; nothing else to do.
+        break;
+      case "model":
+        if (parsed.args) void setModel(sessionId, parsed.args);
+        break;
+      case "mode":
+        if (
+          parsed.args === "approval-required" ||
+          parsed.args === "auto-accept-edits" ||
+          parsed.args === "full-access"
+        ) {
+          void setRuntimeMode(sessionId, parsed.args);
+        }
+        break;
+      case "new":
+      case "help":
+        // `/new` and `/help` are wired in a follow-up — for 0.03 we accept
+        // them silently rather than show an error toast that doesn't yet
+        // have a destination.
+        break;
+    }
+  };
+
+  /**
+   * Insert chips for `files`. Image files render with a thumbnail; other types
+   * (PDFs, docs, archives) get a generic file-icon chip. The chip's underlying
+   * token swaps from a temp id to a `forkzero://attachments/<id>` URL once the
+   * upload resolves. Files beyond the per-turn cap are dropped with a warning.
+   */
+  const attachFiles = (files: readonly File[]): void => {
+    const view = editorViewRef.current;
+    if (view === null || files.length === 0) return;
+
+    const accepted = files.slice(0, MAX_ATTACHMENTS_PER_TURN);
+    if (files.length > MAX_ATTACHMENTS_PER_TURN) {
+      console.warn(
+        `Maximum ${MAX_ATTACHMENTS_PER_TURN} attachments per turn — ${
+          files.length - MAX_ATTACHMENTS_PER_TURN
+        } file(s) dropped`,
+      );
+    }
+
+    for (const file of accepted) {
+      const tempId = `pending-${Math.random().toString(36).slice(2, 10)}`;
+      const isImage = file.type.startsWith("image/");
+      const blobUrl = isImage ? URL.createObjectURL(file) : "";
+      const token = `[image:${tempId}]`;
+      const sel = view.state.selection.main;
+      const insertText = token + " ";
+      const chipFrom = sel.from;
+      const chipTo = sel.from + token.length;
+
+      view.dispatch({
+        changes: { from: sel.from, to: sel.to, insert: insertText },
+        selection: { anchor: sel.from + insertText.length },
+        effects: addChipEffect.of({
+          from: chipFrom,
+          to: chipTo,
+          meta: {
+            kind: "image",
+            id: tempId,
+            mimeType: file.type || "application/octet-stream",
+            originalName: file.name,
+            previewUrl: blobUrl,
+          },
+        }),
+      });
+
+      void uploadOne(sessionId, file)
+        .then((ref) => {
+          const finalUrl = isImage ? `forkzero://attachments/${ref.id}` : "";
+          editorViewRef.current?.dispatch({
+            effects: updateImageChipEffect.of({
+              previousId: tempId,
+              meta: {
+                kind: "image",
+                id: ref.id,
+                mimeType: ref.mimeType,
+                originalName: ref.originalName,
+                previewUrl: finalUrl,
+              },
+            }),
+          });
+        })
+        .catch((err) => {
+          console.error("[chat-composer] upload failed", err);
+        })
+        .finally(() => {
+          if (blobUrl) URL.revokeObjectURL(blobUrl);
+        });
+    }
+  };
+
+  // Paperclip → hidden file input.
+  const onPickFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files === null) return;
+    attachFiles(Array.from(files));
+    e.target.value = "";
+  };
+
+  // Paste handler — accepts any file type pasted into the composer (images,
+  // PDFs, docs, etc.).
+  const onPaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const files: File[] = [];
+    for (const it of Array.from(items)) {
+      if (it.kind === "file") {
+        const f = it.getAsFile();
+        if (f) files.push(f);
+      }
+    }
+    if (files.length > 0) {
       e.preventDefault();
-      void submit();
+      attachFiles(files);
     }
   };
 
-  // Auto-grow the textarea up to MAX_HEIGHT, then scroll internally.
-  const onChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setValue(e.target.value);
-    const ta = e.target;
-    ta.style.height = "0px";
-    ta.style.height = `${Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, ta.scrollHeight))}px`;
+  const onDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+    dragDepthRef.current += 1;
+    setIsDragging(true);
+  };
+  const onDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    if (e.dataTransfer.types.includes("Files")) {
+      // Both calls are required: preventDefault marks the element as a
+      // valid drop target, dropEffect tells the OS what cursor to show.
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+    }
+  };
+  const onDragLeave = () => {
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setIsDragging(false);
+  };
+  const onDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    dragDepthRef.current = 0;
+    setIsDragging(false);
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) attachFiles(files);
+  };
+
+  // Forget any stale tempId-keyed attachments when the composer unmounts —
+  // the heartbeat tracks ids, so dropping unattached blobs is enough to
+  // let the GC reap them.
+  useEffect(
+    () => () => {
+      // No-op for now: forgetActive is called per-id only when a chip is
+      // dropped explicitly. Server GC handles long-lived orphans.
+      void forgetActive;
+    },
+    [forgetActive],
+  );
+
+  const submit = (): boolean => {
+    // Don't submit while a popover is open — Enter belongs to the popover.
+    if (trigger !== null) return false;
+
+    const view = editorViewRef.current;
+    if (view === null) return false;
+    const docText = composerDoc(view).trim();
+    if (docText.length === 0) return false;
+
+    const builtin = matchBuiltin(docText, session.providerId);
+    if (builtin !== null) {
+      clearComposer(view);
+      dispatchBuiltin(builtin);
+      return true;
+    }
+
+    const input = parseComposerInput(view.state, session.providerId);
+    clearComposer(view);
+    if (inFlight) {
+      // Mid-turn submit becomes a queue chip; auto-flushed when the turn
+      // ends or steered manually.
+      queue(sessionId, input);
+    } else {
+      void send(sessionId, input);
+    }
+    return true;
+  };
+
+  // Keep the keymap-bound submit pointing at the latest closure so it sees
+  // the current sessionId after a session switch / re-render.
+  submitRef.current = submit;
+  filesDroppedRef.current = (files) => {
+    // CM's drop handler stops propagation so our React onDrop never fires —
+    // clear the drag overlay state here instead.
+    dragDepthRef.current = 0;
+    setIsDragging(false);
+    attachFiles(files);
   };
 
   return (
-    <TooltipProvider>
+    <TooltipProvider delay={0}>
       <div className="shrink-0 px-3 pb-3 pt-2">
-        <div className="mx-auto max-w-3xl">
-          <Frame className="bg-muted/40">
-            <Card className="rounded-xl border-border/50">
-              <CardPanel className="flex items-end gap-2 px-3 py-2">
-                <textarea
-                  ref={textareaRef}
-                  value={value}
-                  onChange={onChange}
-                  onKeyDown={onKeyDown}
-                  placeholder="Send a message…  ⌘+Enter to send"
-                  rows={1}
-                  style={{ height: MIN_HEIGHT }}
-                  className="flex-1 resize-none bg-transparent px-1 py-1 text-sm leading-relaxed outline-none placeholder:text-muted-foreground"
+        <div className="mx-auto">
+          <Frame>
+            <Card
+              className="rounded-xl border-border/50 min-h-30"
+              onDragEnter={onDragEnter}
+              onDragOver={onDragOver}
+              onDragLeave={onDragLeave}
+              onDrop={onDrop}
+              onPaste={onPaste}
+            >
+              {isDragging && (
+                <div className="pointer-events-none absolute inset-1 z-40 flex items-center justify-center rounded-lg border border-dashed border-accent-foreground/40 bg-popover/80 backdrop-blur-sm">
+                  <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                    <Upload className="size-3.5" />
+                    <span>Drop files to attach</span>
+                  </div>
+                </div>
+              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                hidden
+                onChange={onPickFiles}
+              />
+              <QueueTray sessionId={sessionId} />
+              <CardPanel className="relative flex items-stretch gap-2 px-3 py-2">
+                {trigger !== null && editorViewRef.current !== null ? (
+                  trigger.kind === "slash" ? (
+                    <SlashCommandPopover
+                      trigger={trigger}
+                      view={editorViewRef.current}
+                      sessionId={sessionId}
+                      providerId={session.providerId}
+                      onClose={() => setTrigger(null)}
+                    />
+                  ) : (
+                    <FileTagPopover
+                      trigger={trigger}
+                      view={editorViewRef.current}
+                      projectId={session.projectId}
+                      onClose={() => setTrigger(null)}
+                    />
+                  )
+                ) : null}
+                <div
+                  ref={editorHostRef}
+                  className="flex-1 overflow-y-auto bg-transparent text-sm leading-relaxed outline-none"
+                  style={{
+                    minHeight: MIN_HEIGHT,
+                    maxHeight: MAX_HEIGHT,
+                  }}
+                  onClick={() => editorViewRef.current?.focus()}
+                />
+                <FileChipHover
+                  hostRef={editorHostRef}
+                  projectId={session.projectId}
                 />
                 {inFlight ? (
                   <Tooltip>
@@ -119,7 +450,7 @@ export function ChatComposer({ session }: { session: Session }) {
                           type="button"
                           onClick={() => void interrupt(sessionId)}
                           aria-label="Interrupt"
-                          className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-destructive text-destructive-foreground transition-opacity hover:opacity-90"
+                          className="flex size-8 shrink-0 self-end items-center justify-center rounded-lg border border-border/60 bg-background text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
                         >
                           <Square className="size-3.5" />
                         </button>
@@ -136,19 +467,36 @@ export function ChatComposer({ session }: { session: Session }) {
                           onClick={() => void submit()}
                           disabled={!canSend}
                           aria-label="Send"
-                          className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                          className="flex size-8 shrink-0 self-end items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           <Send className="size-3.5" />
                         </button>
                       }
                     />
-                    <TooltipPopup>Send (⌘+Enter)</TooltipPopup>
+                    <TooltipPopup>Send (Enter)</TooltipPopup>
                   </Tooltip>
                 )}
               </CardPanel>
             </Card>
             <FrameFooter className="flex items-center justify-between gap-2 px-2 py-1.5">
               <div className="flex items-center gap-1.5">
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        aria-label="Attach files"
+                        className="flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                      >
+                        <Paperclip className="size-3.5" />
+                      </button>
+                    }
+                  />
+                  <TooltipPopup>
+                    Attach files (paste / drop also work)
+                  </TooltipPopup>
+                </Tooltip>
                 <ModelPicker
                   sessionId={sessionId}
                   providerId={session.providerId}
@@ -162,7 +510,7 @@ export function ChatComposer({ session }: { session: Session }) {
                   sessionId={sessionId}
                   current={session.runtimeMode}
                 />
-                <TurnTimer messages={messages} inFlight={inFlight} />
+                <SessionTimer sessionId={sessionId} inFlight={inFlight} />
               </div>
             </FrameFooter>
           </Frame>
@@ -357,62 +705,81 @@ function ReasoningPicker({ sessionId }: { sessionId: SessionId }) {
   );
 }
 
-const formatElapsed = (ms: number): string => {
-  const totalSec = ms / 1000;
-  if (totalSec < 60) return `${totalSec.toFixed(1)}s`;
+const formatCoarse = (ms: number): string => {
+  const totalSec = Math.floor(ms / 1000);
+  if (totalSec < 60) return `${totalSec}s`;
   const min = Math.floor(totalSec / 60);
-  const sec = totalSec - min * 60;
-  return `${min}m ${sec.toFixed(1)}s`;
+  if (min < 60) return `${min}m`;
+  const hours = Math.floor(min / 60);
+  const mins = min - hours * 60;
+  return mins === 0 ? `${hours}h` : `${hours}h ${mins}m`;
 };
 
 /**
- * Live elapsed time for the current turn. Anchors to the most recent user
- * message; ticks while the turn is in flight, then freezes the final value
- * once the assistant lands so the user can see how long the turn took.
+ * Sum of every turn's duration in this session — start = user message,
+ * end = last message of that turn (or `now` for the in-flight turn). Idle
+ * gaps between a finished assistant reply and the next user prompt are
+ * NOT counted, so an old session that's been sitting open doesn't claim
+ * "47h" of work.
  */
-function TurnTimer({
-  messages,
+function SessionTimer({
+  sessionId,
   inFlight,
 }: {
-  messages: ReadonlyArray<Message>;
+  sessionId: SessionId;
   inFlight: boolean;
 }) {
-  const anchorMs = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i]!;
-      if (m.content._tag === "user") return m.createdAt.getTime();
-    }
-    return null;
-  }, [messages]);
+  const messages = useMessagesStore(
+    (s) => s.messagesBySession[sessionId] ?? EMPTY_MESSAGES,
+  );
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!inFlight) return;
-    const id = window.setInterval(() => setNow(Date.now()), 100);
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, [inFlight]);
 
-  if (anchorMs === null) {
-    return <span className="text-[10px] text-muted-foreground">idle</span>;
-  }
+  const totalElapsed = useMemo(() => {
+    let total = 0;
+    let turnStart: number | null = null;
+    let turnLastMs: number | null = null;
+    let turnIsLast = false;
 
-  // Freeze on the final assistant/tool-result timestamp once the turn ends, so
-  // the displayed value matches the actual turn duration instead of "time
-  // since user spoke".
-  const endMs = inFlight
-    ? now
-    : (messages[messages.length - 1]?.createdAt.getTime() ?? now);
-  const elapsed = Math.max(0, endMs - anchorMs);
+    const closeTurn = (endOverride?: number) => {
+      if (turnStart === null) return;
+      const end = endOverride ?? turnLastMs ?? turnStart;
+      total += Math.max(0, end - turnStart);
+    };
+
+    for (let i = 0; i < messages.length; i++) {
+      const m = messages[i]!;
+      if (m.content._tag === "user") {
+        if (turnStart !== null) closeTurn();
+        turnStart = m.createdAt.getTime();
+        turnLastMs = turnStart;
+        turnIsLast = i === messages.length - 1;
+      } else if (turnStart !== null) {
+        turnLastMs = m.createdAt.getTime();
+        turnIsLast = i === messages.length - 1;
+      }
+    }
+    if (turnStart !== null) {
+      // The in-flight turn keeps growing until the next message lands; for
+      // a completed last turn we freeze at its final message timestamp.
+      closeTurn(inFlight && turnIsLast !== false ? now : undefined);
+    }
+    return total;
+  }, [messages, inFlight, now]);
+
+  if (messages.length === 0) return null;
 
   return (
     <span
-      className={`tabular-nums text-[10px] ${
-        inFlight ? "text-foreground" : "text-muted-foreground"
-      }`}
-      title={inFlight ? "Time on the current turn" : "Last turn duration"}
+      className="rounded-md border border-border/60 bg-background px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground"
+      title="Total time spent across all turns in this session"
     >
-      {inFlight ? "● " : ""}
-      {formatElapsed(elapsed)}
+      {formatCoarse(totalElapsed)}
     </span>
   );
 }
@@ -449,3 +816,5 @@ function SubagentsChip() {
     </button>
   );
 }
+
+const EMPTY_MESSAGES: ReadonlyArray<Message> = [];

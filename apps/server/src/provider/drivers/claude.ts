@@ -310,6 +310,7 @@ const translate = (
             preview: summarize(text),
           });
           if (!state.emittedThinkingThisTurn) {
+            state.emittedThinkingThisTurn = true;
             out.push({
               _tag: "Thinking",
               itemId: nextItemId(),
@@ -323,6 +324,7 @@ const translate = (
             emittedFromDeltasThisTurn: state.emittedThinkingThisTurn,
           });
           if (!state.emittedThinkingThisTurn) {
+            state.emittedThinkingThisTurn = true;
             out.push({
               _tag: "Thinking",
               itemId: nextItemId(),
@@ -427,6 +429,11 @@ const translate = (
         signatureLen: acc.signatureLength,
         textPreview: summarize(acc.text),
       });
+      // If the assistant-message path already emitted thinking for this
+      // turn (rare ordering: full message arrives before trailing
+      // content_block_stop), skip — otherwise we render the same thought
+      // twice.
+      if (state.emittedThinkingThisTurn) return [];
       if (acc.kind === "redacted_thinking") {
         state.emittedThinkingThisTurn = true;
         return [

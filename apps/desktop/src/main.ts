@@ -1,11 +1,33 @@
 import { RpcSerialization } from "@effect/rpc";
-import { app, BrowserWindow, dialog } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from "electron";
 import { Effect, Fiber, Layer } from "effect";
+import * as fs from "node:fs/promises";
 import * as Path from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { makeMainLayer } from "@forkzero/server";
 
 import { electronServerProtocolLayer } from "./ipc/electron-server-protocol.ts";
+
+/**
+ * Privileged scheme registration. Must run before `app.whenReady()` —
+ * Electron freezes the scheme registry once the app is ready, so a late
+ * call silently fails and `<img src="forkzero://...">` errors out with no
+ * obvious cause. `secure: true` puts the scheme in the same trust class as
+ * `https`; `supportFetchAPI` lets the renderer use `fetch()` against it;
+ * `stream: true` lets us hand back a body that the renderer can stream.
+ */
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "forkzero",
+    privileges: {
+      secure: true,
+      standard: true,
+      supportFetchAPI: true,
+      stream: true,
+    },
+  },
+]);
 
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL?.trim() || "";
 const isDevelopment = Boolean(DEV_SERVER_URL);
@@ -67,6 +89,37 @@ function createMainWindow() {
   // Avoid the white flash that transparent windows show before first paint.
   mainWindow.once("ready-to-show", () => mainWindow?.show());
 
+  // Renderer needs to know fullscreen state to drop the macOS traffic-light
+  // gutter (the controls hide in native fullscreen, so the 80px reserve is
+  // dead space). We push the current state on first paint plus on every
+  // toggle — a fresh boot in fullscreen still gets the initial value.
+  const sendFullScreenState = () => {
+    if (mainWindow === null) return;
+    mainWindow.webContents.send(
+      "window:fullscreen",
+      mainWindow.isFullScreen(),
+    );
+  };
+  mainWindow.on("enter-full-screen", sendFullScreenState);
+  mainWindow.on("leave-full-screen", sendFullScreenState);
+  mainWindow.webContents.on("did-finish-load", sendFullScreenState);
+
+  // Hand off http(s) URLs to the OS default browser via `shell.openExternal`
+  // — the renderer asked to leave Electron, not to host another Chromium
+  // window inside the app. Allowlist scheme so the bridge can't be coaxed
+  // into running arbitrary shell URI handlers.
+  ipcMain.on("app:openExternal", (_event, rawUrl: unknown) => {
+    if (typeof rawUrl !== "string") return;
+    let parsed: URL;
+    try {
+      parsed = new URL(rawUrl);
+    } catch {
+      return;
+    }
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return;
+    void shell.openExternal(parsed.toString());
+  });
+
   // Boot the Effect runtime once the window's webContents exists. The RPC
   // server protocol is bound to this webContents, so a window restart means
   // a fresh runtime — the only Effect.runFork in the main process.
@@ -126,7 +179,68 @@ function createMainWindow() {
   });
 }
 
+/**
+ * Resolve `forkzero://attachments/<id>` to a file under
+ * `<userDataDir>/attachments/`. The id has no extension on the wire so we
+ * scan the directory for a file with the matching stem. Anything outside
+ * the host `attachments` is rejected — no path traversal, no other hosts.
+ */
+const ATTACHMENTS_HOST = "attachments";
+
+const MIME_BY_EXT: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  webp: "image/webp",
+  gif: "image/gif",
+  avif: "image/avif",
+};
+
+const registerForkzeroProtocol = (): void => {
+  const attachmentsDir = Path.join(app.getPath("userData"), "attachments");
+
+  protocol.handle("forkzero", async (request) => {
+    const url = new URL(request.url);
+    if (url.host !== ATTACHMENTS_HOST) {
+      return new Response(null, { status: 404 });
+    }
+
+    // The path is `/<id>`; sanitise to a single segment so a crafted url
+    // like `forkzero://attachments/../foo` cannot escape `attachmentsDir`.
+    const id = decodeURIComponent(url.pathname.replace(/^\//, ""));
+    if (!id || id.includes("/") || id.includes("\\") || id.includes("..")) {
+      return new Response(null, { status: 400 });
+    }
+
+    let entries: string[];
+    try {
+      entries = await fs.readdir(attachmentsDir);
+    } catch {
+      return new Response(null, { status: 404 });
+    }
+    const filename = entries.find((name) => {
+      const dot = name.lastIndexOf(".");
+      return dot > 0 && name.slice(0, dot) === id;
+    });
+    if (!filename) return new Response(null, { status: 404 });
+
+    const absPath = Path.join(attachmentsDir, filename);
+    const ext = filename.slice(filename.lastIndexOf(".") + 1).toLowerCase();
+    const mime = MIME_BY_EXT[ext] ?? "application/octet-stream";
+
+    const response = await net.fetch(pathToFileURL(absPath).toString());
+    const headers = new Headers(response.headers);
+    headers.set("content-type", mime);
+    headers.set("cache-control", "private, max-age=31536000, immutable");
+    return new Response(response.body, {
+      status: response.status,
+      headers,
+    });
+  });
+};
+
 void app.whenReady().then(() => {
+  registerForkzeroProtocol();
   createMainWindow();
 
   app.on("activate", () => {

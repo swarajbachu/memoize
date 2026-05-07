@@ -1,4 +1,6 @@
 export * from "./agent.ts";
+export * from "./attachment.ts";
+export * from "./composer.ts";
 export * from "./fs.ts";
 export * from "./git.ts";
 export * from "./ids.ts";
@@ -7,4 +9,5 @@ export * from "./ping.ts";
 export * from "./pty.ts";
 export * from "./rpc.ts";
 export * from "./session.ts";
+export * from "./skill.ts";
 export * from "./workspace.ts";

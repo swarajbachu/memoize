@@ -14,7 +14,7 @@ import { Effect } from "effect";
  *    session re-passes the same roster into `provider.start`, preserving
  *    the sub-agent set across reloads.
  */
-export const Migration0006Subagents = Effect.gen(function* () {
+export const Migration0007Subagents = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
 
   yield* sql`

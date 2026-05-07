@@ -23,6 +23,21 @@ const bridge = {
       };
     },
   },
+  window: {
+    onFullScreenChange: (handler: (fullscreen: boolean) => void) => {
+      const wrapped = (_event: IpcRendererEvent, value: boolean) =>
+        handler(value);
+      ipcRenderer.on("window:fullscreen", wrapped);
+      return () => {
+        ipcRenderer.off("window:fullscreen", wrapped);
+      };
+    },
+  },
+  app: {
+    openExternal: (url: string) => {
+      ipcRenderer.send("app:openExternal", url);
+    },
+  },
 };
 
 contextBridge.exposeInMainWorld("forkzero", bridge);

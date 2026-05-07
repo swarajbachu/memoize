@@ -1,6 +1,7 @@
 import { ForkzeroRpcs } from "@forkzero/wire";
 import { Effect, Layer } from "effect";
 
+import { FileSearchService } from "./services/file-search.ts";
 import { FolderPicker } from "./services/folder-picker.ts";
 import { WorkspaceService } from "./services/workspace-service.ts";
 
@@ -35,6 +36,14 @@ const SetSelected = ForkzeroRpcs.toLayerHandler(
     Effect.flatMap(WorkspaceService, (ws) => ws.setSelected(folderId)),
 );
 
+const SearchFiles = ForkzeroRpcs.toLayerHandler(
+  "workspace.searchFiles",
+  ({ projectId, query, limit }) =>
+    Effect.flatMap(FileSearchService, (svc) =>
+      svc.search(projectId, query, limit),
+    ),
+);
+
 export const WorkspaceHandlersLayer = Layer.mergeAll(
   Add,
   List,
@@ -42,4 +51,5 @@ export const WorkspaceHandlersLayer = Layer.mergeAll(
   PickFolder,
   GetSelected,
   SetSelected,
+  SearchFiles,
 );

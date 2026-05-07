@@ -5,6 +5,7 @@ import { Layer } from "effect";
 import { ForkzeroRpcs } from "@forkzero/wire";
 
 import { AppPaths } from "./app-paths.ts";
+import { AttachmentServiceLive } from "./attachment/layers/attachment-service.ts";
 import { FsServiceLive } from "./fs/layers/fs-service.ts";
 import { GitServiceLive } from "./git/layers/git-service.ts";
 import { HandlersLayer } from "./handlers.ts";
@@ -17,8 +18,11 @@ import { MessageStoreLive } from "./provider/layers/message-store.ts";
 import { PermissionServiceLive } from "./provider/layers/permission-service.ts";
 import { ProviderServiceLive } from "./provider/layers/provider-service.ts";
 import { PtyServiceLive } from "./pty/layers/pty-service.ts";
-import { FolderPicker } from "./workspace/services/folder-picker.ts";
+import { SkillBridgeLive } from "./skill/layers/skill-bridge.ts";
+import { SkillDiscoveryServiceLive } from "./skill/layers/skill-discovery.ts";
+import { FileSearchServiceLive } from "./workspace/layers/file-search.ts";
 import { WorkspaceServiceLive } from "./workspace/layers/workspace-service.ts";
+import { FolderPicker } from "./workspace/services/folder-picker.ts";
 
 /**
  * Inputs to `makeMainLayer`. The host shell (today: Electron in
@@ -88,6 +92,13 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(NodeContext.layer),
   );
 
+  // FileSearchService backs the composer's `@` file picker. Same deps as
+  // FsLayer — recursive walk skipping common heavy directories.
+  const FileSearchLayer = FileSearchServiceLive.pipe(
+    Layer.provide(WorkspaceLayer),
+    Layer.provide(NodeContext.layer),
+  );
+
   // PermissionService brokers between the SDK permission callback (driver
   // side) and the renderer toast (RPC side). It writes decisions to
   // SQLite so an `AllowForSession` row survives a process crash and the
@@ -124,14 +135,39 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(NdjsonLoggerLayer),
   );
 
+  // AttachmentService writes uploaded image bytes under userData and runs
+  // the GC sweep that reaps orphaned blobs. Disk I/O comes from
+  // NodeContext; persistence joins MigratedSqlite.
+  const AttachmentLayer = AttachmentServiceLive.pipe(
+    Layer.provide(MigratedSqlite),
+    Layer.provide(AppPathsLayer),
+    Layer.provide(NodeContext.layer),
+  );
+
+  // SkillBridge surfaces the user's per-provider skill library to the
+  // composer's slash popover. Discovery walks disk; the bridge caches per
+  // (provider, projectCwd) and re-emits on watcher fire so editing a
+  // SKILL.md updates the popover within ~2 s.
+  const SkillDiscoveryLayer = SkillDiscoveryServiceLive.pipe(
+    Layer.provide(NodeContext.layer),
+  );
+  const SkillBridgeLayer = SkillBridgeLive.pipe(
+    Layer.provide(SkillDiscoveryLayer),
+    Layer.provide(MessageStoreLayer),
+    Layer.provide(WorkspaceLayer),
+  );
+
   const Handlers = HandlersLayer.pipe(
     Layer.provide(WorkspaceLayer),
     Layer.provide(PtyServiceLive),
     Layer.provide(GitLayer),
     Layer.provide(FsLayer),
+    Layer.provide(FileSearchLayer),
     Layer.provide(ProviderLayer),
     Layer.provide(MessageStoreLayer),
     Layer.provide(PermissionLayer),
+    Layer.provide(AttachmentLayer),
+    Layer.provide(SkillBridgeLayer),
     Layer.provide(FolderPickerLayer),
   );
 

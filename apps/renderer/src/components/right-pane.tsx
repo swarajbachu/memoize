@@ -1,11 +1,15 @@
-import { FolderTree, TerminalSquare } from "lucide-react";
+import { CircleDot, FolderTree, Loader2, TerminalSquare } from "lucide-react";
 import { useState } from "react";
 
+import { usePrStateStore } from "../store/pr-state.ts";
 import { useWorkspaceStore } from "../store/workspace.ts";
+import { ChecksPane } from "./checks-pane.tsx";
 import { FileTree } from "./file-tree.tsx";
+import { RightPaneHeader } from "./right-pane-header.tsx";
 import { TerminalPane } from "./terminal-pane.tsx";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip.tsx";
 
-type Tab = "files" | "terminal";
+type Tab = "files" | "terminal" | "checks";
 
 /**
  * Right-pane shell with two tabs: project file tree and a single PTY scoped
@@ -19,22 +23,52 @@ export function RightPane() {
   const selected = selectedFolderId
     ? (folders.find((f) => f.id === selectedFolderId) ?? null)
     : null;
+  const pr = usePrStateStore((s) =>
+    selectedFolderId ? (s.byFolder[selectedFolderId] ?? null) : null,
+  );
   const [tab, setTab] = useState<Tab>("files");
 
+  // Tiny status glyph next to the "Checks" tab so users get a glance of CI
+  // health without expanding the tab. Mirrors what the top bar's badge tone
+  // signals when the user is on Files / Terminal.
+  let checksGlyph: React.ReactNode = (
+    <CircleDot className="size-3.5 text-muted-foreground" />
+  );
+  if (pr && pr.state === "open" && !pr.isDraft) {
+    if (pr.checks === "pending")
+      checksGlyph = (
+        <Loader2 className="size-3.5 animate-spin text-amber-300" />
+      );
+    else if (pr.checks === "failure")
+      checksGlyph = <span className="size-2 rounded-full bg-red-400" />;
+    else if (pr.checks === "success")
+      checksGlyph = <span className="size-2 rounded-full bg-emerald-400" />;
+  }
+
   return (
-    <aside className="flex h-full min-h-0 w-full flex-col bg-zinc-950">
+    <aside className="flex h-full min-h-0 w-full flex-col">
+      {selected ? <RightPaneHeader projectName={selected.name} /> : null}
       <div className="flex h-9 shrink-0 items-center gap-0.5 border-b border-border px-1 text-xs">
         <TabButton
           active={tab === "files"}
           onClick={() => setTab("files")}
           icon={<FolderTree className="size-3.5" />}
           label="Files"
+          tooltip="Browse project files"
         />
         <TabButton
           active={tab === "terminal"}
           onClick={() => setTab("terminal")}
           icon={<TerminalSquare className="size-3.5" />}
           label="Terminal"
+          tooltip="Open a terminal in the project root"
+        />
+        <TabButton
+          active={tab === "checks"}
+          onClick={() => setTab("checks")}
+          icon={checksGlyph}
+          label="Checks"
+          tooltip="Branch + PR + CI status for this project"
         />
       </div>
       <div className="flex min-h-0 flex-1 flex-col">
@@ -53,6 +87,9 @@ export function RightPane() {
             <div hidden={tab !== "terminal"} className="min-h-0 flex-1">
               <TerminalPane />
             </div>
+            <div hidden={tab !== "checks"} className="min-h-0 flex-1">
+              <ChecksPane folderId={selected.id} />
+            </div>
           </>
         )}
       </div>
@@ -65,24 +102,33 @@ function TabButton({
   onClick,
   icon,
   label,
+  tooltip,
 }: {
   active: boolean;
   onClick: () => void;
   icon: React.ReactNode;
   label: string;
+  tooltip: string;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex items-center gap-1.5 rounded px-2 py-1 text-[11px] transition-colors ${
-        active
-          ? "bg-muted text-foreground"
-          : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-      }`}
-    >
-      {icon}
-      {label}
-    </button>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            onClick={onClick}
+            className={`flex items-center gap-1.5 rounded px-2 py-1 text-[11px] transition-colors ${
+              active
+                ? "bg-muted text-foreground"
+                : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+            }`}
+          >
+            {icon}
+            {label}
+          </button>
+        }
+      />
+      <TooltipPopup>{tooltip}</TooltipPopup>
+    </Tooltip>
   );
 }

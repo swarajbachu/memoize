@@ -30,10 +30,16 @@ type UiState = {
   // 0.02 hard-codes false. The future settings-page autosave toggle flips
   // this to true and a debounced save kicks in inside FileEditor.
   readonly autosave: boolean;
+  readonly leftSidebarOpen: boolean;
+  readonly rightSidebarOpen: boolean;
+  readonly isFullScreen: boolean;
   readonly setActiveMainTab: (tab: MainTab) => void;
   readonly openFileInTab: (file: OpenFile) => void;
   readonly closeFileTab: () => void;
   readonly setFileDirty: (dirty: boolean) => void;
+  readonly setLeftSidebarOpen: (open: boolean) => void;
+  readonly setRightSidebarOpen: (open: boolean) => void;
+  readonly setFullScreen: (full: boolean) => void;
 };
 
 export const useUiStore = create<UiState>((set) => ({
@@ -43,10 +49,16 @@ export const useUiStore = create<UiState>((set) => ({
   openFile: null,
   fileDirty: false,
   autosave: false,
+  leftSidebarOpen: true,
+  rightSidebarOpen: true,
+  isFullScreen: false,
   setActiveMainTab: (tab) => set({ activeMainTab: tab }),
   openFileInTab: (file) =>
     set({ openFile: file, activeMainTab: "file", fileDirty: false }),
   closeFileTab: () =>
     set({ openFile: null, activeMainTab: "chat", fileDirty: false }),
   setFileDirty: (dirty) => set({ fileDirty: dirty }),
+  setLeftSidebarOpen: (open) => set({ leftSidebarOpen: open }),
+  setRightSidebarOpen: (open) => set({ rightSidebarOpen: open }),
+  setFullScreen: (full) => set({ isFullScreen: full }),
 }));

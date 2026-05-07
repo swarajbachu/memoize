@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Fiber, Stream } from "effect";
 import {
   Archive,
   ArchiveRestore,
@@ -27,9 +27,10 @@ import {
 
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
-import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn, formatCompactNumber } from "~/lib/utils";
 import { getRpcClient } from "../lib/rpc-client.ts";
+import { useMessagesStore } from "../store/messages.ts";
 import { usePrStateStore } from "../store/pr-state.ts";
 import { useProvidersStore } from "../store/providers.ts";
 import { useSessionsStore } from "../store/sessions.ts";
@@ -38,7 +39,7 @@ import { useUiStore } from "../store/ui.ts";
 import { useWorkspaceStore } from "../store/workspace.ts";
 import { BranchIcon, type BranchState } from "./branch-icon.tsx";
 import { PermissionsInspector } from "./permissions-inspector.tsx";
-import { ProviderIcon } from "./provider-icons.tsx";
+import { GradientDescent } from "./ui/gradient-descent.tsx";
 
 const initialsOf = (name: string): string => {
   const parts = name.split(/[-_.\s]+/).filter(Boolean);
@@ -153,20 +154,24 @@ export function ProjectsSidebar() {
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
 
   return (
-    <aside className="flex h-full min-h-0 w-full flex-col bg-sidebar/80 backdrop-blur-3xl text-sidebar-foreground">
-      <div className="flex h-9 items-center justify-between px-3 text-xs uppercase tracking-wide text-muted-foreground [-webkit-app-region:drag]">
-        <span className="ml-16 select-none">forkzero</span>
-      </div>
+    <aside className="flex h-full min-h-0 w-full flex-col backdrop-blur-3xl text-sidebar-foreground">
       <div className="flex items-center justify-between px-3 py-2 text-xs text-muted-foreground">
         <span>Projects</span>
-        <button
-          type="button"
-          onClick={onAddProject}
-          className="rounded p-1 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          aria-label="Add project"
-        >
-          <Plus className="size-3.5" />
-        </button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                onClick={onAddProject}
+                className="rounded p-1 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                aria-label="Add project"
+              >
+                <Plus className="size-3.5" />
+              </button>
+            }
+          />
+          <TooltipPopup>Add project</TooltipPopup>
+        </Tooltip>
       </div>
 
       {(error ?? sessionsError) !== null && (
@@ -208,19 +213,25 @@ function SidebarFooter() {
   const view = useUiStore((s) => s.view);
   return (
     <div className="border-t border-sidebar-border/40 px-2 py-1.5">
-      <button
-        type="button"
-        onClick={() => setView("settings")}
-        className={cn(
-          "flex w-full items-center gap-2 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
-          view === "settings" &&
-            "bg-sidebar-accent/60 text-sidebar-accent-foreground",
-        )}
-        title="Settings"
-      >
-        <Settings className="size-3.5" />
-        <span>Settings</span>
-      </button>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              onClick={() => setView("settings")}
+              className={cn(
+                "flex w-full items-center gap-2 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
+                view === "settings" &&
+                  "bg-sidebar-accent/60 text-sidebar-accent-foreground",
+              )}
+            >
+              <Settings className="size-3.5" />
+              <span>Settings</span>
+            </button>
+          }
+        />
+        <TooltipPopup side="top">Open settings</TooltipPopup>
+      </Tooltip>
     </div>
   );
 }
@@ -433,7 +444,6 @@ const LOGIN_HINT: Record<ProviderId, string> = {
 };
 
 function NewSessionButton({ projectId }: { projectId: FolderId }) {
-  const availability = useProvidersStore((s) => s.availability);
   const refresh = useProvidersStore((s) => s.refresh);
   const create = useSessionsStore((s) => s.create);
   const defaultProviderId = useSettingsStore((s) => s.defaultProviderId);
@@ -441,111 +451,35 @@ function NewSessionButton({ projectId }: { projectId: FolderId }) {
     (s) => s.defaultModelByProvider,
   );
   const defaultRuntimeMode = useSettingsStore((s) => s.defaultRuntimeMode);
-  const [open, setOpen] = useState(false);
-
-  // Refresh availability every time the popover opens — catches the user
-  // running `claude /login` in their terminal without needing to restart.
-  useEffect(() => {
-    if (open) void refresh();
-  }, [open, refresh]);
-
-  const isReady = (providerId: ProviderId): boolean => {
-    const a = availability.find((x) => x.providerId === providerId);
-    if (a === undefined) return false;
-    return a.cliLoggedIn || a.hasApiKey;
-  };
-
-  const startSession = (providerId: ProviderId, model: string) => {
-    void create(projectId, providerId, model, {
-      runtimeMode: defaultRuntimeMode,
-    });
-  };
 
   const onClick = async (e: React.MouseEvent) => {
     e.stopPropagation();
     // Cheap availability refresh in case the user just logged into a CLI.
     await refresh();
-    if (isReady(defaultProviderId)) {
-      const model =
-        defaultModelByProvider[defaultProviderId] ??
-        defaultModelFor(defaultProviderId);
-      startSession(defaultProviderId, model);
-      return;
-    }
-    // Saved default isn't logged in — fall back to the popover so the user
-    // can still pick a provider that works right now.
-    setOpen(true);
-  };
-
-  const onPick = (providerId: ProviderId) => {
-    setOpen(false);
     const model =
-      defaultModelByProvider[providerId] ?? defaultModelFor(providerId);
-    startSession(providerId, model);
+      defaultModelByProvider[defaultProviderId] ??
+      defaultModelFor(defaultProviderId);
+    void create(projectId, defaultProviderId, model, {
+      runtimeMode: defaultRuntimeMode,
+    });
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
-        onClick={onClick}
-        className="rounded p-0.5 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[popup-open]:bg-sidebar-accent data-[popup-open]:text-sidebar-accent-foreground"
-        aria-label="New chat"
-        title="New chat"
-      >
-        <SquarePen className="size-3.5" />
-      </PopoverTrigger>
-      <PopoverPopup side="right" align="start" className="w-64">
-        <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-          {isReady(defaultProviderId)
-            ? "New session"
-            : "Saved default isn't ready — pick another provider"}
-        </div>
-        {availability.length === 0 && (
-          <p className="px-2 py-2 text-xs text-muted-foreground">
-            Loading providers…
-          </p>
-        )}
-        {availability.map((avail) => {
-          const ready = avail.cliLoggedIn || avail.hasApiKey;
-          const hint = !avail.cliInstalled
-            ? `Install the \`${avail.providerId}\` CLI`
-            : !ready
-              ? LOGIN_HINT[avail.providerId]
-              : null;
-          return (
-            <button
-              key={avail.providerId}
-              type="button"
-              disabled={!ready}
-              onClick={() => {
-                if (ready) onPick(avail.providerId);
-              }}
-              className={`flex w-full flex-col items-start gap-0.5 rounded px-2 py-1.5 text-left text-xs ${
-                ready
-                  ? "hover:bg-sidebar-accent"
-                  : "cursor-not-allowed opacity-60"
-              }`}
-            >
-              <div className="flex w-full items-center gap-2">
-                <ProviderIcon
-                  providerId={avail.providerId}
-                  className="size-3.5"
-                />
-                <span className="flex-1 truncate">{avail.displayName}</span>
-                <span className="text-[10px] text-muted-foreground">
-                  {ready ? "ready" : "needs login"}
-                </span>
-              </div>
-              {hint !== null && (
-                <span className="ml-5 text-[10px] text-muted-foreground">
-                  {hint}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </PopoverPopup>
-    </Popover>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            onClick={onClick}
+            className="rounded p-0.5 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            aria-label="New chat"
+          >
+            <SquarePen className="size-3.5" />
+          </button>
+        }
+      />
+      <TooltipPopup>New chat</TooltipPopup>
+    </Tooltip>
   );
 }
 
@@ -557,6 +491,49 @@ function SessionRow({ session }: { session: Session }) {
   const unarchive = useSessionsStore((s) => s.unarchive);
   const remove = useSessionsStore((s) => s.remove);
   const prInfo = usePrStateStore((s) => s.byFolder[session.projectId] ?? null);
+  // Live "agent is working" signal — replaces the branch icon while running
+  // so users scanning the sidebar see at a glance which sessions are busy
+  // even when they're focused on a different chat. The messages store only
+  // maintains streamStatus for the active session, so each SessionRow owns
+  // its own subscription and writes back into the same map. (Active-session
+  // double-writes converge harmlessly.)
+  const isRunning = useMessagesStore(
+    (s) => s.runningBySession[session.id] === true,
+  );
+  useEffect(() => {
+    let cancelled = false;
+    let fiber: Fiber.RuntimeFiber<unknown, unknown> | null = null;
+    void (async () => {
+      try {
+        const client = await getRpcClient();
+        if (cancelled) return;
+        fiber = Effect.runFork(
+          Stream.runForEach(
+            client.session.streamStatus({ sessionId: session.id }),
+            (event) =>
+              Effect.sync(() => {
+                if (cancelled) return;
+                useMessagesStore.setState((s) => ({
+                  runningBySession: {
+                    ...s.runningBySession,
+                    [session.id]: event.status === "running",
+                  },
+                }));
+              }),
+          ),
+        );
+      } catch {
+        // Best-effort — sidebar still renders the branch icon if the
+        // status stream is unavailable.
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (fiber !== null) {
+        void Effect.runPromise(Fiber.interrupt(fiber)).catch(() => {});
+      }
+    };
+  }, [session.id]);
 
   const isSelected = selectedSessionId === session.id;
   const isArchived = session.archivedAt !== null;
@@ -634,11 +611,29 @@ function SessionRow({ session }: { session: Session }) {
         )}
         title={`${session.providerId} · ${session.model}`}
       >
-        <BranchIcon
-          state={branchState}
-          selected={isSelected}
-          className="ml-3"
-        />
+        {isRunning ? (
+          <span
+            className={cn(
+              "ml-3 inline-flex size-3.5 shrink-0 items-center justify-center",
+              isSelected ? "text-sidebar-accent-foreground" : "text-foreground",
+            )}
+            aria-label="Agent is working"
+            title="Agent is working"
+          >
+            <GradientDescent
+              dotSize={2}
+              cellPadding={0.5}
+              speed={1.4}
+              color="currentColor"
+            />
+          </span>
+        ) : (
+          <BranchIcon
+            state={branchState}
+            selected={isSelected}
+            className="ml-3"
+          />
+        )}
         <span className="min-w-0 flex-1 truncate">{session.title}</span>
         {/* Right-side slot: idle row shows diff stats (if PR open/closed) or
             timestamp (no PR). On hover the slot swaps to a single Archive

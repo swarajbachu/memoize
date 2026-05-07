@@ -7,8 +7,16 @@ import { cn } from "~/lib/utils";
 export const TooltipCreateHandle: typeof TooltipPrimitive.createHandle =
   TooltipPrimitive.createHandle;
 
-export const TooltipProvider: typeof TooltipPrimitive.Provider =
-  TooltipPrimitive.Provider;
+/**
+ * Defaults `delay` to 0 so tooltips feel instant. Callers can still pass an
+ * explicit `delay` to override per-Provider.
+ */
+export function TooltipProvider({
+  delay = 0,
+  ...props
+}: TooltipPrimitive.Provider.Props): React.ReactElement {
+  return <TooltipPrimitive.Provider delay={delay} {...props} />;
+}
 
 export const Tooltip: typeof TooltipPrimitive.Root = TooltipPrimitive.Root;
 

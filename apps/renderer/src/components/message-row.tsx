@@ -78,7 +78,7 @@ export function MessageRow({
 function UserBubble({ text }: { text: string }) {
   return (
     <div className="flex justify-end px-4 py-2">
-      <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-2xl rounded-tr-sm bg-primary px-3 py-2 text-sm text-primary-foreground">
+      <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-2xl rounded-tr-sm bg-user-bubble px-3 py-2 text-sm text-user-bubble-foreground">
         {text}
       </div>
     </div>
@@ -88,10 +88,8 @@ function UserBubble({ text }: { text: string }) {
 function AssistantBubble({ text }: { text: string }) {
   return (
     <div className="px-4 py-2">
-      <div className="max-w-[88%] text-sm leading-relaxed">
-        <div className="prose prose-invert prose-sm max-w-none break-words [&>:first-child]:mt-0 [&>:last-child]:mb-0 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-3 [&_pre>code]:bg-transparent [&_pre>code]:p-0">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
-        </div>
+      <div className="fz-prose max-w-[88%]">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
       </div>
     </div>
   );

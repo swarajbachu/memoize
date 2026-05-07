@@ -3,6 +3,8 @@
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/inter";
 @import "@fontsource-variable/geist-mono";
+@import "./components/ui/loaders/grid.css";
+@import "./components/ui/loaders/reduced-motion.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -85,6 +87,18 @@ body,
   --color-bg-overlay: var(--bg-overlay);
   --color-text-faint: var(--text-faint);
 
+  /* Chat + prose tokens. Kept separate from `primary` so the assistant
+     prose body and the user bubble can be tuned independently of buttons. */
+  --color-user-bubble: var(--user-bubble);
+  --color-user-bubble-foreground: var(--user-bubble-foreground);
+  --color-message-text: var(--message-text);
+  --color-message-heading: var(--message-heading);
+  --color-message-code: var(--message-code);
+  --color-message-code-bg: var(--message-code-bg);
+  --color-message-pre-bg: var(--message-pre-bg);
+  --color-message-quote: var(--message-quote);
+  --color-message-rule: var(--message-rule);
+
   /* Charts — kept for the shadcn convention; unused right now. */
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
@@ -106,156 +120,226 @@ body,
     }
   }
   @keyframes caret-blink {
-    0%, 70%, to { opacity: 1; }
-    20%, 50% { opacity: 0; }
+    0%,
+    70%,
+    to {
+      opacity: 1;
+    }
+    20%,
+    50% {
+      opacity: 0;
+    }
   }
   @keyframes toast-success-odd {
-    0% { scale: 1; }
-    30% { scale: 1.025; }
-    60% { scale: 0.99; }
-    100% { scale: 1; }
+    0% {
+      scale: 1;
+    }
+    30% {
+      scale: 1.025;
+    }
+    60% {
+      scale: 0.99;
+    }
+    100% {
+      scale: 1;
+    }
   }
   @keyframes toast-error-odd {
-    0% { translate: 0 0; }
-    25% { translate: -3px 0; }
-    50% { translate: 3px 0; }
-    75% { translate: -3px 0; }
-    100% { translate: 0 0; }
+    0% {
+      translate: 0 0;
+    }
+    25% {
+      translate: -3px 0;
+    }
+    50% {
+      translate: 3px 0;
+    }
+    75% {
+      translate: -3px 0;
+    }
+    100% {
+      translate: 0 0;
+    }
   }
   @keyframes toast-success-even {
-    0% { scale: 1; }
-    30% { scale: 1.025; }
-    60% { scale: 0.99; }
-    100% { scale: 1; }
+    0% {
+      scale: 1;
+    }
+    30% {
+      scale: 1.025;
+    }
+    60% {
+      scale: 0.99;
+    }
+    100% {
+      scale: 1;
+    }
   }
   @keyframes toast-error-even {
-    0% { translate: 0 0; }
-    25% { translate: -3px 0; }
-    50% { translate: 3px 0; }
-    75% { translate: -3px 0; }
-    100% { translate: 0 0; }
+    0% {
+      translate: 0 0;
+    }
+    25% {
+      translate: -3px 0;
+    }
+    50% {
+      translate: 3px 0;
+    }
+    75% {
+      translate: -3px 0;
+    }
+    100% {
+      translate: 0 0;
+    }
   }
 }
 
 /* ---------- Light theme ---------- */
-/* Zinc-tinted neutrals (hue 286). Cool gray, no warm tint. Light mode
-   exists for parity / future toggle but we ship dark-by-default. */
+/* Warm stone neutrals (hue 70). Subtle warmth, no cool blue cast. Light
+   mode exists for parity / future toggle but we ship dark-by-default. */
 :root {
   --radius: 0.625rem;
 
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.141 0.005 286);
+  --background: oklch(0.99 0.003 75);
+  --foreground: oklch(0.18 0.008 70);
 
-  --bg-subtle: oklch(0.985 0 0);
-  --bg-elevated: oklch(0.967 0.001 286);
-  --bg-overlay: oklch(0.92 0.004 286);
-  --text-faint: oklch(0.705 0.015 286);
+  --bg-subtle: oklch(0.975 0.004 75);
+  --bg-elevated: oklch(0.955 0.005 70);
+  --bg-overlay: oklch(0.91 0.006 70);
+  --text-faint: oklch(0.62 0.012 70);
 
   --card: oklch(1 0 0);
   --card-foreground: var(--foreground);
   --popover: oklch(1 0 0);
   --popover-foreground: var(--foreground);
 
-  --primary: oklch(0.21 0.006 286);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.967 0.001 286);
+  --primary: oklch(0.24 0.008 70);
+  --primary-foreground: oklch(0.985 0.003 75);
+  --secondary: oklch(0.955 0.005 70);
   --secondary-foreground: var(--foreground);
-  --muted: oklch(0.967 0.001 286);
-  --muted-foreground: oklch(0.552 0.014 286);
-  --accent: oklch(0.967 0.001 286);
+  --muted: oklch(0.955 0.005 70);
+  --muted-foreground: oklch(0.52 0.012 70);
+  --accent: oklch(0.955 0.005 70);
   --accent-foreground: var(--foreground);
 
-  --destructive: oklch(0.577 0.245 27.3);
-  --destructive-foreground: oklch(0.985 0 0);
-  --success: oklch(0.696 0.17 162.5);
-  --success-foreground: oklch(0.985 0 0);
-  --warning: oklch(0.769 0.188 70.1);
-  --warning-foreground: oklch(0.21 0.006 286);
-  --info: oklch(0.623 0.214 259.8);
-  --info-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.585 0.22 27);
+  --destructive-foreground: oklch(0.985 0.003 75);
+  --success: oklch(0.66 0.15 150);
+  --success-foreground: oklch(0.985 0.003 75);
+  --warning: oklch(0.78 0.16 75);
+  --warning-foreground: oklch(0.24 0.008 70);
+  --info: oklch(0.62 0.16 245);
+  --info-foreground: oklch(0.985 0.003 75);
 
-  --border: oklch(0.92 0.004 286);
-  --input: oklch(0.92 0.004 286);
-  --ring: oklch(0.705 0.015 286);
+  --border: oklch(0.9 0.006 70);
+  --input: oklch(0.9 0.006 70);
+  --ring: oklch(0.62 0.012 70);
 
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.141 0.005 286);
-  --sidebar-primary: oklch(0.21 0.006 286);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.967 0.001 286);
-  --sidebar-accent-foreground: oklch(0.21 0.006 286);
-  --sidebar-border: oklch(0.92 0.004 286);
-  --sidebar-ring: oklch(0.705 0.015 286);
+  --sidebar: oklch(0.975 0.004 75);
+  --sidebar-foreground: oklch(0.18 0.008 70);
+  --sidebar-primary: oklch(0.24 0.008 70);
+  --sidebar-primary-foreground: oklch(0.985 0.003 75);
+  --sidebar-accent: oklch(0.955 0.005 70);
+  --sidebar-accent-foreground: oklch(0.24 0.008 70);
+  --sidebar-border: oklch(0.9 0.006 70);
+  --sidebar-ring: oklch(0.62 0.012 70);
 
   --chart-1: oklch(0.646 0.222 41.1);
   --chart-2: oklch(0.6 0.118 184.7);
   --chart-3: oklch(0.398 0.07 227.4);
   --chart-4: oklch(0.828 0.189 84.4);
   --chart-5: oklch(0.769 0.188 70.1);
+
+  /* Chat bubble + prose. Independent of `primary` so we can keep button
+     primary punchy without bleaching message text. */
+  --user-bubble: oklch(0.93 0.012 260);
+  --user-bubble-foreground: oklch(0.22 0.01 260);
+  --message-text: oklch(0.28 0.008 260);
+  --message-heading: oklch(0.18 0.01 260);
+  --message-code: oklch(0.42 0.05 30);
+  --message-code-bg: oklch(0.95 0.006 260);
+  --message-pre-bg: oklch(0.97 0.005 260);
+  --message-quote: oklch(0.46 0.01 260);
+  --message-rule: oklch(0.88 0.005 260);
 }
 
-/* ---------- Dark theme (default) ---------- */
-/* Same zinc hue (286). Lightness ramp tuned softer than typical "OLED dark":
-     0.20   background      (body — soft, not pitch black)
-     0.235  bg-subtle       (sidebar bg behind translucency)
-     0.265  card / popover  (raised surfaces)
-     0.295  bg-elevated     (between card and accent)
-     0.33   muted/secondary/accent  (subtle bg, hover)
-     0.37   bg-overlay      (top-of-stack hover, scrollbars)
-
-   Text ladder: foreground → muted-foreground → text-faint */
 .dark {
-  --background: oklch(0.2 0.005 286);
-  --foreground: oklch(0.985 0 0);
+  --background: oklch(0.18 0.004 260);
+  --foreground: oklch(0.955 0.004 260);
 
-  --bg-subtle: oklch(0.235 0.005 286);
-  --bg-elevated: oklch(0.295 0.006 286);
-  --bg-overlay: oklch(0.37 0.008 286);
-  --text-faint: oklch(0.6 0.013 286);
+  --bg-subtle: oklch(0.225 0.005 260);
+  --bg-elevated: oklch(0.275 0.006 260);
+  --bg-overlay: oklch(0.35 0.008 260);
+  --text-faint: oklch(0.58 0.006 260);
 
-  --card: oklch(0.265 0.006 286);
+  --card: oklch(0.225 0.005 260);
   --card-foreground: var(--foreground);
-  --popover: oklch(0.265 0.006 286);
+
+  --popover: oklch(0.255 0.006 260);
   --popover-foreground: var(--foreground);
 
-  --primary: oklch(0.92 0.004 286);
-  --primary-foreground: oklch(0.265 0.006 286);
-  --secondary: oklch(0.33 0.007 286);
+  --primary: oklch(0.94 0.004 260);
+  --primary-foreground: oklch(0.18 0.004 260);
+
+  --secondary: oklch(0.305 0.006 260);
   --secondary-foreground: var(--foreground);
-  --muted: oklch(0.33 0.007 286);
-  --muted-foreground: oklch(0.74 0.014 286);
-  --accent: oklch(0.33 0.007 286);
+
+  --muted: oklch(0.305 0.006 260);
+  --muted-foreground: oklch(0.72 0.006 260);
+
+  --accent: oklch(0.32 0.008 260);
   --accent-foreground: var(--foreground);
 
-  --destructive: oklch(0.704 0.191 22.2);
-  --destructive-foreground: oklch(0.985 0 0);
-  --success: oklch(0.696 0.17 162.5);
-  --success-foreground: oklch(0.985 0 0);
-  --warning: oklch(0.769 0.188 70.1);
-  --warning-foreground: oklch(0.265 0.006 286);
-  --info: oklch(0.623 0.214 259.8);
-  --info-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.68 0.19 25);
+  --destructive-foreground: oklch(0.985 0.003 260);
 
-  --border: oklch(1 0 0 / 0.12);
-  --input: oklch(1 0 0 / 0.18);
-  --ring: oklch(0.59 0.014 286);
+  --success: oklch(0.72 0.13 155);
+  --success-foreground: oklch(0.18 0.004 260);
 
-  --sidebar: oklch(0.235 0.005 286);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.33 0.007 286);
+  --warning: oklch(0.8 0.12 85);
+  --warning-foreground: oklch(0.18 0.004 260);
+
+  --info: oklch(0.7 0.09 245);
+  --info-foreground: oklch(0.985 0.003 260);
+
+  --border: oklch(1 0 0 / 0.09);
+  --input: oklch(1 0 0 / 0.14);
+  --ring: oklch(0.65 0.025 260);
+
+  --sidebar: oklch(0.2 0.004 260);
+  --sidebar-foreground: oklch(0.955 0.004 260);
+
+  --sidebar-primary: oklch(0.72 0.075 260);
+  --sidebar-primary-foreground: oklch(0.18 0.004 260);
+
+  --sidebar-accent: oklch(0.285 0.006 260);
   --sidebar-accent-foreground: var(--foreground);
-  --sidebar-border: oklch(1 0 0 / 0.12);
-  --sidebar-ring: oklch(0.59 0.014 286);
 
-  --chart-1: oklch(0.546 0.245 262.9);
-  --chart-2: oklch(0.696 0.17 162.5);
-  --chart-3: oklch(0.769 0.188 70.1);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.4);
+  --sidebar-border: oklch(1 0 0 / 0.09);
+  --sidebar-ring: oklch(0.65 0.025 260);
+
+  --chart-1: oklch(0.72 0.075 260);
+  --chart-2: oklch(0.72 0.12 155);
+  --chart-3: oklch(0.78 0.11 85);
+  --chart-4: oklch(0.72 0.09 295);
+  --chart-5: oklch(0.68 0.17 25);
+
+  /* Chat bubble + prose. The user bubble sits one rung above `accent` with
+     a slight blue tint so it reads as a distinct surface, not a button.
+     `--message-text` and `--message-heading` are both dimmed below
+     `--foreground` (0.955) so a long answer feels like a calm read rather
+     than a wall of white. Headings stay only ~0.08 above body so the
+     hierarchy comes from weight + spacing, not blast-bright text. */
+  --user-bubble: oklch(0.36 0.022 260);
+  --user-bubble-foreground: oklch(0.96 0.005 260);
+  --message-text: oklch(0.78 0.006 260);
+  --message-heading: oklch(0.88 0.006 260);
+  --message-code: oklch(0.82 0.04 60);
+  --message-code-bg: oklch(0.28 0.008 260);
+  --message-pre-bg: oklch(0.235 0.006 260);
+  --message-quote: oklch(0.66 0.008 260);
+  --message-rule: oklch(1 0 0 / 0.08);
 }
-
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -267,7 +351,212 @@ body,
        components paint where opacity is needed. */
     background-color: transparent;
   }
-  code, kbd, samp, pre {
+  code,
+  kbd,
+  samp,
+  pre {
     font-family: var(--font-mono);
+  }
+}
+
+/* Assistant message prose. Tuned for long-read comfort: body sits a touch
+   below `--foreground`, headings sharper, code in a contained surface, and
+   typographic rhythm (margins, line-height, list indents) calmed down so a
+   long answer reads like a published doc instead of a wall of bold tags. */
+@layer components {
+  .fz-prose {
+    color: var(--message-text);
+    font-size: 0.9rem;
+    line-height: 1.65;
+    word-break: break-word;
+  }
+  .fz-prose > :first-child {
+    margin-top: 0;
+  }
+  .fz-prose > :last-child {
+    margin-bottom: 0;
+  }
+  .fz-prose p {
+    margin: 0.6em 0;
+  }
+  .fz-prose h1,
+  .fz-prose h2,
+  .fz-prose h3,
+  .fz-prose h4,
+  .fz-prose h5,
+  .fz-prose h6 {
+    color: var(--message-heading);
+    font-weight: 600;
+    line-height: 1.3;
+    letter-spacing: -0.01em;
+    margin: 1.4em 0 0.5em;
+  }
+  .fz-prose h1 {
+    font-size: 1.4em;
+  }
+  .fz-prose h2 {
+    font-size: 1.2em;
+  }
+  .fz-prose h3 {
+    font-size: 1.05em;
+  }
+  .fz-prose h4,
+  .fz-prose h5,
+  .fz-prose h6 {
+    font-size: 1em;
+  }
+  .fz-prose strong {
+    color: var(--message-heading);
+    font-weight: 600;
+  }
+  .fz-prose a {
+    color: var(--info);
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, var(--info), transparent 60%);
+    text-underline-offset: 0.2em;
+  }
+  .fz-prose a:hover {
+    text-decoration-color: var(--info);
+  }
+  .fz-prose ul,
+  .fz-prose ol {
+    margin: 0.6em 0;
+    padding-left: 1.4em;
+  }
+  .fz-prose li {
+    margin: 0.2em 0;
+  }
+  .fz-prose li::marker {
+    color: var(--text-faint);
+  }
+  .fz-prose blockquote {
+    margin: 0.8em 0;
+    padding: 0.1em 0 0.1em 0.9em;
+    border-left: 2px solid var(--message-rule);
+    color: var(--message-quote);
+    font-style: normal;
+  }
+  .fz-prose hr {
+    border: 0;
+    border-top: 1px solid var(--message-rule);
+    margin: 1.2em 0;
+  }
+  .fz-prose code {
+    font-family: var(--font-mono);
+    font-size: 0.86em;
+    color: var(--message-code);
+    background-color: var(--message-code-bg);
+    padding: 0.1em 0.35em;
+    border-radius: 0.3rem;
+  }
+  .fz-prose pre {
+    background-color: var(--message-pre-bg);
+    border: 1px solid var(--message-rule);
+    border-radius: 0.5rem;
+    padding: 0.85em 1em;
+    margin: 0.8em 0;
+    overflow-x: auto;
+    font-size: 0.84em;
+    line-height: 1.55;
+  }
+  .fz-prose pre code {
+    color: var(--message-text);
+    background: transparent;
+    padding: 0;
+    font-size: inherit;
+  }
+  .fz-prose table {
+    width: auto;
+    border-collapse: collapse;
+    margin: 0.8em 0;
+    font-size: 0.92em;
+  }
+  .fz-prose th,
+  .fz-prose td {
+    border: 1px solid var(--message-rule);
+    padding: 0.4em 0.7em;
+    text-align: left;
+  }
+  .fz-prose th {
+    color: var(--message-heading);
+    font-weight: 600;
+    background-color: color-mix(
+      in srgb,
+      var(--message-pre-bg),
+      transparent 40%
+    );
+  }
+}
+
+/* Composer atomic chips. Outlined pill that visually replaces the underlying
+   token (e.g. `@apps/foo.ts`) with an icon + label. Sized to sit on the
+   prose baseline without disturbing line-height. */
+@layer components {
+  .fz-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.15rem 0.55rem 0.15rem 0.2rem;
+    margin: 0 0.15rem;
+    border: 1px solid color-mix(in srgb, var(--border), transparent 40%);
+    border-radius: 0.375rem;
+    background-color: transparent;
+    color: var(--foreground);
+    font-size: 0.85em;
+    line-height: 1.1;
+    vertical-align: -0.25em;
+    user-select: none;
+    white-space: nowrap;
+  }
+  .fz-chip-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.4em;
+    height: 1.4em;
+    border-radius: 0.25rem;
+    background-color: color-mix(in srgb, var(--muted), transparent 50%);
+    flex-shrink: 0;
+  }
+  .fz-chip-iconimg {
+    width: 1em;
+    height: 1em;
+    object-fit: contain;
+  }
+  .fz-chip-iconsvg {
+    display: inline-flex;
+    align-items: center;
+    color: var(--muted-foreground);
+  }
+  .fz-chip-thumb {
+    width: 1.4em;
+    height: 1.4em;
+    object-fit: cover;
+    border-radius: 0.25rem;
+  }
+  .fz-chip-divider {
+    display: none;
+  }
+  .fz-chip-label {
+    color: var(--foreground);
+  }
+  /* Skill chips read as a different category from file chips — accent
+     border + tint. */
+  .fz-chip[data-kind="skill"] {
+    border-color: color-mix(in srgb, var(--accent), transparent 30%);
+  }
+  .fz-chip[data-kind="skill"] .fz-chip-iconsvg {
+    color: var(--accent-foreground);
+  }
+  .fz-chip[data-kind="file"] {
+    cursor: pointer;
+  }
+  .fz-chip[data-kind="file"]:hover,
+  .fz-chip[data-kind="image"]:hover {
+    background-color: color-mix(in srgb, var(--muted), transparent 60%);
+  }
+  /* Image-thumb chips: thumbnail fills the icon slot with no inner bg. */
+  .fz-chip[data-kind="image"] .fz-chip-icon:has(.fz-chip-thumb) {
+    background-color: transparent;
   }
 }
