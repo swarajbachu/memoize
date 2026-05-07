@@ -10,10 +10,12 @@ import {
 
 import type { AgentItemId, Message, SessionId } from "@forkzero/wire";
 
+import { groupMessages } from "../lib/group-messages.ts";
 import { useMessagesStore } from "../store/messages.ts";
 import { useSessionsStore } from "../store/sessions.ts";
 import { useSkillsStore } from "../store/skills.ts";
 import { MessageRow, type ToolResultRecord } from "./message-row.tsx";
+import { SubagentRow } from "./subagent-row.tsx";
 import { TurnSummary } from "./turn-summary.tsx";
 import { GradientDescent } from "./ui/gradient-descent.tsx";
 
@@ -158,6 +160,11 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
             );
             const showSummary = !isLive && hasToolCalls && hasFinalText;
             const turnKey = turn.user?.id ?? `turn-${idx}`;
+            // Within an open (non-collapsed) turn, group sub-agent rows
+            // under a SubagentRow wrapper. TurnSummary handles its own
+            // rendering for collapsed turns; sub-agents inside a collapsed
+            // turn render via TurnSummary's existing path.
+            const bodyGroups = groupMessages(turn.body);
             return (
               <Fragment key={turnKey}>
                 {turn.user !== null ? (
@@ -172,13 +179,26 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
                     resultsByItemId={resultsByItemId}
                   />
                 ) : (
-                  turn.body.map((m) => (
-                    <MessageRow
-                      key={m.id}
-                      message={m}
-                      resultsByItemId={resultsByItemId}
-                    />
-                  ))
+                  bodyGroups.map((group) =>
+                    group.kind === "single" ? (
+                      <MessageRow
+                        key={group.message.id}
+                        message={group.message}
+                        resultsByItemId={resultsByItemId}
+                      />
+                    ) : (
+                      <SubagentRow
+                        key={group.parent.id}
+                        agentToolUseId={group.parentItemId}
+                        agentName={group.agentName}
+                        prompt={group.prompt}
+                        modelRequested={group.modelRequested}
+                        children={group.children}
+                        summary={group.summary}
+                        resultsByItemId={resultsByItemId}
+                      />
+                    ),
+                  )
                 )}
               </Fragment>
             );
