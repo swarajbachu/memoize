@@ -150,10 +150,29 @@ const SessionStreamStatus = ForkzeroRpcs.toLayerHandler(
 
 const MessagesSend = ForkzeroRpcs.toLayerHandler(
   "messages.send",
-  ({ sessionId, text, input }) =>
-    Effect.flatMap(MessageStore, (svc) =>
-      svc.sendMessage(sessionId, input?.text ?? text ?? ""),
-    ),
+  ({ sessionId, text, input }) => {
+    console.log(
+      `[rpc.messages.send] sessionId=${sessionId} hasInput=${input !== undefined} attachments=${
+        input?.attachments?.length ?? 0
+      } fileRefs=${input?.fileRefs?.length ?? 0} skillRefs=${
+        input?.skillRefs?.length ?? 0
+      } textLen=${(input?.text ?? text ?? "").length}`,
+    );
+    if (input?.attachments !== undefined && input.attachments.length > 0) {
+      console.log(
+        `[rpc.messages.send] attachments: ${JSON.stringify(input.attachments)}`,
+      );
+    }
+    return Effect.flatMap(MessageStore, (svc) =>
+      svc.sendMessage(
+        sessionId,
+        input?.text ?? text ?? "",
+        input?.attachments,
+        input?.fileRefs,
+        input?.skillRefs,
+      ),
+    );
+  },
 );
 
 const MessagesInterrupt = ForkzeroRpcs.toLayerHandler(

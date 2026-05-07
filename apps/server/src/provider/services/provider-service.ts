@@ -7,6 +7,7 @@ import type {
   AgentSessionNotFoundError,
   AgentSessionStartError,
   AgentTurnId,
+  AttachmentRef,
   ProviderId,
   ProviderNotAvailableError,
   RuntimeMode,
@@ -43,6 +44,7 @@ export interface ProviderServiceShape {
   readonly send: (
     sessionId: AgentSessionId,
     text: string,
+    attachments?: ReadonlyArray<AttachmentRef>,
   ) => Effect.Effect<void, AgentSessionNotFoundError>;
 
   readonly interrupt: (

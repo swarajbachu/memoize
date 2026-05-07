@@ -1,6 +1,8 @@
 import { Context, type Effect, type Stream } from "effect";
 
 import type {
+  AttachmentRef,
+  FileRef,
   FolderId,
   Message,
   ProviderId,
@@ -10,6 +12,7 @@ import type {
   SessionNotFoundError,
   SessionStartError,
   SessionStatus,
+  SkillRef,
 } from "@forkzero/wire";
 
 /**
@@ -109,6 +112,9 @@ export interface MessageStoreShape {
   readonly sendMessage: (
     sessionId: SessionId,
     text: string,
+    attachments?: ReadonlyArray<AttachmentRef>,
+    fileRefs?: ReadonlyArray<FileRef>,
+    skillRefs?: ReadonlyArray<SkillRef>,
   ) => Effect.Effect<void, SessionNotFoundError>;
 
   readonly interruptSession: (

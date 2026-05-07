@@ -113,6 +113,26 @@ export const AttachmentServiceLive = Layer.scoped(
         };
       });
 
+    const read: AttachmentServiceShape["read"] = (id) =>
+      Effect.gen(function* () {
+        interface Row {
+          readonly mime_type: string;
+          readonly original_name: string;
+        }
+        const rows = yield* sql<Row>`
+          SELECT mime_type, original_name FROM attachments WHERE id = ${id}
+        `.pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<Row>));
+        const row = rows[0];
+        if (row === undefined) return null;
+        const ext = extForUpload(row.mime_type, row.original_name);
+        const absPath = pathSvc.join(dir, blobFilename(id, ext));
+        const bytes = yield* fs
+          .readFile(absPath)
+          .pipe(Effect.orElseSucceed(() => null));
+        if (bytes === null) return null;
+        return { bytes, mimeType: row.mime_type };
+      });
+
     const touch: AttachmentServiceShape["touch"] = (ids) =>
       Ref.update(lastTouched, (m) => {
         const next = new Map(m);
@@ -180,6 +200,6 @@ export const AttachmentServiceLive = Layer.scoped(
     );
     yield* Effect.addFinalizer(() => Fiber.interrupt(gcFiber));
 
-    return { upload, touch } satisfies AttachmentServiceShape;
+    return { upload, touch, read } satisfies AttachmentServiceShape;
   }),
 );

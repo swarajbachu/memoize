@@ -12,11 +12,14 @@ import {
   type AgentEvent,
   type AgentItemId,
   type AgentSessionId,
+  type AttachmentRef,
   type PermissionDecision,
   type PermissionKind,
   type RuntimeMode,
   type StartSessionInput,
 } from "@forkzero/wire";
+
+import { AttachmentService } from "../../attachment/services/attachment-service.ts";
 
 /**
  * Live-only handle for one Claude SDK conversation. The orchestrator
@@ -25,10 +28,51 @@ import {
  */
 export interface ClaudeSessionHandle {
   readonly events: Stream.Stream<AgentEvent>;
-  readonly send: (text: string) => Effect.Effect<void>;
+  readonly send: (
+    text: string,
+    attachments?: ReadonlyArray<AttachmentRef>,
+  ) => Effect.Effect<void>;
   readonly interrupt: () => Effect.Effect<void>;
   readonly close: () => Effect.Effect<void>;
 }
+
+/**
+ * Anthropic accepts these media types as image content blocks. Anything else
+ * (HEIC, BMP, raw bytes) gets dropped with a console warning rather than
+ * forwarded as an unsupported block — the SDK would reject the whole turn.
+ */
+const SUPPORTED_IMAGE_MIME = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+]);
+
+type AnthropicImageMediaType =
+  | "image/png"
+  | "image/jpeg"
+  | "image/gif"
+  | "image/webp";
+
+type UserContentBlock =
+  | { type: "text"; text: string }
+  | {
+      type: "image";
+      source: {
+        type: "base64";
+        media_type: AnthropicImageMediaType;
+        data: string;
+      };
+    }
+  | {
+      type: "document";
+      source: {
+        type: "base64";
+        media_type: "application/pdf";
+        data: string;
+      };
+      title?: string;
+    };
 
 /**
  * Tiny promise-backed async input channel. The Claude SDK's streaming-input
@@ -81,11 +125,15 @@ class UserInputChannel implements AsyncIterable<SDKUserMessage> {
   }
 }
 
-const userMessageOf = (text: string, sessionId: string): SDKUserMessage => ({
+const userMessageOf = (
+  text: string,
+  sessionId: string,
+  attachmentBlocks: ReadonlyArray<UserContentBlock> = [],
+): SDKUserMessage => ({
   type: "user",
   message: {
     role: "user",
-    content: [{ type: "text", text }],
+    content: [...attachmentBlocks, { type: "text", text }],
   },
   parent_tool_use_id: null,
   session_id: sessionId,
@@ -620,11 +668,74 @@ export const startClaudeSession = (
   requestPermission: RequestPermission,
   getRuntimeMode: GetRuntimeMode,
   resumeCursor: string | null = null,
-): Effect.Effect<ClaudeSessionHandle, AgentSessionStartError> =>
+): Effect.Effect<ClaudeSessionHandle, AgentSessionStartError, AttachmentService> =>
   Effect.gen(function* () {
+    const attachments = yield* AttachmentService;
     const events = yield* Mailbox.make<AgentEvent>();
     const inputChannel = new UserInputChannel();
     const abort = new AbortController();
+
+    const buildAttachmentBlocks = (
+      refs: ReadonlyArray<AttachmentRef>,
+    ): Promise<ReadonlyArray<UserContentBlock>> =>
+      Promise.all(
+        refs.map(async (ref): Promise<UserContentBlock | null> => {
+          if (ref.id.startsWith("pending-")) {
+            console.warn(
+              `[claude.attach] skipping pending attachment id=${ref.id} (upload didn't finish before send)`,
+            );
+            return null;
+          }
+          // Browsers report "image/jpg" sometimes — Anthropic only accepts
+          // the canonical "image/jpeg" name.
+          const normalizedMime =
+            ref.mimeType.toLowerCase() === "image/jpg"
+              ? "image/jpeg"
+              : ref.mimeType.toLowerCase();
+          const isImage = SUPPORTED_IMAGE_MIME.has(normalizedMime);
+          const isPdf = normalizedMime === "application/pdf";
+          if (!isImage && !isPdf) {
+            console.warn(
+              `[claude.attach] dropping unsupported mime id=${ref.id} mime=${ref.mimeType}`,
+            );
+            return null;
+          }
+          const blob = await Effect.runPromise(attachments.read(ref.id));
+          if (blob === null) {
+            console.warn(
+              `[claude.attach] blob not found id=${ref.id} (db row missing or file deleted)`,
+            );
+            return null;
+          }
+          const base64 = Buffer.from(blob.bytes).toString("base64");
+          console.log(
+            `[claude.attach] built ${
+              isPdf ? "document" : "image"
+            } block id=${ref.id} mime=${normalizedMime} bytes=${blob.bytes.byteLength} base64Len=${base64.length}`,
+          );
+          if (isPdf) {
+            return {
+              type: "document",
+              source: {
+                type: "base64",
+                media_type: "application/pdf",
+                data: base64,
+              },
+              title: ref.originalName,
+            };
+          }
+          return {
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: normalizedMime as AnthropicImageMediaType,
+              data: base64,
+            },
+          };
+        }),
+      ).then((blocks) =>
+        blocks.filter((b): b is NonNullable<typeof b> => b !== null),
+      );
 
     if (input.initialPrompt !== undefined && input.initialPrompt.length > 0) {
       inputChannel.push(userMessageOf(input.initialPrompt, sessionId));
@@ -780,9 +891,28 @@ export const startClaudeSession = (
 
     const handle: ClaudeSessionHandle = {
       events: Mailbox.toStream(events),
-      send: (text) =>
-        Effect.sync(() => {
-          inputChannel.push(userMessageOf(text, sessionId));
+      send: (text, attachmentRefs) =>
+        Effect.promise(async () => {
+          console.log(
+            `[claude.send] sessionId=${sessionId} textLen=${text.length} attachments=${attachmentRefs?.length ?? 0}`,
+          );
+          const attachmentBlocks =
+            attachmentRefs !== undefined && attachmentRefs.length > 0
+              ? await buildAttachmentBlocks(attachmentRefs)
+              : [];
+          console.log(
+            `[claude.send] pushing user message: attachmentBlocks=${attachmentBlocks.length} content=${JSON.stringify(
+              [
+                ...attachmentBlocks.map((b) =>
+                  b.type === "text"
+                    ? { type: "text", textLen: b.text.length }
+                    : { type: b.type, media_type: b.source.media_type, base64Len: b.source.data.length },
+                ),
+                { type: "text", textLen: text.length },
+              ],
+            )}`,
+          );
+          inputChannel.push(userMessageOf(text, sessionId, attachmentBlocks));
         }),
       interrupt: () =>
         Effect.tryPromise({

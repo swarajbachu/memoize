@@ -750,7 +750,7 @@ function SessionTimer({
 
     for (let i = 0; i < messages.length; i++) {
       const m = messages[i]!;
-      if (m.content._tag === "user") {
+      if (m.content._tag === "user" || m.content._tag === "user_rich") {
         if (turnStart !== null) closeTurn();
         turnStart = m.createdAt.getTime();
         turnLastMs = turnStart;

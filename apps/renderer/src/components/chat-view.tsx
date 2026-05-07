@@ -91,7 +91,7 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
     }> = [];
     let current: { user: Message | null; body: Message[] } | null = null;
     for (const m of messages) {
-      if (m.content._tag === "user") {
+      if (m.content._tag === "user" || m.content._tag === "user_rich") {
         if (current !== null) out.push(current);
         current = { user: m, body: [] };
       } else {
@@ -223,7 +223,8 @@ function WorkingRow({ messages }: { messages: ReadonlyArray<Message> }) {
   const anchorMs = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
       const m = messages[i]!;
-      if (m.content._tag === "user") return m.createdAt.getTime();
+      if (m.content._tag === "user" || m.content._tag === "user_rich")
+        return m.createdAt.getTime();
     }
     return null;
   }, [messages]);
