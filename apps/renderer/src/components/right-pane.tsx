@@ -172,8 +172,8 @@ function renderPrBadge(
                 c.conclusion === "action_required",
             ).length;
       return (
-        <span className="flex items-center gap-1 text-red-400">
-          <span className="size-2 rounded-full bg-red-400" />
+        <span className="flex items-center gap-1 text-rose-300">
+          <span className="size-2 rounded-full border border-rose-300" />
           {failing !== null && failing > 0 ? (
             <span className="font-mono text-[10px]">{failing}</span>
           ) : null}

@@ -246,6 +246,12 @@ export type GitChangeKind = typeof GitChangeKind.Type;
 
 export class GitChange extends Schema.Class<GitChange>("GitChange")({
   path: Schema.String,
+  /**
+   * Original path for renamed / copied files (the location HEAD knew the
+   * file under). `null` for every other kind. Lets the renderer surface
+   * "old → new" so a move doesn't silently look like an unrelated edit.
+   */
+  oldPath: Schema.NullOr(Schema.String),
   staged: Schema.Boolean,
   kind: GitChangeKind,
 }) {}

@@ -1,5 +1,13 @@
 import { Effect } from "effect";
-import { CornerDownLeft, Loader2, Upload } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowRight,
+  CornerDownLeft,
+  Loader2,
+  Minus,
+  Plus,
+  Upload,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 
 import type {
@@ -24,6 +32,17 @@ const basename = (path: string): string => {
 const dirname = (path: string): string => {
   const i = path.lastIndexOf("/");
   return i === -1 ? "" : path.slice(0, i);
+};
+
+/**
+ * `gh pr view` doesn't tell us whether a PR file was added vs deleted vs
+ * modified — only the line counts. Infer from the deltas: pure +N → added,
+ * pure −N → deleted, both → modified. Used for the PR file rows' kind box.
+ */
+const prFileKind = (additions: number, deletions: number): GitChangeKind => {
+  if (additions > 0 && deletions === 0) return "added";
+  if (deletions > 0 && additions === 0) return "deleted";
+  return "modified";
 };
 
 /**
@@ -155,12 +174,9 @@ export function DiffPane({
                   folderId={folderId}
                   worktreeId={worktreeId}
                   path={f.path}
-                  badge={
-                    <span className="shrink-0 font-mono text-[10px]">
-                      <span className="text-emerald-300/90">+{f.additions}</span>{" "}
-                      <span className="text-rose-300/90">−{f.deletions}</span>
-                    </span>
-                  }
+                  kind={prFileKind(f.additions, f.deletions)}
+                  additions={f.additions}
+                  deletions={f.deletions}
                 />
               ))}
             </ul>
@@ -205,7 +221,8 @@ function ChangeList({
             folderId={folderId}
             worktreeId={worktreeId}
             path={c.path}
-            badge={<KindBadge kind={c.kind} />}
+            oldPath={c.oldPath}
+            kind={c.kind}
           />
         ))}
       </ul>
@@ -217,15 +234,22 @@ function FileRow({
   folderId,
   worktreeId,
   path,
-  badge,
+  oldPath,
+  kind,
+  additions,
+  deletions,
 }: {
   folderId: FolderId;
   worktreeId: WorktreeId | null;
   path: string;
-  badge: React.ReactNode;
+  oldPath?: string | null;
+  kind: GitChangeKind;
+  additions?: number;
+  deletions?: number;
 }) {
   const openFileInTab = useUiStore((s) => s.openFileInTab);
-  const dir = dirname(path);
+  const renamed = oldPath !== null && oldPath !== undefined && oldPath !== path;
+  const tooltip = renamed ? `${oldPath} → ${path}` : path;
   return (
     <li>
       <button
@@ -234,42 +258,148 @@ function FileRow({
           openFileInTab({ folderId, worktreeId, path, name: basename(path) })
         }
         className="-mx-1 flex w-[calc(100%+0.5rem)] items-center justify-between gap-2 rounded-sm px-1 py-0.5 text-left transition-colors hover:bg-foreground/5"
-        title={path}
+        title={tooltip}
       >
         <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
-          <span className="truncate font-mono text-[11px] text-foreground/90">
-            {basename(path)}
-          </span>
-          {dir.length > 0 ? (
-            <span className="truncate font-mono text-[10px] text-muted-foreground">
-              {dir}
+          {renamed ? <RenameLabel oldPath={oldPath!} newPath={path} /> : (
+            <PathLabel path={path} />
+          )}
+        </span>
+        <span className="flex shrink-0 items-center gap-1.5">
+          {typeof additions === "number" || typeof deletions === "number" ? (
+            <span className="font-mono text-[10px]">
+              {typeof additions === "number" && additions > 0 ? (
+                <span className="text-emerald-300/90">+{additions}</span>
+              ) : null}
+              {typeof additions === "number" &&
+              typeof deletions === "number" &&
+              additions > 0 &&
+              deletions > 0 ? (
+                " "
+              ) : null}
+              {typeof deletions === "number" && deletions > 0 ? (
+                <span className="text-rose-300/90">−{deletions}</span>
+              ) : null}
             </span>
           ) : null}
+          <KindBox kind={kind} />
         </span>
-        {badge}
       </button>
     </li>
   );
 }
 
-const KIND_BADGE: Record<GitChangeKind, { label: string; className: string }> =
-  {
-    modified: { label: "M", className: "text-amber-300" },
-    added: { label: "A", className: "text-emerald-300" },
-    deleted: { label: "D", className: "text-rose-300" },
-    renamed: { label: "R", className: "text-sky-300" },
-    copied: { label: "C", className: "text-sky-300" },
-    untracked: { label: "U", className: "text-emerald-200" },
-    ignored: { label: "I", className: "text-muted-foreground" },
-    unmerged: { label: "!", className: "text-rose-400" },
-    type_changed: { label: "T", className: "text-amber-300" },
-  };
-
-function KindBadge({ kind }: { kind: GitChangeKind }) {
-  const badge = KIND_BADGE[kind];
+function PathLabel({ path }: { path: string }) {
+  const dir = dirname(path);
   return (
-    <span className={`shrink-0 font-mono text-[10px] ${badge.className}`}>
-      {badge.label}
+    <>
+      <span className="truncate font-mono text-[11px] text-foreground/90">
+        {basename(path)}
+      </span>
+      {dir.length > 0 ? (
+        <span className="truncate font-mono text-[10px] text-muted-foreground">
+          {dir}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * Renders an "old → new" label for a renamed file. Collapses the unchanged
+ * path prefix where possible so a `src/foo/bar.ts → src/foo/baz.ts` rename
+ * only shows the part that actually moved (`bar.ts → baz.ts`), with the
+ * shared parent directory faded after.
+ */
+function RenameLabel({ oldPath, newPath }: { oldPath: string; newPath: string }) {
+  const oldDir = dirname(oldPath);
+  const newDir = dirname(newPath);
+  const oldName = basename(oldPath);
+  const newName = basename(newPath);
+  const sameDir = oldDir === newDir;
+  return (
+    <>
+      <span className="flex min-w-0 items-baseline gap-1 truncate font-mono text-[11px] text-foreground/90">
+        <span className="truncate">{oldName}</span>
+        <ArrowRight className="size-3 shrink-0 text-muted-foreground" />
+        <span className="truncate">{newName}</span>
+      </span>
+      <span className="truncate font-mono text-[10px] text-muted-foreground">
+        {sameDir
+          ? newDir
+          : `${oldDir.length > 0 ? oldDir : "."} → ${newDir.length > 0 ? newDir : "."}`}
+      </span>
+    </>
+  );
+}
+
+/**
+ * Square 14×14 status box: green `+` for additions, warm red `−` for
+ * deletions, amber dot for "both" (modified / renamed / copied / type
+ * changed), warm red `!` for unmerged. Mirrors the look of GitHub's diff
+ * gutter so the file kind reads at a glance without a letter to decode.
+ */
+function KindBox({ kind }: { kind: GitChangeKind }) {
+  switch (kind) {
+    case "added":
+    case "untracked":
+      return (
+        <Box tone="emerald">
+          <Plus className="size-2.5" strokeWidth={3} />
+        </Box>
+      );
+    case "deleted":
+      return (
+        <Box tone="rose">
+          <Minus className="size-2.5" strokeWidth={3} />
+        </Box>
+      );
+    case "modified":
+    case "type_changed":
+    case "renamed":
+    case "copied":
+      return (
+        <Box tone="amber">
+          <span className="size-1 rounded-full bg-current" />
+        </Box>
+      );
+    case "unmerged":
+      return (
+        <Box tone="rose">
+          <AlertTriangle className="size-2.5" strokeWidth={2.5} />
+        </Box>
+      );
+    case "ignored":
+      return (
+        <Box tone="zinc">
+          <span className="size-1 rounded-full bg-current" />
+        </Box>
+      );
+  }
+}
+
+const BOX_TONE: Record<
+  "emerald" | "rose" | "amber" | "zinc",
+  string
+> = {
+  emerald: "border-emerald-400/60 text-emerald-300",
+  rose: "border-rose-300/60 text-rose-300",
+  amber: "border-amber-300/60 text-amber-200",
+  zinc: "border-zinc-500/60 text-muted-foreground",
+};
+
+function Box({
+  tone,
+  children,
+}: {
+  tone: keyof typeof BOX_TONE;
+  children: React.ReactNode;
+}) {
+  return (
+    <span
+      className={`flex size-[14px] shrink-0 items-center justify-center rounded-[3px] border ${BOX_TONE[tone]}`}
+    >
+      {children}
     </span>
   );
 }

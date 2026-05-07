@@ -163,11 +163,14 @@ const parseChangesOutput = (out: string): ReadonlyArray<GitChange> => {
       if (path.length === 0) continue;
       const kind = codeToKind(y === "." ? x : y);
       if (kind === null) continue;
-      changes.push(GitChange.make({ path, staged: x !== ".", kind }));
+      changes.push(
+        GitChange.make({ path, oldPath: null, staged: x !== ".", kind }),
+      );
     } else if (tag === "2") {
       // "2 XY sub mH mI mW hH hI Xscore path<TAB>origPath"
       const tabIdx = line.indexOf("\t");
       const head = tabIdx === -1 ? line : line.slice(0, tabIdx);
+      const oldPath = tabIdx === -1 ? null : line.slice(tabIdx + 1);
       const parts = head.split(" ");
       const xy = parts[1] ?? "..";
       const x = xy[0] ?? ".";
@@ -176,20 +179,48 @@ const parseChangesOutput = (out: string): ReadonlyArray<GitChange> => {
       if (path.length === 0) continue;
       const code = y === "." ? x : y;
       const kind: GitChangeKind = code === "C" ? "copied" : "renamed";
-      changes.push(GitChange.make({ path, staged: x !== ".", kind: codeToKind(code) ?? kind }));
+      changes.push(
+        GitChange.make({
+          path,
+          oldPath,
+          staged: x !== ".",
+          kind: codeToKind(code) ?? kind,
+        }),
+      );
     } else if (tag === "u") {
       const parts = line.split(" ");
       const path = parts.slice(10).join(" ");
       if (path.length === 0) continue;
-      changes.push(GitChange.make({ path, staged: false, kind: "unmerged" }));
+      changes.push(
+        GitChange.make({
+          path,
+          oldPath: null,
+          staged: false,
+          kind: "unmerged",
+        }),
+      );
     } else if (tag === "?") {
       const path = line.slice(2);
       if (path.length === 0) continue;
-      changes.push(GitChange.make({ path, staged: false, kind: "untracked" }));
+      changes.push(
+        GitChange.make({
+          path,
+          oldPath: null,
+          staged: false,
+          kind: "untracked",
+        }),
+      );
     } else if (tag === "!") {
       const path = line.slice(2);
       if (path.length === 0) continue;
-      changes.push(GitChange.make({ path, staged: false, kind: "ignored" }));
+      changes.push(
+        GitChange.make({
+          path,
+          oldPath: null,
+          staged: false,
+          kind: "ignored",
+        }),
+      );
     }
   }
   return changes;

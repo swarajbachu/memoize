@@ -1,12 +1,12 @@
 import {
-  CheckCircle2,
+  Check,
   Circle,
   CircleDashed,
   ExternalLink,
   GitPullRequest,
   Loader2,
   MinusCircle,
-  XCircle,
+  X,
 } from "lucide-react";
 import { useEffect } from "react";
 
@@ -418,17 +418,17 @@ function checkIcon(run: GitPrCheckRun) {
   }
   switch (run.conclusion) {
     case "success":
-      return <CheckCircle2 className="size-4 text-emerald-400" />;
+      return <Check className="size-3 text-emerald-400" strokeWidth={3} />;
     case "failure":
     case "cancelled":
     case "timed_out":
     case "action_required":
-      return <XCircle className="size-4 text-red-400" />;
+      return <X className="size-3 text-rose-300" strokeWidth={3} />;
     case "skipped":
     case "neutral":
-      return <MinusCircle className="size-4 text-muted-foreground" />;
+      return <MinusCircle className="size-3.5 text-muted-foreground" />;
     default:
-      return <Circle className="size-4 text-muted-foreground" />;
+      return <Circle className="size-3.5 text-muted-foreground" />;
   }
 }
 
