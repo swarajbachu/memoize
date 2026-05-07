@@ -783,15 +783,21 @@ const editPathOf = (toolInput: Record<string, unknown>): string =>
  *   5. Otherwise, prompt.
  */
 /**
- * Match our in-process AskUserQuestion tool by suffix as well as the
- * canonical FQN. The SDK has been observed to pass slightly different
- * formats to `canUseTool` than to the tool_use.name field on assistant
- * blocks — guarding both shapes so the auto-allow doesn't depend on
- * the SDK's internal naming convention.
+ * Match every "ask the user a question" surface we know about. The
+ * Claude SDK has a built-in `AskUserQuestion` tool (PascalCase) that
+ * the model can call; we register our own `mcp__forkzero__ask_user_question`
+ * to drive a renderer card. Either form should bypass the permission
+ * toast — asking permission to ask a question is double-prompting.
+ *
+ * The SDK built-in is also added to `disallowedTools` below so the
+ * model is steered to ours; this matcher is the safety net.
  */
+const SDK_BUILTIN_ASK_USER_QUESTION = "AskUserQuestion";
+
 const isAskUserQuestion = (toolName: string): boolean =>
   toolName === ASK_USER_QUESTION_FQN ||
   toolName === ASK_USER_QUESTION_TOOL ||
+  toolName === SDK_BUILTIN_ASK_USER_QUESTION ||
   toolName.endsWith(`__${ASK_USER_QUESTION_TOOL}`);
 
 const policyFor = (
@@ -1150,6 +1156,15 @@ export const startClaudeSession = (
           allowedTools: ["Agent", ASK_USER_QUESTION_FQN],
         } as Pick<Options, "agents" | "allowedTools">)
       : {};
+    // The SDK ships a built-in `AskUserQuestion` tool that opens its
+    // own dialog flow. We disable it so the model is steered to our
+    // MCP version, which the renderer paints as the question card in
+    // the composer slot. Without this, the model would default to the
+    // built-in (it has a nicer name) and trigger the permission toast
+    // for every question.
+    const disallowedTools: ReadonlyArray<string> = [
+      SDK_BUILTIN_ASK_USER_QUESTION,
+    ];
     const initialPermissionMode = input.permissionMode ?? "default";
     const options: Options = {
       cwd,
@@ -1159,6 +1174,13 @@ export const startClaudeSession = (
         : {}),
       ...(input.model !== undefined ? { model: input.model } : {}),
       ...subagentOptions,
+      disallowedTools: [
+        ...(subagentOptions.allowedTools === undefined
+          ? disallowedTools
+          : disallowedTools.filter(
+              (t) => !subagentOptions.allowedTools!.includes(t),
+            )),
+      ],
       mcpServers: { [FORKZERO_MCP_NAME]: forkzeroMcpServer },
       permissionMode: toSdkPermissionMode(initialPermissionMode),
       // Trim the SDK's stock plan-mode body to nudge the agent toward
