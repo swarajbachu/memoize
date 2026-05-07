@@ -1,7 +1,7 @@
 import { Rpc } from "@effect/rpc";
 import { Schema } from "effect";
 
-import { FolderId } from "./ids.ts";
+import { FolderId, WorktreeId } from "./ids.ts";
 
 /**
  * One entry in a directory listing — either a file or a subdirectory. The
@@ -76,6 +76,12 @@ export const FsTreeRpc = Rpc.make("fs.tree", {
   payload: Schema.Struct({
     folderId: FolderId,
     path: Schema.optional(Schema.String),
+    /**
+     * When set, list inside the worktree's path instead of the project's
+     * main checkout. The worktree must belong to `folderId`; otherwise the
+     * server falls back to the main checkout silently.
+     */
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
   }),
   success: Schema.Array(FsEntry),
   error: FsErrors,
@@ -111,6 +117,7 @@ export const FsReadFileRpc = Rpc.make("fs.readFile", {
   payload: Schema.Struct({
     folderId: FolderId,
     path: Schema.String,
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
   }),
   success: FsFileContent,
   error: FsReadFileErrors,
@@ -129,6 +136,7 @@ export const FsWriteFileRpc = Rpc.make("fs.writeFile", {
     path: Schema.String,
     content: Schema.String,
     expectedMtime: Schema.String,
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
   }),
   success: Schema.Struct({
     mtime: Schema.String,

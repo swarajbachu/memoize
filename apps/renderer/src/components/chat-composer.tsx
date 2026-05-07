@@ -941,7 +941,7 @@ function WorkspacePicker({ session }: { session: Session }) {
           <div className="col-start-3 row-start-1 flex flex-col gap-0.5">
             <span className="font-medium leading-none">New worktree</span>
             <span className="text-xs text-muted-foreground leading-snug">
-              Branch off HEAD into a fresh forkzero/&lt;name&gt; worktree.
+              Branch off the current HEAD into a fresh worktree.
             </span>
           </div>
         </MenuItem>
@@ -963,9 +963,12 @@ function WorkspaceBranchLabel({ session }: { session: Session }) {
   const wt = worktrees.find((w) => w.id === session.worktreeId);
   if (wt === undefined) return null;
   return (
-    <span className="flex items-center gap-1 truncate font-mono">
-      <GitBranch className="size-3 shrink-0 opacity-60" />
-      <span className="truncate">{wt.branch}</span>
+    <span
+      className="flex items-center gap-1 truncate font-mono text-foreground/80"
+      title={`Branch ${wt.branch}`}
+    >
+      <GitBranch className="size-3 shrink-0 opacity-70" />
+      <span className="truncate font-medium">{wt.branch}</span>
     </span>
   );
 }

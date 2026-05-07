@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import type { FolderId } from "@forkzero/wire";
+import type { FolderId, WorktreeId } from "@forkzero/wire";
 
 /**
  * Top-level renderer view. The settings page replaces the chat surface in the
@@ -30,6 +30,12 @@ export type OpenFile = {
   readonly folderId: FolderId;
   readonly path: string;
   readonly name: string;
+  /**
+   * Worktree the file lives in. Persisted on the OpenFile so a save still
+   * targets the right tree even if the user switches selected sessions
+   * while the file is open. `null` means main checkout.
+   */
+  readonly worktreeId: WorktreeId | null;
 };
 
 type UiState = {

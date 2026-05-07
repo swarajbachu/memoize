@@ -10,6 +10,7 @@ import {
   type GitOriginInfo,
   type GitPrInfo,
   type GitStatusSummary,
+  type WorktreeId,
 } from "@forkzero/wire";
 
 type GitFailure =
@@ -25,6 +26,7 @@ export interface GitServiceShape {
   ) => Effect.Effect<ReadonlyArray<GitCommit>, GitFailure>;
   readonly status: (
     folderId: FolderId,
+    worktreeId?: WorktreeId | null,
   ) => Effect.Effect<GitStatusSummary, GitFailure>;
   readonly subscribeHeadChanges: (
     folderId: FolderId,

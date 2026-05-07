@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { FolderId } from "@forkzero/wire";
 
+import { useActiveWorktreeId } from "~/store/active-workspace.ts";
 import { useUiStore } from "~/store/ui.ts";
 
 interface HoverState {
@@ -38,6 +39,7 @@ export function FileChipHover({
   const [state, setState] = useState<HoverState | null>(null);
   const hideTimer = useRef<number | null>(null);
   const openFileInTab = useUiStore((s) => s.openFileInTab);
+  const worktreeId = useActiveWorktreeId();
 
   useEffect(() => {
     const host = hostRef.current;
@@ -124,6 +126,7 @@ export function FileChipHover({
               folderId: projectId,
               path: absPath,
               name: basename(relPath),
+              worktreeId,
             });
             setState(null);
           }}

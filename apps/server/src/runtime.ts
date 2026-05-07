@@ -80,18 +80,20 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(NodeContext.layer),
   );
 
-  // GitService yields WorkspaceService for folderId → path resolution and
-  // CommandExecutor (via NodeContext) for spawning git. Provide both.
-  const GitLayer = GitServiceLive.pipe(
-    Layer.provide(WorkspaceLayer),
-    Layer.provide(NodeContext.layer),
-  );
-
   // WorktreeService manages forkzero-owned `git worktree` checkouts. Same
   // shape as GitLayer + the SqlClient for persisting the rows.
   const WorktreeLayer = WorktreeServiceLive.pipe(
     Layer.provide(WorkspaceLayer),
     Layer.provide(MigratedSqlite),
+    Layer.provide(NodeContext.layer),
+  );
+
+  // GitService yields WorkspaceService for folderId → path, WorktreeService
+  // so `git.status` can resolve cwd to the active worktree when set, and
+  // CommandExecutor (via NodeContext) for spawning git.
+  const GitLayer = GitServiceLive.pipe(
+    Layer.provide(WorkspaceLayer),
+    Layer.provide(WorktreeLayer),
     Layer.provide(NodeContext.layer),
   );
 
@@ -101,9 +103,11 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
   );
 
   // FsService walks the project tree one directory at a time. WorkspaceService
-  // resolves folderId → path; FileSystem (via NodeContext) reads dirs/stats.
+  // resolves folderId → path; WorktreeService swaps the root to a worktree's
+  // path when the renderer passes `worktreeId`; FileSystem reads dirs/stats.
   const FsLayer = FsServiceLive.pipe(
     Layer.provide(WorkspaceLayer),
+    Layer.provide(WorktreeLayer),
     Layer.provide(NodeContext.layer),
   );
 

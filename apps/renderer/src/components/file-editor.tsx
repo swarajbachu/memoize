@@ -69,6 +69,7 @@ export function FileEditor() {
           path: file.path,
           content: docRef.current,
           expectedMtime: mtimeRef.current,
+          worktreeId: file.worktreeId,
         }),
       );
       mtimeRef.current = result.mtime;
@@ -129,6 +130,7 @@ export function FileEditor() {
           client.fs.readFile({
             folderId: openFile.folderId,
             path: openFile.path,
+            worktreeId: openFile.worktreeId,
           }),
         );
         if (cancelled) return;

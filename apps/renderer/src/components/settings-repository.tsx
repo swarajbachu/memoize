@@ -296,7 +296,7 @@ function WorktreeSection({
   return (
     <Section
       title="Worktrees"
-      description="Forkzero-managed git worktrees for this repo. Each lives at .forkzero/repo-worktree/<name>/ and tracks branch forkzero/<name>."
+      description="Git worktrees for this repo. Each lives under .forkzero/repo-worktree/ on disk."
     >
       <div className="flex flex-col gap-3">
         <label className="flex items-center gap-3 rounded-md border border-border/60 px-3 py-2.5 text-sm">

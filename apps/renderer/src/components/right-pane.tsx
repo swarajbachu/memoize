@@ -1,8 +1,17 @@
-import { CircleDot, FolderTree, Loader2, TerminalSquare } from "lucide-react";
+import {
+  CircleDot,
+  FolderClosed,
+  FolderTree,
+  GitBranch,
+  Loader2,
+  TerminalSquare,
+} from "lucide-react";
 import { useState } from "react";
 
+import { useActiveWorktreeId } from "../store/active-workspace.ts";
 import { usePrStateStore } from "../store/pr-state.ts";
 import { useWorkspaceStore } from "../store/workspace.ts";
+import { EMPTY_WORKTREES, useWorktreesStore } from "../store/worktrees.ts";
 import { ChecksPane } from "./checks-pane.tsx";
 import { FileTree } from "./file-tree.tsx";
 import { RightPaneHeader } from "./right-pane-header.tsx";
@@ -80,9 +89,12 @@ export function RightPane() {
           <>
             <div
               hidden={tab !== "files"}
-              className="min-h-0 flex-1 overflow-y-auto"
+              className="flex min-h-0 flex-1 flex-col"
             >
-              <FileTree key={selected.id} folderId={selected.id} />
+              <ActiveWorkspaceChip folderId={selected.id} />
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <FileTree key={selected.id} folderId={selected.id} />
+              </div>
             </div>
             <div hidden={tab !== "terminal"} className="min-h-0 flex-1">
               <TerminalPane />
@@ -94,6 +106,36 @@ export function RightPane() {
         )}
       </div>
     </aside>
+  );
+}
+
+/**
+ * Strip above the file tree showing whether the current selection is rooted
+ * in the project's main checkout or in a worktree. Read-only label — pick a
+ * worktree from the chat composer's workspace picker; this chip just makes
+ * the active root visible so users don't get confused by what they're
+ * looking at.
+ */
+function ActiveWorkspaceChip({ folderId }: { folderId: string }) {
+  const worktreeId = useActiveWorktreeId();
+  const worktree = useWorktreesStore((s) => {
+    if (worktreeId === null) return null;
+    const list = s.byProject[folderId] ?? EMPTY_WORKTREES;
+    return list.find((w) => w.id === worktreeId) ?? null;
+  });
+  const Icon = worktreeId === null ? FolderClosed : GitBranch;
+  const label =
+    worktreeId === null ? "Main checkout" : (worktree?.name ?? "Worktree");
+  const sub =
+    worktreeId === null ? null : (worktree?.branch ?? null);
+  return (
+    <div className="flex shrink-0 items-center gap-1.5 border-b border-border/40 px-3 py-1.5 text-[11px] text-muted-foreground">
+      <Icon className="size-3.5 shrink-0 opacity-70" />
+      <span className="truncate font-medium text-foreground/80">{label}</span>
+      {sub !== null ? (
+        <span className="truncate font-mono opacity-70">· {sub}</span>
+      ) : null}
+    </div>
   );
 }
 

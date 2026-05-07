@@ -9,6 +9,7 @@ import {
   type FsPathOutsideError,
   type FsReadError,
   type FsTooLargeError,
+  type WorktreeId,
 } from "@forkzero/wire";
 
 type TreeFailure = FsFolderNotFoundError | FsPathOutsideError | FsReadError;
@@ -19,16 +20,19 @@ export interface FsServiceShape {
   readonly tree: (
     folderId: FolderId,
     relPath: string,
+    worktreeId?: WorktreeId | null,
   ) => Effect.Effect<ReadonlyArray<FsEntry>, TreeFailure>;
   readonly readFile: (
     folderId: FolderId,
     relPath: string,
+    worktreeId?: WorktreeId | null,
   ) => Effect.Effect<typeof FsFileContent.Type, ReadFileFailure>;
   readonly writeFile: (
     folderId: FolderId,
     relPath: string,
     content: string,
     expectedMtime: string,
+    worktreeId?: WorktreeId | null,
   ) => Effect.Effect<{ readonly mtime: string }, WriteFileFailure>;
 }
 

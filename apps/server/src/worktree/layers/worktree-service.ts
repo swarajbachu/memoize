@@ -188,13 +188,13 @@ export const WorktreeServiceLive = Layer.effect(
         );
         const baseBranch = headRefRaw.trim() || "HEAD";
 
-        // Try a few cool-names before giving up. Disk and DB collisions both
-        // count as "pick another."
+        // Try a few cool-names before giving up. Disk, DB, and existing-branch
+        // collisions all count as "pick another."
         let attempt = 0;
         while (attempt < 5) {
           attempt += 1;
           const name = generateCoolName();
-          const branch = `forkzero/${name}`;
+          const branch = name;
           const target = Path.join(baseDir, name);
 
           const targetExists = yield* fs
@@ -208,6 +208,20 @@ export const WorktreeServiceLive = Layer.effect(
             LIMIT 1
           `.pipe(Effect.orDie);
           if (dupes.length > 0) continue;
+
+          // Skip if a branch with this name already exists in the repo —
+          // `git worktree add -b` would fail and we'd surface a confusing
+          // error. Cheap pre-flight; cool-names rarely collide.
+          const branchExists = yield* runGit(repoPath, [
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            `refs/heads/${branch}`,
+          ]).pipe(
+            Effect.map(() => true),
+            Effect.catchAll(() => Effect.succeed(false)),
+          );
+          if (branchExists) continue;
 
           // git worktree add -b <branch> <target> <baseRef>
           // baseRef resolves the new branch's start point; use HEAD so we
