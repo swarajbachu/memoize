@@ -9,7 +9,7 @@ import {
 import { useState } from "react";
 
 import { useActiveWorktreeId } from "../store/active-workspace.ts";
-import { usePrStateStore } from "../store/pr-state.ts";
+import { prStateKey, usePrStateStore } from "../store/pr-state.ts";
 import { useWorkspaceStore } from "../store/workspace.ts";
 import { EMPTY_WORKTREES, useWorktreesStore } from "../store/worktrees.ts";
 import { ChecksPane } from "./checks-pane.tsx";
@@ -32,8 +32,11 @@ export function RightPane() {
   const selected = selectedFolderId
     ? (folders.find((f) => f.id === selectedFolderId) ?? null)
     : null;
+  const worktreeId = useActiveWorktreeId();
   const pr = usePrStateStore((s) =>
-    selectedFolderId ? (s.byFolder[selectedFolderId] ?? null) : null,
+    selectedFolderId
+      ? (s.byKey[prStateKey(selectedFolderId, worktreeId)] ?? null)
+      : null,
   );
   const [tab, setTab] = useState<Tab>("files");
 

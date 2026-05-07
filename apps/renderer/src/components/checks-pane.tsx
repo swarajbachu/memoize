@@ -12,7 +12,7 @@ import type { FolderId, GitPrInfo } from "@forkzero/wire";
 import { softTone, type Tone } from "../lib/tones.ts";
 import { useActiveWorktreeId } from "../store/active-workspace.ts";
 import { gitStatusKey, useGitStatusStore } from "../store/git-status.ts";
-import { usePrStateStore } from "../store/pr-state.ts";
+import { prStateKey, usePrStateStore } from "../store/pr-state.ts";
 
 const openExternal = (url: string) => {
   const bridge = window.forkzero?.app;
@@ -38,7 +38,9 @@ export function ChecksPane({ folderId }: { folderId: FolderId | null }) {
       : null,
   );
   const pr = usePrStateStore((s) =>
-    folderId ? (s.byFolder[folderId] ?? null) : null,
+    folderId
+      ? (s.byKey[prStateKey(folderId, worktreeId)] ?? null)
+      : null,
   );
 
   if (folderId === null) {

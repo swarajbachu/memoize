@@ -21,7 +21,7 @@ import {
 import { useActiveWorktreeId } from "../store/active-workspace.ts";
 import { useComposerBridge } from "../store/composer-bridge.ts";
 import { gitStatusKey, useGitStatusStore } from "../store/git-status.ts";
-import { usePrStateStore } from "../store/pr-state.ts";
+import { prStateKey, usePrStateStore } from "../store/pr-state.ts";
 import { useSessionsStore } from "../store/sessions.ts";
 import { useUiStore } from "../store/ui.ts";
 import {
@@ -241,7 +241,9 @@ export function TopBarRight({ folderId }: { folderId: FolderId | null }) {
       : null,
   );
   const pr = usePrStateStore((s) =>
-    folderId ? (s.byFolder[folderId] ?? null) : null,
+    folderId
+      ? (s.byKey[prStateKey(folderId, worktreeId)] ?? null)
+      : null,
   );
   const insertText = useComposerBridge((s) => s.insertText);
   const selectedSessionId = useSessionsStore((s) => s.selectedSessionId);

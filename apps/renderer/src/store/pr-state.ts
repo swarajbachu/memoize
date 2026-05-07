@@ -1,28 +1,48 @@
 import { Effect } from "effect";
 import { create } from "zustand";
 
-import type { FolderId, GitPrInfo } from "@forkzero/wire";
+import type { FolderId, GitPrInfo, WorktreeId } from "@forkzero/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
 
 /**
- * Per-project PR state. Source of truth for the sidebar branch icon color and
- * the diff-stats slot on the session row. Hydrated lazily when a project is
- * expanded; refreshed after a turn finishes (running → idle/closed) and
- * on-demand from the chat composer.
+ * PR state cache. Source of truth for the sidebar branch icon color and the
+ * diff-stats slot on the session row. Hydrated lazily when a project is
+ * expanded or a session row mounts; refreshed after a turn finishes
+ * (running → idle/closed) and on-demand from the chat composer.
+ *
+ * Keyed by `(folderId, worktreeId)` because each worktree has its own
+ * branch and therefore its own PR. Sessions on the main checkout share
+ * the project-level entry (`worktreeId === null`).
  */
 type PrStateMap = Record<string, GitPrInfo>;
 
 type PrState = {
-  readonly byFolder: PrStateMap;
-  readonly hydrate: (folderId: FolderId) => Promise<void>;
-  readonly refresh: (folderId: FolderId) => Promise<void>;
+  readonly byKey: PrStateMap;
+  readonly hydrate: (
+    folderId: FolderId,
+    worktreeId?: WorktreeId | null,
+  ) => Promise<void>;
+  readonly refresh: (
+    folderId: FolderId,
+    worktreeId?: WorktreeId | null,
+  ) => Promise<void>;
 };
 
-const fetchPrState = async (folderId: FolderId): Promise<GitPrInfo | null> => {
+export const prStateKey = (
+  folderId: FolderId,
+  worktreeId: WorktreeId | null | undefined,
+): string => `${folderId}:${worktreeId ?? "main"}`;
+
+const fetchPrState = async (
+  folderId: FolderId,
+  worktreeId: WorktreeId | null | undefined,
+): Promise<GitPrInfo | null> => {
   try {
     const client = await getRpcClient();
-    const info = await Effect.runPromise(client.git.prState({ folderId }));
+    const info = await Effect.runPromise(
+      client.git.prState({ folderId, worktreeId: worktreeId ?? null }),
+    );
     return info;
   } catch {
     // gh missing, no PR, no remote, etc. — caller treats absence as "none".
@@ -31,16 +51,18 @@ const fetchPrState = async (folderId: FolderId): Promise<GitPrInfo | null> => {
 };
 
 export const usePrStateStore = create<PrState>((set, get) => ({
-  byFolder: {},
-  hydrate: async (folderId) => {
-    if (folderId in get().byFolder) return;
-    const info = await fetchPrState(folderId);
+  byKey: {},
+  hydrate: async (folderId, worktreeId) => {
+    const key = prStateKey(folderId, worktreeId);
+    if (key in get().byKey) return;
+    const info = await fetchPrState(folderId, worktreeId);
     if (info === null) return;
-    set((s) => ({ byFolder: { ...s.byFolder, [folderId]: info } }));
+    set((s) => ({ byKey: { ...s.byKey, [key]: info } }));
   },
-  refresh: async (folderId) => {
-    const info = await fetchPrState(folderId);
+  refresh: async (folderId, worktreeId) => {
+    const info = await fetchPrState(folderId, worktreeId);
     if (info === null) return;
-    set((s) => ({ byFolder: { ...s.byFolder, [folderId]: info } }));
+    const key = prStateKey(folderId, worktreeId);
+    set((s) => ({ byKey: { ...s.byKey, [key]: info } }));
   },
 }));

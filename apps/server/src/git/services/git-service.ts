@@ -36,6 +36,7 @@ export interface GitServiceShape {
   ) => Effect.Effect<GitOriginInfo | null, GitFailure>;
   readonly prState: (
     folderId: FolderId,
+    worktreeId?: WorktreeId | null,
   ) => Effect.Effect<GitPrInfo, GitFailure>;
 }
 

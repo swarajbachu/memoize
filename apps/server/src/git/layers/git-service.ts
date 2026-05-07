@@ -352,8 +352,8 @@ export const GitServiceLive = Layer.effect(
         }),
       );
 
-    const prState: GitService["Type"]["prState"] = (folderId) =>
-      Effect.flatMap(resolvePath(folderId), (cwd) =>
+    const prState: GitService["Type"]["prState"] = (folderId, worktreeId) =>
+      Effect.flatMap(resolvePathForWorktree(folderId, worktreeId), (cwd) =>
         Effect.gen(function* () {
           const empty: GitPrInfo = GitPrInfo.make({
             state: "none",

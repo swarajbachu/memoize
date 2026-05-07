@@ -125,7 +125,15 @@ export class GitPrInfo extends Schema.Class<GitPrInfo>("GitPrInfo")({
 }) {}
 
 export const GitPrStateRpc = Rpc.make("git.prState", {
-  payload: Schema.Struct({ folderId: FolderId }),
+  payload: Schema.Struct({
+    folderId: FolderId,
+    /**
+     * When set, runs `gh pr view` inside the worktree's path so the result
+     * reflects the worktree's branch — each worktree has its own branch,
+     * each branch has its own PR (or none).
+     */
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
+  }),
   success: GitPrInfo,
   error: GitErrors,
 });
