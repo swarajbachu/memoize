@@ -216,6 +216,10 @@ export const startCodexSession = (
         approvalPolicy: "never",
         skipGitRepoCheck: true,
         ...(input.model !== undefined ? { model: input.model } : {}),
+        // `input.agents` is deliberately ignored — the Codex SDK has no
+        // sub-agents primitive. Cross-provider delegation is sketched in
+        // specs/sub-agents/decisions/0012-codex-bridge-via-mcp.md and
+        // lands as a follow-up PR.
       });
     } catch (cause) {
       yield* events.end;
