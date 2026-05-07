@@ -1,13 +1,15 @@
 import { Rpc } from "@effect/rpc";
 import { Schema } from "effect";
 
-import { ProviderId } from "./agent.ts";
+import { ProviderId, RuntimeMode } from "./agent.ts";
 import {
   AgentItemId,
   AgentSessionId,
   FolderId,
   MessageId,
 } from "./ids.ts";
+
+export { DEFAULT_RUNTIME_MODE, RuntimeMode } from "./agent.ts";
 
 /**
  * A session is one chat thread inside a project. The id matches the underlying
@@ -45,25 +47,10 @@ export type SessionStatus = typeof SessionStatus.Type;
 export const ResumeStrategy = Schema.Literal("claude-session-id", "none");
 export type ResumeStrategy = typeof ResumeStrategy.Type;
 
-/**
- * How permission prompts behave for this session.
- *
- *   - `approval-required` — prompt every write/Bash/Network/Task/MCP call.
- *     Read-only tools auto-allow. Sensitive paths force a prompt regardless
- *     of any other allow rule. **Default for new sessions** — safe by default.
- *   - `auto-accept-edits` — also auto-allow `Edit` / `Write` / `MultiEdit` /
- *     `NotebookEdit`. Bash / Network / Task / MCP still prompt. Sensitive
- *     paths still force a prompt.
- *   - `full-access` — auto-allow everything except sensitive paths (which
- *     still prompt — the safety net the user opted into is preserved).
- */
-export const RuntimeMode = Schema.Literal(
-  "approval-required",
-  "auto-accept-edits",
-  "full-access",
-);
-export type RuntimeMode = typeof RuntimeMode.Type;
-export const DEFAULT_RUNTIME_MODE: RuntimeMode = "approval-required";
+// `RuntimeMode` and `DEFAULT_RUNTIME_MODE` are defined in `agent.ts` so the
+// new `AgentDefinition.permissionMode` can reuse the same literal set
+// without an import cycle. Re-exported above for back-compat with the
+// existing `import { RuntimeMode } from "@forkzero/wire"` callers.
 
 export class Session extends Schema.Class<Session>("Session")({
   id: SessionId,
@@ -99,6 +86,7 @@ const UserContent = Schema.TaggedStruct("user", {
 
 const AssistantContent = Schema.TaggedStruct("assistant", {
   text: Schema.String,
+  parentItemId: Schema.optional(AgentItemId),
 });
 
 /**
@@ -111,22 +99,54 @@ const ThinkingContent = Schema.TaggedStruct("thinking", {
   itemId: AgentItemId,
   text: Schema.String,
   redacted: Schema.Boolean,
+  parentItemId: Schema.optional(AgentItemId),
 });
 
 const ToolUseContent = Schema.TaggedStruct("tool_use", {
   itemId: AgentItemId,
   tool: Schema.String,
   input: Schema.Unknown,
+  parentItemId: Schema.optional(AgentItemId),
 });
 
 const ToolResultContent = Schema.TaggedStruct("tool_result", {
   itemId: AgentItemId,
   output: Schema.Unknown,
   isError: Schema.Boolean,
+  parentItemId: Schema.optional(AgentItemId),
 });
 
 const ErrorContent = Schema.TaggedStruct("error", {
   message: Schema.String,
+});
+
+/**
+ * Closing summary persisted for a sub-agent run. Mirrors the streaming
+ * `SubagentSummaryEvent` so resume parity holds: the wrapper-row footer
+ * reads `summary` / `turns` / `durationMs` from this row when collapsed.
+ */
+const SubagentSummaryContent = Schema.TaggedStruct("subagent_summary", {
+  itemId: AgentItemId,
+  agentName: Schema.String,
+  model: Schema.String,
+  turns: Schema.Number,
+  durationMs: Schema.Number,
+  summary: Schema.String,
+  isError: Schema.Boolean,
+});
+
+/**
+ * Per-turn token usage. Persisted (rather than transient) so resume parity
+ * gives us the per-agent cost footer for free. `parentItemId` set means
+ * the usage belongs to a sub-agent; absent means main-agent usage.
+ */
+const UsageContent = Schema.TaggedStruct("usage", {
+  parentItemId: Schema.optional(AgentItemId),
+  inputTokens: Schema.Number,
+  outputTokens: Schema.Number,
+  cacheReadTokens: Schema.Number,
+  cacheCreationTokens: Schema.Number,
+  model: Schema.String,
 });
 
 /**
@@ -142,6 +162,8 @@ export const MessageContent = Schema.Union(
   ToolUseContent,
   ToolResultContent,
   ErrorContent,
+  SubagentSummaryContent,
+  UsageContent,
 );
 export type MessageContent = typeof MessageContent.Type;
 

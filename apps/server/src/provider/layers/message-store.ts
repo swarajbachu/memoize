@@ -105,10 +105,12 @@ const roleForContent = (content: MessageContent): MessageRole => {
     case "assistant":
     case "thinking":
     case "tool_use":
+    case "subagent_summary":
       return "assistant";
     case "tool_result":
       return "tool";
     case "error":
+    case "usage":
       return "system";
   }
 };
