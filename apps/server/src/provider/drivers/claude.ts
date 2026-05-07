@@ -782,11 +782,29 @@ const editPathOf = (toolInput: Record<string, unknown>): string =>
  *   4. `full-access` mode short-circuits everything else.
  *   5. Otherwise, prompt.
  */
+/**
+ * Match our in-process AskUserQuestion tool by suffix as well as the
+ * canonical FQN. The SDK has been observed to pass slightly different
+ * formats to `canUseTool` than to the tool_use.name field on assistant
+ * blocks — guarding both shapes so the auto-allow doesn't depend on
+ * the SDK's internal naming convention.
+ */
+const isAskUserQuestion = (toolName: string): boolean =>
+  toolName === ASK_USER_QUESTION_FQN ||
+  toolName === ASK_USER_QUESTION_TOOL ||
+  toolName.endsWith(`__${ASK_USER_QUESTION_TOOL}`);
+
 const policyFor = (
   toolName: string,
   toolInput: Record<string, unknown>,
   runtimeMode: RuntimeMode,
 ): ToolPolicy => {
+  // 0. Our own AskUserQuestion is the user-facing prompt — gating it
+  //    behind a separate "Use tool AskUserQuestion?" toast is double
+  //    prompting. Always auto-allow.
+  if (isAskUserQuestion(toolName)) {
+    return { kind: "auto-allow" };
+  }
   // 1. Sensitive paths — checked before any auto-allow. Even YOLO mode prompts.
   if (toolName === "Read") {
     const path = typeof toolInput.file_path === "string"
@@ -1173,6 +1191,13 @@ export const startClaudeSession = (
       // promise this awaits.
       canUseTool: async (toolName, toolInput) => {
         const policy = policyFor(toolName, toolInput, getRuntimeMode());
+        // One-line debug so if the auto-allow ever misses (e.g. SDK
+        // changes the MCP-tool naming convention) we can see the
+        // exact toolName arriving and patch `isAskUserQuestion`.
+        // eslint-disable-next-line no-console
+        console.log(
+          `[claude.canUseTool] tool=${toolName} policy=${policy.kind}`,
+        );
         if (policy.kind === "auto-allow") {
           // Read / LS / Glob / Grep / NotebookRead / BashOutput / TodoWrite
           // skip the prompt entirely. We deliberately don't surface a
