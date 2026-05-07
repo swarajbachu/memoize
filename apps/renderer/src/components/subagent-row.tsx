@@ -1,0 +1,190 @@
+import {
+  ClipboardIcon,
+  Robot01Icon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ChevronDown, ChevronRight } from "lucide-react";
+import { useMemo, useState } from "react";
+
+import type { AgentItemId, Message } from "@forkzero/wire";
+
+import { cn } from "~/lib/utils";
+
+import { MessageRow, type ToolResultRecord } from "./message-row.tsx";
+
+const MODEL_LABEL: Record<string, string> = {
+  "claude-opus-4-7": "Opus 4.7",
+  "claude-sonnet-4-6": "Sonnet 4.6",
+  "claude-haiku-4-5": "Haiku 4.5",
+};
+
+const labelForModel = (model: string | undefined): string => {
+  if (!model) return "inherit";
+  return MODEL_LABEL[model] ?? model;
+};
+
+const formatDuration = (ms: number): string => {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  const min = Math.floor(ms / 60_000);
+  const sec = Math.round((ms - min * 60_000) / 1000);
+  return `${min}m ${sec}s`;
+};
+
+/**
+ * Wrapper row for a sub-agent run. Visually mirrors `tool-row.tsx`'s
+ * `ExpandableIconRow` (icon → label → trailing → expandable body) so the
+ * sub-agent collapses into the timeline cleanly. The body renders a
+ * `Prompt` summary at the top followed by nested `MessageRow`s for every
+ * message tagged with this `parentItemId`. Closes with the sub-agent's
+ * final assistant text once the `SubagentSummary` lands.
+ *
+ * Default expansion: open while running (no summary yet), collapsed once
+ * the sub-agent finishes.
+ */
+export function SubagentRow({
+  agentToolUseId,
+  agentName,
+  prompt,
+  modelRequested,
+  children,
+  summary,
+  resultsByItemId,
+}: {
+  readonly agentToolUseId: AgentItemId;
+  readonly agentName: string;
+  readonly prompt: string;
+  readonly modelRequested: string | undefined;
+  readonly children: ReadonlyArray<Message>;
+  readonly summary: {
+    readonly text: string;
+    readonly turns: number;
+    readonly durationMs: number;
+    readonly model: string;
+    readonly isError: boolean;
+  } | null;
+  readonly resultsByItemId: ReadonlyMap<AgentItemId, ToolResultRecord>;
+}) {
+  // Auto-expand while running (no summary yet) so the user can watch the
+  // sub-agent work. Once finished, collapse to a one-line meta summary.
+  const [expanded, setExpanded] = useState<boolean>(summary === null);
+  const Chevron = expanded ? ChevronDown : ChevronRight;
+
+  const trailingMeta = useMemo(() => {
+    if (summary !== null) {
+      return `${labelForModel(summary.model)} · ${summary.turns} turn${summary.turns === 1 ? "" : "s"} · ${formatDuration(summary.durationMs)}`;
+    }
+    return labelForModel(modelRequested);
+  }, [summary, modelRequested]);
+
+  void agentToolUseId; // reserved for future deeplink anchor
+
+  return (
+    <div className="px-4">
+      <button
+        type="button"
+        onClick={() => setExpanded((e) => !e)}
+        className={cn(
+          "group flex w-full items-center gap-2 rounded px-1.5 py-0.5 text-left text-xs",
+          "hover:bg-muted/40 cursor-pointer",
+        )}
+      >
+        <div className="relative grid size-4 shrink-0 place-items-center">
+          <HugeiconsIcon
+            icon={Robot01Icon}
+            strokeWidth={2}
+            aria-hidden="true"
+            className={cn(
+              "col-start-1 row-start-1 size-3.5 text-muted-foreground transition-opacity duration-150 ease-out",
+              "group-hover:opacity-0 motion-reduce:transition-none",
+            )}
+          />
+          <Chevron
+            aria-hidden="true"
+            className={cn(
+              "col-start-1 row-start-1 size-3.5 text-muted-foreground opacity-0 transition-opacity duration-150 ease-out",
+              "group-hover:opacity-100 motion-reduce:transition-none",
+            )}
+          />
+        </div>
+        <span className="shrink-0 font-medium text-foreground/90">
+          Agent · {agentName}
+        </span>
+        <span
+          className={cn(
+            "min-w-0 flex-1 truncate text-muted-foreground",
+            summary?.isError && "text-red-300",
+          )}
+        >
+          {trailingMeta}
+        </span>
+      </button>
+      {expanded ? (
+        <div className="ml-7 mt-1 border-l border-border/60 pl-3">
+          <PromptRow text={prompt} />
+          <div className="flex flex-col">
+            {children.map((m) => (
+              <MessageRow
+                key={m.id}
+                message={m}
+                resultsByItemId={resultsByItemId}
+              />
+            ))}
+          </div>
+          {summary !== null && summary.text.length > 0 ? (
+            <div className="px-4 py-1 text-xs text-foreground/80">
+              {summary.text}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function PromptRow({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const Chevron = expanded ? ChevronDown : ChevronRight;
+  return (
+    <div className="px-4 pt-1">
+      <button
+        type="button"
+        onClick={() => setExpanded((e) => !e)}
+        className={cn(
+          "group flex w-full items-center gap-2 rounded px-1.5 py-0.5 text-left text-xs",
+          "hover:bg-muted/40 cursor-pointer",
+        )}
+      >
+        <div className="relative grid size-4 shrink-0 place-items-center">
+          <HugeiconsIcon
+            icon={ClipboardIcon}
+            strokeWidth={2}
+            aria-hidden="true"
+            className={cn(
+              "col-start-1 row-start-1 size-3.5 text-muted-foreground transition-opacity duration-150 ease-out",
+              "group-hover:opacity-0 motion-reduce:transition-none",
+            )}
+          />
+          <Chevron
+            aria-hidden="true"
+            className={cn(
+              "col-start-1 row-start-1 size-3.5 text-muted-foreground opacity-0 transition-opacity duration-150 ease-out",
+              "group-hover:opacity-100 motion-reduce:transition-none",
+            )}
+          />
+        </div>
+        <span className="shrink-0 font-medium text-foreground/90">Prompt</span>
+        <span className="min-w-0 flex-1 truncate text-muted-foreground">
+          {text}
+        </span>
+      </button>
+      {expanded ? (
+        <div className="ml-7 mt-1 max-w-2xl border-l border-border/60 pl-3 pr-1">
+          <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded bg-zinc-900/70 px-3 py-2 font-mono text-[11px] text-foreground/80">
+            {text || "(empty)"}
+          </pre>
+        </div>
+      ) : null}
+    </div>
+  );
+}

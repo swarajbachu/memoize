@@ -10,6 +10,10 @@ import type {
 } from "@forkzero/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
+import {
+  buildAgentsForNewSession,
+  useSubagentsStore,
+} from "./subagents.ts";
 
 /**
  * Per-project session catalog. Sessions are scoped to a project, archived
@@ -96,6 +100,13 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     set({ error: null });
     try {
       const client = await getRpcClient();
+      // Sub-agent presets are Claude-only this PR — Codex sessions ship
+      // empty `agents` so the wire stays uniform.
+      const agents =
+        providerId === "claude" ? buildAgentsForNewSession() : {};
+      const enableSubagents =
+        providerId === "claude" &&
+        useSubagentsStore.getState().enableForNewSessions;
       const session = await Effect.runPromise(
         client.session.create({
           projectId,
@@ -103,6 +114,8 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
           model,
           initialPrompt: opts?.initialPrompt,
           runtimeMode: opts?.runtimeMode,
+          agents,
+          enableSubagents,
         }),
       );
       set((s) => {

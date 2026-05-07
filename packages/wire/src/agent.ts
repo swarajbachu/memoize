@@ -37,6 +37,24 @@ export const AgentStatus = Schema.Literal(
 export type AgentStatus = typeof AgentStatus.Type;
 
 /**
+ * How permission prompts behave for a session (or a sub-agent). Originally
+ * declared in `session.ts`; lifted here so `AgentDefinition.permissionMode`
+ * can reuse the same literal set without an import cycle.
+ *
+ *   - `approval-required` — prompt every write/Bash/Network/Task/MCP call.
+ *   - `auto-accept-edits` — also auto-allow Edit / Write / MultiEdit /
+ *     NotebookEdit. Bash / Network / Task / MCP still prompt.
+ *   - `full-access` — auto-allow everything except sensitive paths.
+ */
+export const RuntimeMode = Schema.Literal(
+  "approval-required",
+  "auto-accept-edits",
+  "full-access",
+);
+export type RuntimeMode = typeof RuntimeMode.Type;
+export const DEFAULT_RUNTIME_MODE: RuntimeMode = "approval-required";
+
+/**
  * Static availability report for a provider — does the user have the CLI on
  * PATH, is the CLI logged in (so the SDK can ride the local OAuth subprocess),
  * is an API key stored in the keychain. Either `cliLoggedIn` or `hasApiKey`
@@ -87,24 +105,31 @@ const CapabilitiesEvent = Schema.TaggedStruct("Capabilities", {
 const AssistantMessageEvent = Schema.TaggedStruct("AssistantMessage", {
   itemId: AgentItemId,
   text: Schema.String,
+  // `parentItemId` is set when this message originated inside a sub-agent —
+  // the value is the parent's `Agent` tool_use itemId so the renderer can
+  // group nested rows under one collapsible wrapper. Absent for top-level.
+  parentItemId: Schema.optional(AgentItemId),
 });
 
 const ThinkingEvent = Schema.TaggedStruct("Thinking", {
   itemId: AgentItemId,
   text: Schema.String,
   redacted: Schema.Boolean,
+  parentItemId: Schema.optional(AgentItemId),
 });
 
 const ToolUseEvent = Schema.TaggedStruct("ToolUse", {
   itemId: AgentItemId,
   tool: Schema.String,
   input: Schema.Unknown,
+  parentItemId: Schema.optional(AgentItemId),
 });
 
 const ToolResultEvent = Schema.TaggedStruct("ToolResult", {
   itemId: AgentItemId,
   output: Schema.Unknown,
   isError: Schema.Boolean,
+  parentItemId: Schema.optional(AgentItemId),
 });
 
 /**
@@ -117,6 +142,39 @@ const PermissionRequestEvent = Schema.TaggedStruct("PermissionRequest", {
   itemId: AgentItemId,
   kind: Schema.String,
   details: Schema.Unknown,
+  // Carries the parent Agent tool_use itemId when the requesting tool ran
+  // inside a sub-agent context. The toast prepends "via <name> · <model> ·"
+  // when set so the user sees who's actually asking.
+  parentItemId: Schema.optional(AgentItemId),
+});
+
+/**
+ * Closing summary for a sub-agent run. Emitted when the parent's
+ * `Agent` tool_result lands; the wrapper-row footer reads from this when
+ * collapsed.
+ */
+const SubagentSummaryEvent = Schema.TaggedStruct("SubagentSummary", {
+  itemId: AgentItemId,
+  agentName: Schema.String,
+  model: Schema.String,
+  turns: Schema.Number,
+  durationMs: Schema.Number,
+  summary: Schema.String,
+  isError: Schema.Boolean,
+});
+
+/**
+ * Per-turn token usage. Emitted on every SDK `result` message; tagged with
+ * `parentItemId` when the result belongs to a sub-agent. The renderer
+ * accumulates these into the per-agent footer.
+ */
+const UsageDeltaEvent = Schema.TaggedStruct("UsageDelta", {
+  parentItemId: Schema.optional(AgentItemId),
+  inputTokens: Schema.Number,
+  outputTokens: Schema.Number,
+  cacheReadTokens: Schema.Number,
+  cacheCreationTokens: Schema.Number,
+  model: Schema.String,
 });
 
 const CompletedEvent = Schema.TaggedStruct("Completed", {
@@ -150,6 +208,8 @@ export const AgentEvent = Schema.Union(
   ToolUseEvent,
   ToolResultEvent,
   PermissionRequestEvent,
+  SubagentSummaryEvent,
+  UsageDeltaEvent,
   SessionCursorEvent,
   CompletedEvent,
   ErrorEvent,
@@ -159,6 +219,27 @@ export type AgentEvent = typeof AgentEvent.Type;
 // ---------------------------------------------------------------------------
 // RPC inputs
 // ---------------------------------------------------------------------------
+
+/**
+ * Definition of a sub-agent that the main agent can delegate to. Mirror of
+ * the Claude Agent SDK's `AgentDefinition` shape (subset we expose now —
+ * `skills`, `mcpServers`, `memory`, `effort`, `background`, and `isolation`
+ * are reserved for follow-ups).
+ *
+ * `permissionMode` shadows the session's runtime mode for tool calls made
+ * inside this sub-agent — used by `test-runner` to keep Bash prompts on
+ * even when the parent session runs in `full-access`.
+ */
+export const AgentDefinition = Schema.Struct({
+  description: Schema.String,
+  prompt: Schema.String,
+  tools: Schema.optional(Schema.Array(Schema.String)),
+  disallowedTools: Schema.optional(Schema.Array(Schema.String)),
+  model: Schema.optional(Schema.String),
+  maxTurns: Schema.optional(Schema.Number),
+  permissionMode: Schema.optional(RuntimeMode),
+});
+export type AgentDefinition = typeof AgentDefinition.Type;
 
 export const StartSessionInput = Schema.Struct({
   folderId: FolderId,
@@ -172,6 +253,18 @@ export const StartSessionInput = Schema.Struct({
   // Optional provider-specific model id (e.g. "claude-opus-4-7"). Drivers
   // forward it to the SDK; omitting it lets the SDK pick its own default.
   model: Schema.optional(Schema.String),
+  // Sub-agents the main agent may delegate to. Keys are the `subagent_type`
+  // the SDK reports back on `Agent` tool_use blocks; values define each
+  // sub-agent's prompt, tool subset, model, and permission mode. Empty /
+  // omitted means no sub-agents — session behaves as before.
+  agents: Schema.optional(
+    Schema.Record({ key: Schema.String, value: AgentDefinition }),
+  ),
+  // Master toggle. When the renderer wants to start a Claude session with
+  // sub-agents disabled even though presets exist, it sends this as false.
+  // Defaults true when `agents` is non-empty; the driver only adds `Agent`
+  // to `allowedTools` when the effective value is true.
+  enableSubagents: Schema.optional(Schema.Boolean),
 });
 export type StartSessionInput = typeof StartSessionInput.Type;
 
@@ -200,6 +293,25 @@ export const MODELS_BY_PROVIDER: Record<ProviderId, ReadonlyArray<ModelOption>> 
 
 export const defaultModelFor = (providerId: ProviderId): string =>
   MODELS_BY_PROVIDER[providerId][0]!.id;
+
+/**
+ * Per-million-token USD pricing used by the renderer to compute the
+ * "saved ~$X" line in the per-agent cost footer. Numbers are reference
+ * values — keep aligned with vendor pricing pages. The wire stays just
+ * numbers; conversion to currency happens renderer-side.
+ */
+export interface ModelPricing {
+  readonly input: number;
+  readonly output: number;
+  readonly cacheRead: number;
+  readonly cacheCreate: number;
+}
+
+export const MODEL_PRICING: Record<string, ModelPricing> = {
+  "claude-opus-4-7": { input: 15, output: 75, cacheRead: 1.5, cacheCreate: 18.75 },
+  "claude-sonnet-4-6": { input: 3, output: 15, cacheRead: 0.3, cacheCreate: 3.75 },
+  "claude-haiku-4-5": { input: 1, output: 5, cacheRead: 0.1, cacheCreate: 1.25 },
+};
 
 export const SendInput = Schema.Struct({
   sessionId: AgentSessionId,

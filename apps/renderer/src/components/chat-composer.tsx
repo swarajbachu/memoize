@@ -62,8 +62,11 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "~/components/ui/tooltip";
+import { DEFAULT_SUBAGENT_PRESETS } from "../lib/subagent-presets.ts";
 import { useMessagesStore } from "../store/messages.ts";
 import { useSessionsStore } from "../store/sessions.ts";
+import { useSubagentsStore } from "../store/subagents.ts";
+import { useUiStore } from "../store/ui.ts";
 import { ProviderIcon } from "./provider-icons.tsx";
 import { MODES_ORDER, MODE_META } from "./runtime-mode-meta.ts";
 
@@ -500,6 +503,7 @@ export function ChatComposer({ session }: { session: Session }) {
                   currentModel={session.model}
                 />
                 <ReasoningPicker sessionId={sessionId} />
+                {session.providerId === "claude" ? <SubagentsChip /> : null}
               </div>
               <div className="flex items-center gap-2">
                 <RuntimeModeToggle
@@ -777,6 +781,39 @@ function SessionTimer({
     >
       {formatCoarse(totalElapsed)}
     </span>
+  );
+}
+
+/**
+ * "↳ Sub-agents: N enabled" chip — surfaces in the composer footer for
+ * Claude sessions only and links straight to the settings section. Hidden
+ * when the master toggle is off so users who turned it off don't see a
+ * "0 enabled" stub on every session.
+ */
+function SubagentsChip() {
+  const setView = useUiStore((s) => s.setView);
+  const enableForNewSessions = useSubagentsStore((s) => s.enableForNewSessions);
+  const presets = useSubagentsStore((s) => s.presets);
+
+  if (!enableForNewSessions) return null;
+
+  const enabledCount = DEFAULT_SUBAGENT_PRESETS.reduce((acc, p) => {
+    const ps = presets[p.name];
+    return acc + (ps?.enabled ?? true ? 1 : 0);
+  }, 0);
+
+  if (enabledCount === 0) return null;
+
+  return (
+    <button
+      type="button"
+      onClick={() => setView("settings")}
+      title="Sub-agents — open settings"
+      className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+    >
+      <span aria-hidden>↳</span>
+      <span>Sub-agents: {enabledCount} enabled</span>
+    </button>
   );
 }
 

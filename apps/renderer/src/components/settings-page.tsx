@@ -1,4 +1,4 @@
-import { Check, X } from "lucide-react";
+import { Check, Sparkles, X } from "lucide-react";
 
 import {
   MODELS_BY_PROVIDER,
@@ -7,7 +7,9 @@ import {
 } from "@forkzero/wire";
 
 import { cn } from "~/lib/utils";
+import { DEFAULT_SUBAGENT_PRESETS } from "../lib/subagent-presets.ts";
 import { useSettingsStore } from "../store/settings.ts";
+import { useSubagentsStore } from "../store/subagents.ts";
 import { useUiStore } from "../store/ui.ts";
 import { ProviderIcon } from "./provider-icons.tsx";
 import { MODES_ORDER, MODE_META } from "./runtime-mode-meta.ts";
@@ -128,9 +130,102 @@ export function SettingsPage() {
               })}
             </div>
           </Section>
+
+          <SubagentsSection />
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Sub-agents settings. Master toggle + per-preset toggle. Model dropdowns
+ * read the user's overlay; a future "Edit" sheet will surface the prompt
+ * + tool subset (out of scope for v1 — the seed values are already
+ * sensible defaults).
+ */
+function SubagentsSection() {
+  const enableForNewSessions = useSubagentsStore(
+    (s) => s.enableForNewSessions,
+  );
+  const setEnableForNewSessions = useSubagentsStore(
+    (s) => s.setEnableForNewSessions,
+  );
+  const presets = useSubagentsStore((s) => s.presets);
+  const setPresetEnabled = useSubagentsStore((s) => s.setPresetEnabled);
+  const setPresetOverride = useSubagentsStore((s) => s.setPresetOverride);
+
+  const claudeModels = MODELS_BY_PROVIDER.claude;
+
+  return (
+    <Section
+      title="Sub-agents"
+      description="Let your main agent delegate scoped tasks to cheaper models. Saves tokens on long sessions."
+    >
+      <label className="flex items-center gap-3 rounded-md border border-border/60 px-3 py-2.5 text-sm">
+        <input
+          type="checkbox"
+          checked={enableForNewSessions}
+          onChange={(e) => setEnableForNewSessions(e.target.checked)}
+          className="size-4 accent-foreground"
+        />
+        <span className="flex-1">Enable sub-agents for new sessions</span>
+      </label>
+
+      <div
+        className={cn(
+          "flex flex-col gap-2 rounded-md border border-border/40 p-2",
+          enableForNewSessions ? "" : "opacity-60",
+        )}
+      >
+        {DEFAULT_SUBAGENT_PRESETS.map((preset) => {
+          const ps = presets[preset.name] ?? {
+            enabled: true,
+            overrides: {},
+          };
+          const model = ps.overrides.model ?? preset.definition.model;
+          return (
+            <div
+              key={preset.name}
+              className="flex items-center gap-3 rounded-md px-2 py-2 hover:bg-muted/30"
+            >
+              <input
+                type="checkbox"
+                checked={ps.enabled && enableForNewSessions}
+                disabled={!enableForNewSessions}
+                onChange={(e) =>
+                  setPresetEnabled(preset.name, e.target.checked)
+                }
+                className="size-4 accent-foreground"
+              />
+              <Sparkles className="size-3.5 shrink-0 text-muted-foreground" />
+              <div className="flex flex-1 flex-col gap-0.5">
+                <span className="text-sm font-medium">
+                  {preset.displayName}
+                </span>
+                <span className="text-xs text-muted-foreground leading-snug">
+                  {preset.summary}
+                </span>
+              </div>
+              <select
+                value={model ?? ""}
+                disabled={!enableForNewSessions || !ps.enabled}
+                onChange={(e) =>
+                  setPresetOverride(preset.name, { model: e.target.value })
+                }
+                className="rounded-md border border-border/60 bg-background px-2 py-1 text-xs outline-none focus:border-foreground/40 disabled:opacity-50"
+              >
+                {claudeModels.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          );
+        })}
+      </div>
+    </Section>
   );
 }
 

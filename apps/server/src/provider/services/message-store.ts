@@ -1,6 +1,7 @@
 import { Context, type Effect, type Stream } from "effect";
 
 import type {
+  AgentDefinition,
   FolderId,
   Message,
   ProviderId,
@@ -33,6 +34,18 @@ export interface CreateSessionInput {
   readonly title?: string;
   readonly initialPrompt?: string;
   readonly runtimeMode?: RuntimeMode;
+  /**
+   * Sub-agents the main agent may delegate to. Stored on the session row
+   * as JSON so a resumed session re-passes the same roster into
+   * `provider.start`. Empty/omitted means no sub-agents.
+   */
+  readonly agents?: Readonly<Record<string, AgentDefinition>>;
+  /**
+   * Master toggle for sub-agent delegation on this session. Defaults true
+   * when `agents` is non-empty; the driver only adds `Agent` to
+   * `allowedTools` when the effective value is true.
+   */
+  readonly enableSubagents?: boolean;
 }
 
 export interface MessageStoreShape {

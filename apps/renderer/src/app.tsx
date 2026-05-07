@@ -11,6 +11,7 @@ import {
 import { ChatComposer } from "./components/chat-composer";
 import { TooltipProvider } from "./components/ui/tooltip.tsx";
 import { ChatView } from "./components/chat-view";
+import { CostFooter } from "./components/cost-footer";
 import { FileEditor } from "./components/file-editor.tsx";
 import { MainTabs } from "./components/main-tabs.tsx";
 import { PermissionToast } from "./components/permission-toast";
@@ -183,6 +184,7 @@ export function App() {
                       <>
                         <PermissionToast sessionId={selectedSessionId} />
                         <ChatView sessionId={selectedSessionId} />
+                        <CostFooter sessionId={selectedSessionId} />
                         <ChatComposer session={selectedSession} />
                       </>
                     ) : (
