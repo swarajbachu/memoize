@@ -28,6 +28,11 @@ export interface AttachmentServiceShape {
     UploadFailure
   >;
   readonly touch: (ids: ReadonlyArray<string>) => Effect.Effect<void>;
+  readonly read: (
+    id: string,
+  ) => Effect.Effect<
+    { readonly bytes: Uint8Array; readonly mimeType: string } | null
+  >;
 }
 
 export class AttachmentService extends Context.Tag("forkzero/AttachmentService")<

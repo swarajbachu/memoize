@@ -28,7 +28,7 @@ export class AttachmentBadMimeError extends Schema.TaggedError<AttachmentBadMime
 export const AttachmentUploadRpc = Rpc.make("attachments.upload", {
   payload: Schema.Struct({
     sessionId: SessionId,
-    bytes: Schema.Uint8ArrayFromSelf,
+    bytes: Schema.Uint8ArrayFromBase64,
     mimeType: Schema.String,
     originalName: Schema.String,
   }),

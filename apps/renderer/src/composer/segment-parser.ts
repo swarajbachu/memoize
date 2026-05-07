@@ -12,16 +12,18 @@ import { allChips } from "../lib/codemirror/composer-chips.ts";
 
 /**
  * Walk the editor state and assemble a wire-shaped `ComposerInput`. The
- * returned `text` is the document as-is — chips are kept inline as their
- * canonical tokens (`@<relPath>`, `/<skill>`, `[image:<id>]`) so providers
- * that don't read the typed arrays still see something sensible. Drivers
- * that *do* read the arrays expand them server-side.
+ * returned `text` keeps `@<relPath>` / `/<skill>` chip tokens inline (drivers
+ * read them as plain text) but strips `[image:<id>]` markers — image
+ * attachments cross the wire as real Anthropic image content blocks built
+ * from the `attachments` array, so the inline marker would be redundant
+ * noise in the user's prompt to the model.
  */
 export const parseComposerInput = (
   state: EditorState,
   providerId: ProviderId,
 ): ComposerInput => {
-  const text = state.doc.toString();
+  const rawText = state.doc.toString();
+  const text = rawText.replace(/\[image:[^\]]+\]/g, "").replace(/[ \t]{2,}/g, " ").trim();
   const chips = allChips(state);
 
   const fileRefs: FileRef[] = [];

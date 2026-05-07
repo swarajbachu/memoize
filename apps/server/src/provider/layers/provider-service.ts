@@ -23,6 +23,7 @@ import {
   startCodexSession,
   type CodexSessionHandle,
 } from "../drivers/codex.ts";
+import { AttachmentService } from "../../attachment/services/attachment-service.ts";
 import { CredentialsService } from "../services/credentials-service.ts";
 import { PermissionService } from "../services/permission-service.ts";
 import { ProviderService } from "../services/provider-service.ts";
@@ -55,6 +56,7 @@ export const ProviderServiceLive = Layer.effect(
     const credentials = yield* CredentialsService;
     const workspace = yield* WorkspaceService;
     const permissions = yield* PermissionService;
+    const attachmentService = yield* AttachmentService;
     const runtime = yield* Effect.runtime<never>();
     const sessions = yield* Ref.make<Map<AgentSessionId, SessionEntry>>(
       new Map(),
@@ -147,7 +149,7 @@ export const ProviderServiceLive = Layer.effect(
               buildRequestPermission(input.folderId),
               runtimeModeGetter,
               resumeCursor,
-            );
+            ).pipe(Effect.provideService(AttachmentService, attachmentService));
           } else {
             // Codex SDK currently has no public resume API matching our
             // cursor-based model; reject early with a stable reason the
@@ -174,8 +176,10 @@ export const ProviderServiceLive = Layer.effect(
           });
           return { sessionId };
         }),
-      send: (sessionId, text) =>
-        Effect.flatMap(lookup(sessionId), ({ handle }) => handle.send(text)),
+      send: (sessionId, text, attachments) =>
+        Effect.flatMap(lookup(sessionId), ({ handle }) =>
+          handle.send(text, attachments),
+        ),
       interrupt: (sessionId) =>
         Effect.flatMap(lookup(sessionId), ({ handle }) => handle.interrupt()),
       close: (sessionId) =>

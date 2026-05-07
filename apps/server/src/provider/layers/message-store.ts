@@ -14,6 +14,8 @@ import {
   MessageId,
   type AgentDefinition,
   type AgentEvent,
+  type AttachmentRef,
+  type FileRef,
   type FolderId,
   type MessageContent,
   type MessageRole,
@@ -23,6 +25,7 @@ import {
   SessionId,
   SessionNotFoundError,
   SessionStartError,
+  type SkillRef,
 } from "@forkzero/wire";
 
 import { NdjsonLogger } from "../../persistence/ndjson-logger.ts";
@@ -794,10 +797,17 @@ export const MessageStoreLive = Layer.scoped(
      * Restart the provider for `session` under the same persisted id so the
      * message history stays attached to the same row. Used after a process
      * restart wipes the provider's in-memory session map.
+     *
+     * The user's text + attachments are pushed via `provider.send` after the
+     * session opens, NOT via `StartSessionInput.initialPrompt`. The
+     * initialPrompt path only knows about plain text — routing through
+     * `send` reuses the image-block builder so attachments survive the
+     * restart instead of dropping silently.
      */
     const restartProviderSession = (
       session: Session,
-      initialPrompt: string,
+      text: string,
+      attachments: ReadonlyArray<AttachmentRef>,
     ): Effect.Effect<void, SessionNotFoundError> => {
       runtimeModeBySession.set(session.id, session.runtimeMode);
       const subagents = agentsFor(session.id);
@@ -808,7 +818,6 @@ export const MessageStoreLive = Layer.scoped(
             providerId: session.providerId,
             mode: "sdk",
             sessionId: session.id,
-            initialPrompt,
             model: session.model,
             agents: subagents?.agents,
             enableSubagents: subagents?.enableSubagents,
@@ -821,6 +830,7 @@ export const MessageStoreLive = Layer.scoped(
         )
         .pipe(
           Effect.flatMap(() => startSubscription(session.id)),
+          Effect.flatMap(() => provider.send(session.id, text, attachments)),
           Effect.mapError(() => new SessionNotFoundError({ sessionId: session.id })),
         );
     };
@@ -874,13 +884,45 @@ export const MessageStoreLive = Layer.scoped(
         return yield* lookupSession(sessionId);
       });
 
-    const sendMessage: MessageStoreShape["sendMessage"] = (sessionId, text) =>
+    const sendMessage: MessageStoreShape["sendMessage"] = (
+      sessionId,
+      text,
+      attachments,
+      fileRefs,
+      skillRefs,
+    ) =>
       Effect.gen(function* () {
         const session = yield* lookupSession(sessionId);
-        const persisted = yield* persistMessage(sessionId, {
-          _tag: "user",
-          text,
-        });
+        // Drop "pending-*" placeholder ids — those are renderer-side temp
+        // tokens for attachments whose upload didn't finish before submit.
+        // The bytes don't exist server-side, so forwarding them would just
+        // make the driver log a 404 per attachment.
+        const cleanAttachments = (attachments ?? []).filter(
+          (a) => !a.id.startsWith("pending-"),
+        );
+        const hasRichSegments =
+          cleanAttachments.length > 0 ||
+          (fileRefs ?? []).length > 0 ||
+          (skillRefs ?? []).length > 0;
+        const content: MessageContent = hasRichSegments
+          ? {
+              _tag: "user_rich",
+              text,
+              attachments: cleanAttachments,
+              fileRefs: fileRefs ?? [],
+              skillRefs: skillRefs ?? [],
+            }
+          : { _tag: "user", text };
+        const persisted = yield* persistMessage(sessionId, content);
+        // Pin the attachments so the GC sweep treats them as referenced —
+        // a separate row per (message, attachment) keeps the existing
+        // GC join intact.
+        for (const a of cleanAttachments) {
+          yield* sql`
+            INSERT OR IGNORE INTO message_attachments (message_id, attachment_id)
+            VALUES (${persisted.id}, ${a.id})
+          `.pipe(Effect.ignoreLogged);
+        }
         yield* broadcastMessage(sessionId, persisted);
         // Auto-title: if the session is still on its placeholder title, derive
         // one from the user's first real message. Cheaper and more accurate
@@ -897,14 +939,24 @@ export const MessageStoreLive = Layer.scoped(
         // First attempt: push into the existing provider session. If that
         // session is gone (provider dropped it across an app restart) start
         // a fresh one under the same id, then push.
-        const sendResult = yield* provider.send(sessionId, text).pipe(
-          Effect.matchEffect({
-            onFailure: () => Effect.succeed("retry" as const),
-            onSuccess: () => Effect.succeed("ok" as const),
-          }),
+        console.log(
+          `[message-store.sendMessage] sessionId=${sessionId} cleanAttachments=${cleanAttachments.length} (orig=${
+            (attachments ?? []).length
+          })`,
         );
+        const sendResult = yield* provider
+          .send(sessionId, text, cleanAttachments)
+          .pipe(
+            Effect.matchEffect({
+              onFailure: () => Effect.succeed("retry" as const),
+              onSuccess: () => Effect.succeed("ok" as const),
+            }),
+          );
         if (sendResult === "retry") {
-          yield* restartProviderSession(session, text);
+          console.log(
+            `[message-store.sendMessage] provider.send failed; restarting provider session for ${sessionId}`,
+          );
+          yield* restartProviderSession(session, text, cleanAttachments);
         }
         yield* setStatus(sessionId, "running");
       });

@@ -11,6 +11,7 @@ import {
   type AgentEvent,
   type AgentItemId,
   type AgentSessionId,
+  type AttachmentRef,
   type StartSessionInput,
 } from "@forkzero/wire";
 
@@ -25,7 +26,10 @@ import {
  */
 export interface CodexSessionHandle {
   readonly events: Stream.Stream<AgentEvent>;
-  readonly send: (text: string) => Effect.Effect<void>;
+  readonly send: (
+    text: string,
+    attachments?: ReadonlyArray<AttachmentRef>,
+  ) => Effect.Effect<void>;
   readonly interrupt: () => Effect.Effect<void>;
   readonly close: () => Effect.Effect<void>;
 }
@@ -280,8 +284,13 @@ export const startCodexSession = (
 
     const handle: CodexSessionHandle = {
       events: Mailbox.toStream(events),
-      send: (text) =>
+      send: (text, attachmentRefs) =>
         Effect.sync(() => {
+          if (attachmentRefs !== undefined && attachmentRefs.length > 0) {
+            console.warn(
+              `[codex] dropping ${attachmentRefs.length} attachment(s); image input not yet supported on Codex driver`,
+            );
+          }
           enqueueTurn(text);
         }),
       interrupt: () =>

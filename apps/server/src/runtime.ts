@@ -107,6 +107,17 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(MigratedSqlite),
   );
 
+  // AttachmentService writes uploaded image bytes under userData and runs
+  // the GC sweep that reaps orphaned blobs. Disk I/O comes from
+  // NodeContext; persistence joins MigratedSqlite. Defined before
+  // ProviderLayer because the Claude driver reads attachment bytes when
+  // building image content blocks for outbound user messages.
+  const AttachmentLayer = AttachmentServiceLive.pipe(
+    Layer.provide(MigratedSqlite),
+    Layer.provide(AppPathsLayer),
+    Layer.provide(NodeContext.layer),
+  );
+
   // ProviderService probes installed CLIs via CommandExecutor, consults
   // CredentialsService for SDK keys, resolves folderId → cwd via
   // WorkspaceService, and forwards the SDK's tool-permission callback to
@@ -115,6 +126,7 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(CredentialsServiceLive),
     Layer.provide(WorkspaceLayer),
     Layer.provide(PermissionLayer),
+    Layer.provide(AttachmentLayer),
     Layer.provide(NodeContext.layer),
   );
 
@@ -133,15 +145,6 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(ProviderLayer),
     Layer.provide(MigratedSqlite),
     Layer.provide(NdjsonLoggerLayer),
-  );
-
-  // AttachmentService writes uploaded image bytes under userData and runs
-  // the GC sweep that reaps orphaned blobs. Disk I/O comes from
-  // NodeContext; persistence joins MigratedSqlite.
-  const AttachmentLayer = AttachmentServiceLive.pipe(
-    Layer.provide(MigratedSqlite),
-    Layer.provide(AppPathsLayer),
-    Layer.provide(NodeContext.layer),
   );
 
   // SkillBridge surfaces the user's per-provider skill library to the
