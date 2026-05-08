@@ -1,0 +1,59 @@
+name: release
+
+# Tag-driven release. Push `v0.1.0` (or any `v*` tag) to trigger a build,
+# notarize, and publish to a draft GitHub Release. Promote the draft to
+# public when the artifacts have been smoke-tested.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    name: macOS universal .dmg
+    runs-on: macos-14
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.10
+
+      # Cache the electron-builder download dir so subsequent runs don't
+      # re-fetch the universal Electron framework + signing helpers.
+      - name: Cache electron-builder
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: ${{ runner.os }}-electron-builder-${{ hashFiles('**/bun.lock') }}
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Build
+        run: bun run build
+
+      - name: Package + sign + notarize + publish
+        working-directory: apps/desktop
+        env:
+          # GitHub Releases — `electron-updater` reads `latest-mac.yml` from
+          # the release this token publishes to. The default GITHUB_TOKEN is
+          # sufficient for releases in this same repo.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Code signing — base64 .p12 from a Developer ID Application cert.
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          # Notarization (notarytool) — Apple ID + app-specific password +
+          # 10-char team ID from developer.apple.com.
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: bunx electron-builder --mac --universal --publish always

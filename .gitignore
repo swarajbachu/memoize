@@ -29,6 +29,13 @@ dist
 dist-electron
 .electron-runtime
 
+# electron-builder packaged artifacts (root-level dist/) — separately ignored
+# above. Below: re-include the apps/desktop/build/ directory which holds
+# committed packaging resources (icon, entitlements) that the global `build`
+# rule would otherwise hide.
+!apps/desktop/build
+!apps/desktop/build/**
+
 
 # Debug
 npm-debug.log*
