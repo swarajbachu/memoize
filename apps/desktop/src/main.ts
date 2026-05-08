@@ -1,5 +1,14 @@
 import { RpcSerialization } from "@effect/rpc";
-import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  nativeTheme,
+  net,
+  protocol,
+  shell,
+} from "electron";
 import { Effect, Fiber, Layer } from "effect";
 import * as fs from "node:fs/promises";
 import * as Path from "node:path";
@@ -35,6 +44,13 @@ const isDevelopment = Boolean(DEV_SERVER_URL);
 const APP_NAME = isDevelopment ? "forkzero (Dev)" : "forkzero";
 
 app.setName(APP_NAME);
+
+// Lock the app to macOS's dark appearance so the sidebar vibrancy material
+// always renders in its dark variant. Without this, vibrancy follows the
+// user's system theme — on a light-mode Mac the bright material lets the
+// desktop wallpaper bleed through and washes out the (hardcoded-dark)
+// renderer UI.
+nativeTheme.themeSource = "dark";
 
 let mainWindow: BrowserWindow | null = null;
 let runtimeFiber: Fiber.RuntimeFiber<void, never> | null = null;
