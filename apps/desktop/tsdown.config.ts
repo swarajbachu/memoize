@@ -11,8 +11,16 @@ const shared = {
   // Native modules whose loader uses `__dirname` / `module.parent.filename`
   // to locate a `.node` file at runtime — bundling their JS relocates those
   // anchors and the lookup fails. Keep them external so each is require()'d
-  // from node_modules at runtime.
-  external: ["node-pty", "better-sqlite3", "bindings"],
+  // from node_modules at runtime. electron-updater is also kept external —
+  // it pulls in a large CommonJS dep graph (lodash, lazy-val, builder-util)
+  // that loads cleanly via Node's resolver but trips bundlers.
+  external: [
+    "node-pty",
+    "better-sqlite3",
+    "bindings",
+    "keytar",
+    "electron-updater",
+  ],
 };
 
 export default defineConfig([

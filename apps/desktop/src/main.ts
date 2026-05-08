@@ -17,6 +17,7 @@ import { pathToFileURL } from "node:url";
 import { makeMainLayer } from "@memoize/server";
 
 import { electronServerProtocolLayer } from "./ipc/electron-server-protocol.ts";
+import { startAutoUpdater } from "./updater.ts";
 
 /**
  * Privileged scheme registration. Must run before `app.whenReady()` —
@@ -175,14 +176,14 @@ function createMainWindow() {
     void mainWindow.loadURL(DEV_SERVER_URL);
     mainWindow.webContents.openDevTools({ mode: "detach" });
   } else {
-    const rendererIndex = Path.resolve(
-      __dirname,
-      "..",
-      "..",
-      "renderer",
-      "dist",
-      "index.html",
-    );
+    // In dev `dist-electron/main.cjs` lives at apps/desktop/dist-electron/
+    // and the renderer is two levels up at apps/renderer/dist. In the
+    // packaged bundle the renderer is shipped via `extraResources` to
+    // <app>/Contents/Resources/app/renderer/dist (see
+    // apps/desktop/electron-builder.yml).
+    const rendererIndex = app.isPackaged
+      ? Path.join(process.resourcesPath, "app", "renderer", "dist", "index.html")
+      : Path.resolve(__dirname, "..", "..", "renderer", "dist", "index.html");
     void mainWindow.loadFile(rendererIndex);
   }
 
@@ -258,6 +259,9 @@ const registerMemoizeProtocol = (): void => {
 void app.whenReady().then(() => {
   registerMemoizeProtocol();
   createMainWindow();
+  if (!isDevelopment) {
+    startAutoUpdater();
+  }
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {

@@ -9,7 +9,9 @@
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "check-types": "turbo run check-types",
-    "rebuild:pty": "cd apps/desktop && electron-rebuild -f -w node-pty"
+    "rebuild:pty": "cd apps/desktop && electron-rebuild -f -w node-pty",
+    "dist:mac": "bun run build:desktop && cd apps/desktop && bun run dist:mac",
+    "dist:mac:unsigned": "bun run build:desktop && cd apps/desktop && bun run dist:mac:unsigned"
   },
   "devDependencies": {
     "prettier": "catalog:",

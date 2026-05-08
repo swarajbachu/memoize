@@ -1,0 +1,89 @@
+appId: app.memoize.desktop
+productName: memoize
+copyright: © ${author}
+
+# Output the .dmg + latest-mac.yml + blockmap to repo-root/dist so all
+# distributables for all apps land in one place. Build resources (icon,
+# entitlements) live in apps/desktop/build/.
+directories:
+  output: ../../dist
+  buildResources: build
+
+# What to pack inside app.asar. The renderer's Vite output is shipped
+# alongside (not inside) the asar via `extraResources` below — keeping
+# cross-package paths out of the asar avoids electron-builder's
+# `must be under …/apps/desktop/` filter complaining about asarUnpack
+# patterns evaluated against files originating outside this project.
+files:
+  - dist-electron/**/*
+  - "package.json"
+  - "!**/*.{ts,tsx,map,md}"
+  - "!**/tsconfig*.json"
+  # @memoize/* workspace packages are inlined into dist-electron/main.cjs by
+  # tsdown (`deps.alwaysBundle`), so we don't need their source in
+  # node_modules. Their bun symlinks resolve to apps/server and apps/wire,
+  # which trip electron-builder's "must be under apps/desktop/" check during
+  # the asarUnpack walk. Exclude them outright.
+  - "!node_modules/@memoize/**"
+  # Build-time tooling and type packages — never required at runtime.
+  - "!node_modules/@repo/**"
+  - "!node_modules/@types/**"
+  - "!node_modules/@electron/rebuild/**"
+  - "!node_modules/electron-builder/**"
+  - "!node_modules/sharp/**"
+  - "!node_modules/tsdown/**"
+  - "!node_modules/typescript/**"
+extraResources:
+  - from: ../renderer/dist
+    to: app/renderer/dist
+    filter: ["**/*"]
+
+# Native bindings can't load from inside an asar; they need to live as
+# real files on disk. electron-builder writes these to app.asar.unpacked/
+# and the loader transparently rewrites the path.
+asar: true
+asarUnpack:
+  - "**/*.node"
+  - "node_modules/better-sqlite3/**"
+  - "node_modules/node-pty/**"
+  - "node_modules/keytar/**"
+
+# We rebuild natives via the existing electron-rebuild postinstall hook.
+# electron-builder's npmRebuild step doesn't understand bun workspaces.
+npmRebuild: false
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch: universal
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  notarize: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  icon: build/icon.png
+  extendInfo:
+    NSCameraUsageDescription: memoize does not use the camera.
+    NSMicrophoneUsageDescription: memoize does not use the microphone.
+
+dmg:
+  writeUpdateInfo: true
+  sign: false
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+
+# electron-updater consumes latest-mac.yml from the GitHub Release
+# associated with this repo. Repo currently hosted at swarajbachu/forkzero;
+# update both `repo` and the homepage/repository fields in package.json
+# when the GitHub repo is renamed to "memoize".
+publish:
+  provider: github
+  owner: swarajbachu
+  repo: forkzero
+  releaseType: draft
