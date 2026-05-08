@@ -8,7 +8,7 @@ import type {
   PermissionRequestNotFoundError,
   SavedDecision,
   SessionId,
-} from "@forkzero/wire";
+} from "@memoize/wire";
 
 /**
  * Bridge between provider drivers (which call `request` from inside their
@@ -70,5 +70,5 @@ export interface PermissionServiceShape {
 }
 
 export class PermissionService extends Context.Tag(
-  "forkzero/PermissionService",
+  "memoize/PermissionService",
 )<PermissionService, PermissionServiceShape>() {}

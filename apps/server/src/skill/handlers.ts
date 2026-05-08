@@ -1,13 +1,13 @@
-import { ForkzeroRpcs } from "@forkzero/wire";
+import { MemoizeRpcs } from "@memoize/wire";
 import { Effect, Layer, Stream } from "effect";
 
 import { SkillBridge } from "./services/skill-bridge.ts";
 
-const SkillList = ForkzeroRpcs.toLayerHandler("skill.list", ({ sessionId }) =>
+const SkillList = MemoizeRpcs.toLayerHandler("skill.list", ({ sessionId }) =>
   Effect.flatMap(SkillBridge, (svc) => svc.list(sessionId)),
 );
 
-const SkillStream = ForkzeroRpcs.toLayerHandler(
+const SkillStream = MemoizeRpcs.toLayerHandler(
   "skill.stream",
   ({ sessionId }) =>
     Stream.unwrap(

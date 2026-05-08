@@ -14,7 +14,7 @@ model. There are three viable shapes:
    parse the parent's intent, decide a model, spawn a fresh `query()`
    ourselves, plumb the result back as a synthetic assistant message.
 3. Wrap each sub-agent as a custom MCP tool — the parent calls e.g.
-   `forkzero.research(prompt)` and we run it however we like under the
+   `memoize.research(prompt)` and we run it however we like under the
    hood.
 
 ## Options
@@ -44,7 +44,7 @@ query({
 The SDK handles invocation (`Agent` tool_use), context isolation
 (separate fresh context window per sub-agent), result return (final
 message returns as `tool_result`), and `parent_tool_use_id` correlation.
-Forkzero just consumes the existing event stream.
+Memoize just consumes the existing event stream.
 
 **Pros**
 
@@ -97,7 +97,7 @@ assistant message.
 
 ### Option 3 — Each sub-agent as a custom MCP tool
 
-Define `forkzero.research`, `forkzero.file-edits`, `forkzero.test-runner`
+Define `memoize.research`, `memoize.file-edits`, `memoize.test-runner`
 as MCP tools. The parent agent calls them like any other tool.
 
 **Pros**
@@ -138,6 +138,6 @@ shortest path with the strongest correctness guarantees.
   (the MCP bridge). They can't share the SDK's `agents` primitive —
   that's an Anthropic-only construct. ADR 0012 covers the bridge.
 - We do **not** add a routing heuristic, intent classifier, or any
-  forkzero-side decision about when to delegate. The main model
+  memoize-side decision about when to delegate. The main model
   decides, based on each sub-agent's `description`. Tuning the
   descriptions is the operator surface.

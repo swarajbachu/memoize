@@ -42,9 +42,9 @@ Both Claude and Codex SDKs accept MCP servers via standard config. We
 register an in-process MCP server (no socket — `@modelcontextprotocol/sdk`
 supports in-memory transports) that exposes:
 
-- `forkzero.delegate-codex(agent_name, prompt, model?)` → invoked by
+- `memoize.delegate-codex(agent_name, prompt, model?)` → invoked by
   Claude main sessions.
-- `forkzero.delegate-claude(agent_name, prompt, model?)` → invoked by
+- `memoize.delegate-claude(agent_name, prompt, model?)` → invoked by
   Codex main sessions.
 
 The bridge tool's implementation:
@@ -80,7 +80,7 @@ The bridge tool's implementation:
 
 ### Option 3 — Hand-roll a router in the wire layer
 
-Same shape as ADR 0010 Option 2: forkzero-side intent classifier picks
+Same shape as ADR 0010 Option 2: memoize-side intent classifier picks
 a provider, makes a separate `query()` call, splices the result back.
 
 Already rejected for same-provider in ADR 0010. The reasoning is
@@ -93,12 +93,12 @@ translation. No.
 **Custom MCP bridge tool (Option 2).**
 
 Both SDKs natively support MCP. The bridge stays small (one module,
-`apps/server/src/provider/mcp/forkzero-bridge.ts`) and forkzero stays
+`apps/server/src/provider/mcp/memoize-bridge.ts`) and memoize stays
 out of the SDKs' guts. The same code path works in both directions.
 
 ## Consequences
 
-- New module: `apps/server/src/provider/mcp/forkzero-bridge.ts`
+- New module: `apps/server/src/provider/mcp/memoize-bridge.ts`
   exposes the in-memory MCP server. Registered with whichever
   provider's driver is the *main* agent for a session.
 - Cross-provider preset entries in `apps/renderer/src/lib/subagent-presets.ts`

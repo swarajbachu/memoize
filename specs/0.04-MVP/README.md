@@ -4,7 +4,7 @@ MVP 0.03 (everything under [../0.03-MVP/](../0.03-MVP/)) brought the chat
 composer to first-class quality. MVP 0.04 turns inward: it gives the bundled
 agent a real understanding of the user's codebase.
 
-Today an agent inside forkzero explores a repo the same way it does
+Today an agent inside memoize explores a repo the same way it does
 anywhere — `Bash(rg ...)`, `Read`, `Glob`, iterate. On any real codebase
 this is the dominant cost: 25–40k tokens across 5–8 tool calls before the
 agent has the context to answer or edit. Most of that is *navigation tax*,
@@ -16,7 +16,7 @@ agent calls `code_search`, `symbol_lookup`, `find_references`, and
 standalone `apps/mcp-server` so external agents (a terminal `claude`
 session, a Codex session, a Cursor agent) get the same tools.
 
-The wedge: forkzero runs **N parallel agent workspaces on the same repo**
+The wedge: memoize runs **N parallel agent workspaces on the same repo**
 (via Conductor) — multiple branches checked out side-by-side. Cursor,
 Sourcegraph Cody, Greptile, Continue, Augment all index codebases, but none
 handle this shape. A content-addressed chunk store with per-branch
@@ -25,7 +25,7 @@ across workspaces sharing a repo.
 
 ## What lands in 0.04
 
-- **Index engine** as a standalone package `@forkzero/index`. Tree-sitter
+- **Index engine** as a standalone package `@memoize/index`. Tree-sitter
   chunking, symbol extraction, content-addressed blob store, per-branch
   manifest model. SQLite + `sqlite-vec` extension. Engine is transport-agnostic.
 - **3-tier hybrid retrieval**: symbol lookup (Tier 1) → BM25 (Tier 2) →
@@ -36,7 +36,7 @@ across workspaces sharing a repo.
   `find_references`, `read_chunk`, `list_module`) at session start.
   In-process, no MCP overhead.
 - **Standalone MCP server** as `apps/mcp-server`. A Bun-compiled binary
-  (`forkzero-mcp`) plus an npm package `@forkzero/mcp-server`. stdio
+  (`memoize-mcp`) plus an npm package `@memoize/mcp-server`. stdio
   transport (default), HTTP transport (optional). Same engine, same tools,
   reusable by any agent runtime.
 - **Local-first by default.** Embedding model: `nomic-embed-code` ONNX via
@@ -44,12 +44,12 @@ across workspaces sharing a repo.
   calls in the default config.
 - **BYOK opt-in for paid backends.** Voyage / Cohere / OpenAI / Jina keys
   live in `keytar` under the same pattern Phase 2 uses for agent provider
-  keys. Chunks go user → provider directly; forkzero is not in the path.
+  keys. Chunks go user → provider directly; memoize is not in the path.
 - **Branch-aware index**. File watcher + git checkout hook. Switching
   branches in a Conductor workspace is a manifest swap, not a re-index.
   Content-addressed dedup means N parallel workspaces on one repo share
   one blob store.
-- **Renderer scaffolding**. `index.*` RPCs registered in `@forkzero/wire`.
+- **Renderer scaffolding**. `index.*` RPCs registered in `@memoize/wire`.
   A command palette entry (`Cmd+P` → "Search code…") wires the renderer to
   the index. The primary consumer is the agent; the renderer surface is
   scaffolding for future UI.
@@ -59,10 +59,10 @@ across workspaces sharing a repo.
 - **Cloud team index.** The chunk store is content-addressed and ready to
   sync; the actual S3-compatible sync worker, encryption keys, and team
   membership are deferred to a future MVP (sketched as Phase G).
-- **Pay-per-usage billing.** Forkzero-cloud as a paid embedding/rerank
+- **Pay-per-usage billing.** Memoize-cloud as a paid embedding/rerank
   proxy is scaffolded as a provider stub but not implemented. ADR 0021
   documents the call. Adding it later doesn't require re-architecting.
-- **Rust / Go / non-TS grammars at launch.** Forkzero itself is TypeScript;
+- **Rust / Go / non-TS grammars at launch.** Memoize itself is TypeScript;
   ship TS + JS + TSX + JSON + Markdown grammars first, expand on demand.
 - **Refactor / rename tooling.** The `refs` table powers read-only
   `find_references`; cross-file rename is out of scope (an LSP server's
@@ -94,7 +94,7 @@ across workspaces sharing a repo.
 - [decisions/0020-pluggable-rerank-and-embed.md](decisions/0020-pluggable-rerank-and-embed.md) —
   embedding and rerank provider abstraction.
 - [decisions/0021-credentials-and-billing.md](decisions/0021-credentials-and-billing.md) —
-  local default → BYOK in 0.04 → forkzero-cloud deferred.
+  local default → BYOK in 0.04 → memoize-cloud deferred.
 
 ## Status
 

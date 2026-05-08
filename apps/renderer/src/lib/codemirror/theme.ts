@@ -6,7 +6,7 @@ import type { Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { tags as t } from "@lezer/highlight";
 
-// Palette aligned with the rest of forkzero's chrome (zinc-950 surface,
+// Palette aligned with the rest of memoize's chrome (zinc-950 surface,
 // zinc-400/500 muted-foreground). Syntax accents are deliberately desaturated
 // so the editor reads as part of the chat IDE rather than a separate VS Code.
 const PALETTE = {
@@ -178,7 +178,7 @@ const highlightStyle = HighlightStyle.define([
   { tag: t.invalid, color: PALETTE.invalid },
 ]);
 
-export const forkzeroTheme: Extension = [
+export const memoizeTheme: Extension = [
   editorTheme,
   syntaxHighlighting(highlightStyle),
 ];

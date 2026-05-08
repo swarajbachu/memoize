@@ -17,7 +17,7 @@ text-editing surface.
 ADR 0009 (file viewer/editor, MVP 0.02) already chose CodeMirror 6 for
 the in-app file editor on the strength of its extension model. That
 choice is now load-bearing for 0.03 too: if the composer picks a
-different editor, forkzero pays for two editor mental models, two
+different editor, memoize pays for two editor mental models, two
 selection systems, and two extension surfaces — and the future Cmd+K
 inline-AI command in 0.02's roadmap has to be implemented twice.
 
@@ -25,7 +25,7 @@ inline-AI command in 0.02's roadmap has to be implemented twice.
 
 ### Option A — CodeMirror 6 with a "prose" preset
 
-- Same dependency forkzero already accepts in ADR 0009.
+- Same dependency memoize already accepts in ADR 0009.
 - Atomic widget decorations (`Decoration.replace({ widget, atomic: true })`
   combined with `EditorView.atomicRanges`) are the chip primitive.
 - Selection, cursor stepping, copy/paste, undo, IME, and accessibility
@@ -111,4 +111,4 @@ It is the only option that:
 
 - Bundle impact: zero new dependencies (CodeMirror and lucide packages are
   already in `apps/renderer/package.json` from ADR 0009). The composer
-  extensions add ~10 KB of forkzero-authored code.
+  extensions add ~10 KB of memoize-authored code.

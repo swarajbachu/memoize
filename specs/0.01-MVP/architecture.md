@@ -33,13 +33,13 @@ The renderer code does not change between these modes — only the transport mod
 ## Module layout
 
 ```
-forkzero/
+memoize/
   packages/
-    wire/                                   # @forkzero/wire — RPC contracts, branded IDs
+    wire/                                   # @memoize/wire — RPC contracts, branded IDs
       src/
         ping.ts, workspace.ts, pty.ts, git.ts, agent.ts
         ids.ts                              # branded entity IDs (FolderId, PtyId, SessionId, ...)
-        rpc.ts                              # ForkzeroRpcs = RpcGroup.make(...)
+        rpc.ts                              # MemoizeRpcs = RpcGroup.make(...)
         index.ts
     typescript-config/
     eslint-config/
@@ -155,8 +155,8 @@ No SQLite in v1. JSON until proven painful.
 
 See [ADR 0005](decisions/0005-package-layout.md) for the full rules. Highlights:
 
-- Single contracts package: `@forkzero/wire` with one file per domain
-- Internal package namespace: `@forkzero/*`
+- Single contracts package: `@memoize/wire` with one file per domain
+- Internal package namespace: `@memoize/*`
 - Service classes: `<Domain>Service` (no `*Engine`, no `*FileSystem`, no bare verbs)
 - RPC method names: dotted-lowercase string literals passed directly to `Rpc.make("...", ...)` — no central enum
 - Branded IDs for every entity that crosses the wire

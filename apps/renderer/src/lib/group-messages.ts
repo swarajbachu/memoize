@@ -1,4 +1,4 @@
-import type { AgentItemId, Message } from "@forkzero/wire";
+import type { AgentItemId, Message } from "@memoize/wire";
 
 export type RenderGroup =
   | { readonly kind: "single"; readonly message: Message }

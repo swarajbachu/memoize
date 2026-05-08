@@ -1,19 +1,19 @@
-import { ForkzeroRpcs } from "@forkzero/wire";
+import { MemoizeRpcs } from "@memoize/wire";
 import { Effect, Layer, Stream } from "effect";
 
 import { GitService } from "./services/git-service.ts";
 
-const Log = ForkzeroRpcs.toLayerHandler("git.log", ({ folderId, limit }) =>
+const Log = MemoizeRpcs.toLayerHandler("git.log", ({ folderId, limit }) =>
   Effect.flatMap(GitService, (svc) => svc.log(folderId, limit)),
 );
 
-const Status = ForkzeroRpcs.toLayerHandler(
+const Status = MemoizeRpcs.toLayerHandler(
   "git.status",
   ({ folderId, worktreeId }) =>
     Effect.flatMap(GitService, (svc) => svc.status(folderId, worktreeId ?? null)),
 );
 
-const HeadChanged = ForkzeroRpcs.toLayerHandler(
+const HeadChanged = MemoizeRpcs.toLayerHandler(
   "git.headChanged",
   ({ folderId }) =>
     Stream.unwrap(
@@ -21,11 +21,11 @@ const HeadChanged = ForkzeroRpcs.toLayerHandler(
     ),
 );
 
-const Origin = ForkzeroRpcs.toLayerHandler("git.origin", ({ folderId }) =>
+const Origin = MemoizeRpcs.toLayerHandler("git.origin", ({ folderId }) =>
   Effect.flatMap(GitService, (svc) => svc.origin(folderId)),
 );
 
-const PrState = ForkzeroRpcs.toLayerHandler(
+const PrState = MemoizeRpcs.toLayerHandler(
   "git.prState",
   ({ folderId, worktreeId }) =>
     Effect.flatMap(GitService, (svc) =>
@@ -33,7 +33,7 @@ const PrState = ForkzeroRpcs.toLayerHandler(
     ),
 );
 
-const PrDetails = ForkzeroRpcs.toLayerHandler(
+const PrDetails = MemoizeRpcs.toLayerHandler(
   "git.prDetails",
   ({ folderId, worktreeId }) =>
     Effect.flatMap(GitService, (svc) =>
@@ -41,7 +41,7 @@ const PrDetails = ForkzeroRpcs.toLayerHandler(
     ),
 );
 
-const Changes = ForkzeroRpcs.toLayerHandler(
+const Changes = MemoizeRpcs.toLayerHandler(
   "git.changes",
   ({ folderId, worktreeId }) =>
     Effect.flatMap(GitService, (svc) =>
@@ -49,7 +49,7 @@ const Changes = ForkzeroRpcs.toLayerHandler(
     ),
 );
 
-const Commit = ForkzeroRpcs.toLayerHandler(
+const Commit = MemoizeRpcs.toLayerHandler(
   "git.commit",
   ({ folderId, worktreeId, message }) =>
     Effect.flatMap(GitService, (svc) =>
@@ -57,7 +57,7 @@ const Commit = ForkzeroRpcs.toLayerHandler(
     ),
 );
 
-const Push = ForkzeroRpcs.toLayerHandler(
+const Push = MemoizeRpcs.toLayerHandler(
   "git.push",
   ({ folderId, worktreeId }) =>
     Effect.flatMap(GitService, (svc) => svc.push(folderId, worktreeId ?? null)),

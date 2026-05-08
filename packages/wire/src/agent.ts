@@ -442,7 +442,7 @@ export class CredentialStoreError extends Schema.TaggedError<CredentialStoreErro
 ) {}
 
 // ---------------------------------------------------------------------------
-// RPC definitions. Not yet registered in `ForkzeroRpcs` — handlers come
+// RPC definitions. Not yet registered in `MemoizeRpcs` — handlers come
 // online in PR 3 (availability), PR 4 (credentials), PR 5/6 (sessions). Each
 // of those PRs adds its RPC to the group when its handler exists.
 // ---------------------------------------------------------------------------

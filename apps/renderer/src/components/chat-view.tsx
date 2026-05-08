@@ -8,7 +8,7 @@ import {
   useState,
 } from "react";
 
-import type { AgentItemId, Message, SessionId } from "@forkzero/wire";
+import type { AgentItemId, Message, SessionId } from "@memoize/wire";
 
 import { groupMessages } from "../lib/group-messages.ts";
 import { useMessagesStore } from "../store/messages.ts";

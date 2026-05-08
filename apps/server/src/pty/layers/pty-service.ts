@@ -8,7 +8,7 @@ import {
   PtyNotFoundError,
   PtySpawnError,
   type PtyEvent,
-} from "@forkzero/wire";
+} from "@memoize/wire";
 
 import { PtyService } from "../services/pty-service.ts";
 

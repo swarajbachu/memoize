@@ -1,4 +1,4 @@
-import type { FolderId, WorktreeId } from "@forkzero/wire";
+import type { FolderId, WorktreeId } from "@memoize/wire";
 
 import { useSessionsStore } from "./sessions.ts";
 import { useWorkspaceStore } from "./workspace.ts";

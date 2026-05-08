@@ -12,7 +12,7 @@ import {
   FsTooLargeError,
   type FolderId,
   type WorktreeId,
-} from "@forkzero/wire";
+} from "@memoize/wire";
 
 import { WorkspaceService } from "../../workspace/services/workspace-service.ts";
 import { WorktreeService } from "../../worktree/services/worktree-service.ts";

@@ -8,7 +8,7 @@ import { useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import type { AgentItemId, Message } from "@forkzero/wire";
+import type { AgentItemId, Message } from "@memoize/wire";
 
 import { groupMessages } from "../lib/group-messages.ts";
 import { cn } from "~/lib/utils";

@@ -26,7 +26,7 @@
     "@effect/rpc": "catalog:",
     "@fontsource-variable/geist-mono": "^5.2.7",
     "@fontsource-variable/inter": "^5.2.8",
-    "@forkzero/wire": "*",
+    "@memoize/wire": "*",
     "@hugeicons/core-free-icons": "^4.1.1",
     "@hugeicons/react": "^1.1.6",
     "@lezer/highlight": "^1.2.0",

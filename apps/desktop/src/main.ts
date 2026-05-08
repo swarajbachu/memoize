@@ -14,21 +14,21 @@ import * as fs from "node:fs/promises";
 import * as Path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { makeMainLayer } from "@forkzero/server";
+import { makeMainLayer } from "@memoize/server";
 
 import { electronServerProtocolLayer } from "./ipc/electron-server-protocol.ts";
 
 /**
  * Privileged scheme registration. Must run before `app.whenReady()` —
  * Electron freezes the scheme registry once the app is ready, so a late
- * call silently fails and `<img src="forkzero://...">` errors out with no
+ * call silently fails and `<img src="memoize://...">` errors out with no
  * obvious cause. `secure: true` puts the scheme in the same trust class as
  * `https`; `supportFetchAPI` lets the renderer use `fetch()` against it;
  * `stream: true` lets us hand back a body that the renderer can stream.
  */
 protocol.registerSchemesAsPrivileged([
   {
-    scheme: "forkzero",
+    scheme: "memoize",
     privileges: {
       secure: true,
       standard: true,
@@ -41,7 +41,7 @@ protocol.registerSchemesAsPrivileged([
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL?.trim() || "";
 const isDevelopment = Boolean(DEV_SERVER_URL);
 
-const APP_NAME = isDevelopment ? "forkzero (Dev)" : "forkzero";
+const APP_NAME = isDevelopment ? "memoize (Dev)" : "memoize";
 
 app.setName(APP_NAME);
 
@@ -156,7 +156,7 @@ function createMainWindow() {
           // Boot-time layer failures (sqlite open, migrator, config) are
           // unrecoverable — surface the cause and bail. Quiet
           // success-after-restart is preferable to a half-running app.
-          console.error("[forkzero] fatal boot error", cause);
+          console.error("[memoize] fatal boot error", cause);
           app.exit(1);
         }),
       ),
@@ -196,7 +196,7 @@ function createMainWindow() {
 }
 
 /**
- * Resolve `forkzero://attachments/<id>` to a file under
+ * Resolve `memoize://attachments/<id>` to a file under
  * `<userDataDir>/attachments/`. The id has no extension on the wire so we
  * scan the directory for a file with the matching stem. Anything outside
  * the host `attachments` is rejected — no path traversal, no other hosts.
@@ -212,17 +212,17 @@ const MIME_BY_EXT: Record<string, string> = {
   avif: "image/avif",
 };
 
-const registerForkzeroProtocol = (): void => {
+const registerMemoizeProtocol = (): void => {
   const attachmentsDir = Path.join(app.getPath("userData"), "attachments");
 
-  protocol.handle("forkzero", async (request) => {
+  protocol.handle("memoize", async (request) => {
     const url = new URL(request.url);
     if (url.host !== ATTACHMENTS_HOST) {
       return new Response(null, { status: 404 });
     }
 
     // The path is `/<id>`; sanitise to a single segment so a crafted url
-    // like `forkzero://attachments/../foo` cannot escape `attachmentsDir`.
+    // like `memoize://attachments/../foo` cannot escape `attachmentsDir`.
     const id = decodeURIComponent(url.pathname.replace(/^\//, ""));
     if (!id || id.includes("/") || id.includes("\\") || id.includes("..")) {
       return new Response(null, { status: 400 });
@@ -256,7 +256,7 @@ const registerForkzeroProtocol = (): void => {
 };
 
 void app.whenReady().then(() => {
-  registerForkzeroProtocol();
+  registerMemoizeProtocol();
   createMainWindow();
 
   app.on("activate", () => {

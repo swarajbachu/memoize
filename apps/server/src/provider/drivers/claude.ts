@@ -24,7 +24,7 @@ import {
   type StartSessionInput,
   type UserQuestion,
   type UserQuestionAnswer,
-} from "@forkzero/wire";
+} from "@memoize/wire";
 
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
 
@@ -70,13 +70,13 @@ const toSdkPermissionMode = (mode: PermissionMode): SdkPermissionMode =>
 /**
  * Name we register the in-process AskUserQuestion tool under. The SDK
  * exposes MCP tools to the model as `mcp__<server>__<tool>`, so the
- * model sees `mcp__forkzero__ask_user_question` and the translator
+ * model sees `mcp__memoize__ask_user_question` and the translator
  * matches on that exact prefix to emit `UserQuestion` instead of a
  * generic `ToolUse`.
  */
-const FORKZERO_MCP_NAME = "forkzero";
+const MEMOIZE_MCP_NAME = "memoize";
 const ASK_USER_QUESTION_TOOL = "ask_user_question";
-const ASK_USER_QUESTION_FQN = `mcp__${FORKZERO_MCP_NAME}__${ASK_USER_QUESTION_TOOL}`;
+const ASK_USER_QUESTION_FQN = `mcp__${MEMOIZE_MCP_NAME}__${ASK_USER_QUESTION_TOOL}`;
 
 /**
  * Anthropic accepts these media types as image content blocks. Anything else
@@ -185,7 +185,7 @@ let itemCounter = 0;
 const nextItemId = (): AgentItemId =>
   `i_${Date.now()}_${++itemCounter}` as AgentItemId;
 
-// Markers Claude Code injects into every subprocess it spawns. If forkzero
+// Markers Claude Code injects into every subprocess it spawns. If memoize
 // is launched from a Claude Code terminal these get inherited, and the
 // nested `claude` binary then loads a different parent's session state
 // instead of the user's `claude /login` OAuth. Strip them so our spawn
@@ -295,12 +295,12 @@ const extractTextFromContent = (content: unknown): string => {
   return "";
 };
 
-// Off by default; enable with FORKZERO_DEBUG_THINKING=1 when diagnosing
+// Off by default; enable with MEMOIZE_DEBUG_THINKING=1 when diagnosing
 // thinking-block delivery. One JSON object per line so terminal
 // scrollback / `grep` / `tee logfile` all preserve every field — Node's
 // default util.inspect spans multiple lines and gets chopped by
 // line-oriented tools.
-const THINKING_DEBUG = process.env.FORKZERO_DEBUG_THINKING === "1";
+const THINKING_DEBUG = process.env.MEMOIZE_DEBUG_THINKING === "1";
 const tlog = (event: string, payload: Record<string, unknown> = {}): void => {
   if (!THINKING_DEBUG) return;
   let line: string;
@@ -785,7 +785,7 @@ const editPathOf = (toolInput: Record<string, unknown>): string =>
 /**
  * Match every "ask the user a question" surface we know about. The
  * Claude SDK has a built-in `AskUserQuestion` tool (PascalCase) that
- * the model can call; we register our own `mcp__forkzero__ask_user_question`
+ * the model can call; we register our own `mcp__memoize__ask_user_question`
  * to drive a renderer card. Either form should bypass the permission
  * toast — asking permission to ask a question is double-prompting.
  *
@@ -1013,7 +1013,7 @@ export const startClaudeSession = (
 
     // Pass `process.env` through, but scrub any "we are inside another
     // Claude Code session" markers that Claude Code injects into its child
-    // shells. When forkzero is launched from a Claude Code terminal (very
+    // shells. When memoize is launched from a Claude Code terminal (very
     // common during dev), the shell inherits CLAUDECODE=1,
     // CLAUDE_CODE_ENTRYPOINT, CLAUDE_CODE_EXECPATH, and friends — which
     // confuses the spawned `claude` binary's auth resolver into thinking
@@ -1130,8 +1130,8 @@ export const startClaudeSession = (
       { alwaysLoad: true },
     );
 
-    const forkzeroMcpServer = createSdkMcpServer({
-      name: FORKZERO_MCP_NAME,
+    const memoizeMcpServer = createSdkMcpServer({
+      name: MEMOIZE_MCP_NAME,
       tools: [askUserQuestionToolDefinition],
       alwaysLoad: !(input.toolSearch ?? false),
     });
@@ -1181,10 +1181,10 @@ export const startClaudeSession = (
               (t) => !subagentOptions.allowedTools!.includes(t),
             )),
       ],
-      mcpServers: { [FORKZERO_MCP_NAME]: forkzeroMcpServer },
+      mcpServers: { [MEMOIZE_MCP_NAME]: memoizeMcpServer },
       permissionMode: toSdkPermissionMode(initialPermissionMode),
       // Trim the SDK's stock plan-mode body to nudge the agent toward
-      // forkzero's two structured-interaction tools. The SDK still wraps
+      // memoize's two structured-interaction tools. The SDK still wraps
       // this with its read-only enforcement preamble + ExitPlanMode
       // protocol footer.
       planModeInstructions: [

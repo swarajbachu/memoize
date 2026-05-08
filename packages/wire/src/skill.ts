@@ -5,7 +5,7 @@ import { ProviderId } from "./agent.ts";
 import { SessionId, SessionNotFoundError } from "./session.ts";
 
 /**
- * One skill discovered by a provider driver. Forkzero owns no skill format;
+ * One skill discovered by a provider driver. Memoize owns no skill format;
  * the driver normalises the underlying agent's parsed metadata into this
  * shape so the renderer is provider-agnostic.
  */

@@ -13,7 +13,7 @@ import {
   type GitPrInfo,
   type GitStatusSummary,
   type WorktreeId,
-} from "@forkzero/wire";
+} from "@memoize/wire";
 
 type GitFailure =
   | GitNotARepoError
@@ -59,7 +59,7 @@ export interface GitServiceShape {
   ) => Effect.Effect<{ readonly output: string }, GitFailure>;
 }
 
-export class GitService extends Context.Tag("forkzero/GitService")<
+export class GitService extends Context.Tag("memoize/GitService")<
   GitService,
   GitServiceShape
 >() {}

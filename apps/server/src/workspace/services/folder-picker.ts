@@ -8,7 +8,7 @@ import { Context, type Effect } from "effect";
  *
  * Returns the chosen absolute path, or null if the user cancelled.
  */
-export class FolderPicker extends Context.Tag("forkzero/FolderPicker")<
+export class FolderPicker extends Context.Tag("memoize/FolderPicker")<
   FolderPicker,
   {
     readonly pick: () => Effect.Effect<string | null>;

@@ -4,7 +4,7 @@ import type {
   SessionId,
   SessionNotFoundError,
   Skill,
-} from "@forkzero/wire";
+} from "@memoize/wire";
 
 /**
  * Per-session skill listing, plus a live feed that re-emits the full list
@@ -21,7 +21,7 @@ export interface SkillBridgeShape {
   ) => Stream.Stream<ReadonlyArray<Skill>, SessionNotFoundError>;
 }
 
-export class SkillBridge extends Context.Tag("forkzero/SkillBridge")<
+export class SkillBridge extends Context.Tag("memoize/SkillBridge")<
   SkillBridge,
   SkillBridgeShape
 >() {}

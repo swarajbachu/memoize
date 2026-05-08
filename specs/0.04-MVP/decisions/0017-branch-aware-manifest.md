@@ -27,7 +27,7 @@ Conductor's parallel-workspace pattern raises specific cases:
 
 ### Per-workspace active branch
 
-Each forkzero workspace tracks its own *active branch* in memory.
+Each memoize workspace tracks its own *active branch* in memory.
 `IndexService.search` accepts a `branch?` param; when omitted, it uses
 the workspace's active branch. Workspace A's queries never see B's
 manifest, even though both share the underlying blob store.

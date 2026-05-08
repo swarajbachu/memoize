@@ -1,4 +1,4 @@
-# 0011 — Skills are discovered by the active provider, not by forkzero
+# 0011 — Skills are discovered by the active provider, not by memoize
 
 Status: Accepted (2026-05-04)
 
@@ -6,54 +6,54 @@ Status: Accepted (2026-05-04)
 
 MVP 0.03 surfaces user-authored skills (markdown commands with
 frontmatter) inside the composer's slash popover. The user's stated
-direction was explicit: **forkzero should not own a skill directory of
+direction was explicit: **memoize should not own a skill directory of
 its own.** Users already author skills inside their preferred coding
 agent — under `~/.claude/skills/` and project-level `.claude/skills/`
 when working with Claude, under `~/.codex/skills/` and project-level
 `.codex/skills/` when working with Codex. Asking them to maintain a
-third copy under `.forkzero/skills/` would be a tax on every user with
+third copy under `.memoize/skills/` would be a tax on every user with
 no offsetting benefit.
 
 The question is **how** to plumb those existing directories into
-forkzero's UI without re-implementing each provider's discovery rules,
+memoize's UI without re-implementing each provider's discovery rules,
 frontmatter conventions, override semantics, or hot-reload signals.
 
 ## Options
 
-### Option A — Forkzero owns `.forkzero/skills/`
+### Option A — Memoize owns `.memoize/skills/`
 
 - A new directory the user has to populate.
-- Simplest implementation: forkzero reads markdown, parses frontmatter,
+- Simplest implementation: memoize reads markdown, parses frontmatter,
   emits a list.
 - Cost: every user maintains a separate skill copy per coding tool;
   every minor format divergence between Claude/Codex skill formats
-  needs a forkzero-specific re-encoding; every cross-tool skill
+  needs a memoize-specific re-encoding; every cross-tool skill
   ergonomic gain in a future Claude or Codex release is invisible to
-  forkzero unless we re-implement it.
+  memoize unless we re-implement it.
 
-### Option B — Forkzero reads provider directories directly
+### Option B — Memoize reads provider directories directly
 
-- Forkzero reads `.claude/skills/`, `.codex/skills/`, etc. from disk
+- Memoize reads `.claude/skills/`, `.codex/skills/`, etc. from disk
   itself, parsing the frontmatter formats each tool uses.
 - Avoids the "maintain three copies" tax.
-- Cost: forkzero now owns parsing rules for each provider and has to
+- Cost: memoize now owns parsing rules for each provider and has to
   match each provider's discovery semantics (which directories are
   scanned, project vs. global precedence, override rules,
-  inheritance). Every time a provider changes those rules, forkzero
-  drifts. Frontmatter parsing bugs are forkzero's bugs, not the
+  inheritance). Every time a provider changes those rules, memoize
+  drifts. Frontmatter parsing bugs are memoize's bugs, not the
   provider's.
 
 ### Option C — Delegate to the provider driver
 
 - Each provider driver exposes `listSkills` and `subscribeSkills`. The
-  underlying tool does the discovery and parsing; forkzero consumes
+  underlying tool does the discovery and parsing; memoize consumes
   the projected `Skill` shape.
 - For Claude, the Agent SDK already does this work (`settingSources:
   ["user", "project", "local"]` exposes commands via `init.commands`);
   the driver projects each entry onto our `Skill` schema.
 - For Codex, the CLI exposes `skills/list` over its RPC interface and
   emits `SkillsChangedNotification` on changes.
-- Cost: forkzero gains a small cross-provider normalization layer; in
+- Cost: memoize gains a small cross-provider normalization layer; in
   return, every change in provider semantics is invisible (and free).
 
 ## Decision
@@ -61,11 +61,11 @@ frontmatter conventions, override semantics, or hot-reload signals.
 **Option C: drivers expose `listSkills` and `subscribeSkills`; the
 renderer never touches the filesystem for skills.**
 
-The choice follows the same logic that gave forkzero its provider
+The choice follows the same logic that gave memoize its provider
 abstraction in the first place: the Claude SDK and the Codex CLI are
-better at being themselves than forkzero will ever be. Any time an
+better at being themselves than memoize will ever be. Any time an
 inner tool updates its skill semantics — adding new frontmatter
-fields, changing precedence, supporting new directories — forkzero
+fields, changing precedence, supporting new directories — memoize
 inherits those improvements without code changes.
 
 ## Consequences
@@ -85,7 +85,7 @@ inherits those improvements without code changes.
   the user is invoking.
 
 - Project-scoped skills shadow global skills with the same name. Both
-  drivers already implement this; forkzero just respects the
+  drivers already implement this; memoize just respects the
   precedence each driver returns and does not re-sort.
 
 - Hot reload is free. The Claude SDK re-emits `init` (with the new
@@ -95,18 +95,18 @@ inherits those improvements without code changes.
   subscription pushes the new list to the popover.
 
 - Skill body expansion happens on the provider side. When the user
-  picks a `skill` chip and submits, forkzero passes a `SkillRef
+  picks a `skill` chip and submits, memoize passes a `SkillRef
   { name, scope, args }` to the driver, which calls into the SDK or
-  CLI to invoke the skill. Forkzero never inlines skill body text
-  into the prompt. This keeps forkzero's behavior identical to using
+  CLI to invoke the skill. Memoize never inlines skill body text
+  into the prompt. This keeps memoize's behavior identical to using
   the underlying tool directly — users get the same skill semantics
   they'd get from their CLI.
 
-- Authoring is also out of scope for forkzero. Users edit skill
+- Authoring is also out of scope for memoize. Users edit skill
   files in their text editor, in the destination directory their
   provider expects. Future polish (a "New skill" template-drop
   affordance, an "Edit skill" jump-to-source link) is additive;
-  forkzero owning the format itself would not be.
+  memoize owning the format itself would not be.
 
 - We accept that switching providers mid-conversation means switching
   skill lists mid-conversation. This is not a bug — a user who
@@ -120,7 +120,7 @@ The original wording assumed the underlying tool exposes discovery via
 its SDK or RPC interface (`init.commands` for Claude, `skills/list` for
 Codex). In practice the Claude Agent SDK only exposes
 `Query.supportedCommands()` once a `query()` call is in flight, which
-forkzero doesn't have at popover-open time — sessions are started
+memoize doesn't have at popover-open time — sessions are started
 lazily on first send. Spawning an ephemeral `query()` purely to list
 skills costs a real model handshake.
 

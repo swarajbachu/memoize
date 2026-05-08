@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import type { FolderId, WorktreeId } from "@forkzero/wire";
+import type { FolderId, WorktreeId } from "@memoize/wire";
 
 /**
  * Top-level renderer view. The settings page replaces the chat surface in the

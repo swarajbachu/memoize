@@ -5,7 +5,7 @@ import type {
   AttachmentTooLargeError,
   SessionId,
   SessionNotFoundError,
-} from "@forkzero/wire";
+} from "@memoize/wire";
 
 export type UploadFailure =
   | AttachmentTooLargeError
@@ -35,7 +35,7 @@ export interface AttachmentServiceShape {
   >;
 }
 
-export class AttachmentService extends Context.Tag("forkzero/AttachmentService")<
+export class AttachmentService extends Context.Tag("memoize/AttachmentService")<
   AttachmentService,
   AttachmentServiceShape
 >() {}

@@ -12,7 +12,7 @@ import {
   type PermissionDecision,
   type PermissionKind,
   type ProviderId,
-} from "@forkzero/wire";
+} from "@memoize/wire";
 
 import { probeAllProviders, resolveCliPath } from "../availability.ts";
 import {

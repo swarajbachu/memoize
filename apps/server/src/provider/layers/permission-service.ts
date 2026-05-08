@@ -9,7 +9,7 @@ import {
   type FolderId,
   type PermissionDecision,
   type SessionId,
-} from "@forkzero/wire";
+} from "@memoize/wire";
 
 import {
   PermissionService,

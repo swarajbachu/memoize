@@ -1,6 +1,6 @@
 import { X } from "lucide-react";
 
-import { MODELS_BY_PROVIDER, type ProviderId } from "@forkzero/wire";
+import { MODELS_BY_PROVIDER, type ProviderId } from "@memoize/wire";
 
 import { useUiStore } from "../store/ui.ts";
 import { FileIcon } from "./file-icon.tsx";

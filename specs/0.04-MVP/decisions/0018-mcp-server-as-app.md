@@ -5,20 +5,20 @@ Status: Accepted
 
 ## Context
 
-The index engine (`@forkzero/index`, ADR 0013) has two consumers in
+The index engine (`@memoize/index`, ADR 0013) has two consumers in
 0.04: the desktop server and an MCP server for external agents. The
 external-MCP shape lets users connect *any* agent runtime (terminal
 Claude Code, Codex, Cursor's agent mode, custom scripts) to the same
-index, getting the same tools forkzero's bundled agent uses.
+index, getting the same tools memoize's bundled agent uses.
 
 Distribution shape questions:
 
 - Is the MCP server a route inside `apps/server`, or its own app?
 - Does it ship with the desktop, or as a standalone binary?
-- Does it run only when forkzero is open, or independently?
-- How do users without forkzero installed get it?
+- Does it run only when memoize is open, or independently?
+- How do users without memoize installed get it?
 
-The honest goal: forkzero's index becomes useful **even if the user is
+The honest goal: memoize's index becomes useful **even if the user is
 running `claude` in a terminal without the desktop app.** That's the
 distribution play — same engine, two transports, available everywhere
 agents are.
@@ -31,9 +31,9 @@ Ship the MCP server as a separate workspace app: **`apps/mcp-server`**.
 
 ```
 apps/mcp-server/
-  package.json                      # name: "@forkzero/mcp-server"
+  package.json                      # name: "@memoize/mcp-server"
   src/
-    bin.ts                          # CLI entry — `forkzero-mcp [opts]`
+    bin.ts                          # CLI entry — `memoize-mcp [opts]`
     server.ts                       # MCP server boot
     tools/
       code-search.ts
@@ -47,10 +47,10 @@ apps/mcp-server/
 
 ### Transport
 
-- **stdio** (default) — `forkzero-mcp --workspace /path` reads/writes
+- **stdio** (default) — `memoize-mcp --workspace /path` reads/writes
   JSON-RPC over stdin/stdout. This is what `~/.claude/mcp.json` and
   Codex's MCP config expect.
-- **HTTP** (optional) — `forkzero-mcp --http :7421 --workspace /path`
+- **HTTP** (optional) — `memoize-mcp --http :7421 --workspace /path`
   exposes the same MCP endpoints over HTTP for runtimes that prefer
   HTTP (or for IDE plugins).
 
@@ -60,19 +60,19 @@ Both transports use `@modelcontextprotocol/sdk` server primitives.
 
 Three channels:
 
-1. **npm** — `npx @forkzero/mcp-server --workspace .` works for users
+1. **npm** — `npx @memoize/mcp-server --workspace .` works for users
    with Node ≥ 22. Lowest-friction entry.
 2. **Bun-compiled binaries** — `bun build --compile` produces
-   `forkzero-mcp` per OS. No Node required. Distributed via GitHub
+   `memoize-mcp` per OS. No Node required. Distributed via GitHub
    Releases and Homebrew.
 3. **Bundled in the desktop app** — the binary lives inside the
-   forkzero app bundle so users who installed the desktop also get
-   `forkzero-mcp` on PATH.
+   memoize app bundle so users who installed the desktop also get
+   `memoize-mcp` on PATH.
 
 ### Authentication and key handling
 
 The MCP server does **not** mount the desktop's keytar. If a user wants
-paid embeddings/rerank when running `forkzero-mcp` standalone, they
+paid embeddings/rerank when running `memoize-mcp` standalone, they
 provide keys via env vars (`VOYAGE_API_KEY`, etc.) — same env vars the
 desktop reads after fetching them from keytar. This way:
 
@@ -88,9 +88,9 @@ loaded.
 
 `--workspace <path>` is required. Defaults to `process.cwd()` if
 omitted. The server opens (or creates) the index DB at the path
-described in ADR 0014 (`<userData>/index/<repo-id>/forkzero-index.sqlite`),
+described in ADR 0014 (`<userData>/index/<repo-id>/memoize-index.sqlite`),
 which means desktop and standalone share the same DB when run on the
-same repo. Users on a forkzero-managed index get warm-started search.
+same repo. Users on a memoize-managed index get warm-started search.
 
 ### Why a separate app, not a route in `apps/server`
 
@@ -99,7 +99,7 @@ shouldn't pay that cost — it's a different process model (single CLI
 invocation, stdio-attached) and a different bundle size target.
 Separate app keeps each focused and Bun-compilable.
 
-`@forkzero/index` is the shared substrate. Both apps consume it. No
+`@memoize/index` is the shared substrate. Both apps consume it. No
 code duplication; no cross-contamination of transport concerns.
 
 ### Why npm + binary, not just binary
@@ -113,15 +113,15 @@ code duplication; no cross-contamination of transport concerns.
 
 ### Positive
 
-- Forkzero's index reaches users who don't run the desktop app.
+- Memoize's index reaches users who don't run the desktop app.
 - The MCP binary is small (no Electron, no React, no Effect RPC).
 - Same engine, same data, same answers across desktop and MCP.
-- npm distribution doubles as marketing (`@forkzero/mcp-server` is
+- npm distribution doubles as marketing (`@memoize/mcp-server` is
   searchable, installable, recommendable).
 
 ### Negative
 
-- Two apps to keep in sync. Mitigated by `@forkzero/index` being the
+- Two apps to keep in sync. Mitigated by `@memoize/index` being the
   source of truth; both apps are thin wrappers.
 - npm publishing pipeline (CI workflow, version bumps) is one more
   thing to maintain.
@@ -155,11 +155,11 @@ code duplication; no cross-contamination of transport concerns.
 
 ## What we deliberately rejected
 
-- Bundling MCP transport into `@forkzero/index`. Keeps the package
+- Bundling MCP transport into `@memoize/index`. Keeps the package
   transport-agnostic.
 - Spinning up the MCP server on demand from `apps/desktop`. The
   desktop's bundled agent uses `IndexService` in-process; users who
-  want external MCP access run `forkzero-mcp` themselves.
+  want external MCP access run `memoize-mcp` themselves.
 
 ## Reference
 

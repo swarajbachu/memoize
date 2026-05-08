@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { create } from "zustand";
 
-import type { Folder, FolderId } from "@forkzero/wire";
+import type { Folder, FolderId } from "@memoize/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
 

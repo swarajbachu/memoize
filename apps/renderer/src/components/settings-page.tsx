@@ -15,7 +15,7 @@ import {
   type FolderId,
   type ProviderId,
   type RuntimeMode,
-} from "@forkzero/wire";
+} from "@memoize/wire";
 
 import { cn } from "~/lib/utils";
 import { DEFAULT_SUBAGENT_PRESETS } from "../lib/subagent-presets.ts";
@@ -327,7 +327,7 @@ function WorkspacePane() {
   return (
     <Section
       title="New chat workspace"
-      description="Forkzero can run each chat in its own git worktree under .forkzero/repo-worktree/, branched off the project's HEAD. Per-repo settings under Repositories override this default."
+      description="Memoize can run each chat in its own git worktree under .memoize/repo-worktree/, branched off the project's HEAD. Per-repo settings under Repositories override this default."
     >
       <label className="flex items-center gap-3 rounded-md border border-border/60 px-3 py-2.5 text-sm">
         <input

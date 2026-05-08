@@ -1,6 +1,6 @@
 import { ArrowUp, X } from "lucide-react";
 
-import type { SessionId } from "@forkzero/wire";
+import type { SessionId } from "@memoize/wire";
 
 import {
   Tooltip,

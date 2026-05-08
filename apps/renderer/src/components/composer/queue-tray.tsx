@@ -1,4 +1,4 @@
-import type { SessionId } from "@forkzero/wire";
+import type { SessionId } from "@memoize/wire";
 
 import { useMessagesStore } from "../../store/messages.ts";
 import { QueueChip } from "./queue-chip.tsx";

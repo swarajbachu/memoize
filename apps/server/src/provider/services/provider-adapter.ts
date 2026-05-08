@@ -8,7 +8,7 @@ import type {
   AgentTurnId,
   ProviderId,
   StartSessionInput,
-} from "@forkzero/wire";
+} from "@memoize/wire";
 
 import type { ProviderAdapterError } from "../errors.ts";
 
@@ -43,7 +43,7 @@ export interface ProviderAdapterShape {
   ) => Effect.Effect<void, AgentSessionNotFoundError>;
 }
 
-export class ProviderAdapter extends Context.Tag("forkzero/ProviderAdapter")<
+export class ProviderAdapter extends Context.Tag("memoize/ProviderAdapter")<
   ProviderAdapter,
   ProviderAdapterShape
 >() {}

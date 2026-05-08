@@ -4,7 +4,7 @@ import { Effect } from "effect";
 /**
  * Worktrees + per-repository settings.
  *
- *  - `worktrees` rows track each `git worktree` forkzero owns for a project.
+ *  - `worktrees` rows track each `git worktree` memoize owns for a project.
  *    Removed from disk via `WorktreeService.remove`; cascades from the
  *    parent project so deleting a project drops the rows too (the disk
  *    removal step happens before the DB delete in the service so we never

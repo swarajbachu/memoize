@@ -1,7 +1,7 @@
 import { RpcClient, RpcGroup, RpcSerialization } from "@effect/rpc";
 import { Effect, Layer, ManagedRuntime, Scope } from "effect";
 
-import { ForkzeroRpcs } from "@forkzero/wire";
+import { MemoizeRpcs } from "@memoize/wire";
 
 import { getBridge } from "./bridge.ts";
 import { electronClientProtocolLayer } from "./electron-client-protocol.ts";
@@ -14,10 +14,10 @@ import { electronClientProtocolLayer } from "./electron-client-protocol.ts";
  * background fibers (response demux, error reconciliation). We hand the
  * client a long-lived scope that lives until the page unloads.
  */
-type ForkzeroClient = RpcClient.RpcClient<RpcGroup.Rpcs<typeof ForkzeroRpcs>>;
+type MemoizeClient = RpcClient.RpcClient<RpcGroup.Rpcs<typeof MemoizeRpcs>>;
 
 let runtime: ManagedRuntime.ManagedRuntime<RpcClient.Protocol, never> | null = null;
-let cachedClient: Promise<ForkzeroClient> | null = null;
+let cachedClient: Promise<MemoizeClient> | null = null;
 
 function getRuntime() {
   if (runtime === null) {
@@ -29,13 +29,13 @@ function getRuntime() {
   return runtime;
 }
 
-export function getRpcClient(): Promise<ForkzeroClient> {
+export function getRpcClient(): Promise<MemoizeClient> {
   if (cachedClient === null) {
     const rt = getRuntime();
     cachedClient = rt.runPromise(
       Effect.gen(function* () {
         const scope = yield* Scope.make();
-        return yield* RpcClient.make(ForkzeroRpcs).pipe(Scope.extend(scope));
+        return yield* RpcClient.make(MemoizeRpcs).pipe(Scope.extend(scope));
       }),
     );
   }

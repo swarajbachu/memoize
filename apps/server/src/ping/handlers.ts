@@ -1,4 +1,4 @@
-import { ForkzeroRpcs, PingResult } from "@forkzero/wire";
+import { MemoizeRpcs, PingResult } from "@memoize/wire";
 import { Effect, Layer } from "effect";
 
 /**
@@ -8,7 +8,7 @@ import { Effect, Layer } from "effect";
  * Each domain registers handlers per-method via `toLayerHandler` so domains
  * compose without one needing to know about every other RPC in the group.
  */
-const PingPing = ForkzeroRpcs.toLayerHandler("ping.ping", () =>
+const PingPing = MemoizeRpcs.toLayerHandler("ping.ping", () =>
   Effect.succeed(PingResult.make({ message: "pong", receivedAt: new Date() })),
 );
 

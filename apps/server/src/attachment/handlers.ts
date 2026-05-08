@@ -1,9 +1,9 @@
-import { ForkzeroRpcs } from "@forkzero/wire";
+import { MemoizeRpcs } from "@memoize/wire";
 import { Effect, Layer } from "effect";
 
 import { AttachmentService } from "./services/attachment-service.ts";
 
-const Upload = ForkzeroRpcs.toLayerHandler(
+const Upload = MemoizeRpcs.toLayerHandler(
   "attachments.upload",
   ({ sessionId, bytes, mimeType, originalName }) =>
     Effect.flatMap(AttachmentService, (svc) =>
@@ -11,7 +11,7 @@ const Upload = ForkzeroRpcs.toLayerHandler(
     ),
 );
 
-const Touch = ForkzeroRpcs.toLayerHandler("attachments.touch", ({ ids }) =>
+const Touch = MemoizeRpcs.toLayerHandler("attachments.touch", ({ ids }) =>
   Effect.flatMap(AttachmentService, (svc) => svc.touch(ids)),
 );
 

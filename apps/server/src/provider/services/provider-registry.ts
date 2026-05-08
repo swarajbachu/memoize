@@ -1,6 +1,6 @@
 import { Context, type Effect } from "effect";
 
-import type { ProviderId } from "@forkzero/wire";
+import type { ProviderId } from "@memoize/wire";
 
 import type { ProviderRegistryError } from "../errors.ts";
 import type { ProviderAdapterShape } from "./provider-adapter.ts";
@@ -18,7 +18,7 @@ export interface ProviderRegistryShape {
   readonly list: () => Effect.Effect<ReadonlyArray<ProviderAdapterShape>>;
 }
 
-export class ProviderRegistry extends Context.Tag("forkzero/ProviderRegistry")<
+export class ProviderRegistry extends Context.Tag("memoize/ProviderRegistry")<
   ProviderRegistry,
   ProviderRegistryShape
 >() {}

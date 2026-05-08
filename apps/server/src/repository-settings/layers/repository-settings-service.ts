@@ -6,7 +6,7 @@ import {
   type ProviderId,
   RepositorySettings,
   type RuntimeMode,
-} from "@forkzero/wire";
+} from "@memoize/wire";
 
 import { RepositorySettingsService } from "../services/repository-settings-service.ts";
 

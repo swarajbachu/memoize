@@ -6,7 +6,7 @@ import {
   type FileRef,
   type ProviderId,
   type SkillRef,
-} from "@forkzero/wire";
+} from "@memoize/wire";
 
 import { allChips } from "../lib/codemirror/composer-chips.ts";
 

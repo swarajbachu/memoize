@@ -1,7 +1,7 @@
 # Feature: File viewer & editor
 
 The right-pane file tree is the only window onto the user's project
-filesystem inside forkzero. In MVP 0.01 it was a read-only browse surface
+filesystem inside memoize. In MVP 0.01 it was a read-only browse surface
 with generic file/folder icons. MVP 0.02 turns it into a working editor:
 type-aware icons, click-to-open in the main pane, and a save-capable
 minimal editor.

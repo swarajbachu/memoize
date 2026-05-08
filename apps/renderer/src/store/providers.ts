@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { create } from "zustand";
 
-import type { AgentAvailability, ProviderId } from "@forkzero/wire";
+import type { AgentAvailability, ProviderId } from "@memoize/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
 

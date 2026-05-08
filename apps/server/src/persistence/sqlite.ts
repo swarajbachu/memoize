@@ -7,9 +7,9 @@ import { AppPaths } from "../app-paths.ts";
 /**
  * Live SQLite client for the chat-MVP persistence layer. Resolves the DB
  * file path against `AppPaths.userData` (provided by the host shim — Electron
- * today, WS server tomorrow). Honors `FORKZERO_SQLITE_MEMORY=1` for tests
+ * today, WS server tomorrow). Honors `MEMOIZE_SQLITE_MEMORY=1` for tests
  * and isolated benches; otherwise the file lives at
- * `<userData>/forkzero.sqlite` so a user can `sqlite3` into it.
+ * `<userData>/memoize.sqlite` so a user can `sqlite3` into it.
  *
  * `SqliteClient.layer` produces both `SqliteClient` (sqlite-specific:
  * `export`, `backup`, `loadExtension`) and the generic `SqlClient` —
@@ -19,9 +19,9 @@ export const SqliteLive = Layer.unwrapEffect(
   Effect.gen(function* () {
     const paths = yield* AppPaths;
     const filename =
-      process.env.FORKZERO_SQLITE_MEMORY === "1"
+      process.env.MEMOIZE_SQLITE_MEMORY === "1"
         ? ":memory:"
-        : join(paths.userData, "forkzero.sqlite");
+        : join(paths.userData, "memoize.sqlite");
     return SqliteClient.layer({ filename });
   }),
 );

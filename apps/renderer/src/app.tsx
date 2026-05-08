@@ -24,7 +24,7 @@ import { useSessionsStore } from "./store/sessions.ts";
 import { useUiStore } from "./store/ui.ts";
 import { useWorkspaceStore } from "./store/workspace.ts";
 
-const PANEL_GROUP_ID = "forkzero.shell.v3";
+const PANEL_GROUP_ID = "memoize.shell.v3";
 const PANEL_IDS = ["projects", "main", "files"];
 
 export function App() {
@@ -53,7 +53,7 @@ export function App() {
   // lights to dodge in native fullscreen.
   const setFullScreen = useUiStore((s) => s.setFullScreen);
   useEffect(() => {
-    const win = window.forkzero?.window;
+    const win = window.memoize?.window;
     if (win === undefined) return;
     return win.onFullScreenChange((value) => setFullScreen(value));
   }, [setFullScreen]);
@@ -86,11 +86,11 @@ export function App() {
         const result = await Effect.runPromise(client.ping.ping({}));
         if (cancelled) return;
         // eslint-disable-next-line no-console
-        console.log("[forkzero] RPC smoke test:", JSON.stringify(result));
+        console.log("[memoize] RPC smoke test:", JSON.stringify(result));
       } catch (error) {
         if (cancelled) return;
         // eslint-disable-next-line no-console
-        console.error("[forkzero] RPC smoke test failed:", error);
+        console.error("[memoize] RPC smoke test failed:", error);
       }
     })();
     return () => {

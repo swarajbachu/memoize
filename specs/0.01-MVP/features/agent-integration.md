@@ -43,4 +43,4 @@ All adapters emit the same `AgentEvent` union (see [phases/02-agents.md](../phas
 
 ## Credentials
 
-`keytar` keyed by `"forkzero:<provider>:apiKey"`. Never logged, never written to disk in plaintext.
+`keytar` keyed by `"memoize:<provider>:apiKey"`. Never logged, never written to disk in plaintext.

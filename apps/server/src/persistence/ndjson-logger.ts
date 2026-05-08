@@ -2,7 +2,7 @@ import { Context, Effect, Layer } from "effect";
 import { createWriteStream, mkdirSync, renameSync, type WriteStream } from "node:fs";
 import { dirname, join } from "node:path";
 
-import type { FolderId, Message, SessionId } from "@forkzero/wire";
+import type { FolderId, Message, SessionId } from "@memoize/wire";
 
 import { AppPaths } from "../app-paths.ts";
 
@@ -33,7 +33,7 @@ export interface NdjsonLoggerShape {
   readonly close: (sessionId: SessionId) => Effect.Effect<void>;
 }
 
-export class NdjsonLogger extends Context.Tag("forkzero/NdjsonLogger")<
+export class NdjsonLogger extends Context.Tag("memoize/NdjsonLogger")<
   NdjsonLogger,
   NdjsonLoggerShape
 >() {}

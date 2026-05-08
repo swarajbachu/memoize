@@ -64,7 +64,7 @@ It is the only option that's both minimal *now* (sub-200 KB after
 language packs) and structured the way the future Cmd+K-on-selection
 work needs to work (selection, decorations, and content-changing
 transactions are core APIs). Monaco is the right choice for an IDE,
-not for forkzero. A `<textarea>` would force a rewrite as soon as we
+not for memoize. A `<textarea>` would force a rewrite as soon as we
 add the first interesting editor command.
 
 ## Consequences
@@ -79,7 +79,7 @@ add the first interesting editor command.
   `lib/codemirror/languages.ts` + `components/file-editor.tsx`) so the
   future inline-AI command extension lives in one new file rather than
   reshaping the React tree.
-- We do **not** ship LSP integration or IntelliSense in 0.02. If forkzero
+- We do **not** ship LSP integration or IntelliSense in 0.02. If memoize
   later wants completions, the path is `@codemirror/autocomplete` plus
-  a forkzero-specific completion source (likely backed by the agent),
+  a memoize-specific completion source (likely backed by the agent),
   not pulling in Monaco.

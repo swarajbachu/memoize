@@ -1,9 +1,9 @@
-import { ForkzeroRpcs } from "@forkzero/wire";
+import { MemoizeRpcs } from "@memoize/wire";
 import { Effect, Layer } from "effect";
 
 import { FsService } from "./services/fs-service.ts";
 
-const Tree = ForkzeroRpcs.toLayerHandler(
+const Tree = MemoizeRpcs.toLayerHandler(
   "fs.tree",
   ({ folderId, path, worktreeId }) =>
     Effect.flatMap(FsService, (svc) =>
@@ -11,7 +11,7 @@ const Tree = ForkzeroRpcs.toLayerHandler(
     ),
 );
 
-const ReadFile = ForkzeroRpcs.toLayerHandler(
+const ReadFile = MemoizeRpcs.toLayerHandler(
   "fs.readFile",
   ({ folderId, path, worktreeId }) =>
     Effect.flatMap(FsService, (svc) =>
@@ -19,7 +19,7 @@ const ReadFile = ForkzeroRpcs.toLayerHandler(
     ),
 );
 
-const WriteFile = ForkzeroRpcs.toLayerHandler(
+const WriteFile = MemoizeRpcs.toLayerHandler(
   "fs.writeFile",
   ({ folderId, path, content, expectedMtime, worktreeId }) =>
     Effect.flatMap(FsService, (svc) =>

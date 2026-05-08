@@ -15,7 +15,7 @@ import {
   type PermissionMode,
   type StartSessionInput,
   type UserQuestionAnswer,
-} from "@forkzero/wire";
+} from "@memoize/wire";
 
 /**
  * Live-only handle for one Codex SDK conversation. Mirrors `ClaudeSessionHandle`
@@ -224,7 +224,7 @@ export const startCodexSession = (
         workingDirectory: cwd,
         // Codex SDK exposes `approvalPolicy` but no callback — when set to
         // anything other than "never" it routes prompts to its own stdio,
-        // which we can't bridge to forkzero's toast. Stay on "never" until
+        // which we can't bridge to memoize's toast. Stay on "never" until
         // the SDK exposes a programmatic hook; Claude is the primary
         // permission path in Phase 4.
         sandboxMode: "read-only",

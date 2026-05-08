@@ -6,26 +6,26 @@ via `apps/mcp-server`). One engine, one chunk store, two transports.
 
 ## Why this exists
 
-Agents inside forkzero spend most of their token budget on navigation —
+Agents inside memoize spend most of their token budget on navigation —
 `Bash(rg ...)` → `Read` → repeat. On a real codebase: 25–40k tokens across
 5–8 tool calls before the agent has the context to work. Most of that is
 *tax*, not value.
 
 Existing tools (Cursor, Sourcegraph Cody, Greptile, Continue, Augment) all
 build codebase indexes. None handle the **N parallel agent workspaces on
-the same repo** shape that Conductor + forkzero already produces. That's
+the same repo** shape that Conductor + memoize already produces. That's
 the wedge: not "vector DB for code," but "the only index built for the
 parallel-workspace agent workflow."
 
 ## Goals
 
-1. **Tokens-per-task ↓ 3–10×** vs. baseline grep agent on real forkzero tasks.
+1. **Tokens-per-task ↓ 3–10×** vs. baseline grep agent on real memoize tasks.
 2. **Wall-clock-per-task ↓ 2–3×** (driven by fewer LLM round-trips, not
    faster retrieval).
 3. **Branch switches in < 200 ms**, not minutes — Conductor workspace
    ergonomics demand this.
 4. **Local-first**, zero network calls in the default config.
-5. **Reusable**: forkzero is one consumer, not the only consumer.
+5. **Reusable**: memoize is one consumer, not the only consumer.
 
 ## Non-goals
 
@@ -42,7 +42,7 @@ wraps it as MCP, and a future cloud-sync worker is a third consumer.
 
 ```
 packages/
-  index/                              # @forkzero/index — pure engine
+  index/                              # @memoize/index — pure engine
     src/
       schema/migrations/              # SQL files
       chunker/                        # tree-sitter chunking
@@ -62,14 +62,14 @@ packages/
 apps/
   server/
     src/
-      index/                          # consumes @forkzero/index
+      index/                          # consumes @memoize/index
         index-service.ts              # Effect.Service wrapping the engine
         index-handlers.ts             # RPC handlers → renderer
   mcp-server/                         # NEW — standalone MCP app
     src/
       server.ts                       # MCP stdio + HTTP entry
       tools/                          # MCP tool wrappers
-      bin.ts                          # `forkzero-mcp` executable
+      bin.ts                          # `memoize-mcp` executable
 ```
 
 The desktop renderer never talks to the index directly — it goes through
@@ -189,7 +189,7 @@ on branch switch:
   no re-parsing for unchanged blobs
 ```
 
-Initial index of a forkzero-sized repo (~80k LOC TypeScript): target
+Initial index of a memoize-sized repo (~80k LOC TypeScript): target
 60–120s. Per-file change: 10–50ms. Branch switch: < 200ms.
 
 **Tree-sitter grammars** loaded on demand: TypeScript, JavaScript, TSX,
@@ -319,25 +319,25 @@ provider abstraction.
 
 Three concentric tiers. **Only the first two ship in 0.04.**
 
-| Tier | Mode | What user does | Where forkzero is in the path |
+| Tier | Mode | What user does | Where memoize is in the path |
 |---|---|---|---|
 | **1. Local** (default) | nomic-embed-code + bge-reranker-v2-m3 via `transformers.js` | Nothing. Works out of the box. | Not in the path. |
 | **2. BYOK** | User pastes their Voyage / Cohere / OpenAI / Jina key | One-time: paste key in Settings → Index | Not in the path. Chunks go user → provider directly. |
-| **3. Forkzero-cloud** (deferred) | Pay forkzero (subscription or metered); we proxy | Sign up, swipe card | In the path — chunks traverse forkzero's proxy. |
+| **3. Memoize-cloud** (deferred) | Pay memoize (subscription or metered); we proxy | Sign up, swipe card | In the path — chunks traverse memoize's proxy. |
 
 **BYOK storage** uses the existing `keytar` pattern from agent integration
 (see [agent-integration.md](../../0.01-MVP/features/agent-integration.md)),
 same shape, new key slots:
 
 ```
-forkzero:embed:voyage     → VOYAGE_API_KEY
-forkzero:embed:openai     → OPENAI_API_KEY
-forkzero:embed:jina       → JINA_API_KEY
-forkzero:rerank:cohere    → COHERE_API_KEY
-forkzero:rerank:voyage    → VOYAGE_API_KEY
+memoize:embed:voyage     → VOYAGE_API_KEY
+memoize:embed:openai     → OPENAI_API_KEY
+memoize:embed:jina       → JINA_API_KEY
+memoize:rerank:cohere    → COHERE_API_KEY
+memoize:rerank:voyage    → VOYAGE_API_KEY
 ```
 
-Never logged. Never written to disk in plaintext. Never sent to forkzero
+Never logged. Never written to disk in plaintext. Never sent to memoize
 servers (because there are none in 0.04).
 
 See [ADR 0021](../decisions/0021-credentials-and-billing.md) for why
@@ -347,9 +347,9 @@ pay-per-usage is deferred.
 
 Two consumption shapes.
 
-### Shape 1 — In-process (forkzero's bundled agent)
+### Shape 1 — In-process (memoize's bundled agent)
 
-`apps/server` consumes `@forkzero/index` directly. The Claude Code SDK and
+`apps/server` consumes `@memoize/index` directly. The Claude Code SDK and
 Codex SDK adapters register five custom tools at session start:
 
 ```ts
@@ -369,15 +369,15 @@ A standalone binary that any agent runtime can spawn. Implements the
 Model Context Protocol over stdio (default) and HTTP (optional).
 
 ```
-forkzero-mcp --workspace /path/to/repo
-forkzero-mcp --workspace /path/to/repo --http :7421
+memoize-mcp --workspace /path/to/repo
+memoize-mcp --workspace /path/to/repo --http :7421
 ```
 
 Distribution:
 
-- npm: `npx @forkzero/mcp-server`
+- npm: `npx @memoize/mcp-server`
 - Bun standalone binary via `bun build --compile` (single executable per OS)
-- Bundled inside the desktop app for users who want their forkzero-managed
+- Bundled inside the desktop app for users who want their memoize-managed
   index served to outside agents
 
 Tool surface (mirrors Shape 1):
@@ -403,7 +403,7 @@ A typical external-agent setup (terminal Claude Code) drops a line in
 `~/.claude/mcp.json`:
 
 ```json
-{ "servers": { "forkzero": { "command": "forkzero-mcp", "args": ["--workspace", "."] } } }
+{ "servers": { "memoize": { "command": "memoize-mcp", "args": ["--workspace", "."] } } }
 ```
 
 …and gets the same tools as the bundled agent.
@@ -439,7 +439,7 @@ scaffolding for future UI.
 
 ## Verification
 
-1. **Unit tests** (`bun --filter @forkzero/index test`): chunker fixtures,
+1. **Unit tests** (`bun --filter @memoize/index test`): chunker fixtures,
    symbol extraction fixtures, manifest swap, RRF correctness, router
    classification edge cases.
 2. **Integration tests** (`apps/server`): reindex this repo, run a sample
@@ -452,7 +452,7 @@ scaffolding for future UI.
 4. **MCP smoke test**: spawn `apps/mcp-server` from a script; connect via
    the `@modelcontextprotocol/sdk` client; call each tool with a fixture
    query; assert response shape.
-5. **Manual dogfood**: open forkzero on the forkzero repo itself; ask the
+5. **Manual dogfood**: open memoize on the memoize repo itself; ask the
    bundled agent "where is the PTY service spun up and how does it stream
    data to the renderer?"; observe it answers in 1–2 tool calls instead
    of 5+.
@@ -472,6 +472,6 @@ Phase B freezes:
 3. **Refs accuracy floor.** Tree-sitter alone gets 70–80% accurate refs;
    full TS resolution needs `ts-morph` (heavy). Recommendation: ship
    tree-sitter-only; upgrade later if evals show false negatives matter.
-4. **MCP server distribution.** Ship `@forkzero/mcp-server` as a separate
+4. **MCP server distribution.** Ship `@memoize/mcp-server` as a separate
    npm package from day 1, or bundle inside the Electron app first?
    Recommendation: ship the npm package in Phase F.

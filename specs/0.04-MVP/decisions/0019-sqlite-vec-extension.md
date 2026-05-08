@@ -6,14 +6,14 @@ Status: Accepted
 ## Context
 
 ADR 0008 established SQLite + `@effect/sql-sqlite-node` (with
-`better-sqlite3`) as forkzero's persistence engine. 0.04 adds vector
+`better-sqlite3`) as memoize's persistence engine. 0.04 adds vector
 search to the index. Three places that vector storage could live:
 
 - A separate vector DB (LanceDB, Qdrant, Chroma, Weaviate)
 - A SQLite extension that adds vector columns
 - An in-memory index (FAISS, hnswlib) backed by serialized files
 
-The forkzero principles (ADR 0007: server is the only source of truth;
+The memoize principles (ADR 0007: server is the only source of truth;
 ADR 0008: single-file portability; local-first) point at "stay inside
 SQLite if at all possible." Adding a second persistence engine adds a
 second backup story, a second failure mode, a second startup
@@ -85,7 +85,7 @@ to the existing `electron-rebuild -w` list alongside `keytar`,
 ```
 
 Per ADR 0006, native modules used by 2+ workspaces (here, `apps/server`
-and `apps/mcp-server` via `@forkzero/index`) are catalogued.
+and `apps/mcp-server` via `@memoize/index`) are catalogued.
 
 ### Embedding lifecycle
 
@@ -116,7 +116,7 @@ Migrations are run via `@effect/sql/Migrator` at engine startup.
 ### Positive
 
 - One file, one backup story. The user's index lives in their
-  workspace's `forkzero-index.sqlite`.
+  workspace's `memoize-index.sqlite`.
 - Same query engine for vector + BM25 + symbol — joins across them are
   trivial (`JOIN chunks ON chunks.id = chunk_vec.chunk_id`).
 - Schema migrations follow the existing ADR 0008 pattern; no new

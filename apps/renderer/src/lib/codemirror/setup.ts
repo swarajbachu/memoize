@@ -14,7 +14,7 @@ import {
   lineNumbers,
 } from "@codemirror/view";
 
-import { forkzeroTheme } from "./theme.ts";
+import { memoizeTheme } from "./theme.ts";
 
 // One compartment for the language extension so opening a different file
 // reconfigures it via a single transaction instead of rebuilding the view.
@@ -60,7 +60,7 @@ export const createEditor = ({
             },
           },
         ]),
-        forkzeroTheme,
+        memoizeTheme,
         languageCompartment.of(language ?? []),
         EditorView.updateListener.of((u) => {
           if (u.docChanged) onChange(u.state.doc.toString());

@@ -11,7 +11,7 @@ import type {
   SessionId,
   UserQuestionAnswer,
   WorktreeId,
-} from "@forkzero/wire";
+} from "@memoize/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
 import {

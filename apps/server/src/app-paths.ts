@@ -6,7 +6,7 @@ import { Context } from "effect";
  * would resolve them from `XDG_DATA_HOME` or similar. Services yield this tag
  * instead of importing electron themselves — that's the rule from ADR 0007.
  */
-export class AppPaths extends Context.Tag("forkzero/AppPaths")<
+export class AppPaths extends Context.Tag("memoize/AppPaths")<
   AppPaths,
   {
     readonly userData: string;

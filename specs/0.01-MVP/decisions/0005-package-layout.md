@@ -12,15 +12,15 @@ Other terminal-for-agents apps split their server into a dozen domain packages (
 
 ## Decision
 
-### One contracts package: `@forkzero/wire`
+### One contracts package: `@memoize/wire`
 
-All RPC contracts, branded IDs, and cross-process schemas live in a single workspace package: `@forkzero/wire`. Inside, **one file per domain** (`ping.ts`, `workspace.ts`, `pty.ts`, `git.ts`). One `RpcGroup` (`ForkzeroRpcs`) collects every `Rpc.make(...)`.
+All RPC contracts, branded IDs, and cross-process schemas live in a single workspace package: `@memoize/wire`. Inside, **one file per domain** (`ping.ts`, `workspace.ts`, `pty.ts`, `git.ts`). One `RpcGroup` (`MemoizeRpcs`) collects every `Rpc.make(...)`.
 
 **Why one package, not many:** the wire format is the boundary. Splitting it across packages forces every new RPC to negotiate package membership. One package, one file per domain, lets us add an RPC by editing one file and re-exporting from `index.ts`.
 
-### Internal package naming: `@forkzero/*`
+### Internal package naming: `@memoize/*`
 
-All packages we create live under `@forkzero/*` (e.g. `@forkzero/wire`). Pre-existing repo-shared config packages keep their `@repo/*` namespace (`@repo/typescript-config`, `@repo/eslint-config`, `@repo/ui`) — they're scaffolding that came with the Turborepo template, not domain code.
+All packages we create live under `@memoize/*` (e.g. `@memoize/wire`). Pre-existing repo-shared config packages keep their `@repo/*` namespace (`@repo/typescript-config`, `@repo/eslint-config`, `@repo/ui`) — they're scaffolding that came with the Turborepo template, not domain code.
 
 **Why not mix scoped and unscoped:** a single namespace makes it obvious at a glance whether a dependency is ours or third-party.
 
@@ -106,7 +106,7 @@ apps/server/src/                          # NEW — main-process service impleme
   app-paths.ts, runtime.ts, handlers.ts, bin.ts
 
 apps/desktop/src/                          # thin Electron shim
-  main.ts                                  # imports makeMainLayer from @forkzero/server
+  main.ts                                  # imports makeMainLayer from @memoize/server
   preload.ts
   ipc/electron-server-protocol.ts          # transport stays in apps/desktop
 

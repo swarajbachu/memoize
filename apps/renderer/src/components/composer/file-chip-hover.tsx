@@ -1,7 +1,7 @@
 import { ExternalLink } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import type { FolderId } from "@forkzero/wire";
+import type { FolderId } from "@memoize/wire";
 
 import { useActiveWorktreeId } from "~/store/active-workspace.ts";
 import { useUiStore } from "~/store/ui.ts";

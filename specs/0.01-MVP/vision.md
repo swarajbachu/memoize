@@ -1,14 +1,14 @@
 # Vision
 
-## What forkzero is
+## What memoize is
 
 A desktop app for working with coding agents (Claude Code, Codex) chat-first. You add a project to the sidebar, open a session, and chat with an agent that has full access to that project's files. The agent does the work; you review the diff. A file tree and a real terminal sit on the right so you can run `pnpm dev`, `tsc --noEmit`, or `ls` without leaving the app.
 
 The mental model is closer to Cursor's "Composer" or T3 Chat, not VS Code. The chat is the canvas; the file tree and terminal are tools you reach for when needed.
 
-## What forkzero is not
+## What memoize is not
 
-- **Not an editor.** We don't own the editor surface. Open files in your editor of choice; forkzero shows file contents inline in chat, but doesn't let you edit them in-app.
+- **Not an editor.** We don't own the editor surface. Open files in your editor of choice; memoize shows file contents inline in chat, but doesn't let you edit them in-app.
 - **Not a terminal-first tool.** The terminal is on the right panel, available, but it's not the primary surface. If you want a terminal-first agent UX, use Claude Code or Codex CLI directly.
 - **Not cloud.** Sessions, messages, credentials live on disk. No telemetry without opt-in.
 - **Not multi-user / collaborative.** Single-user desktop tool.

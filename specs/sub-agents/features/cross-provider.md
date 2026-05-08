@@ -33,8 +33,8 @@ What both SDKs **do** support is **MCP tools** — model-side function
 calls into a server we control. Both providers will happily call an
 arbitrary tool, await its result, and incorporate the result into the
 conversation. So the bridge is shaped as an **in-process MCP server**
-that exposes tools like `forkzero.delegate-codex` and
-`forkzero.delegate-claude`, registered with whichever provider is
+that exposes tools like `memoize.delegate-codex` and
+`memoize.delegate-claude`, registered with whichever provider is
 currently the *main* agent.
 
 ## Architecture
@@ -47,7 +47,7 @@ currently the *main* agent.
 │   │  Opus 4.7             │  call   │  gpt-5-mini          │     │
 │   │  query({              │ ──────▶ │  (spun up by bridge) │     │
 │   │    mcpServers: {      │         │                      │     │
-│   │      forkzero: …      │         │                      │     │
+│   │      memoize: …      │         │                      │     │
 │   │    }                  │ ◀────── │                      │     │
 │   │  })                   │ result  │                      │     │
 │   └───────────────────────┘         └──────────────────────┘     │
@@ -67,7 +67,7 @@ currently the *main* agent.
        └─────────────────────────────────────────────┘
 ```
 
-## New piece: `apps/server/src/provider/mcp/forkzero-bridge.ts`
+## New piece: `apps/server/src/provider/mcp/memoize-bridge.ts`
 
 An in-process MCP server (no socket, no subprocess — `@modelcontextprotocol/sdk`
 supports in-memory transports). Exposes two tools:
@@ -75,7 +75,7 @@ supports in-memory transports). Exposes two tools:
 ```ts
 // Registered with whichever provider is the main agent.
 {
-  name: "forkzero.delegate-codex",
+  name: "memoize.delegate-codex",
   description:
     "Delegate a scoped sub-task to a Codex (GPT-5) sub-agent. Use " +
     "when the parent is on Claude and a cheaper Codex model is the " +
@@ -93,7 +93,7 @@ supports in-memory transports). Exposes two tools:
 }
 
 {
-  name: "forkzero.delegate-claude",
+  name: "memoize.delegate-claude",
   description: "Reverse direction. Used when main is Codex.",
   inputSchema: { /* same shape */ },
 }
@@ -235,7 +235,7 @@ identical to Claude-side rows because the wire schema is the same.
   the bridge can manage. A future cleanup is a `tool-name` translation
   layer in `packages/wire/src/tools.ts`.
 - **Model auto-selection.** Today the user picks the sub-agent's
-  model. Future: forkzero suggests "based on this prompt, gpt-5-mini
+  model. Future: memoize suggests "based on this prompt, gpt-5-mini
   would be ~3× cheaper than Haiku for the same quality, switch?"
 - **Parallel cross-provider fan-out.** Phase 2's bridge is one
   sub-session at a time. Real fan-out (run `research` on Claude *and*
@@ -243,7 +243,7 @@ identical to Claude-side rows because the wire schema is the same.
 
 ## Implementation order (when Phase 2 lands)
 
-1. `apps/server/src/provider/mcp/forkzero-bridge.ts` + register with
+1. `apps/server/src/provider/mcp/memoize-bridge.ts` + register with
    the parent driver's MCP layer.
 2. `CrossProviderInvocationEvent` in `packages/wire/src/agent.ts`.
 3. Cross-provider preset entries in

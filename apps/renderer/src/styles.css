@@ -79,7 +79,7 @@ body,
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  /* Forkzero extras: extra rungs on the surface ladder. The semantic shadcn
+  /* Memoize extras: extra rungs on the surface ladder. The semantic shadcn
      tokens (background → card → muted → accent) form a 4-step ramp; these
      fill in the gaps for hover/elevated/popover-on-popover surfaces. */
   --color-bg-subtle: var(--bg-subtle);

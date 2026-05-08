@@ -5,7 +5,7 @@ import {
   MODELS_BY_PROVIDER,
   type FolderId,
   type ProviderId,
-} from "@forkzero/wire";
+} from "@memoize/wire";
 
 import { cn } from "~/lib/utils";
 import { useRepositorySettingsStore } from "../store/repository-settings.ts";
@@ -296,7 +296,7 @@ function WorktreeSection({
   return (
     <Section
       title="Worktrees"
-      description="Git worktrees for this repo. Each lives under .forkzero/repo-worktree/ on disk."
+      description="Git worktrees for this repo. Each lives under .memoize/repo-worktree/ on disk."
     >
       <div className="flex flex-col gap-3">
         <label className="flex items-center gap-3 rounded-md border border-border/60 px-3 py-2.5 text-sm">

@@ -2,7 +2,7 @@ import { NodeContext } from "@effect/platform-node";
 import { RpcServer } from "@effect/rpc";
 import { Layer } from "effect";
 
-import { ForkzeroRpcs } from "@forkzero/wire";
+import { MemoizeRpcs } from "@memoize/wire";
 
 import { AppPaths } from "./app-paths.ts";
 import { AttachmentServiceLive } from "./attachment/layers/attachment-service.ts";
@@ -32,7 +32,7 @@ import { WorktreeServiceLive } from "./worktree/layers/worktree-service.ts";
  * UI-toolkit-specific. See ADR 0007 for the rules that make WS extraction
  * cheap later.
  *
- * - `userData`: where persistence files (forkzero.sqlite, OS keychain) live.
+ * - `userData`: where persistence files (memoize.sqlite, OS keychain) live.
  *   Electron resolves this from `app.getPath("userData")`; a headless
  *   server resolves it from `XDG_DATA_HOME` or a CLI flag.
  * - `folderPicker`: a callback returning the user-chosen path. Electron
@@ -80,7 +80,7 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(NodeContext.layer),
   );
 
-  // WorktreeService manages forkzero-owned `git worktree` checkouts. Same
+  // WorktreeService manages memoize-owned `git worktree` checkouts. Same
   // shape as GitLayer + the SqlClient for persisting the rows.
   const WorktreeLayer = WorktreeServiceLive.pipe(
     Layer.provide(WorkspaceLayer),
@@ -199,7 +199,7 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(FolderPickerLayer),
   );
 
-  const ServerLayer = RpcServer.layer(ForkzeroRpcs).pipe(
+  const ServerLayer = RpcServer.layer(MemoizeRpcs).pipe(
     Layer.provide(Handlers),
     Layer.provide(deps.serverProtocol),
   );

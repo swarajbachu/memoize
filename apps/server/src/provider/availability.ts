@@ -3,7 +3,7 @@ import { Duration, Effect, Stream } from "effect";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
 
-import { AgentAvailability, type ProviderId } from "@forkzero/wire";
+import { AgentAvailability, type ProviderId } from "@memoize/wire";
 
 interface ProviderProbe {
   readonly providerId: ProviderId;

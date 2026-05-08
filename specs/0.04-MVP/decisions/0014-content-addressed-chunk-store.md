@@ -5,7 +5,7 @@ Status: Accepted
 
 ## Context
 
-Forkzero's value prop, sharpened by Conductor workspaces, is **N parallel
+Memoize's value prop, sharpened by Conductor workspaces, is **N parallel
 agent workspaces on the same repo** — multiple branches checked out
 side-by-side, multiple agents iterating in parallel. Existing code-index
 products (Cursor, Sourcegraph Cody, Greptile, Continue, Augment) struggle
@@ -122,7 +122,7 @@ store, five manifest sets.
 The DB file lives at:
 
 ```
-<userData>/index/<repo-id>/forkzero-index.sqlite
+<userData>/index/<repo-id>/memoize-index.sqlite
 ```
 
 `<repo-id>` is `blake3(absolute_path_of_origin_clone)` — stable across
@@ -175,8 +175,8 @@ Conductor workspaces of the same repo.
 ### Reuse git's own object store
 
 - Pro: free dedup.
-- Con: requires the user's repo to be a git repo (forkzero supports
-  non-git folders too); requires reading git internals; forkzero would
+- Con: requires the user's repo to be a git repo (memoize supports
+  non-git folders too); requires reading git internals; memoize would
   have a hard time managing untracked / generated files.
 
 ## What we deliberately rejected

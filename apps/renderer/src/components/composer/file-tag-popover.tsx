@@ -3,7 +3,7 @@ import { Effect } from "effect";
 import { Folder } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import type { FolderId, WorktreeId } from "@forkzero/wire";
+import type { FolderId, WorktreeId } from "@memoize/wire";
 
 import {
   getFileIconUrl,

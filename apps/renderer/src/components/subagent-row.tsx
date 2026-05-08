@@ -6,7 +6,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import type { AgentItemId, Message } from "@forkzero/wire";
+import type { AgentItemId, Message } from "@memoize/wire";
 
 import { cn } from "~/lib/utils";
 
