@@ -79,11 +79,9 @@ dmg:
       path: /Applications
 
 # electron-updater consumes latest-mac.yml from the GitHub Release
-# associated with this repo. Repo currently hosted at swarajbachu/forkzero;
-# update both `repo` and the homepage/repository fields in package.json
-# when the GitHub repo is renamed to "memoize".
+# associated with this repo.
 publish:
   provider: github
   owner: swarajbachu
-  repo: forkzero
+  repo: memoize
   releaseType: draft

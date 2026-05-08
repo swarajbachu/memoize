@@ -8,10 +8,10 @@
     "name": "Swaraj Bachu",
     "email": "swarajkumar4444@gmail.com"
   },
-  "homepage": "https://github.com/swarajbachu/forkzero",
+  "homepage": "https://github.com/swarajbachu/memoize",
   "repository": {
     "type": "git",
-    "url": "https://github.com/swarajbachu/forkzero.git"
+    "url": "https://github.com/swarajbachu/memoize.git"
   },
   "main": "dist-electron/main.cjs",
   "scripts": {
