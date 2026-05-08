@@ -4,7 +4,7 @@ import {
   type FolderId,
   type RepositorySettings,
   type RepositorySettingsPatch,
-} from "@forkzero/wire";
+} from "@memoize/wire";
 
 export interface RepositorySettingsServiceShape {
   /**
@@ -27,5 +27,5 @@ export interface RepositorySettingsServiceShape {
 }
 
 export class RepositorySettingsService extends Context.Tag(
-  "forkzero/RepositorySettingsService",
+  "memoize/RepositorySettingsService",
 )<RepositorySettingsService, RepositorySettingsServiceShape>() {}

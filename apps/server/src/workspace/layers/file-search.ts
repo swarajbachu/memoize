@@ -4,7 +4,7 @@ import { FileSystem, Path } from "@effect/platform";
 import { Effect, Layer } from "effect";
 import fuzzysort from "fuzzysort";
 
-import { FsFolderNotFoundError } from "@forkzero/wire";
+import { FsFolderNotFoundError } from "@memoize/wire";
 
 import { WorktreeService } from "../../worktree/services/worktree-service.ts";
 import {

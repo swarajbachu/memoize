@@ -15,7 +15,7 @@ import type {
   RuntimeMode,
   StartSessionInput,
   UserQuestionAnswer,
-} from "@forkzero/wire";
+} from "@memoize/wire";
 
 import type { CredentialsError } from "../errors.ts";
 
@@ -88,7 +88,7 @@ export interface ProviderServiceShape {
   ) => Effect.Effect<void, AgentSessionNotFoundError>;
 }
 
-export class ProviderService extends Context.Tag("forkzero/ProviderService")<
+export class ProviderService extends Context.Tag("memoize/ProviderService")<
   ProviderService,
   ProviderServiceShape
 >() {}

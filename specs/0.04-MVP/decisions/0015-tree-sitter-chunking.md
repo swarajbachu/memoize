@@ -41,7 +41,7 @@ Use **tree-sitter** for chunking and symbol extraction, in-process.
 - `tree-sitter-markdown`
 
 Loaded on demand. Python / Go / Rust ship later when there's user demand.
-Forkzero itself is TypeScript; ship for the first-party use case first.
+Memoize itself is TypeScript; ship for the first-party use case first.
 
 ### Chunking strategy
 

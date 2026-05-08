@@ -84,7 +84,7 @@ import {
  *
  * Add new RPCs by importing them here and including them in the group.
  */
-export const ForkzeroRpcs = RpcGroup.make(
+export const MemoizeRpcs = RpcGroup.make(
   PingRpc,
   WorkspaceAddRpc,
   WorkspaceListRpc,
@@ -152,7 +152,7 @@ export const ForkzeroRpcs = RpcGroup.make(
   RepositorySettingsUpdateRpc,
   SessionSetWorktreeRpc,
 );
-export type ForkzeroRpcs = typeof ForkzeroRpcs;
+export type MemoizeRpcs = typeof MemoizeRpcs;
 
 /**
  * The Electron IPC channel name used to transport RPC frames in both
@@ -162,4 +162,4 @@ export type ForkzeroRpcs = typeof ForkzeroRpcs;
  * Renderer → main: `ipcRenderer.send(IPC_CHANNEL, frame)`
  * Main → renderer: `webContents.send(IPC_CHANNEL, frame)`
  */
-export const IPC_CHANNEL = "forkzero:rpc" as const;
+export const IPC_CHANNEL = "memoize:rpc" as const;

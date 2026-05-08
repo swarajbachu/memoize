@@ -8,7 +8,7 @@ import {
   type WorktreeId,
   type WorktreeNotFoundError,
   type WorktreeRemoveError,
-} from "@forkzero/wire";
+} from "@memoize/wire";
 
 export interface WorktreeServiceShape {
   readonly create: (
@@ -29,7 +29,7 @@ export interface WorktreeServiceShape {
   >;
 }
 
-export class WorktreeService extends Context.Tag("forkzero/WorktreeService")<
+export class WorktreeService extends Context.Tag("memoize/WorktreeService")<
   WorktreeService,
   WorktreeServiceShape
 >() {}

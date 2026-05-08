@@ -1,7 +1,7 @@
 import { Effect, Fiber, Stream } from "effect";
 import { create } from "zustand";
 
-import type { ComposerInput, Message, SessionId } from "@forkzero/wire";
+import type { ComposerInput, Message, SessionId } from "@memoize/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
 import { usePrDetailsStore } from "./pr-details.ts";

@@ -8,7 +8,7 @@ import type {
   AgentTurnId,
   ProviderId,
   StartSessionInput,
-} from "@forkzero/wire";
+} from "@memoize/wire";
 
 import type { ProviderAdapterError } from "../errors.ts";
 

@@ -23,7 +23,7 @@ import {
   type RuntimeMode,
   type Session,
   type SessionId,
-} from "@forkzero/wire";
+} from "@memoize/wire";
 
 import { Card, CardPanel } from "~/components/ui/card";
 import { Frame, FrameFooter } from "~/components/ui/frame";
@@ -291,7 +291,7 @@ export function ChatComposer({ session }: { session: Session }) {
   /**
    * Insert chips for `files`. Image files render with a thumbnail; other types
    * (PDFs, docs, archives) get a generic file-icon chip. The chip's underlying
-   * token swaps from a temp id to a `forkzero://attachments/<id>` URL once the
+   * token swaps from a temp id to a `memoize://attachments/<id>` URL once the
    * upload resolves. Files beyond the per-turn cap are dropped with a warning.
    */
   const attachFiles = (files: readonly File[]): void => {
@@ -335,7 +335,7 @@ export function ChatComposer({ session }: { session: Session }) {
 
       void uploadOne(sessionId, file)
         .then((ref) => {
-          const finalUrl = isImage ? `forkzero://attachments/${ref.id}` : "";
+          const finalUrl = isImage ? `memoize://attachments/${ref.id}` : "";
           editorViewRef.current?.dispatch({
             effects: updateImageChipEffect.of({
               previousId: tempId,
@@ -849,7 +849,7 @@ function ModelPicker({
  * sessionStorage so reloads keep the chosen level visible.
  */
 function ReasoningPicker({ sessionId }: { sessionId: SessionId }) {
-  const storageKey = `forkzero.reasoning.${sessionId}`;
+  const storageKey = `memoize.reasoning.${sessionId}`;
   const [level, setLevel] = useState<ReasoningLevel>(() => {
     if (typeof window === "undefined") return "medium";
     const stored = window.sessionStorage.getItem(storageKey);

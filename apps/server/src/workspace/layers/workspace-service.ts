@@ -9,7 +9,7 @@ import {
   WorkspaceDuplicatePathError,
   WorkspaceInvalidPathError,
   WorkspaceNotFoundError,
-} from "@forkzero/wire";
+} from "@memoize/wire";
 
 import { WorkspaceService } from "../services/workspace-service.ts";
 

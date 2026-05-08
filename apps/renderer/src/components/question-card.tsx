@@ -9,7 +9,7 @@ import type {
   SessionId,
   UserQuestion,
   UserQuestionAnswer,
-} from "@forkzero/wire";
+} from "@memoize/wire";
 
 import { cn } from "~/lib/utils";
 

@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-import type { AgentDefinition } from "@forkzero/wire";
+import type { AgentDefinition } from "@memoize/wire";
 
 import {
   DEFAULT_SUBAGENT_PRESETS,
@@ -12,7 +12,7 @@ import {
  * Per-preset overlay. Stores any field the user changed; `undefined`
  * fields fall back to the seed. We keep a separate overlay (rather than
  * cloning the full definition into storage) so seed updates from new
- * forkzero builds reach the user — a future tweak to the `research`
+ * memoize builds reach the user — a future tweak to the `research`
  * prompt would have applied retroactively had they not edited it.
  */
 interface PresetState {
@@ -73,7 +73,7 @@ export const useSubagentsStore = create<SubagentsState>()(
         }),
     }),
     {
-      name: "forkzero.subagents",
+      name: "memoize.subagents",
       version: 1,
     },
   ),

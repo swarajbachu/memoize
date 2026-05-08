@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 
-import { IPC_CHANNEL } from "@forkzero/wire";
+import { IPC_CHANNEL } from "@memoize/wire";
 
 /**
  * Preload bridge — the only seam between the renderer and the main process.
@@ -40,4 +40,4 @@ const bridge = {
   },
 };
 
-contextBridge.exposeInMainWorld("forkzero", bridge);
+contextBridge.exposeInMainWorld("memoize", bridge);

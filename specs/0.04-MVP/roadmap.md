@@ -13,15 +13,15 @@ Tree-sitter chunker, symbol extractor, SQLite schema, content-addressed
 blob store, manifest model. **No retrieval yet.**
 
 - `packages/index/` scaffold + Effect Service contract
-- ADR 0013 — `@forkzero/index` as standalone package
+- ADR 0013 — `@memoize/index` as standalone package
 - ADR 0014 — content-addressed chunk store + per-branch manifest
 - ADR 0015 — tree-sitter for chunking & symbols
 - TypeScript + JavaScript + TSX grammars only
 - Migrations under `packages/index/src/schema/migrations/`
-- Tests: index forkzero itself; assert chunk count, symbol count, blob
+- Tests: index memoize itself; assert chunk count, symbol count, blob
   dedup across two branches with shared files
 
-**Acceptance:** `bun --filter @forkzero/index test` passes; indexing this
+**Acceptance:** `bun --filter @memoize/index test` passes; indexing this
 repo produces > 5,000 chunks and > 2,000 symbols; switching `main` ↔ a
 branch with one changed file results in exactly one new blob row.
 
@@ -90,14 +90,14 @@ Standalone MCP binary, npm-distributable, Bun-compiled.
 - ADR 0018 — MCP server as standalone app
 - stdio transport (default), HTTP transport (optional)
 - All five tools registered, JSON Schema validated
-- `bun build --compile` produces `forkzero-mcp` per OS
-- npm publish: `@forkzero/mcp-server`
+- `bun build --compile` produces `memoize-mcp` per OS
+- npm publish: `@memoize/mcp-server`
 - ADR 0021 — credentials and billing (BYOK in 0.04, cloud deferred)
 - Smoke test: terminal Claude Code session pointed at the MCP server can
   call all five tools end-to-end
 
-**Acceptance:** `npx @forkzero/mcp-server --workspace .` runs; an external
-agent (terminal `claude`) using only `forkzero-mcp` tools (no built-in
+**Acceptance:** `npx @memoize/mcp-server --workspace .` runs; an external
+agent (terminal `claude`) using only `memoize-mcp` tools (no built-in
 grep) finishes ≥ 80% of the eval harness tasks.
 
 ## Phase G — Cloud team index (deferred)
@@ -107,7 +107,7 @@ Out of scope for 0.04. Spec'd separately in a future MVP.
 - S3-compatible chunk-store sync (the blob store is already content-addressed)
 - Per-team encryption keys
 - Embedding inversion mitigation (research, not yet a decision)
-- Forkzero-cloud as a paid embedding/rerank proxy
+- Memoize-cloud as a paid embedding/rerank proxy
 
 ## Total
 
@@ -129,7 +129,7 @@ becomes a focused PR, not a redesign.
 
 | Milestone | What changes |
 |---|---|
-| Cloud team index | Drop in a sync worker over the existing content-addressed blob store; add `forkzero-cloud` provider for embed/rerank. |
+| Cloud team index | Drop in a sync worker over the existing content-addressed blob store; add `memoize-cloud` provider for embed/rerank. |
 | Symbol-aware refactors | The `refs` table is already populated — building rename/extract on top is incremental. |
 | Cross-repo search | Index multiple workspaces under one query — needs a workspace-spanning manifest layer. |
 

@@ -17,7 +17,7 @@ import type {
   GitPrInfo,
   GitPrReviewState,
   WorktreeId,
-} from "@forkzero/wire";
+} from "@memoize/wire";
 
 import { softTone, type Tone } from "../lib/tones.ts";
 import { gitStatusKey, useGitStatusStore } from "../store/git-status.ts";
@@ -26,7 +26,7 @@ import { prStateKey, usePrStateStore } from "../store/pr-state.ts";
 import { MarkdownBody } from "./markdown-body.tsx";
 
 const openExternal = (url: string) => {
-  const bridge = window.forkzero?.app;
+  const bridge = window.memoize?.app;
   if (bridge !== undefined) {
     bridge.openExternal(url);
     return;

@@ -2,7 +2,7 @@ import { ChevronDown, ChevronRight, Plus } from "lucide-react";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Effect } from "effect";
 
-import type { FolderId, FsEntry } from "@forkzero/wire";
+import type { FolderId, FsEntry } from "@memoize/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
 import {

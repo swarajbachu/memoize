@@ -23,7 +23,7 @@ export class AttachmentBadMimeError extends Schema.TaggedError<AttachmentBadMime
 /**
  * Upload an image attachment for a session. Bytes land under the desktop
  * app's userData directory; the returned id is what the renderer stores on
- * `ComposerInput.attachments` and renders via `forkzero://attachments/<id>`.
+ * `ComposerInput.attachments` and renders via `memoize://attachments/<id>`.
  */
 export const AttachmentUploadRpc = Rpc.make("attachments.upload", {
   payload: Schema.Struct({

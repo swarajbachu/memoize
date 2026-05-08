@@ -1,7 +1,7 @@
 import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
 
-import type { AgentAvailability, ProviderId } from "@forkzero/wire";
+import type { AgentAvailability, ProviderId } from "@memoize/wire";
 
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -28,7 +28,7 @@ export function CredentialsSheet() {
           <SheetTitle>Settings · API keys</SheetTitle>
           <SheetDescription>
             Most users don&apos;t need this. Run <code>claude /login</code> or{" "}
-            <code>codex login</code> in your terminal and forkzero uses those
+            <code>codex login</code> in your terminal and memoize uses those
             credentials automatically. API keys here are an advanced fallback,
             stored in your OS keychain and only sent to the provider&apos;s SDK.
           </SheetDescription>

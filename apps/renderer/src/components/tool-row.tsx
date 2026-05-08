@@ -15,7 +15,7 @@ import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import type { SessionId } from "@forkzero/wire";
+import type { SessionId } from "@memoize/wire";
 
 import { cn } from "~/lib/utils";
 

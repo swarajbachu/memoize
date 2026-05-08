@@ -1,4 +1,4 @@
-import { CredentialStoreError, ForkzeroRpcs, type ProviderId } from "@forkzero/wire";
+import { CredentialStoreError, MemoizeRpcs, type ProviderId } from "@memoize/wire";
 import { Effect, Layer, Stream } from "effect";
 
 import { MessageStore } from "./services/message-store.ts";
@@ -7,17 +7,17 @@ import { ProviderService } from "./services/provider-service.ts";
 
 /**
  * Provider-domain RPC handlers. Each subsequent PR adds a `toLayerHandler`
- * here as it registers its RPC into `ForkzeroRpcs` (in `@forkzero/wire`):
+ * here as it registers its RPC into `MemoizeRpcs` (in `@memoize/wire`):
  *
  *   PR 3 — `agent.availability`         ← here
  *   PR 4 — `agent.setCredential`        ← here
  *   PR 5/6 — `agent.start` / `send` / `interrupt` / `close` / `events`
  */
-const Availability = ForkzeroRpcs.toLayerHandler("agent.availability", () =>
+const Availability = MemoizeRpcs.toLayerHandler("agent.availability", () =>
   Effect.flatMap(ProviderService, (svc) => svc.availability()),
 );
 
-const SetCredential = ForkzeroRpcs.toLayerHandler(
+const SetCredential = MemoizeRpcs.toLayerHandler(
   "agent.setCredential",
   ({ providerId, apiKey }) =>
     Effect.flatMap(ProviderService, (svc) =>
@@ -34,25 +34,25 @@ const SetCredential = ForkzeroRpcs.toLayerHandler(
     ),
 );
 
-const Start = ForkzeroRpcs.toLayerHandler("agent.start", (input) =>
+const Start = MemoizeRpcs.toLayerHandler("agent.start", (input) =>
   Effect.flatMap(ProviderService, (svc) => svc.start(input)),
 );
 
-const Send = ForkzeroRpcs.toLayerHandler("agent.send", ({ sessionId, text }) =>
+const Send = MemoizeRpcs.toLayerHandler("agent.send", ({ sessionId, text }) =>
   Effect.flatMap(ProviderService, (svc) => svc.send(sessionId, text)),
 );
 
-const Interrupt = ForkzeroRpcs.toLayerHandler(
+const Interrupt = MemoizeRpcs.toLayerHandler(
   "agent.interrupt",
   ({ sessionId, turnId }) =>
     Effect.flatMap(ProviderService, (svc) => svc.interrupt(sessionId, turnId)),
 );
 
-const Close = ForkzeroRpcs.toLayerHandler("agent.close", ({ sessionId }) =>
+const Close = MemoizeRpcs.toLayerHandler("agent.close", ({ sessionId }) =>
   Effect.flatMap(ProviderService, (svc) => svc.close(sessionId)),
 );
 
-const Events = ForkzeroRpcs.toLayerHandler("agent.events", ({ sessionId }) =>
+const Events = MemoizeRpcs.toLayerHandler("agent.events", ({ sessionId }) =>
   Stream.unwrap(
     Effect.map(ProviderService, (svc) => svc.events(sessionId)),
   ),
@@ -64,7 +64,7 @@ const Events = ForkzeroRpcs.toLayerHandler("agent.events", ({ sessionId }) =>
 // store composes them and they're useful for low-level testing).
 // ---------------------------------------------------------------------------
 
-const SessionList = ForkzeroRpcs.toLayerHandler(
+const SessionList = MemoizeRpcs.toLayerHandler(
   "session.list",
   ({ projectId, includeArchived }) =>
     Effect.flatMap(MessageStore, (svc) =>
@@ -72,13 +72,13 @@ const SessionList = ForkzeroRpcs.toLayerHandler(
     ),
 );
 
-const SessionGet = ForkzeroRpcs.toLayerHandler(
+const SessionGet = MemoizeRpcs.toLayerHandler(
   "session.get",
   ({ sessionId }) =>
     Effect.flatMap(MessageStore, (svc) => svc.getSession(sessionId)),
 );
 
-const SessionCreate = ForkzeroRpcs.toLayerHandler("session.create", (input) =>
+const SessionCreate = MemoizeRpcs.toLayerHandler("session.create", (input) =>
   Effect.flatMap(MessageStore, (svc) =>
     svc.createSession({
       projectId: input.projectId,
@@ -96,43 +96,43 @@ const SessionCreate = ForkzeroRpcs.toLayerHandler("session.create", (input) =>
   ),
 );
 
-const SessionRename = ForkzeroRpcs.toLayerHandler(
+const SessionRename = MemoizeRpcs.toLayerHandler(
   "session.rename",
   ({ sessionId, title }) =>
     Effect.flatMap(MessageStore, (svc) => svc.renameSession(sessionId, title)),
 );
 
-const SessionSetModel = ForkzeroRpcs.toLayerHandler(
+const SessionSetModel = MemoizeRpcs.toLayerHandler(
   "session.setModel",
   ({ sessionId, model }) =>
     Effect.flatMap(MessageStore, (svc) => svc.setModel(sessionId, model)),
 );
 
-const SessionArchive = ForkzeroRpcs.toLayerHandler(
+const SessionArchive = MemoizeRpcs.toLayerHandler(
   "session.archive",
   ({ sessionId }) =>
     Effect.flatMap(MessageStore, (svc) => svc.archiveSession(sessionId)),
 );
 
-const SessionUnarchive = ForkzeroRpcs.toLayerHandler(
+const SessionUnarchive = MemoizeRpcs.toLayerHandler(
   "session.unarchive",
   ({ sessionId }) =>
     Effect.flatMap(MessageStore, (svc) => svc.unarchiveSession(sessionId)),
 );
 
-const SessionDelete = ForkzeroRpcs.toLayerHandler(
+const SessionDelete = MemoizeRpcs.toLayerHandler(
   "session.delete",
   ({ sessionId }) =>
     Effect.flatMap(MessageStore, (svc) => svc.deleteSession(sessionId)),
 );
 
-const SessionResume = ForkzeroRpcs.toLayerHandler(
+const SessionResume = MemoizeRpcs.toLayerHandler(
   "session.resume",
   ({ sessionId }) =>
     Effect.flatMap(MessageStore, (svc) => svc.resumeSession(sessionId)),
 );
 
-const SessionSetRuntimeMode = ForkzeroRpcs.toLayerHandler(
+const SessionSetRuntimeMode = MemoizeRpcs.toLayerHandler(
   "session.setRuntimeMode",
   ({ sessionId, runtimeMode }) =>
     Effect.flatMap(MessageStore, (svc) =>
@@ -140,7 +140,7 @@ const SessionSetRuntimeMode = ForkzeroRpcs.toLayerHandler(
     ),
 );
 
-const SessionSetPermissionMode = ForkzeroRpcs.toLayerHandler(
+const SessionSetPermissionMode = MemoizeRpcs.toLayerHandler(
   "session.setPermissionMode",
   ({ sessionId, mode }) =>
     Effect.flatMap(MessageStore, (svc) =>
@@ -148,19 +148,19 @@ const SessionSetPermissionMode = ForkzeroRpcs.toLayerHandler(
     ),
 );
 
-const SessionAnswerQuestion = ForkzeroRpcs.toLayerHandler(
+const SessionAnswerQuestion = MemoizeRpcs.toLayerHandler(
   "session.answerQuestion",
   ({ sessionId, itemId, answers }) =>
     Effect.flatMap(MessageStore, (svc) =>
       svc.answerQuestion(
         sessionId,
-        itemId as import("@forkzero/wire").AgentItemId,
+        itemId as import("@memoize/wire").AgentItemId,
         answers,
       ),
     ),
 );
 
-const SessionSetWorktree = ForkzeroRpcs.toLayerHandler(
+const SessionSetWorktree = MemoizeRpcs.toLayerHandler(
   "session.setWorktree",
   ({ sessionId, worktreeId }) =>
     Effect.flatMap(MessageStore, (svc) =>
@@ -168,13 +168,13 @@ const SessionSetWorktree = ForkzeroRpcs.toLayerHandler(
     ),
 );
 
-const MessagesList = ForkzeroRpcs.toLayerHandler(
+const MessagesList = MemoizeRpcs.toLayerHandler(
   "messages.list",
   ({ sessionId }) =>
     Effect.flatMap(MessageStore, (svc) => svc.listMessages(sessionId)),
 );
 
-const MessagesStream = ForkzeroRpcs.toLayerHandler(
+const MessagesStream = MemoizeRpcs.toLayerHandler(
   "messages.stream",
   ({ sessionId }) =>
     Stream.unwrap(
@@ -182,7 +182,7 @@ const MessagesStream = ForkzeroRpcs.toLayerHandler(
     ),
 );
 
-const SessionStreamStatus = ForkzeroRpcs.toLayerHandler(
+const SessionStreamStatus = MemoizeRpcs.toLayerHandler(
   "session.streamStatus",
   ({ sessionId }) =>
     Stream.unwrap(
@@ -190,7 +190,7 @@ const SessionStreamStatus = ForkzeroRpcs.toLayerHandler(
     ),
 );
 
-const MessagesSend = ForkzeroRpcs.toLayerHandler(
+const MessagesSend = MemoizeRpcs.toLayerHandler(
   "messages.send",
   ({ sessionId, text, input }) => {
     console.log(
@@ -217,7 +217,7 @@ const MessagesSend = ForkzeroRpcs.toLayerHandler(
   },
 );
 
-const MessagesInterrupt = ForkzeroRpcs.toLayerHandler(
+const MessagesInterrupt = MemoizeRpcs.toLayerHandler(
   "messages.interrupt",
   ({ sessionId }) =>
     Effect.flatMap(MessageStore, (svc) => svc.interruptSession(sessionId)),
@@ -229,25 +229,25 @@ const MessagesInterrupt = ForkzeroRpcs.toLayerHandler(
 // `listPending` is the cold-load helper used on session mount.
 // ---------------------------------------------------------------------------
 
-const PermissionRequests = ForkzeroRpcs.toLayerHandler(
+const PermissionRequests = MemoizeRpcs.toLayerHandler(
   "permission.requests",
   () =>
     Stream.unwrap(Effect.map(PermissionService, (svc) => svc.requests())),
 );
 
-const PermissionDecide = ForkzeroRpcs.toLayerHandler(
+const PermissionDecide = MemoizeRpcs.toLayerHandler(
   "permission.decide",
   ({ requestId, decision }) =>
     Effect.flatMap(PermissionService, (svc) => svc.decide(requestId, decision)),
 );
 
-const PermissionListPending = ForkzeroRpcs.toLayerHandler(
+const PermissionListPending = MemoizeRpcs.toLayerHandler(
   "permission.listPending",
   ({ sessionId }) =>
     Effect.flatMap(PermissionService, (svc) => svc.listPending(sessionId)),
 );
 
-const PermissionListDecisions = ForkzeroRpcs.toLayerHandler(
+const PermissionListDecisions = MemoizeRpcs.toLayerHandler(
   "permission.listDecisions",
   ({ projectId }) =>
     Effect.flatMap(PermissionService, (svc) =>
@@ -255,7 +255,7 @@ const PermissionListDecisions = ForkzeroRpcs.toLayerHandler(
     ),
 );
 
-const PermissionRevokeDecision = ForkzeroRpcs.toLayerHandler(
+const PermissionRevokeDecision = MemoizeRpcs.toLayerHandler(
   "permission.revokeDecision",
   ({ requestId }) =>
     Effect.flatMap(PermissionService, (svc) => svc.revokeDecision(requestId)),

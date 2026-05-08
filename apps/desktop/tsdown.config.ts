@@ -7,7 +7,7 @@ const shared = {
   outExtensions: () => ({ js: ".cjs" }),
   // Workspace packages ship as raw .ts source — bundle them in instead of
   // letting Node try to require() the .ts file at runtime.
-  deps: { alwaysBundle: ["@forkzero/wire", "@forkzero/server"] },
+  deps: { alwaysBundle: ["@memoize/wire", "@memoize/server"] },
   // Native modules whose loader uses `__dirname` / `module.parent.filename`
   // to locate a `.node` file at runtime — bundling their JS relocates those
   // anchors and the lookup fails. Keep them external so each is require()'d

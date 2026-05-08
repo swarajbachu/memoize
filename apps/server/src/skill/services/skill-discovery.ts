@@ -1,6 +1,6 @@
 import { Context, type Effect } from "effect";
 
-import type { ProviderId, Skill } from "@forkzero/wire";
+import type { ProviderId, Skill } from "@memoize/wire";
 
 /**
  * Per-provider skill discovery on disk.
@@ -22,5 +22,5 @@ export interface SkillDiscoveryServiceShape {
 }
 
 export class SkillDiscoveryService extends Context.Tag(
-  "forkzero/SkillDiscoveryService",
+  "memoize/SkillDiscoveryService",
 )<SkillDiscoveryService, SkillDiscoveryServiceShape>() {}

@@ -3,7 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Effect, Fiber, Stream } from "effect";
 
-import type { Folder, PtyId } from "@forkzero/wire";
+import type { Folder, PtyId } from "@memoize/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
 import { useActiveWorkspaceRoot } from "../store/active-workspace.ts";
@@ -170,7 +170,7 @@ function PtyTerminal({ folder, cwd }: { folder: Folder; cwd: string }) {
       } catch (err) {
         if (cancelled) return;
         // eslint-disable-next-line no-console
-        console.error("[forkzero] failed to open pty:", err);
+        console.error("[memoize] failed to open pty:", err);
         term.write(
           "\r\n\x1b[38;5;203mfailed to open terminal — see devtools console\x1b[0m\r\n",
         );

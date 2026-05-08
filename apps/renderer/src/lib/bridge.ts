@@ -1,6 +1,6 @@
 /**
  * Shape of the preload bridge that the main process exposes onto
- * `window.forkzero`. The renderer's RPC client transport reads/writes raw
+ * `window.memoize`. The renderer's RPC client transport reads/writes raw
  * encoded RPC frames; serialization + framing happen at the Effect RPC layer.
  */
 export interface RpcBridge {
@@ -20,7 +20,7 @@ export interface AppBridge {
   readonly openExternal: (url: string) => void;
 }
 
-export interface ForkzeroBridge {
+export interface MemoizeBridge {
   readonly rpc: RpcBridge;
   readonly window?: WindowBridge;
   readonly app?: AppBridge;
@@ -28,15 +28,15 @@ export interface ForkzeroBridge {
 
 declare global {
   interface Window {
-    forkzero?: ForkzeroBridge;
+    memoize?: MemoizeBridge;
   }
 }
 
-export function getBridge(): ForkzeroBridge {
-  const bridge = globalThis.window?.forkzero;
+export function getBridge(): MemoizeBridge {
+  const bridge = globalThis.window?.memoize;
   if (!bridge) {
     throw new Error(
-      "forkzero bridge missing — preload.ts did not load. Are we running outside Electron?",
+      "memoize bridge missing — preload.ts did not load. Are we running outside Electron?",
     );
   }
   return bridge;

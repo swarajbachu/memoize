@@ -2,7 +2,7 @@ import { ChatGptIcon, ClaudeIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { ComponentProps } from "react";
 
-import type { ProviderId } from "@forkzero/wire";
+import type { ProviderId } from "@memoize/wire";
 
 import { cn } from "~/lib/utils";
 

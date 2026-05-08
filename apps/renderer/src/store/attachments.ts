@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { create } from "zustand";
 
-import type { AttachmentRef, SessionId } from "@forkzero/wire";
+import type { AttachmentRef, SessionId } from "@memoize/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
 

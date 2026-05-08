@@ -23,7 +23,7 @@ import {
   type GitOriginInfo,
   type ProviderId,
   type Session,
-} from "@forkzero/wire";
+} from "@memoize/wire";
 
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
@@ -433,7 +433,7 @@ function ProjectActionsMenu({
 }
 
 // One-line login hint per provider — the user runs this in their terminal
-// and forkzero picks up the credentials automatically on next refresh.
+// and memoize picks up the credentials automatically on next refresh.
 const LOGIN_HINT: Record<ProviderId, string> = {
   claude: "Run `claude /login` in your terminal",
   codex: "Run `codex login` in your terminal",

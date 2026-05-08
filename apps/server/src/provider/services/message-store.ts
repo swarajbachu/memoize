@@ -19,7 +19,7 @@ import type {
   SkillRef,
   UserQuestionAnswer,
   WorktreeId,
-} from "@forkzero/wire";
+} from "@memoize/wire";
 
 /**
  * Persistence-backed orchestration of chat sessions and their message log.
@@ -193,7 +193,7 @@ export interface MessageStoreShape {
   ) => Effect.Effect<void, SessionNotFoundError>;
 }
 
-export class MessageStore extends Context.Tag("forkzero/MessageStore")<
+export class MessageStore extends Context.Tag("memoize/MessageStore")<
   MessageStore,
   MessageStoreShape
 >() {}

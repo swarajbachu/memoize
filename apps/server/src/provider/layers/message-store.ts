@@ -30,7 +30,7 @@ import {
   SessionStartError,
   type SkillRef,
   type WorktreeId,
-} from "@forkzero/wire";
+} from "@memoize/wire";
 
 import { WorktreeService } from "../../worktree/services/worktree-service.ts";
 

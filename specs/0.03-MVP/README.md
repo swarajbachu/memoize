@@ -15,14 +15,14 @@ first-class queued items the user can steer into the running conversation.
 - **Skills**, scoped to the active session's provider. Claude sessions show
   skills the Claude SDK reports from `~/.claude/skills/` and project-level
   `.claude/skills/`; Codex sessions show skills the Codex CLI reports from
-  `~/.codex/skills/` and project-level `.codex/skills/`. Forkzero owns no
+  `~/.codex/skills/` and project-level `.codex/skills/`. Memoize owns no
   skill directory of its own.
 - **File tagging via `@`**. Typing `@` opens a workspace-aware file picker;
   picking a file inserts an inline atomic chip (icon | label) at the cursor.
 - **Image attachments** by drag-drop, paste, or paperclip button. Images
   render as inline atomic chips with a thumbnail; binaries are persisted
   under the app's userData directory and served back to the renderer via a
-  custom `forkzero://attachments/<id>` protocol. The data model reserves
+  custom `memoize://attachments/<id>` protocol. The data model reserves
   cloud fields so sync can land later without changing message history.
 - **`Enter` to send**, `Shift+Enter` for newline. `Cmd+Enter` continues to
   work as a backstop.
@@ -61,7 +61,7 @@ first-class queued items the user can steer into the running conversation.
   composer.
 - [decisions/0011-skills-via-provider.md](decisions/0011-skills-via-provider.md) —
   why skill discovery is delegated to the provider driver instead of a
-  forkzero-owned directory.
+  memoize-owned directory.
 - [decisions/0012-steer-via-interrupt.md](decisions/0012-steer-via-interrupt.md) —
   why "Steer" is interrupt + send rather than mid-stream injection.
 

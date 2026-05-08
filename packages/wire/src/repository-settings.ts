@@ -25,7 +25,7 @@ export class RepositorySettings extends Schema.Class<RepositorySettings>(
   autoCreateWorktree: Schema.Boolean,
   /**
    * Optional override for the worktree base dir. `null` means
-   * `<repoPath>/.forkzero/repo-worktree/`.
+   * `<repoPath>/.memoize/repo-worktree/`.
    */
   worktreeBaseDir: Schema.NullOr(Schema.String),
 }) {}

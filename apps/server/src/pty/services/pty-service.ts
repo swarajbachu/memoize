@@ -6,7 +6,7 @@ import {
   type PtyId,
   type PtyNotFoundError,
   type PtySpawnError,
-} from "@forkzero/wire";
+} from "@memoize/wire";
 
 export interface PtyServiceShape {
   readonly open: (
@@ -32,7 +32,7 @@ export interface PtyServiceShape {
   ) => Stream.Stream<typeof PtyEvent.Type, PtyNotFoundError>;
 }
 
-export class PtyService extends Context.Tag("forkzero/PtyService")<
+export class PtyService extends Context.Tag("memoize/PtyService")<
   PtyService,
   PtyServiceShape
 >() {}

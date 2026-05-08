@@ -4,9 +4,9 @@ import { Schema } from "effect";
 import { FolderId, WorktreeId } from "./ids.ts";
 
 /**
- * A git worktree owned by forkzero. Lives at `<repoPath>/.forkzero/repo-worktree/<name>/`
+ * A git worktree owned by memoize. Lives at `<repoPath>/.memoize/repo-worktree/<name>/`
  * by default; the user can override the base dir per-repo. Branch is always
- * `forkzero/<name>` so the `forkzero/` prefix lets users grep their git
+ * `memoize/<name>` so the `memoize/` prefix lets users grep their git
  * branch list cleanly.
  */
 export class Worktree extends Schema.Class<Worktree>("Worktree")({

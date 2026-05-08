@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { FileSystem } from "@effect/platform";
 import { Effect, Layer } from "effect";
 
-import { Skill, type ProviderId } from "@forkzero/wire";
+import { Skill, type ProviderId } from "@memoize/wire";
 
 import { SkillDiscoveryService } from "../services/skill-discovery.ts";
 
@@ -17,7 +17,7 @@ interface RawSkill {
 
 /**
  * Parse YAML-like frontmatter at the top of a SKILL.md / prompt file.
- * Forkzero only needs `name`, `description`, and `argument-hint`; we
+ * Memoize only needs `name`, `description`, and `argument-hint`; we
  * deliberately keep the parser minimal — full YAML support belongs in
  * the provider, not here. Anything we don't recognise is ignored.
  */

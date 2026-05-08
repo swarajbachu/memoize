@@ -155,11 +155,11 @@ configured.
 
 ## Telemetry / observability hooks
 
-Each preset run logs (locally, to the existing forkzero log file):
+Each preset run logs (locally, to the existing memoize log file):
 
 ```
 [subagent.research] turns=8 in=12.4k out=312 cache_read=4.2k duration=3.1s
 ```
 
 Useful for tuning prompts and `maxTurns` after we see real usage. No
-network telemetry — forkzero is local-only by principle.
+network telemetry — memoize is local-only by principle.

@@ -13,8 +13,8 @@
   },
   "dependencies": {
     "@effect/rpc": "catalog:",
-    "@forkzero/server": "*",
-    "@forkzero/wire": "*",
+    "@memoize/server": "*",
+    "@memoize/wire": "*",
     "better-sqlite3": "^12.9.0",
     "effect": "catalog:",
     "electron": "^33.2.0",

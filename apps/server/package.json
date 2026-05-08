@@ -1,5 +1,5 @@
 {
-  "name": "@forkzero/server",
+  "name": "@memoize/server",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -29,7 +29,7 @@
     "@effect/sql": "catalog:",
     "@effect/sql-sqlite-node": "catalog:",
     "better-sqlite3": "^12.9.0",
-    "@forkzero/wire": "*",
+    "@memoize/wire": "*",
     "effect": "catalog:",
     "fuzzysort": "catalog:",
     "keytar": "^7.9.0",

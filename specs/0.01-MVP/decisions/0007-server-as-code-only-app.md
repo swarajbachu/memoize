@@ -39,7 +39,7 @@ apps/
                                 # Tomorrow: WS server boot.
   desktop/                      # thin Electron shim
     src/
-      main.ts                   # Electron lifecycle. Imports runtime from @forkzero/server.
+      main.ts                   # Electron lifecycle. Imports runtime from @memoize/server.
       preload.ts                # contextBridge
       ipc/                      # electron-server-protocol — Electron-bound transport
   renderer/                     # React UI
@@ -94,5 +94,5 @@ When any of these become priority, we add the relevant bits without restructurin
 ## How we'll know we got it right
 
 - Phase 2 ships without revisiting transport.
-- The day someone asks for "let me SSH into my desktop and use forkzero from my laptop browser," the PR touches `apps/server/src/bin.ts`, `apps/server/src/transports/ws.ts`, `apps/desktop/src/main.ts`, and `apps/renderer/src/lib/rpc-client.ts` — and nothing in any service.
+- The day someone asks for "let me SSH into my desktop and use memoize from my laptop browser," the PR touches `apps/server/src/bin.ts`, `apps/server/src/transports/ws.ts`, `apps/desktop/src/main.ts`, and `apps/renderer/src/lib/rpc-client.ts` — and nothing in any service.
 - New service domains (Phase 3 permissions, Phase 4 diff viewer) follow the same `apps/server/src/<domain>/{Drivers,Layers,Services,Errors.ts}` pattern without anyone asking where they should live.

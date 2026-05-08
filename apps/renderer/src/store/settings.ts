@@ -4,9 +4,9 @@ import {
   defaultModelFor,
   type ProviderId,
   type RuntimeMode,
-} from "@forkzero/wire";
+} from "@memoize/wire";
 
-const STORAGE_KEY = "forkzero.settings.v1";
+const STORAGE_KEY = "memoize.settings.v1";
 
 const DEFAULT_PROVIDER: ProviderId = "claude";
 const DEFAULT_RUNTIME_MODE: RuntimeMode = "approval-required";

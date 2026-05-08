@@ -12,7 +12,7 @@ import type {
   Message,
   SessionId,
   SkillRef,
-} from "@forkzero/wire";
+} from "@memoize/wire";
 
 import {
   getFileIconUrl,
@@ -181,7 +181,7 @@ function UserBubble({
               return (
                 <a
                   key={a.id}
-                  href={`forkzero://attachments/${a.id}`}
+                  href={`memoize://attachments/${a.id}`}
                   target="_blank"
                   rel="noreferrer"
                   title={a.originalName}
@@ -189,7 +189,7 @@ function UserBubble({
                 >
                   {isImage ? (
                     <img
-                      src={`forkzero://attachments/${a.id}`}
+                      src={`memoize://attachments/${a.id}`}
                       alt=""
                       className="size-4 rounded object-cover"
                     />

@@ -10,7 +10,7 @@ the main conversation.
 
 The primitive is already in Anthropic's Agent SDK
 ([`agents` parameter](https://code.claude.com/docs/en/agent-sdk/subagents) +
-the built-in `Agent` tool). The work here is wiring it through forkzero's
+the built-in `Agent` tool). The work here is wiring it through memoize's
 Effect provider stack and surfacing the nested calls in the chat UI.
 
 ## What lands in this PR
@@ -43,14 +43,14 @@ Effect provider stack and surfacing the nested calls in the chat UI.
 
 - **Cross-provider sub-agents** — Claude main → Codex sub (and vice versa).
   The SDK's `agents` parameter only spawns Claude sub-agents. Cross-provider
-  needs a forkzero-internal MCP bridge tool. Sketched in
+  needs a memoize-internal MCP bridge tool. Sketched in
   [features/cross-provider.md](features/cross-provider.md), implemented in
   a follow-up PR.
 - **User-defined sub-agents in settings UI.** This PR ships preset toggles
   + per-preset edits. Creating brand-new sub-agents from scratch in the UI
   comes after we see how the presets get used.
 - **Filesystem-based agents** (`.claude/agents/*.md`). Claude Code parity
-  is nice but not critical for forkzero's chat-first surface.
+  is nice but not critical for memoize's chat-first surface.
 - **Multi-level nesting.** The SDK explicitly forbids sub-agents spawning
   their own sub-agents. Renderer assumes `depth ≤ 1`.
 - **Background sub-agents** (SDK `background: true`). Useful for

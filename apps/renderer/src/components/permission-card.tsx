@@ -4,7 +4,7 @@ import type {
   PermissionDecision,
   PermissionKind,
   PermissionRequest,
-} from "@forkzero/wire";
+} from "@memoize/wire";
 
 import { cn } from "~/lib/utils";
 

@@ -1,8 +1,8 @@
 # Feature: Skills
 
-A "skill" in forkzero is a markdown command the user has authored in
+A "skill" in memoize is a markdown command the user has authored in
 their coding-agent tool of choice. Skill discovery is **delegated** to
-the active provider — forkzero owns no skill directory of its own.
+the active provider — memoize owns no skill directory of its own.
 
 For a Claude session, skills come from `~/.claude/skills/` (global) and
 project-level `.claude/skills/` (multiple between cwd and the repo
@@ -69,7 +69,7 @@ the file"; no hard SLA.
 
 Authoring is out of scope for 0.03. Users create and edit skills in
 their preferred text editor, in the directory their provider expects.
-Forkzero introduces no skill format of its own.
+Memoize introduces no skill format of its own.
 
 ## Driver capability
 
@@ -146,7 +146,7 @@ When the user confirms a skill row in the slash popover, the editor
 inserts a `skill` chip carrying `{ name, scope, args: "" }`. Anything
 the user types after the chip is treated as the `args` payload (free
 text — provider-specific argument parsing happens on the provider
-side; forkzero passes the raw string).
+side; memoize passes the raw string).
 
 At send time, the composer walks the document and produces:
 
@@ -168,7 +168,7 @@ inspects `skillRefs` and calls into the driver:
 - **Codex driver** — sends the equivalent `skills/run` request (CLI
   expands the body before invoking the model).
 
-Forkzero never inlines the skill body into the prompt. Expansion is
+Memoize never inlines the skill body into the prompt. Expansion is
 the provider's responsibility, which keeps skill semantics identical
 to using the underlying CLI directly.
 

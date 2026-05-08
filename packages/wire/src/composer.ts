@@ -6,7 +6,7 @@ import { ProviderId } from "./agent.ts";
  * Reference to an uploaded attachment. The renderer carries this on
  * `ComposerInput` and on persisted user-rich messages; the actual bytes live
  * under the desktop app's userData directory and are served to the renderer
- * via the `forkzero://attachments/<id>` custom protocol.
+ * via the `memoize://attachments/<id>` custom protocol.
  *
  * `id` shape: `<sessionSegment>-<uuid>` (sanitised session id + v4 UUID).
  */
@@ -31,7 +31,7 @@ export type FileRef = typeof FileRef.Type;
 
 /**
  * Reference to a provider-defined skill the user invoked from the slash
- * popover. Forkzero never inlines the skill body; the driver expands it
+ * popover. Memoize never inlines the skill body; the driver expands it
  * provider-side so semantics match the underlying CLI.
  */
 export const SkillRef = Schema.Struct({

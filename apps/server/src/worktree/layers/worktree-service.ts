@@ -11,7 +11,7 @@ import {
   WorktreeId,
   WorktreeNotFoundError,
   WorktreeRemoveError,
-} from "@forkzero/wire";
+} from "@memoize/wire";
 
 import { WorkspaceService } from "../../workspace/services/workspace-service.ts";
 import { generateCoolName } from "../cool-name.ts";
@@ -38,7 +38,7 @@ const rowToWorktree = (row: WorktreeRow): Worktree =>
     createdAt: new Date(row.created_at),
   });
 
-const EXCLUDE_LINE = ".forkzero/";
+const EXCLUDE_LINE = ".memoize/";
 
 export const WorktreeServiceLive = Layer.effect(
   WorktreeService,
@@ -92,9 +92,9 @@ export const WorktreeServiceLive = Layer.effect(
       );
 
     /**
-     * Append `.forkzero/` to the repo's `.git/info/exclude` if it isn't
+     * Append `.memoize/` to the repo's `.git/info/exclude` if it isn't
      * already there. Idempotent. We patch this on first worktree create so
-     * the in-repo `.forkzero/` tree doesn't show up as untracked, without
+     * the in-repo `.memoize/` tree doesn't show up as untracked, without
      * touching the user's `.gitignore`.
      */
     const ensureExclude = (repoPath: string) =>
@@ -158,10 +158,10 @@ export const WorktreeServiceLive = Layer.effect(
           );
         }
         const repoPath = folder.path;
-        // Layout: <repo>/.forkzero/<repo-name>/<branch>/. Grouping by repo
-        // name keeps `ls .forkzero/` legible when a project hosts many
+        // Layout: <repo>/.memoize/<repo-name>/<branch>/. Grouping by repo
+        // name keeps `ls .memoize/` legible when a project hosts many
         // worktrees ("branches of pangyo") instead of a generic bucket.
-        const baseDir = Path.join(repoPath, ".forkzero", folder.name);
+        const baseDir = Path.join(repoPath, ".memoize", folder.name);
 
         yield* ensureExclude(repoPath);
         yield* fs

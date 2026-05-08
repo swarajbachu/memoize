@@ -14,7 +14,7 @@ click-to-open, and a minimal editor that can save changes back to disk.
 - **Two-tab main pane**: a permanent **Chat** tab and at most **one** file
   tab. Opening a different file replaces (never stacks) the file tab.
 - **Minimal editor** based on CodeMirror 6 with language packs for the
-  formats forkzero users edit most (TS/TSX/JS/JSON/Markdown/HTML/CSS/Python/
+  formats memoize users edit most (TS/TSX/JS/JSON/Markdown/HTML/CSS/Python/
   Rust/Go), dirty-dot indicator, `Cmd/Ctrl+S` to save.
 - **Conflict-aware writes** via mtime-based optimistic concurrency: the
   server rejects writes if the file changed on disk since we read it.

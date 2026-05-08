@@ -12,7 +12,7 @@ quality / speed / cost / privacy axes:
 - **Local default** (free, private, but quality is below SOTA)
 - **Voyage / Cohere / OpenAI** (paid, SOTA quality, requires API key,
   chunks leave the user's machine)
-- **Forkzero-cloud** (deferred — see ADR 0021)
+- **Memoize-cloud** (deferred — see ADR 0021)
 
 Different users have different needs. A solo developer indexing a
 private repo wants local-only. A team OK with sharing chunks with
@@ -22,10 +22,10 @@ the engine's internals.
 
 ## Decision
 
-Define two **provider abstractions** in `@forkzero/index` —
+Define two **provider abstractions** in `@memoize/index` —
 `EmbeddingProvider` and `RerankProvider` — and ship multiple
 implementations. The user picks via config (env var or
-`forkzero-index.config.json` in the workspace).
+`memoize-index.config.json` in the workspace).
 
 ### EmbeddingProvider contract
 
@@ -113,7 +113,7 @@ download on first use (configurable).
 
 - Users choose between privacy (local) and quality (paid) without
   modifying engine code.
-- Adding a new provider (Cohere, Mistral, a future forkzero-cloud) is
+- Adding a new provider (Cohere, Mistral, a future memoize-cloud) is
   a new file, not a refactor.
 - Benchmarking is straightforward — swap providers and re-run the eval.
 - The provider boundary contains all network code, all credential
@@ -154,7 +154,7 @@ search
 
 - Mix-and-match per-query providers. One workspace, one embed model,
   one rerank model.
-- Forkzero-managed key escrow in 0.04. ADR 0021 defers this.
+- Memoize-managed key escrow in 0.04. ADR 0021 defers this.
 - Streaming embeddings. Embeddings are batch in nature; streaming
   doesn't help our async-worker model.
 

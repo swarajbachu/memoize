@@ -1,6 +1,6 @@
 import { Context, type Effect } from "effect";
 
-import type { ProviderId } from "@forkzero/wire";
+import type { ProviderId } from "@memoize/wire";
 
 import type { CredentialsError } from "../errors.ts";
 
@@ -30,5 +30,5 @@ export interface CredentialsServiceShape {
 }
 
 export class CredentialsService extends Context.Tag(
-  "forkzero/CredentialsService",
+  "memoize/CredentialsService",
 )<CredentialsService, CredentialsServiceShape>() {}

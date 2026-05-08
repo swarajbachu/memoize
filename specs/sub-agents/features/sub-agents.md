@@ -42,7 +42,7 @@ Subsequent SDK messages carry `parent_tool_use_id` pointing to that
 When the sub-agent finishes, a `tool_result` for that id lands carrying
 the sub-agent's final message as text.
 
-Forkzero's job is therefore narrow:
+Memoize's job is therefore narrow:
 
 1. Forward an `agents` map from the wire into the SDK options.
 2. Propagate `parent_tool_use_id` onto every emitted wire event.
@@ -288,8 +288,8 @@ under that parent."
 
 The `Agent` tool call IS a tool call. The wrapper row visually mirrors
 the existing `tool-row.tsx` style (hugeicons + muted-foreground + chevron
-swap on hover, per the project's [accordion pattern](../../../.claude/projects/-Users-whizzy-Developer-startups-forkzero/memory/feedback_accordion_pattern.md)
-and [icon convention](../../../.claude/projects/-Users-whizzy-Developer-startups-forkzero/memory/feedback_icons_hugeicons.md)).
+swap on hover, per the project's [accordion pattern](../../../.claude/projects/-Users-whizzy-Developer-startups-memoize/memory/feedback_accordion_pattern.md)
+and [icon convention](../../../.claude/projects/-Users-whizzy-Developer-startups-memoize/memory/feedback_icons_hugeicons.md)).
 
 Inside, every nested call uses `tool-row.tsx` *unchanged*, with a single
 `indented` prop that draws a left rail.
@@ -427,7 +427,7 @@ Opus: 4.2k in / 1.1k out · Haiku (research): 18.4k in / 412 out · saved ~$0.34
 all sub-agent turns ran on the main model, minus actual cost. Pure
 visualization — no functional impact.
 
-Renderer reads `MODEL_PRICING` from `@forkzero/wire`. When a sub-agent
+Renderer reads `MODEL_PRICING` from `@memoize/wire`. When a sub-agent
 finishes, the cumulative numbers update in place.
 
 ## Open questions left for implementation

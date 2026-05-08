@@ -5,7 +5,7 @@ import type {
   FolderId,
   PermissionKind,
   SavedDecision,
-} from "@forkzero/wire";
+} from "@memoize/wire";
 
 import {
   Dialog,

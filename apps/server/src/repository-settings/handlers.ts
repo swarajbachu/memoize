@@ -1,15 +1,15 @@
-import { ForkzeroRpcs } from "@forkzero/wire";
+import { MemoizeRpcs } from "@memoize/wire";
 import { Effect, Layer } from "effect";
 
 import { RepositorySettingsService } from "./services/repository-settings-service.ts";
 
-const Get = ForkzeroRpcs.toLayerHandler(
+const Get = MemoizeRpcs.toLayerHandler(
   "repositorySettings.get",
   ({ projectId }) =>
     Effect.flatMap(RepositorySettingsService, (svc) => svc.get(projectId)),
 );
 
-const Update = ForkzeroRpcs.toLayerHandler(
+const Update = MemoizeRpcs.toLayerHandler(
   "repositorySettings.update",
   ({ projectId, patch }) =>
     Effect.flatMap(RepositorySettingsService, (svc) =>

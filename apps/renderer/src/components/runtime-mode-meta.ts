@@ -1,7 +1,7 @@
 import { Lock, LockOpen, PencilLine } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-import type { RuntimeMode } from "@forkzero/wire";
+import type { RuntimeMode } from "@memoize/wire";
 
 /**
  * Shared label/description/icon for each runtime mode. Used by the composer's

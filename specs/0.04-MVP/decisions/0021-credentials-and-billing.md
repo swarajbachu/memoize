@@ -11,14 +11,14 @@ Jina) — these need credentials, and someone has to pay the bill.
 
 There are three credible billing shapes for paid providers:
 
-| Shape | What user does | Where forkzero is in the path | Forkzero infra needed |
+| Shape | What user does | Where memoize is in the path | Memoize infra needed |
 |---|---|---|---|
 | **Local** | Nothing | Not in the path | None |
 | **BYOK** | Pastes their own key in Settings | Not in the path; chunks go user → provider directly | None |
-| **Forkzero-cloud** | Subscribes; we proxy | In the path; chunks traverse our proxy | Auth, billing, rate limit, abuse mitigation, support |
+| **Memoize-cloud** | Subscribes; we proxy | In the path; chunks traverse our proxy | Auth, billing, rate limit, abuse mitigation, support |
 
-The temptation with "make it a service" is to ship Forkzero-cloud
-day-one. The reality of running Forkzero-cloud:
+The temptation with "make it a service" is to ship Memoize-cloud
+day-one. The reality of running Memoize-cloud:
 
 - Backend service (key management, rate limiting, key rotation, observability)
 - Stripe + sales tax / VAT in 30+ jurisdictions
@@ -36,9 +36,9 @@ without a revenue base.
 
 ## Decision
 
-**0.04 ships local + BYOK only.** Forkzero-cloud is deferred. The
+**0.04 ships local + BYOK only.** Memoize-cloud is deferred. The
 architecture leaves the door open: the provider abstraction (ADR 0020)
-treats `forkzero-cloud` as one more provider. Adding it later is
+treats `memoize-cloud` as one more provider. Adding it later is
 two new files plus a billing service, not re-architecting.
 
 ### Local (default)
@@ -54,42 +54,42 @@ the existing `keytar` pattern from agent integration (Phase 2), with new
 slots:
 
 ```
-forkzero:embed:voyage     → VOYAGE_API_KEY
-forkzero:embed:openai     → OPENAI_API_KEY
-forkzero:embed:jina       → JINA_API_KEY
-forkzero:rerank:cohere    → COHERE_API_KEY
-forkzero:rerank:voyage    → VOYAGE_API_KEY
+memoize:embed:voyage     → VOYAGE_API_KEY
+memoize:embed:openai     → OPENAI_API_KEY
+memoize:embed:jina       → JINA_API_KEY
+memoize:rerank:cohere    → COHERE_API_KEY
+memoize:rerank:voyage    → VOYAGE_API_KEY
 ```
 
 When the user selects a paid provider, `apps/server` reads the matching
 key from keytar at engine startup and injects it into the provider via
 env var. Keys never logged. Never written to disk in plaintext. Never
-sent to forkzero servers (because there are none in 0.04).
+sent to memoize servers (because there are none in 0.04).
 
 For the standalone MCP server (`apps/mcp-server`), keys come from env
 vars directly — the binary doesn't access keytar.
 
-### Forkzero-cloud (deferred)
+### Memoize-cloud (deferred)
 
-A `forkzero-cloud` provider stub exists in 0.04 but throws "not yet
+A `memoize-cloud` provider stub exists in 0.04 but throws "not yet
 available" if selected. This is intentional:
 
-- The UI surface ("Forkzero-cloud — coming soon") signals to users
+- The UI surface ("Memoize-cloud — coming soon") signals to users
   that this option exists.
 - Pre-allocates a name in the provider registry so future config can
   reference it without breaking change.
 - Forces us to keep the provider abstraction honest (if we couldn't
-  drop in `forkzero-cloud` later, the abstraction would be wrong).
+  drop in `memoize-cloud` later, the abstraction would be wrong).
 
-When we eventually ship Forkzero-cloud (a future MVP, not 0.04):
+When we eventually ship Memoize-cloud (a future MVP, not 0.04):
 
-- Implement the `forkzero-cloud` embed and rerank providers (HTTP
+- Implement the `memoize-cloud` embed and rerank providers (HTTP
   clients hitting our proxy)
 - Build `apps/billing-proxy` (or run as a service)
 - Add Stripe integration, key issuance, rate limiting
 - Document the privacy trade-off honestly
 
-### Why pre-stub `forkzero-cloud` now
+### Why pre-stub `memoize-cloud` now
 
 If we leave it out entirely, future ADRs may need to reshape the
 provider contract to fit a billing model we hadn't imagined. By
@@ -112,11 +112,11 @@ a one-package-touch.
 - BYOK costs nothing to support — same pattern as Phase 2 agent keys.
 - The cloud option exists conceptually; users see it labeled and know
   it's planned.
-- When we do build Forkzero-cloud, the architecture doesn't change.
+- When we do build Memoize-cloud, the architecture doesn't change.
 
 ### Negative
 
-- Forkzero-cloud users have to wait. We won't have recurring revenue
+- Memoize-cloud users have to wait. We won't have recurring revenue
   from this product surface in 0.04.
 - BYOK requires users to sign up at Voyage / Cohere / OpenAI etc.,
   which is friction. Some users will abandon and use local-only.
@@ -125,11 +125,11 @@ a one-package-touch.
 
 ## Alternatives considered
 
-### (a) BYOK only, defer forkzero-cloud forever
+### (a) BYOK only, defer memoize-cloud forever
 
 - Pro: zero billing complexity, ever.
 - Con: forecloses recurring revenue and team-shared cloud index.
-  Forkzero stays an OSS tool. Possibly fine; possibly limiting.
+  Memoize stays an OSS tool. Possibly fine; possibly limiting.
 
 ### (b) Ship pay-per-usage in 0.04 alongside BYOK
 
@@ -138,14 +138,14 @@ a one-package-touch.
   index work itself. Doubles 0.04's scope. Likely delays shipping
   by a quarter.
 
-### (c) BYOK in 0.04 + scaffold forkzero-cloud stub now (chosen)
+### (c) BYOK in 0.04 + scaffold memoize-cloud stub now (chosen)
 
 - Pro: ship 0.04 fast; preserve optionality; exercise the abstraction.
 - Con: stub debt (must follow through eventually).
 
 ## What we deliberately rejected
 
-- Forkzero-cloud as the *default*. Local-first is the principle (matches
+- Memoize-cloud as the *default*. Local-first is the principle (matches
   ADR 0007's local-only-v1 stance).
 - Storing API keys in plaintext config. Keytar is the standard.
 - Per-query keys (passing keys with each request). Provider holds the

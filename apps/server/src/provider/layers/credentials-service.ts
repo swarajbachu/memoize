@@ -1,16 +1,16 @@
 import keytar from "keytar";
 import { Effect, Layer } from "effect";
 
-import { type ProviderId } from "@forkzero/wire";
+import { type ProviderId } from "@memoize/wire";
 
 import { CredentialsError } from "../errors.ts";
 import { CredentialsService } from "../services/credentials-service.ts";
 
-const SERVICE_NAME = "forkzero";
+const SERVICE_NAME = "memoize";
 
 /**
  * Keychain entries are namespaced as `apiKey:<providerId>` under the
- * `forkzero` service. Listing uses `findCredentials(SERVICE_NAME)` and filters
+ * `memoize` service. Listing uses `findCredentials(SERVICE_NAME)` and filters
  * to the `apiKey:` prefix — keeps room for future credential kinds (refresh
  * tokens, OAuth state) without colliding with API keys.
  */

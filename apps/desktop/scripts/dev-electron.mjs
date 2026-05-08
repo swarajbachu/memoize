@@ -91,7 +91,7 @@ function startApp() {
   if (shuttingDown || currentApp !== null) return;
 
   const electronPath = require("electron");
-  const app = spawn(electronPath, [".", "--forkzero-dev"], {
+  const app = spawn(electronPath, [".", "--memoize-dev"], {
     cwd: desktopDir,
     // Pass the resolved dev URL through explicitly so main.ts sees it even
     // when bun/turbo invoked us without setting the env var.

@@ -5,7 +5,7 @@ import type {
   FolderId,
   RepositorySettings,
   RepositorySettingsPatch,
-} from "@forkzero/wire";
+} from "@memoize/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
 
