@@ -18,6 +18,7 @@ import {
   buildAgentsForNewSession,
   useSubagentsStore,
 } from "./subagents.ts";
+import { useWorkspaceStore } from "./workspace.ts";
 
 /**
  * Per-project session catalog. Sessions are scoped to a project, archived
@@ -27,7 +28,19 @@ import {
  */
 type SessionsState = {
   readonly sessionsByProject: Record<string, ReadonlyArray<Session>>;
+  /**
+   * Mirror of `selectedSessionByProject[selectedFolderId]`. Kept as live state
+   * (not a derived selector) so existing call sites can subscribe to it
+   * directly without a per-render workspace lookup. Synced from
+   * `selectedSessionByProject` by a workspace subscription at module init.
+   */
   readonly selectedSessionId: SessionId | null;
+  /**
+   * Per-project last-selected session. Switching projects restores the
+   * previously-active session for the new project so file tree, changes,
+   * PR badge, terminal cwd, and the chat all swap together.
+   */
+  readonly selectedSessionByProject: Record<string, SessionId | null>;
   readonly showArchivedByProject: Record<string, boolean>;
   readonly loadingByProject: Record<string, boolean>;
   readonly error: string | null;
@@ -108,6 +121,7 @@ const findSessionProject = (
 export const useSessionsStore = create<SessionsState>((set, get) => ({
   sessionsByProject: {},
   selectedSessionId: null,
+  selectedSessionByProject: {},
   showArchivedByProject: {},
   loadingByProject: {},
   error: null,
@@ -167,6 +181,10 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
             [projectId]: [session, ...existing],
           },
           selectedSessionId: session.id,
+          selectedSessionByProject: {
+            ...s.selectedSessionByProject,
+            [projectId]: session.id,
+          },
         };
       });
       return session.id;
@@ -323,7 +341,19 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       // Re-hydrate the affected project so visibility honors showArchived.
       const projectId = findSessionProject(get().sessionsByProject, sessionId);
       if (projectId !== null) await get().hydrate(projectId);
-      if (get().selectedSessionId === sessionId) set({ selectedSessionId: null });
+      set((s) => {
+        const wasSelected = s.selectedSessionId === sessionId;
+        const clearPerProject =
+          projectId !== null &&
+          s.selectedSessionByProject[projectId] === sessionId;
+        if (!wasSelected && !clearPerProject) return s;
+        return {
+          selectedSessionId: wasSelected ? null : s.selectedSessionId,
+          selectedSessionByProject: clearPerProject
+            ? { ...s.selectedSessionByProject, [projectId!]: null }
+            : s.selectedSessionByProject,
+        };
+      });
     } catch (err) {
       set({ error: formatError(err) });
     }
@@ -348,6 +378,9 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
         const projectId = findSessionProject(s.sessionsByProject, sessionId);
         if (projectId === null) return {};
         const sessions = s.sessionsByProject[projectId] ?? [];
+        const perProject = s.selectedSessionByProject[projectId] === sessionId
+          ? { ...s.selectedSessionByProject, [projectId]: null }
+          : s.selectedSessionByProject;
         return {
           sessionsByProject: {
             ...s.sessionsByProject,
@@ -355,6 +388,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
           },
           selectedSessionId:
             s.selectedSessionId === sessionId ? null : s.selectedSessionId,
+          selectedSessionByProject: perProject,
         };
       });
     } catch (err) {
@@ -380,6 +414,10 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
             ),
           },
           selectedSessionId: session.id,
+          selectedSessionByProject: {
+            ...s.selectedSessionByProject,
+            [projectId]: session.id,
+          },
         };
       });
       return true;
@@ -411,7 +449,42 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       // Silent — refreshOne is a best-effort follow-up after send().
     }
   },
-  select: (sessionId) => set({ selectedSessionId: sessionId }),
+  select: (sessionId) => {
+    if (sessionId === null) {
+      set((s) => {
+        const activeProjectId = useWorkspaceStore.getState().selectedFolderId;
+        return {
+          selectedSessionId: null,
+          selectedSessionByProject:
+            activeProjectId !== null
+              ? { ...s.selectedSessionByProject, [activeProjectId]: null }
+              : s.selectedSessionByProject,
+        };
+      });
+      return;
+    }
+    const projectId = findSessionProject(get().sessionsByProject, sessionId);
+    // Write the per-project slot FIRST so the workspace.select below sees
+    // the freshly-set slot when its subscriber fires — otherwise the
+    // subscriber would briefly mirror the stale slot value.
+    set((s) => ({
+      selectedSessionId: sessionId,
+      selectedSessionByProject:
+        projectId !== null
+          ? { ...s.selectedSessionByProject, [projectId]: sessionId }
+          : s.selectedSessionByProject,
+    }));
+    // If the session lives in a different project than the currently-active
+    // one, switch projects too. Without this the chat would jump to the new
+    // session but the right pane, top bar, terminal cwd, etc. would stay on
+    // the old project — the "click does nothing visible" symptom.
+    if (
+      projectId !== null &&
+      useWorkspaceStore.getState().selectedFolderId !== projectId
+    ) {
+      void useWorkspaceStore.getState().select(projectId);
+    }
+  },
   toggleShowArchived: (projectId) => {
     set((s) => ({
       showArchivedByProject: {
@@ -422,3 +495,18 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     void get().hydrate(projectId);
   },
 }));
+
+// Mirror `selectedSessionId` from the active project's per-project slot.
+// Switching projects automatically restores whichever session was last
+// selected for the new project; if none, the chat clears (no stale session
+// from the previous project leaks across).
+useWorkspaceStore.subscribe((ws, prev) => {
+  if (ws.selectedFolderId === prev.selectedFolderId) return;
+  const slot =
+    ws.selectedFolderId !== null
+      ? useSessionsStore.getState().selectedSessionByProject[ws.selectedFolderId] ?? null
+      : null;
+  if (useSessionsStore.getState().selectedSessionId !== slot) {
+    useSessionsStore.setState({ selectedSessionId: slot });
+  }
+});

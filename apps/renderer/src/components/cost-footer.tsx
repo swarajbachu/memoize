@@ -142,13 +142,19 @@ export function CostFooter({ sessionId }: { sessionId: SessionId }) {
       const counterModel =
         slot.parentItemId === null ? slot.model : (mainModel ?? slot.model);
       counterfactualUsd += usdFor(counterModel, slot.bucket);
+      // Sub-agent `result` events sometimes ship without a model field —
+      // the driver tags those "unknown". Tokens are real, so still print
+      // them; drop the unhelpful label.
+      const tokens = `${formatTokens(slot.bucket.inputTokens)} in / ${formatTokens(slot.bucket.outputTokens)} out`;
+      if (slot.model === "unknown") {
+        lines.push(tokens);
+        continue;
+      }
       const label =
         slot.parentItemId === null
           ? labelForModel(slot.model)
           : `${labelForModel(slot.model)} (${slot.agentName})`;
-      lines.push(
-        `${label}: ${formatTokens(slot.bucket.inputTokens)} in / ${formatTokens(slot.bucket.outputTokens)} out`,
-      );
+      lines.push(`${label}: ${tokens}`);
     }
     const saved = counterfactualUsd - actualUsd;
     return { lines, saved };

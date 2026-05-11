@@ -1,6 +1,8 @@
 import { FolderClosed, GitBranch } from "lucide-react";
 import { useState } from "react";
 
+import type { FolderId } from "@memoize/wire";
+
 import { useActiveWorktreeId } from "../store/active-workspace.ts";
 import { gitStatusKey, useGitStatusStore } from "../store/git-status.ts";
 import { prDetailsKey, usePrDetailsStore } from "../store/pr-details.ts";
@@ -28,7 +30,7 @@ export function RightPane() {
   const selected = selectedFolderId
     ? (folders.find((f) => f.id === selectedFolderId) ?? null)
     : null;
-  const worktreeId = useActiveWorktreeId();
+  const worktreeId = useActiveWorktreeId(selectedFolderId);
   const status = useGitStatusStore((s) =>
     selectedFolderId
       ? (s.byKey[gitStatusKey(selectedFolderId, worktreeId)] ?? null)
@@ -116,8 +118,8 @@ export function RightPane() {
  * the active root visible so users don't get confused by what they're
  * looking at.
  */
-function ActiveWorkspaceChip({ folderId }: { folderId: string }) {
-  const worktreeId = useActiveWorktreeId();
+function ActiveWorkspaceChip({ folderId }: { folderId: FolderId }) {
+  const worktreeId = useActiveWorktreeId(folderId);
   const worktree = useWorktreesStore((s) => {
     if (worktreeId === null) return null;
     const list = s.byProject[folderId] ?? EMPTY_WORKTREES;

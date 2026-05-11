@@ -12,6 +12,7 @@ import {
 import { useComposerBridge } from "../store/composer-bridge.ts";
 import { useUiStore } from "../store/ui.ts";
 import { FileIcon } from "./file-icon.tsx";
+import { Skeleton } from "./ui/skeleton.tsx";
 import {
   Tooltip,
   TooltipPopup,
@@ -49,7 +50,7 @@ export function FileTree({ folderId }: { folderId: FolderId }) {
   // Follow the selected session's worktree when it has one. The reset effect
   // depends on `worktreeId` so toggling worktrees re-roots the tree without
   // unmounting; passing it through `fs.tree` swaps the server-side root.
-  const worktreeId = useActiveWorktreeId();
+  const worktreeId = useActiveWorktreeId(folderId);
   const [rootState, setRootState] = useState<DirState>({ status: "loading" });
   const [childStates, setChildStates] = useState<Record<string, DirState>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -166,7 +167,19 @@ export function FileTree({ folderId }: { folderId: FolderId }) {
   );
 
   if (rootState.status === "loading") {
-    return <Empty>Loading…</Empty>;
+    return (
+      <ul
+        className="flex flex-col gap-1 px-2 py-1"
+        aria-label="Loading project files"
+      >
+        {[80, 64, 72, 56, 88, 60, 76].map((w, i) => (
+          <li key={i} className="flex items-center gap-1.5 px-1 py-1">
+            <Skeleton className="size-3.5 shrink-0" />
+            <Skeleton className="h-3" style={{ width: `${w}%` }} />
+          </li>
+        ))}
+      </ul>
+    );
   }
   if (rootState.status === "error") {
     return <Empty>{rootState.reason}</Empty>;

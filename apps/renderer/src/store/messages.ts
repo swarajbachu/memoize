@@ -87,8 +87,19 @@ const stopLiveFiber = async () => {
     tasks.push(Effect.runPromise(Fiber.interrupt(statusFiber)));
     statusFiber = null;
   }
+  const prevSessionId = liveSessionId;
   liveSessionId = null;
   await Promise.all(tasks);
+  // Drop the prior session's "running" flag — a stale `true` from the
+  // interrupted subscription would otherwise outlive the new hydrate and
+  // pin the composer on Interrupt forever.
+  if (prevSessionId !== null) {
+    useMessagesStore.setState((s) => {
+      if (s.runningBySession[prevSessionId] !== true) return s;
+      const { [prevSessionId]: _drop, ...rest } = s.runningBySession;
+      return { runningBySession: rest };
+    });
+  }
 };
 
 const newQueueId = (): string =>
@@ -191,69 +202,83 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
       // across the whole tool-call loop. When a turn ends we also refresh
       // the project's PR state so freshly pushed branches recolor the
       // branch icon without waiting for the user to click around.
-      statusFiber = Effect.runFork(
-        Stream.runForEach(
-          client.session.streamStatus({ sessionId }),
-          (event) =>
-            Effect.sync(() => {
-              const wasRunning = get().runningBySession[sessionId] === true;
-              const isRunning = event.status === "running";
-              set((s) => ({
-                runningBySession: {
-                  ...s.runningBySession,
-                  [sessionId]: isRunning,
-                },
-              }));
-              if (wasRunning && !isRunning) {
-                // Refresh PR state for this session's specific (project,
-                // worktree) pair — a turn that pushed commits on a worktree's
-                // branch shouldn't touch the main checkout's cache entry.
-                const sessions = useSessionsStore
-                  .getState()
-                  .sessionsByProject;
-                for (const list of Object.values(sessions)) {
-                  const sess = list.find((s) => s.id === sessionId);
-                  if (sess !== undefined) {
-                    void usePrStateStore
-                      .getState()
-                      .refresh(sess.projectId, sess.worktreeId);
-                    void usePrDetailsStore
-                      .getState()
-                      .refresh(sess.projectId, sess.worktreeId);
-                    break;
-                  }
-                }
-
-                // Auto-flush: when a turn lands and the queue is non-empty,
-                // send the queued items in order. Each send awaits the
-                // previous so the provider sees a single linear chain.
-                const queued = get().queueBySession[sessionId] ?? [];
-                if (queued.length > 0) {
-                  void (async () => {
-                    for (const q of queued) {
-                      try {
-                        await get().send(sessionId, q.input);
-                      } catch {
-                        // Stop on first error; remaining chips stay in the
-                        // queue and the user can retry by clicking Steer
-                        // (which is a no-op send when no turn is running).
-                        return;
-                      }
-                      set((s) => ({
-                        queueBySession: {
-                          ...s.queueBySession,
-                          [sessionId]: (s.queueBySession[sessionId] ?? []).filter(
-                            (it) => it.id !== q.id,
-                          ),
-                        },
-                      }));
-                    }
-                  })();
+      // Reset the running flag if the status stream ever errors — otherwise
+      // a transient RPC failure (server restart, dropped connection) leaves
+      // `runningBySession[sessionId]` pinned `true`, and the composer is
+      // stuck showing Interrupt with no way back to Send.
+      const resetOnStreamEnd = Effect.sync(() => {
+        useMessagesStore.setState((s) => {
+          if (s.runningBySession[sessionId] !== true) return s;
+          return {
+            runningBySession: { ...s.runningBySession, [sessionId]: false },
+          };
+        });
+      });
+      const statusProgram = Stream.runForEach(
+        client.session.streamStatus({ sessionId }).pipe(
+          Stream.catchAll((err) => {
+            console.error("[messages] status stream errored", err);
+            return Stream.empty;
+          }),
+        ),
+        (event) =>
+          Effect.sync(() => {
+            const wasRunning = get().runningBySession[sessionId] === true;
+            const isRunning = event.status === "running";
+            set((s) => ({
+              runningBySession: {
+                ...s.runningBySession,
+                [sessionId]: isRunning,
+              },
+            }));
+            if (wasRunning && !isRunning) {
+              // Refresh PR state for this session's specific (project,
+              // worktree) pair — a turn that pushed commits on a worktree's
+              // branch shouldn't touch the main checkout's cache entry.
+              const sessions = useSessionsStore.getState().sessionsByProject;
+              for (const list of Object.values(sessions)) {
+                const sess = list.find((s) => s.id === sessionId);
+                if (sess !== undefined) {
+                  void usePrStateStore
+                    .getState()
+                    .refresh(sess.projectId, sess.worktreeId);
+                  void usePrDetailsStore
+                    .getState()
+                    .refresh(sess.projectId, sess.worktreeId);
+                  break;
                 }
               }
-            }),
-        ),
-      );
+
+              // Auto-flush: when a turn lands and the queue is non-empty,
+              // send the queued items in order. Each send awaits the
+              // previous so the provider sees a single linear chain.
+              const queued = get().queueBySession[sessionId] ?? [];
+              if (queued.length > 0) {
+                void (async () => {
+                  for (const q of queued) {
+                    try {
+                      await get().send(sessionId, q.input);
+                    } catch {
+                      // Stop on first error; remaining chips stay in the
+                      // queue and the user can retry by clicking Steer
+                      // (which is a no-op send when no turn is running).
+                      return;
+                    }
+                    set((s) => ({
+                      queueBySession: {
+                        ...s.queueBySession,
+                        [sessionId]: (s.queueBySession[sessionId] ?? []).filter(
+                          (it) => it.id !== q.id,
+                        ),
+                      },
+                    }));
+                  }
+                })();
+              }
+            }
+          }),
+      ).pipe(Effect.ensuring(resetOnStreamEnd));
+      statusFiber = Effect.runFork(statusProgram);
     } catch (err) {
       set((s) => ({
         errorBySession: {
@@ -280,11 +305,15 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
       await Effect.runPromise(client.messages.send(payload));
       void useSessionsStore.getState().refreshOne(sessionId);
     } catch (err) {
+      // Reset the optimistic running flag — otherwise a failed send leaves
+      // the composer stuck on Interrupt with no path back to Send (the
+      // status stream won't emit "idle" if the server never saw the turn).
       set((s) => ({
         errorBySession: {
           ...s.errorBySession,
           [sessionId]: formatError(err),
         },
+        runningBySession: { ...s.runningBySession, [sessionId]: false },
       }));
     }
   },
