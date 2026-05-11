@@ -157,6 +157,15 @@ export function ChatComposer({ session }: { session: Session }) {
   useEffect(() => {
     void hydratePermissions(sessionId);
   }, [sessionId, hydratePermissions]);
+  // Reconcile permission requests whenever the running flag transitions
+  // true → false. A turn that ended (or aborted) sometimes leaves a stale
+  // pending-permission row in the client cache — the row's UI then takes
+  // over the composer slot and looks like the input is disabled. Re-asking
+  // the server clears anything it already resolved.
+  useEffect(() => {
+    if (inFlight) return;
+    void hydratePermissions(sessionId);
+  }, [inFlight, sessionId, hydratePermissions]);
   const headPermission = pendingPermissions[0];
 
   const [hasText, setHasText] = useState(false);

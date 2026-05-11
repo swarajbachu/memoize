@@ -39,7 +39,7 @@ export function FileChipHover({
   const [state, setState] = useState<HoverState | null>(null);
   const hideTimer = useRef<number | null>(null);
   const openFileInTab = useUiStore((s) => s.openFileInTab);
-  const worktreeId = useActiveWorktreeId();
+  const worktreeId = useActiveWorktreeId(projectId);
 
   useEffect(() => {
     const host = hostRef.current;

@@ -15,17 +15,25 @@ import { useWorktreesStore } from "./worktrees.ts";
  * pull in the others' types as a side effect.
  */
 
-/** WorktreeId of the selected session, or null when on main checkout. */
-export const useActiveWorktreeId = (): WorktreeId | null => {
-  const selectedSessionId = useSessionsStore((s) => s.selectedSessionId);
-  const sessionsByProject = useSessionsStore((s) => s.sessionsByProject);
-  if (selectedSessionId === null) return null;
-  for (const list of Object.values(sessionsByProject)) {
-    for (const sess of list) {
-      if (sess.id === selectedSessionId) return sess.worktreeId;
-    }
-  }
-  return null;
+/**
+ * WorktreeId of the given project's currently-selected session, or null when
+ * that project's selection is on main checkout. Scoped per-project so
+ * switching projects deterministically swaps every panel that reads it
+ * (file tree, changes, PR, terminal, top-bar branch) to the new project's
+ * own active context — no cross-project session lookup.
+ */
+export const useActiveWorktreeId = (
+  folderId: FolderId | null,
+): WorktreeId | null => {
+  const sessionId = useSessionsStore((s) =>
+    folderId !== null ? s.selectedSessionByProject[folderId] ?? null : null,
+  );
+  const sessions = useSessionsStore((s) =>
+    folderId !== null ? s.sessionsByProject[folderId] ?? null : null,
+  );
+  if (sessionId === null || sessions === null) return null;
+  const found = sessions.find((sess) => sess.id === sessionId);
+  return found?.worktreeId ?? null;
 };
 
 /**
@@ -38,7 +46,7 @@ export const useActiveWorkspaceRoot = (folderId: FolderId): string | null => {
   const folder = useWorkspaceStore((s) =>
     s.folders.find((f) => f.id === folderId) ?? null,
   );
-  const worktreeId = useActiveWorktreeId();
+  const worktreeId = useActiveWorktreeId(folderId);
   const worktree = useWorktreesStore((s) => {
     if (worktreeId === null) return null;
     const list = s.byProject[folderId] ?? [];

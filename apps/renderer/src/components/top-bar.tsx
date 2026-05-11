@@ -82,7 +82,7 @@ export function TopBarMain({ folderId }: { folderId: FolderId | null }) {
   // The branch label follows the active session's worktree so users see the
   // worktree's branch (e.g. happy-otter-42) when they're chatting against it,
   // not the main checkout's branch.
-  const worktreeId = useActiveWorktreeId();
+  const worktreeId = useActiveWorktreeId(folderId);
   const status = useGitStatusStore((s) =>
     folderId
       ? (s.byKey[gitStatusKey(folderId, worktreeId)] ?? null)
@@ -234,7 +234,7 @@ const deriveWorkflow = (
  * deferred — the layout already reserves the space.
  */
 export function TopBarRight({ folderId }: { folderId: FolderId | null }) {
-  const worktreeId = useActiveWorktreeId();
+  const worktreeId = useActiveWorktreeId(folderId);
   const status = useGitStatusStore((s) =>
     folderId
       ? (s.byKey[gitStatusKey(folderId, worktreeId)] ?? null)
