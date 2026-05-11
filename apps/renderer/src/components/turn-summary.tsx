@@ -8,7 +8,11 @@ import { useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import type { AgentItemId, Message } from "@memoize/wire";
+import type {
+  AgentItemId,
+  Message,
+  UserQuestionAnswer,
+} from "@memoize/wire";
 
 import { groupMessages } from "../lib/group-messages.ts";
 import { cn } from "~/lib/utils";
@@ -73,9 +77,14 @@ const MAX_PREVIEW_ICONS = 5;
 export function TurnSummary({
   body,
   resultsByItemId,
+  answersByItemId,
 }: {
   body: ReadonlyArray<Message>;
   resultsByItemId: ReadonlyMap<AgentItemId, ToolResultRecord>;
+  answersByItemId?: ReadonlyMap<
+    AgentItemId,
+    ReadonlyArray<UserQuestionAnswer>
+  >;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -193,6 +202,7 @@ export function TurnSummary({
                 key={group.message.id}
                 message={group.message}
                 resultsByItemId={resultsByItemId}
+                answersByItemId={answersByItemId}
               />
             ) : (
               <SubagentRow
@@ -204,6 +214,7 @@ export function TurnSummary({
                 children={group.children}
                 summary={group.summary}
                 resultsByItemId={resultsByItemId}
+                answersByItemId={answersByItemId}
               />
             ),
           )}

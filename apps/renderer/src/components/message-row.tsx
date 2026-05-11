@@ -12,6 +12,7 @@ import type {
   Message,
   SessionId,
   SkillRef,
+  UserQuestionAnswer,
 } from "@memoize/wire";
 
 import {
@@ -20,7 +21,12 @@ import {
 } from "~/lib/icons/material-icons";
 import { cn } from "~/lib/utils";
 
-import { ExitPlanModeRow, ThinkingRow, ToolRow } from "./tool-row.tsx";
+import {
+  ExitPlanModeRow,
+  ThinkingRow,
+  ToolRow,
+  UserInputRow,
+} from "./tool-row.tsx";
 
 export interface ToolResultRecord {
   readonly output: unknown;
@@ -52,10 +58,12 @@ const stringifyJson = (value: unknown): string => {
 export function MessageRow({
   message,
   resultsByItemId,
+  answersByItemId,
   sessionId,
 }: {
   message: Message;
   resultsByItemId: ReadonlyMap<AgentItemId, ToolResultRecord>;
+  answersByItemId?: ReadonlyMap<AgentItemId, ReadonlyArray<UserQuestionAnswer>>;
   sessionId?: SessionId;
 }) {
   switch (message.content._tag) {
@@ -106,14 +114,20 @@ export function MessageRow({
         <ToolErrorRow output={message.content.output} />
       ) : null;
     }
-    case "user_question":
+    case "user_question": {
+      // Pending questions live in the composer slot — ChatComposer swaps the
+      // editor for a QuestionCard. Once answered, the question + the user's
+      // selections render here as a `UserInputRow` accordion so the Q&A
+      // stays visible in scrollback like every other tool call.
+      const answers = answersByItemId?.get(message.content.itemId);
+      if (answers === undefined) return null;
+      return (
+        <UserInputRow questions={message.content.questions} answers={answers} />
+      );
+    }
     case "user_question_answer":
-      // Questions live in the composer slot, not the timeline — pending
-      // ones are rendered by ChatComposer (it swaps the editor for a
-      // QuestionCard); answered ones vanish entirely so the chat scrollback
-      // doesn't accumulate noisy decision rows. The agent's resulting
-      // assistant message is the timeline-visible record of what the
-      // answers led to.
+      // The paired `user_question` row above renders the answer inline, so
+      // the standalone answer row is suppressed.
       return null;
     case "error":
       return <ErrorBubble text={message.content.message} />;

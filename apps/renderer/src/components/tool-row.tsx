@@ -1,12 +1,15 @@
 import {
   Brain01Icon,
+  BubbleChatIcon,
   CheckListIcon,
+  Copy01Icon,
   File01Icon,
   GlobeIcon,
   PencilEdit01Icon,
   Robot01Icon,
   SearchIcon,
   TerminalIcon,
+  Tick02Icon,
   Wrench01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -15,7 +18,11 @@ import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import type { SessionId } from "@memoize/wire";
+import type {
+  SessionId,
+  UserQuestion,
+  UserQuestionAnswer,
+} from "@memoize/wire";
 
 import { cn } from "~/lib/utils";
 
@@ -778,6 +785,134 @@ export function ExitPlanModeRow({
       ) : null}
     </div>
   );
+}
+
+/**
+ * Timeline card for an answered `AskUserQuestion`. While the question is
+ * still pending, the composer slot owns the interaction (see
+ * `ChatComposer`); once the user submits, this card lands inline in
+ * scrollback. Mirrors the `ExitPlanModeRow` card layout — header icon +
+ * label + copy button, body, then a footer with meta on the left and the
+ * status pill on the right.
+ */
+export function UserInputRow({
+  questions,
+  answers,
+}: {
+  readonly questions: ReadonlyArray<UserQuestion>;
+  readonly answers: ReadonlyArray<UserQuestionAnswer>;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = () => {
+    const text = questions
+      .map((q, i) => {
+        const summary = answerSummaryText(q, answers, i);
+        return `Q: ${q.question}\nA: ${summary ?? "(cancelled)"}`;
+      })
+      .join("\n\n");
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    });
+  };
+
+  return (
+    <div className="py-2">
+      <div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
+        <HugeiconsIcon icon={BubbleChatIcon} size={14} strokeWidth={2} />
+        <span>User input</span>
+        <button
+          type="button"
+          onClick={copy}
+          aria-label={copied ? "Copied" : "Copy Q&A"}
+          title={copied ? "Copied" : "Copy"}
+          className="rounded p-0.5 text-muted-foreground/70 hover:bg-muted/40 hover:text-foreground"
+        >
+          <HugeiconsIcon
+            icon={copied ? Tick02Icon : Copy01Icon}
+            size={12}
+            strokeWidth={2}
+          />
+        </button>
+      </div>
+
+      <div className="space-y-3">
+        {questions.map((q, i) => {
+          const summary = answerSummary(q, answers, i);
+          return (
+            <div key={i} className="text-sm">
+              <div className="border-l-2 border-border/60 pl-3 text-foreground/70">
+                {q.question}
+              </div>
+              <div className="mt-1 pl-3 text-foreground">
+                {summary === null ? (
+                  <span className="italic text-muted-foreground">
+                    (cancelled)
+                  </span>
+                ) : (
+                  summary
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-3 flex items-center justify-between text-[11px] text-muted-foreground">
+        <span>
+          {questions.length}{" "}
+          {questions.length === 1 ? "question" : "questions"}
+        </span>
+        <span className="rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-500/90">
+          Answered
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One question's answer formatted for display: selected option labels
+ * joined with `, ` then optionally `· <other>` for free-text. Returns
+ * `null` when the user submitted nothing (cancelled).
+ */
+function answerSummary(
+  question: UserQuestion,
+  answers: ReadonlyArray<UserQuestionAnswer>,
+  index: number,
+): React.ReactNode | null {
+  const a = answers.find((x) => x.questionIndex === index);
+  const picks = (a?.selected ?? []).map(
+    (idx) => question.options[idx] ?? `#${idx}`,
+  );
+  const other = a?.other?.trim() ?? "";
+  if (picks.length === 0 && other.length === 0) return null;
+  return (
+    <>
+      {picks.length > 0 ? picks.join(", ") : null}
+      {picks.length > 0 && other.length > 0 ? " · " : null}
+      {other.length > 0 ? <span className="italic">{other}</span> : null}
+    </>
+  );
+}
+
+/** Plain-text version of `answerSummary` for clipboard export. */
+function answerSummaryText(
+  question: UserQuestion,
+  answers: ReadonlyArray<UserQuestionAnswer>,
+  index: number,
+): string | null {
+  const a = answers.find((x) => x.questionIndex === index);
+  const picks = (a?.selected ?? []).map(
+    (idx) => question.options[idx] ?? `#${idx}`,
+  );
+  const other = a?.other?.trim() ?? "";
+  if (picks.length === 0 && other.length === 0) return null;
+  const parts: string[] = [];
+  if (picks.length > 0) parts.push(picks.join(", "));
+  if (other.length > 0) parts.push(other);
+  return parts.join(" · ");
 }
 
 export function ToolRow({

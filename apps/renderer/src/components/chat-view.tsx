@@ -8,7 +8,12 @@ import {
   useState,
 } from "react";
 
-import type { AgentItemId, Message, SessionId } from "@memoize/wire";
+import type {
+  AgentItemId,
+  Message,
+  SessionId,
+  UserQuestionAnswer,
+} from "@memoize/wire";
 
 import { groupMessages } from "../lib/group-messages.ts";
 import { useMessagesStore } from "../store/messages.ts";
@@ -125,6 +130,27 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
     return map;
   }, [messages]);
 
+  // Pair `user_question_answer` rows back to their originating
+  // `user_question` by itemId so the `UserInputRow` can render Q + A as one
+  // accordion. Mirrors `resultsByItemId`. Pending (unanswered) questions
+  // stay absent from this map — `MessageRow` returns null for them and the
+  // composer slot owns the live interaction.
+  const answersByItemId = useMemo(() => {
+    const seenQuestionIds = new Set<AgentItemId>();
+    const map = new Map<AgentItemId, ReadonlyArray<UserQuestionAnswer>>();
+    for (const m of messages) {
+      if (m.content._tag === "user_question") {
+        seenQuestionIds.add(m.content.itemId);
+      } else if (
+        m.content._tag === "user_question_answer" &&
+        seenQuestionIds.has(m.content.itemId)
+      ) {
+        map.set(m.content.itemId, m.content.answers);
+      }
+    }
+    return map;
+  }, [messages]);
+
 
   return (
     <div
@@ -173,6 +199,7 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
                   <MessageRow
                     message={turn.user}
                     resultsByItemId={resultsByItemId}
+                    answersByItemId={answersByItemId}
                     sessionId={sessionId}
                   />
                 ) : null}
@@ -180,6 +207,7 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
                   <TurnSummary
                     body={turn.body}
                     resultsByItemId={resultsByItemId}
+                    answersByItemId={answersByItemId}
                   />
                 ) : (
                   bodyGroups.map((group) =>
@@ -188,6 +216,7 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
                         key={group.message.id}
                         message={group.message}
                         resultsByItemId={resultsByItemId}
+                        answersByItemId={answersByItemId}
                         sessionId={sessionId}
                       />
                     ) : (
@@ -200,6 +229,7 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
                         children={group.children}
                         summary={group.summary}
                         resultsByItemId={resultsByItemId}
+                        answersByItemId={answersByItemId}
                       />
                     ),
                   )

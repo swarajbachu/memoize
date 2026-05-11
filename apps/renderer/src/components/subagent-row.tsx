@@ -6,7 +6,11 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import type { AgentItemId, Message } from "@memoize/wire";
+import type {
+  AgentItemId,
+  Message,
+  UserQuestionAnswer,
+} from "@memoize/wire";
 
 import { cn } from "~/lib/utils";
 
@@ -50,6 +54,7 @@ export function SubagentRow({
   children,
   summary,
   resultsByItemId,
+  answersByItemId,
 }: {
   readonly agentToolUseId: AgentItemId;
   readonly agentName: string;
@@ -64,6 +69,10 @@ export function SubagentRow({
     readonly isError: boolean;
   } | null;
   readonly resultsByItemId: ReadonlyMap<AgentItemId, ToolResultRecord>;
+  readonly answersByItemId?: ReadonlyMap<
+    AgentItemId,
+    ReadonlyArray<UserQuestionAnswer>
+  >;
 }) {
   // Auto-expand while running (no summary yet) so the user can watch the
   // sub-agent work. Once finished, collapse to a one-line meta summary.
@@ -128,6 +137,7 @@ export function SubagentRow({
                 key={m.id}
                 message={m}
                 resultsByItemId={resultsByItemId}
+                answersByItemId={answersByItemId}
               />
             ))}
           </div>
