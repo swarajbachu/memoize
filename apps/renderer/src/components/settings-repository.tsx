@@ -1,4 +1,4 @@
-import { Check, GitBranch, Trash2 } from "lucide-react";
+import { GitBranch, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -7,19 +7,21 @@ import {
   type ProviderId,
 } from "@memoize/wire";
 
-import { cn } from "~/lib/utils";
 import { useRepositorySettingsStore } from "../store/repository-settings.ts";
 import { useSettingsStore } from "../store/settings.ts";
 import { useWorkspaceStore } from "../store/workspace.ts";
 import { EMPTY_WORKTREES, useWorktreesStore } from "../store/worktrees.ts";
 import { ProviderIcon } from "./provider-icons.tsx";
 import { MODES_ORDER, MODE_META } from "./runtime-mode-meta.ts";
-import { ModelSelect, Section } from "./settings-page.tsx";
-
-const PROVIDER_LABEL: Record<ProviderId, string> = {
-  claude: "Claude Code",
-  codex: "Codex",
-};
+import {
+  CheckboxField,
+  ModelSelect,
+  OptionCard,
+  OptionGroup,
+  OverrideField,
+  PROVIDER_LABEL,
+  Section,
+} from "./settings-page.tsx";
 
 /**
  * Per-repository settings: provider/model/permission overrides plus
@@ -56,17 +58,7 @@ export function RepositorySettings({ projectId }: { projectId: FolderId }) {
 
   return (
     <>
-      <Section
-        title="Path"
-        description="Where this repository lives on disk."
-      >
-        <div className="rounded-md border border-border/60 bg-background px-3 py-2 font-mono text-xs text-muted-foreground">
-          {folder.path}
-        </div>
-      </Section>
-
       <ProviderOverrideSection
-        projectId={projectId}
         defaultProviderId={settings.defaultProviderId}
         defaultModel={settings.defaultModel}
         onProviderChange={(value) =>
@@ -96,86 +88,58 @@ export function RepositorySettings({ projectId }: { projectId: FolderId }) {
 }
 
 function ProviderOverrideSection({
-  projectId,
   defaultProviderId,
   defaultModel,
   onProviderChange,
   onModelChange,
 }: {
-  projectId: FolderId;
   defaultProviderId: ProviderId | null;
   defaultModel: string | null;
   onProviderChange: (v: ProviderId | null) => void;
   onModelChange: (v: string | null) => void;
 }) {
   const globalProviderId = useSettingsStore((s) => s.defaultProviderId);
+  const globalModelByProvider = useSettingsStore(
+    (s) => s.defaultModelByProvider,
+  );
   const effectiveProvider: ProviderId = defaultProviderId ?? globalProviderId;
+  const globalModel = globalModelByProvider[globalProviderId];
+  const globalModelLabel =
+    MODELS_BY_PROVIDER[globalProviderId].find((m) => m.id === globalModel)
+      ?.label ?? globalModel ?? "—";
+  const isOverridden = defaultProviderId !== null || defaultModel !== null;
   return (
     <Section
       title="Default agent"
-      description="Override the global default provider and model for new chats started in this repo. Leave on global to inherit."
+      description="Override the global default provider and model for new chats in this repo."
     >
-      <div className="flex flex-col gap-3">
-        <div className="grid grid-cols-3 gap-2">
-          <button
-            type="button"
-            onClick={() => onProviderChange(null)}
-            className={cn(
-              "flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors",
-              defaultProviderId === null
-                ? "border-foreground/40 bg-accent/40"
-                : "border-border/60 hover:bg-muted/40",
-            )}
-            title={`Use global default (${PROVIDER_LABEL[globalProviderId]})`}
-          >
-            <span className="flex-1 text-left">Use global</span>
-            {defaultProviderId === null && (
-              <Check className="size-3.5 opacity-80" />
-            )}
-          </button>
-          {(["claude", "codex"] as ReadonlyArray<ProviderId>).map((pid) => {
-            const active = defaultProviderId === pid;
-            return (
-              <button
+      <OverrideField
+        isOverridden={isOverridden}
+        globalLabel={`${PROVIDER_LABEL[globalProviderId]} · ${globalModelLabel}`}
+        onClear={() => {
+          onProviderChange(null);
+          onModelChange(null);
+        }}
+      >
+        <div className="flex flex-col gap-3">
+          <OptionGroup columns={2}>
+            {(["claude", "codex"] as ReadonlyArray<ProviderId>).map((pid) => (
+              <OptionCard
                 key={pid}
-                type="button"
+                iconNode={<ProviderIcon providerId={pid} className="size-4" />}
+                title={PROVIDER_LABEL[pid]}
+                active={effectiveProvider === pid}
                 onClick={() => onProviderChange(pid)}
-                className={cn(
-                  "flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors",
-                  active
-                    ? "border-foreground/40 bg-accent/40"
-                    : "border-border/60 hover:bg-muted/40",
-                )}
-              >
-                <ProviderIcon providerId={pid} className="size-4" />
-                <span className="flex-1 text-left">
-                  {PROVIDER_LABEL[pid]}
-                </span>
-                {active && <Check className="size-3.5 opacity-80" />}
-              </button>
-            );
-          })}
-        </div>
-        <div className="flex items-end gap-2">
+              />
+            ))}
+          </OptionGroup>
           <ModelSelect
             providerId={effectiveProvider}
             value={defaultModel}
             onChange={(model) => onModelChange(model)}
           />
-          <button
-            type="button"
-            onClick={() => onModelChange(null)}
-            disabled={defaultModel === null}
-            className="rounded-md border border-border/60 px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted/40 disabled:opacity-50"
-            title="Clear override and inherit global default model"
-          >
-            Use global
-          </button>
         </div>
-        <span className="text-[11px] text-muted-foreground">
-          Project: <span className="font-mono">{projectId}</span>
-        </span>
-      </div>
+      </OverrideField>
     </Section>
   );
 }
@@ -184,60 +148,37 @@ function RuntimeModeOverrideSection({
   currentValue,
   onChange,
 }: {
-  currentValue: string | null;
+  currentValue: typeof MODES_ORDER[number] | null;
   onChange: (v: typeof MODES_ORDER[number] | null) => void;
 }) {
+  const globalMode = useSettingsStore((s) => s.defaultRuntimeMode);
+  const effective = currentValue ?? globalMode;
   return (
     <Section
       title="Default permission mode"
       description="Override the global permission posture for new chats in this repo."
     >
-      <div className="flex flex-col gap-2">
-        <button
-          type="button"
-          onClick={() => onChange(null)}
-          className={cn(
-            "flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors",
-            currentValue === null
-              ? "border-foreground/40 bg-accent/40"
-              : "border-border/60 hover:bg-muted/40",
-          )}
-        >
-          <span className="flex-1 text-left">Use global default</span>
-          {currentValue === null && <Check className="size-3.5 opacity-80" />}
-        </button>
-        {MODES_ORDER.map((mode) => {
-          const m = MODE_META[mode];
-          const ItemIcon = m.Icon;
-          const active = currentValue === mode;
-          return (
-            <button
-              key={mode}
-              type="button"
-              onClick={() => onChange(mode)}
-              className={cn(
-                "grid grid-cols-[1.25rem_1.25rem_1fr_1rem] items-start gap-x-3 rounded-md border px-3 py-3 text-left transition-colors",
-                active
-                  ? "border-foreground/40 bg-accent/40"
-                  : "border-border/60 hover:bg-muted/40",
-              )}
-            >
-              <ItemIcon className="col-start-2 row-start-1 mt-0.5 size-4 shrink-0" />
-              <div className="col-start-3 row-start-1 flex flex-col gap-1">
-                <span className="text-sm font-medium leading-none">
-                  {m.label}
-                </span>
-                <span className="text-xs text-muted-foreground leading-snug">
-                  {m.description}
-                </span>
-              </div>
-              {active && (
-                <Check className="col-start-4 row-start-1 mt-0.5 size-3.5 opacity-80" />
-              )}
-            </button>
-          );
-        })}
-      </div>
+      <OverrideField
+        isOverridden={currentValue !== null}
+        globalLabel={MODE_META[globalMode].label}
+        onClear={() => onChange(null)}
+      >
+        <OptionGroup>
+          {MODES_ORDER.map((mode) => {
+            const m = MODE_META[mode];
+            return (
+              <OptionCard
+                key={mode}
+                icon={m.Icon}
+                title={m.label}
+                description={m.description}
+                active={effective === mode}
+                onClick={() => onChange(mode)}
+              />
+            );
+          })}
+        </OptionGroup>
+      </OverrideField>
     </Section>
   );
 }
@@ -299,46 +240,39 @@ function WorktreeSection({
       description="Git worktrees for this repo. Each lives under .memoize/repo-worktree/ on disk."
     >
       <div className="flex flex-col gap-3">
-        <label className="flex items-center gap-3 rounded-md border border-border/60 px-3 py-2.5 text-sm">
-          <input
-            type="checkbox"
-            checked={autoCreate}
-            onChange={(e) => onAutoCreateChange(e.target.checked)}
-            className="size-4 accent-foreground"
-          />
-          <span className="flex flex-1 flex-col gap-0.5">
-            <span className="font-medium leading-none">
-              Auto-create a worktree for new chats
-            </span>
-            <span className="text-xs text-muted-foreground leading-snug">
-              When on, the composer's workspace picker pre-selects a fresh
-              worktree. You can still flip back to "Current checkout"
-              before sending the first message.
-            </span>
-          </span>
-        </label>
+        <CheckboxField
+          checked={autoCreate}
+          onChange={onAutoCreateChange}
+          label="Auto-create a worktree for new chats"
+          description='When on, the composer&apos;s workspace picker pre-selects a fresh worktree. You can still flip back to "Current checkout" before sending the first message.'
+        />
 
         {sorted.length === 0 ? (
-          <p className="rounded-md border border-dashed border-border/40 px-3 py-4 text-center text-xs text-muted-foreground">
-            No worktrees yet. The composer creates one on demand.
+          <p className="rounded-lg border border-dashed border-border/50 px-3 py-6 text-center text-xs text-muted-foreground">
+            No worktrees yet. Memoize creates one for you when you start a new
+            chat.
           </p>
         ) : (
-          <ul className="flex flex-col gap-1 rounded-md border border-border/40 p-1">
+          <ul className="flex flex-col gap-0.5 rounded-lg border border-border/50 p-1.5">
             {sorted.map((wt) => (
               <li
                 key={wt.id}
-                className="grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-md px-2 py-2 hover:bg-muted/30"
+                className="grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-md px-2.5 py-2 transition-colors hover:bg-muted/40"
               >
                 <GitBranch className="size-4 shrink-0 text-muted-foreground" />
-                <div className="flex min-w-0 flex-col gap-0.5">
-                  <span className="truncate text-sm font-medium">
+                <div
+                  className="flex min-w-0 flex-col gap-0.5"
+                  title={wt.path}
+                >
+                  <span className="truncate text-sm font-medium text-foreground">
                     {wt.name}
                   </span>
                   <span className="truncate font-mono text-[11px] text-muted-foreground">
-                    {wt.branch} · off {wt.baseBranch}
-                  </span>
-                  <span className="truncate font-mono text-[11px] text-muted-foreground/80">
-                    {wt.path}
+                    {wt.branch}
+                    <span className="text-muted-foreground/60">
+                      {" "}
+                      · off {wt.baseBranch}
+                    </span>
                   </span>
                 </div>
                 {pendingDirty === wt.name ? (
@@ -346,14 +280,14 @@ function WorktreeSection({
                     <button
                       type="button"
                       onClick={() => void onRemove(wt.id, wt.name, true)}
-                      className="rounded-md border border-red-500/40 bg-red-500/10 px-2 py-1 text-[11px] text-red-400 hover:bg-red-500/20"
+                      className="rounded-md border border-red-500/40 bg-red-500/10 px-2 py-1 text-[11px] text-red-400 transition-colors hover:bg-red-500/20"
                     >
                       Force remove
                     </button>
                     <button
                       type="button"
                       onClick={() => setPendingDirty(null)}
-                      className="rounded-md border border-border/60 px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted/40"
+                      className="rounded-md border border-border/50 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted/40"
                     >
                       Cancel
                     </button>
@@ -362,7 +296,7 @@ function WorktreeSection({
                   <button
                     type="button"
                     onClick={() => void onRemove(wt.id, wt.name, false)}
-                    className="flex items-center gap-1 rounded-md border border-border/60 px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+                    className="flex items-center gap-1 rounded-md border border-border/50 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
                     title="Remove this worktree from disk (branch stays)"
                   >
                     <Trash2 className="size-3" />
