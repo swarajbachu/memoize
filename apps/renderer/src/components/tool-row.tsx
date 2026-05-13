@@ -735,7 +735,7 @@ export function ExitPlanModeRow({
   const decide = usePermissionsStore((s) => s.decide);
 
   return (
-    <div className="py-2">
+    <div className="px-4 py-2">
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
           <HugeiconsIcon icon={CheckListIcon} size={14} strokeWidth={2} />
@@ -818,7 +818,7 @@ export function UserInputRow({
   };
 
   return (
-    <div className="py-2">
+    <div className="px-4 py-2">
       <div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
         <HugeiconsIcon icon={BubbleChatIcon} size={14} strokeWidth={2} />
         <span>User input</span>

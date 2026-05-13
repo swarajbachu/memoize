@@ -87,19 +87,14 @@ const stopLiveFiber = async () => {
     tasks.push(Effect.runPromise(Fiber.interrupt(statusFiber)));
     statusFiber = null;
   }
-  const prevSessionId = liveSessionId;
   liveSessionId = null;
   await Promise.all(tasks);
-  // Drop the prior session's "running" flag — a stale `true` from the
-  // interrupted subscription would otherwise outlive the new hydrate and
-  // pin the composer on Interrupt forever.
-  if (prevSessionId !== null) {
-    useMessagesStore.setState((s) => {
-      if (s.runningBySession[prevSessionId] !== true) return s;
-      const { [prevSessionId]: _drop, ...rest } = s.runningBySession;
-      return { runningBySession: rest };
-    });
-  }
+  // We intentionally do NOT clear the prior session's `runningBySession`
+  // entry here. The sidebar-root `useSessionRunningSubscriptions` hook
+  // keeps a persistent subscription per session, so the flag remains the
+  // live truth even after switching away. Wiping it would make the
+  // previous session's busy indicator disappear in the sidebar until
+  // the next transition event.
 };
 
 const newQueueId = (): string =>
@@ -206,7 +201,14 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
       // a transient RPC failure (server restart, dropped connection) leaves
       // `runningBySession[sessionId]` pinned `true`, and the composer is
       // stuck showing Interrupt with no way back to Send.
+      //
+      // BUT skip this reset when the stream ends because we deliberately
+      // interrupted it during a session switch. In that case the OLD
+      // session may still be running on the backend — the sidebar-root
+      // `useSessionRunningSubscriptions` hook owns its state from now on
+      // and we don't want to clobber its truth with a `false`.
       const resetOnStreamEnd = Effect.sync(() => {
+        if (liveSessionId !== sessionId) return;
         useMessagesStore.setState((s) => {
           if (s.runningBySession[sessionId] !== true) return s;
           return {
@@ -223,6 +225,17 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
         ),
         (event) =>
           Effect.sync(() => {
+            // Guard: the per-active-session statusFiber gets interrupted
+            // when the user switches sessions, but its pending stream
+            // events still drain during the async interrupt cleanup. Those
+            // stale events would clobber the now-correct
+            // `runningBySession[prevSessionId]` (typically a backend
+            // `closed` emitted as the turn ends), making the prior
+            // session's sidebar loader disappear the moment you navigate
+            // away. The sidebar-root `useSessionRunningSubscriptions` hook
+            // is the canonical writer for non-active sessions — let it
+            // own those transitions.
+            if (liveSessionId !== sessionId) return;
             const wasRunning = get().runningBySession[sessionId] === true;
             const isRunning = event.status === "running";
             set((s) => ({

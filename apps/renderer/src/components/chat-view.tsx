@@ -22,7 +22,7 @@ import { useSkillsStore } from "../store/skills.ts";
 import { ErrorBubble, MessageRow, type ToolResultRecord } from "./message-row.tsx";
 import { SubagentRow } from "./subagent-row.tsx";
 import { TurnSummary } from "./turn-summary.tsx";
-import { GradientDescent } from "./ui/gradient-descent.tsx";
+import { TokenStream } from "./ui/loaders";
 
 const NEAR_BOTTOM_PX = 80;
 
@@ -255,20 +255,6 @@ const formatElapsed = (ms: number): string => {
   return `${min}m ${sec.toFixed(1)}s`;
 };
 
-const PATTERNS = [
-  "frame",
-  "corners",
-  "checker",
-  "x",
-  "full",
-] as const;
-type Pattern = (typeof PATTERNS)[number];
-
-function pickDifferent(current: Pattern | null): Pattern {
-  const candidates = PATTERNS.filter((p) => p !== current);
-  return candidates[Math.floor(Math.random() * candidates.length)]!;
-}
-
 function WorkingRow({ messages }: { messages: ReadonlyArray<Message> }) {
   // Anchor to the most recent user message — we want the live "current turn"
   // elapsed time beside the loader, not the session-wide total.
@@ -282,16 +268,10 @@ function WorkingRow({ messages }: { messages: ReadonlyArray<Message> }) {
   }, [messages]);
 
   const [now, setNow] = useState(() => Date.now());
-  const [pattern, setPattern] = useState<Pattern>(() => pickDifferent(null));
   useEffect(() => {
     const tickId = window.setInterval(() => setNow(Date.now()), 100);
-    const patternId = window.setInterval(
-      () => setPattern((prev) => pickDifferent(prev)),
-      2200,
-    );
     return () => {
       window.clearInterval(tickId);
-      window.clearInterval(patternId);
     };
   }, []);
 
@@ -299,9 +279,7 @@ function WorkingRow({ messages }: { messages: ReadonlyArray<Message> }) {
 
   return (
     <div className="flex items-center gap-2 px-4 py-2 text-[11px] text-muted-foreground">
-      <div data-pattern={pattern}>
-        <GradientDescent dotSize={2.5} cellPadding={0.75} speed={1.2} />
-      </div>
+      <TokenStream dotSize={2.5} cellPadding={0.75} speed={1.2} />
       <span className="tabular-nums">{formatElapsed(elapsed)}</span>
     </div>
   );
