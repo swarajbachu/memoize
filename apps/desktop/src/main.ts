@@ -10,11 +10,23 @@ import {
   shell,
 } from "electron";
 import { Effect, Fiber, Layer } from "effect";
+import fixPath from "fix-path";
 import * as fs from "node:fs/promises";
 import * as Path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { makeMainLayer } from "@memoize/server";
+
+// macOS GUI apps launched from Finder inherit a minimal PATH
+// (`/usr/bin:/bin:/usr/sbin:/sbin`), not the user's shell PATH. The Claude
+// driver runs `which claude` to locate the user's Claude Code install — that
+// fails under the minimal PATH even when the binary is on Homebrew, nvm, mise,
+// or npm-global. Expand PATH from the login shell before any `Command.make`
+// in the server runs. Dev (`bun run dev`) inherits the terminal's PATH
+// already, so we only do this when packaged. No-op on Windows.
+if (process.platform === "darwin" && app.isPackaged) {
+  fixPath();
+}
 
 import { electronServerProtocolLayer } from "./ipc/electron-server-protocol.ts";
 import { startAutoUpdater } from "./updater.ts";
