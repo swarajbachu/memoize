@@ -51,3 +51,4 @@ function buildCoords(size: number): DotCoord[] {
 
 export const coords5: DotCoord[] = buildCoords(5);
 export const coords4: DotCoord[] = buildCoords(4);
+export const coords3: DotCoord[] = buildCoords(3);

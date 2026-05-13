@@ -23,6 +23,7 @@ import {
   type GitOriginInfo,
   type ProviderId,
   type Session,
+  type SessionId,
 } from "@memoize/wire";
 
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
@@ -41,7 +42,7 @@ import { useUiStore } from "../store/ui.ts";
 import { useWorkspaceStore } from "../store/workspace.ts";
 import { BranchIcon, type BranchState } from "./branch-icon.tsx";
 import { PermissionsInspector } from "./permissions-inspector.tsx";
-import { GradientDescent } from "./ui/gradient-descent.tsx";
+import { Beacon } from "./ui/loaders";
 
 const initialsOf = (name: string): string => {
   const parts = name.split(/[-_.\s]+/).filter(Boolean);
@@ -68,6 +69,92 @@ const formatRelative = (iso: Date): string => {
   const day = Math.floor(hr / 24);
   return `${day}d ago`;
 };
+
+/**
+ * Keep a live `session.streamStatus` subscription per known session so the
+ * sidebar's busy indicators stay accurate even when a project is collapsed
+ * or its row isn't mounted. Lives at the sidebar root so subscription
+ * lifetime is decoupled from row-mount lifetime (the prior per-`SessionRow`
+ * subscription dropped the moment a project group was collapsed). Each
+ * fiber writes into `useMessagesStore.runningBySession[sessionId]`, which
+ * every consumer already reads from.
+ */
+function useSessionRunningSubscriptions(
+  sessionIds: ReadonlyArray<SessionId>,
+) {
+  // Stable ref-tracked fiber map. We diff incoming `sessionIds` against the
+  // tracked set and only start/stop the deltas. Critically, an existing
+  // session's fiber is NEVER torn down just because another session is
+  // added or removed from the list — tearing it down would force a fresh
+  // `streamStatus` subscribe whose initial event (read from the DB at
+  // subscribe time) would clobber the live `true` flag with whatever's
+  // persisted, making the previous session's loader disappear.
+  const fibersRef = useRef<Map<SessionId, Fiber.RuntimeFiber<unknown, unknown>>>(
+    new Map(),
+  );
+  const idsKey = sessionIds.join(",");
+
+  useEffect(() => {
+    const tracked = fibersRef.current;
+    const incoming = new Set(sessionIds);
+    const toAdd = sessionIds.filter((id) => !tracked.has(id));
+    const toRemove = Array.from(tracked.keys()).filter(
+      (id) => !incoming.has(id),
+    );
+    for (const id of toRemove) {
+      const fiber = tracked.get(id);
+      tracked.delete(id);
+      if (fiber !== undefined) {
+        void Effect.runPromise(Fiber.interrupt(fiber)).catch(() => {});
+      }
+    }
+    if (toAdd.length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const client = await getRpcClient();
+        if (cancelled) return;
+        for (const id of toAdd) {
+          if (tracked.has(id)) continue;
+          const fiber = Effect.runFork(
+            Stream.runForEach(
+              client.session.streamStatus({ sessionId: id }),
+              (event) =>
+                Effect.sync(() => {
+                  useMessagesStore.setState((s) => ({
+                    runningBySession: {
+                      ...s.runningBySession,
+                      [id]: event.status === "running",
+                    },
+                  }));
+                }),
+            ),
+          );
+          tracked.set(id, fiber);
+        }
+      } catch {
+        // Best-effort — sidebar still renders the branch icon if the
+        // status stream is unavailable.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idsKey]);
+
+  // Final teardown on unmount only (sidebar lives for the whole app, so
+  // this realistically fires once on hot-reload).
+  useEffect(() => {
+    return () => {
+      const tracked = fibersRef.current;
+      for (const fiber of tracked.values()) {
+        void Effect.runPromise(Fiber.interrupt(fiber)).catch(() => {});
+      }
+      tracked.clear();
+    };
+  }, []);
+}
 
 export function ProjectsSidebar() {
   const folders = useWorkspaceStore((s) => s.folders);
@@ -144,6 +231,22 @@ export function ProjectsSidebar() {
       cancelled = true;
     };
   }, [folders, origins]);
+
+  // Flat list of every non-archived session across every hydrated project.
+  // Drives a single sidebar-root subscription per session so busy indicators
+  // stay alive across collapse/expand toggles.
+  const allSessionIds = useMemo(() => {
+    const ids: SessionId[] = [];
+    for (const folder of folders) {
+      const sessions = sessionsByProject[folder.id];
+      if (sessions === undefined) continue;
+      for (const session of sessions) {
+        if (session.archivedAt === null) ids.push(session.id);
+      }
+    }
+    return ids;
+  }, [folders, sessionsByProject]);
+  useSessionRunningSubscriptions(allSessionIds);
 
   const onAddProject = () => void add();
   const onToggleExpanded = (id: FolderId) =>
@@ -269,6 +372,19 @@ function ProjectGroup({
   );
   const archivedCount = sessions.filter((s) => s.archivedAt !== null).length;
 
+  // Surface a busy hint on the collapsed project header when any of its
+  // non-archived sessions are running, so users see activity even without
+  // expanding the group.
+  const liveSessionIds = useMemo(
+    () =>
+      sessions.filter((s) => s.archivedAt === null).map((s) => s.id),
+    [sessions],
+  );
+  const anyRunning = useMessagesStore((s) =>
+    liveSessionIds.some((id) => s.runningBySession[id] === true),
+  );
+  const showHeaderBusy = anyRunning && !isExpanded;
+
   const Chevron = isExpanded ? ChevronDown : ChevronRight;
 
   return (
@@ -301,6 +417,7 @@ function ProjectGroup({
               className={cn(
                 "col-start-1 row-start-1 size-5 rounded transition-opacity duration-150 ease-out",
                 "group-hover:opacity-0 motion-reduce:transition-none",
+                showHeaderBusy && "opacity-0",
               )}
             >
               {avatarUrl !== null && (
@@ -310,6 +427,23 @@ function ProjectGroup({
                 {fallbackText}
               </AvatarFallback>
             </Avatar>
+            {showHeaderBusy && (
+              <span
+                className={cn(
+                  "col-start-1 row-start-1 inline-flex size-3.5 items-center justify-center text-foreground transition-opacity duration-150 ease-out",
+                  "group-hover:opacity-0 motion-reduce:transition-none",
+                )}
+                aria-label="Agent is working in a session"
+                title="Agent is working in a session"
+              >
+                <Beacon
+                  dotSize={3}
+                  cellPadding={0.75}
+                  speed={1.8}
+                  color="currentColor"
+                />
+              </span>
+            )}
             <Chevron
               aria-hidden="true"
               className={cn(
@@ -518,47 +652,12 @@ function SessionRow({ session }: { session: Session }) {
   }, [hydratePrState, session.projectId, session.worktreeId]);
   // Live "agent is working" signal — replaces the branch icon while running
   // so users scanning the sidebar see at a glance which sessions are busy
-  // even when they're focused on a different chat. The messages store only
-  // maintains streamStatus for the active session, so each SessionRow owns
-  // its own subscription and writes back into the same map. (Active-session
-  // double-writes converge harmlessly.)
+  // even when they're focused on a different chat. The map is populated by
+  // `useSessionRunningSubscriptions` mounted at the sidebar root, so this
+  // row's indicator survives collapse/expand of the project group.
   const isRunning = useMessagesStore(
     (s) => s.runningBySession[session.id] === true,
   );
-  useEffect(() => {
-    let cancelled = false;
-    let fiber: Fiber.RuntimeFiber<unknown, unknown> | null = null;
-    void (async () => {
-      try {
-        const client = await getRpcClient();
-        if (cancelled) return;
-        fiber = Effect.runFork(
-          Stream.runForEach(
-            client.session.streamStatus({ sessionId: session.id }),
-            (event) =>
-              Effect.sync(() => {
-                if (cancelled) return;
-                useMessagesStore.setState((s) => ({
-                  runningBySession: {
-                    ...s.runningBySession,
-                    [session.id]: event.status === "running",
-                  },
-                }));
-              }),
-          ),
-        );
-      } catch {
-        // Best-effort — sidebar still renders the branch icon if the
-        // status stream is unavailable.
-      }
-    })();
-    return () => {
-      cancelled = true;
-      if (fiber !== null) {
-        void Effect.runPromise(Fiber.interrupt(fiber)).catch(() => {});
-      }
-    };
-  }, [session.id]);
 
   const isSelected = selectedSessionId === session.id;
   const isArchived = session.archivedAt !== null;
@@ -645,10 +744,10 @@ function SessionRow({ session }: { session: Session }) {
             aria-label="Agent is working"
             title="Agent is working"
           >
-            <GradientDescent
-              dotSize={2}
-              cellPadding={0.5}
-              speed={1.4}
+            <Beacon
+              dotSize={3}
+              cellPadding={0.75}
+              speed={1.8}
               color="currentColor"
             />
           </span>
