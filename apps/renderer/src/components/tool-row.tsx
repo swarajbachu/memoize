@@ -817,26 +817,18 @@ export function UserInputRow({
     });
   };
 
-  return (
-    <div className="px-4 py-2">
-      <div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-        <HugeiconsIcon icon={BubbleChatIcon} size={14} strokeWidth={2} />
-        <span>User input</span>
-        <button
-          type="button"
-          onClick={copy}
-          aria-label={copied ? "Copied" : "Copy Q&A"}
-          title={copied ? "Copied" : "Copy"}
-          className="rounded p-0.5 text-muted-foreground/70 hover:bg-muted/40 hover:text-foreground"
-        >
-          <HugeiconsIcon
-            icon={copied ? Tick02Icon : Copy01Icon}
-            size={12}
-            strokeWidth={2}
-          />
-        </button>
-      </div>
+  // Collapsed teaser: first question + its answer (or "cancelled"), flattened
+  // and truncated like ThinkingRow / ToolRow trailing hints so the row reads
+  // as one calm line in scrollback.
+  const firstQ = questions[0];
+  const teaser = (() => {
+    if (firstQ === undefined) return "";
+    const ans = answerSummaryText(firstQ, answers, 0) ?? "(cancelled)";
+    return firstSentence(`${firstQ.question} · ${ans}`);
+  })();
 
+  const body = (
+    <>
       <div className="space-y-3">
         {questions.map((q, i) => {
           const summary = answerSummary(q, answers, i);
@@ -860,15 +852,40 @@ export function UserInputRow({
       </div>
 
       <div className="mt-3 flex items-center justify-between text-[11px] text-muted-foreground">
-        <span>
-          {questions.length}{" "}
-          {questions.length === 1 ? "question" : "questions"}
-        </span>
+        <div className="flex items-center gap-2">
+          <span>
+            {questions.length}{" "}
+            {questions.length === 1 ? "question" : "questions"}
+          </span>
+          <button
+            type="button"
+            onClick={copy}
+            aria-label={copied ? "Copied" : "Copy Q&A"}
+            title={copied ? "Copied" : "Copy"}
+            className="rounded p-0.5 text-muted-foreground/70 hover:bg-muted/40 hover:text-foreground"
+          >
+            <HugeiconsIcon
+              icon={copied ? Tick02Icon : Copy01Icon}
+              size={12}
+              strokeWidth={2}
+            />
+          </button>
+        </div>
         <span className="rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-500/90">
           Answered
         </span>
       </div>
-    </div>
+    </>
+  );
+
+  return (
+    <ExpandableIconRow
+      icon={BubbleChatIcon}
+      label="User input"
+      trailing={<InlineTextHint value={teaser} />}
+      hasContent
+      body={body}
+    />
   );
 }
 
