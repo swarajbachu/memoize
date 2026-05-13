@@ -135,12 +135,24 @@ export const ProviderServiceLive = Layer.effect(
           const sessionId = input.sessionId ?? nextSessionId();
           let handle: SessionHandle;
           if (input.providerId === "claude") {
-            // Point the SDK at the user's installed `claude` binary; the
-            // SDK's bundled CLI is shipped as an optional native dep that
-            // doesn't always install. Falls through to bundled if not found.
+            // Point the SDK at the user's installed `claude` binary. We
+            // don't ship the SDK's bundled optional native CLI (216 MB per
+            // arch) — if `which claude` finds nothing here, the SDK would
+            // throw a cryptic "Native CLI binary for darwin-arm64 not
+            // found" error. Surface a clean install-Claude-Code message
+            // instead.
             const claudePath = yield* resolveCliPath("claude").pipe(
               Effect.provideService(CommandExecutor.CommandExecutor, executor),
             );
+            if (claudePath === null) {
+              return yield* Effect.fail(
+                new AgentSessionStartError({
+                  providerId: "claude",
+                  reason:
+                    "Claude Code CLI not found on PATH. Install Claude Code from https://docs.claude.com/en/docs/claude-code and try again.",
+                }),
+              );
+            }
             handle = yield* startClaudeSession(
               input,
               cwd,

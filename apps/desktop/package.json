@@ -1,7 +1,7 @@
 {
   "name": "desktop",
   "productName": "memoize",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "memoize desktop app",
   "private": true,
   "author": {
@@ -41,6 +41,7 @@
     "effect": "catalog:",
     "electron-builder": "^25.1.8",
     "electron": "^33.2.0",
+    "fix-path": "^4.0.0",
     "sharp": "^0.34.1",
     "tsdown": "^0.21.10",
     "typescript": "catalog:"

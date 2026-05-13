@@ -7,7 +7,10 @@ const shared = {
   outExtensions: () => ({ js: ".cjs" }),
   // Workspace packages ship as raw .ts source — bundle them in instead of
   // letting Node try to require() the .ts file at runtime.
-  deps: { alwaysBundle: ["@memoize/wire", "@memoize/server"] },
+  // `fix-path` is ESM-only ("type": "module"). Electron 33 ships Node 20.x
+  // where `require()` of an ESM module throws ERR_REQUIRE_ESM. Bundling it
+  // inline transpiles it to CJS so the main bundle can call it directly.
+  deps: { alwaysBundle: ["@memoize/wire", "@memoize/server", "fix-path"] },
   // Native modules whose loader uses `__dirname` / `module.parent.filename`
   // to locate a `.node` file at runtime — bundling their JS relocates those
   // anchors and the lookup fails. Keep them external so each is require()'d
