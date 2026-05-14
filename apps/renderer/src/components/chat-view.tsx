@@ -193,6 +193,38 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
             // rendering for collapsed turns; sub-agents inside a collapsed
             // turn render via TurnSummary's existing path.
             const bodyGroups = groupMessages(turn.body);
+            // Hoist ExitPlanMode rows out of TurnSummary so the Plan card
+            // (and its resolved accordion) stays a top-level row in
+            // scrollback — it's a user-facing decision, not just another
+            // tool call to bury in the "N tool calls" rollup.
+            const planMessages = turn.body.filter(
+              (m) =>
+                m.content._tag === "tool_use" &&
+                m.content.tool === "ExitPlanMode",
+            );
+            const planItemIds = new Set(
+              planMessages.flatMap((m) =>
+                m.content._tag === "tool_use" ? [m.content.itemId] : [],
+              ),
+            );
+            const summaryBody =
+              planMessages.length === 0
+                ? turn.body
+                : turn.body.filter((m) => {
+                    if (
+                      m.content._tag === "tool_use" &&
+                      m.content.tool === "ExitPlanMode"
+                    ) {
+                      return false;
+                    }
+                    if (
+                      m.content._tag === "tool_result" &&
+                      planItemIds.has(m.content.itemId)
+                    ) {
+                      return false;
+                    }
+                    return true;
+                  });
             return (
               <Fragment key={turnKey}>
                 {turn.user !== null ? (
@@ -204,11 +236,22 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
                   />
                 ) : null}
                 {showSummary ? (
-                  <TurnSummary
-                    body={turn.body}
-                    resultsByItemId={resultsByItemId}
-                    answersByItemId={answersByItemId}
-                  />
+                  <>
+                    {planMessages.map((m) => (
+                      <MessageRow
+                        key={m.id}
+                        message={m}
+                        resultsByItemId={resultsByItemId}
+                        answersByItemId={answersByItemId}
+                        sessionId={sessionId}
+                      />
+                    ))}
+                    <TurnSummary
+                      body={summaryBody}
+                      resultsByItemId={resultsByItemId}
+                      answersByItemId={answersByItemId}
+                    />
+                  </>
                 ) : (
                   bodyGroups.map((group) =>
                     group.kind === "single" ? (
