@@ -226,10 +226,16 @@ const translateEvent = (ev: ThreadEvent): ReadonlyArray<AgentEvent> => {
     case "item.completed":
       return translateItem(ev.item, "completed");
     case "turn.completed":
-      // Turn ends but session stays open — don't emit Completed here.
-      return [];
+      // Turn ends but session stays open. Flip status to idle so the
+      // renderer's composer drops out of "loading" — Claude does this
+      // via `Completed("ended")`, but for codex we keep the session alive
+      // across turns, so `Status: idle` is the right shape.
+      return [{ _tag: "Status", status: "idle" }];
     case "turn.failed":
-      return [{ _tag: "Error", message: ev.error.message }];
+      return [
+        { _tag: "Error", message: ev.error.message },
+        { _tag: "Status", status: "idle" },
+      ];
     case "error":
       return [{ _tag: "Error", message: ev.message }];
     default:
@@ -435,6 +441,11 @@ export const startCodexSession = (
               ? "Codex CLI is older than memoize expects. Upgrade with `npm i -g @openai/codex@latest`, then try again — or switch to a Claude session in the meantime."
               : raw,
           });
+          // The SDK threw before emitting `turn.failed`, so the translate
+          // path never gets a chance to flip status. Emit it here so the
+          // composer drops out of "loading" and the user can switch /
+          // upgrade / try again instead of seeing a stuck spinner.
+          events.unsafeOffer({ _tag: "Status", status: "idle" });
         }
       } finally {
         if (currentAbort === abort) currentAbort = null;
