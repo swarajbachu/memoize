@@ -476,38 +476,41 @@ export function ChatComposer({ session }: { session: Session }) {
     attachFiles(files);
   };
 
-  if (headPermission !== undefined) {
-    return (
-      <div className="shrink-0 px-3 pb-3 pt-2">
-        <div className="mx-auto">
-          <PermissionCard
-            head={headPermission}
-            queueSize={pendingPermissions.length}
-          />
-        </div>
-      </div>
-    );
-  }
-
-  if (pendingQuestion !== null) {
-    return (
-      <div className="shrink-0 px-3 pb-3 pt-2">
-        <div className="mx-auto">
-          <QuestionCard
-            sessionId={sessionId}
-            itemId={pendingQuestion.itemId}
-            questions={pendingQuestion.questions}
-          />
-        </div>
-      </div>
-    );
-  }
-
   const inPlanMode = session.permissionMode === "plan";
+  // Keep the editor mounted at all times. Permissions / questions render as
+  // a sibling above it, and we hide the editor block with `display: none`
+  // while a card is up. Unmounting the editor branch detaches the CodeMirror
+  // view from the DOM, and the view-creation `useEffect` (empty deps) never
+  // re-runs to re-attach it — so the host reappears blank: no placeholder,
+  // cursor won't land. Staying mounted also preserves any in-progress draft
+  // when a permission prompt interrupts mid-typing.
+  const showCard = headPermission !== undefined || pendingQuestion !== null;
 
   return (
     <TooltipProvider delay={0}>
-      <div className="shrink-0 px-3 pb-3 pt-2">
+      {showCard ? (
+        <div className="shrink-0 px-3 pb-3 pt-2">
+          <div className="mx-auto">
+            {headPermission !== undefined ? (
+              <PermissionCard
+                head={headPermission}
+                queueSize={pendingPermissions.length}
+              />
+            ) : pendingQuestion !== null ? (
+              <QuestionCard
+                sessionId={sessionId}
+                itemId={pendingQuestion.itemId}
+                questions={pendingQuestion.questions}
+              />
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+      <div
+        className="shrink-0 px-3 pb-3 pt-2"
+        style={showCard ? { display: "none" } : undefined}
+        aria-hidden={showCard || undefined}
+      >
         <div className="mx-auto">
           <Frame>
             <Card

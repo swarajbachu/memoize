@@ -734,26 +734,54 @@ export function ExitPlanModeRow({
   });
   const decide = usePermissionsStore((s) => s.decide);
 
-  return (
-    <div className="px-4 py-2">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+  // Pending plans need the Approve / Reject buttons visible inline so the
+  // user can act without an extra click — keep the full card layout.
+  // Resolved plans (approved / rejected) collapse into the same icon-row
+  // accordion the rest of the timeline uses, with the plan body behind the
+  // chevron and the status pill pinned to the body footer.
+  if (status === "pending") {
+    return (
+      <div className="px-4 py-2">
+        <div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
           <HugeiconsIcon icon={CheckListIcon} size={14} strokeWidth={2} />
           <span>Plan</span>
         </div>
-        {status !== "pending" ? (
-          <span
-            className={cn(
-              "rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
-              status === "approved"
-                ? "text-emerald-500/90"
-                : "text-muted-foreground",
-            )}
-          >
-            {status === "approved" ? "Approved" : "Rejected"}
-          </span>
+        {plan === null ? (
+          <p className="text-sm italic text-muted-foreground">
+            (No plan body.)
+          </p>
+        ) : (
+          <MarkdownBody>{plan}</MarkdownBody>
+        )}
+        {pendingRequest !== null ? (
+          <div className="mt-4 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                void decide(pendingRequest.id, { _tag: "Deny" })
+              }
+              className="rounded-md px-3 py-1 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+            >
+              Reject
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                void decide(pendingRequest.id, { _tag: "AllowOnce" })
+              }
+              className="rounded-md bg-foreground px-3 py-1 text-xs font-medium text-background hover:opacity-90"
+            >
+              Approve
+            </button>
+          </div>
         ) : null}
       </div>
+    );
+  }
+
+  const teaser = plan === null ? "(No plan body.)" : firstSentence(plan);
+  const body = (
+    <>
       {plan === null ? (
         <p className="text-sm italic text-muted-foreground">
           (No plan body.)
@@ -761,29 +789,29 @@ export function ExitPlanModeRow({
       ) : (
         <MarkdownBody>{plan}</MarkdownBody>
       )}
-      {status === "pending" && pendingRequest !== null ? (
-        <div className="mt-4 flex items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={() =>
-              void decide(pendingRequest.id, { _tag: "Deny" })
-            }
-            className="rounded-md px-3 py-1 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-          >
-            Reject
-          </button>
-          <button
-            type="button"
-            onClick={() =>
-              void decide(pendingRequest.id, { _tag: "AllowOnce" })
-            }
-            className="rounded-md bg-foreground px-3 py-1 text-xs font-medium text-background hover:opacity-90"
-          >
-            Approve
-          </button>
-        </div>
-      ) : null}
-    </div>
+      <div className="mt-3 flex items-center justify-end text-[11px] text-muted-foreground">
+        <span
+          className={cn(
+            "rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+            status === "approved"
+              ? "text-emerald-500/90"
+              : "text-muted-foreground",
+          )}
+        >
+          {status === "approved" ? "Approved" : "Rejected"}
+        </span>
+      </div>
+    </>
+  );
+
+  return (
+    <ExpandableIconRow
+      icon={CheckListIcon}
+      label="Plan"
+      trailing={<InlineTextHint value={teaser} />}
+      hasContent
+      body={body}
+    />
   );
 }
 
@@ -817,26 +845,18 @@ export function UserInputRow({
     });
   };
 
-  return (
-    <div className="px-4 py-2">
-      <div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-        <HugeiconsIcon icon={BubbleChatIcon} size={14} strokeWidth={2} />
-        <span>User input</span>
-        <button
-          type="button"
-          onClick={copy}
-          aria-label={copied ? "Copied" : "Copy Q&A"}
-          title={copied ? "Copied" : "Copy"}
-          className="rounded p-0.5 text-muted-foreground/70 hover:bg-muted/40 hover:text-foreground"
-        >
-          <HugeiconsIcon
-            icon={copied ? Tick02Icon : Copy01Icon}
-            size={12}
-            strokeWidth={2}
-          />
-        </button>
-      </div>
+  // Collapsed teaser: first question + its answer (or "cancelled"), flattened
+  // and truncated like ThinkingRow / ToolRow trailing hints so the row reads
+  // as one calm line in scrollback.
+  const firstQ = questions[0];
+  const teaser = (() => {
+    if (firstQ === undefined) return "";
+    const ans = answerSummaryText(firstQ, answers, 0) ?? "(cancelled)";
+    return firstSentence(`${firstQ.question} · ${ans}`);
+  })();
 
+  const body = (
+    <>
       <div className="space-y-3">
         {questions.map((q, i) => {
           const summary = answerSummary(q, answers, i);
@@ -860,15 +880,40 @@ export function UserInputRow({
       </div>
 
       <div className="mt-3 flex items-center justify-between text-[11px] text-muted-foreground">
-        <span>
-          {questions.length}{" "}
-          {questions.length === 1 ? "question" : "questions"}
-        </span>
+        <div className="flex items-center gap-2">
+          <span>
+            {questions.length}{" "}
+            {questions.length === 1 ? "question" : "questions"}
+          </span>
+          <button
+            type="button"
+            onClick={copy}
+            aria-label={copied ? "Copied" : "Copy Q&A"}
+            title={copied ? "Copied" : "Copy"}
+            className="rounded p-0.5 text-muted-foreground/70 hover:bg-muted/40 hover:text-foreground"
+          >
+            <HugeiconsIcon
+              icon={copied ? Tick02Icon : Copy01Icon}
+              size={12}
+              strokeWidth={2}
+            />
+          </button>
+        </div>
         <span className="rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-500/90">
           Answered
         </span>
       </div>
-    </div>
+    </>
+  );
+
+  return (
+    <ExpandableIconRow
+      icon={BubbleChatIcon}
+      label="User input"
+      trailing={<InlineTextHint value={teaser} />}
+      hasContent
+      body={body}
+    />
   );
 }
 
