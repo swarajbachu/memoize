@@ -12,12 +12,14 @@ import { useEffect } from "react";
 
 import type { FolderId } from "@memoize/wire";
 
+import { formatShortcut } from "../lib/shortcuts.ts";
 import {
   softInteractive,
   softTone,
   solidInteractive,
   type Tone,
 } from "../lib/tones.ts";
+import { TooltipShortcut } from "./projects-sidebar.tsx";
 import { useActiveWorktreeId } from "../store/active-workspace.ts";
 import { useComposerBridge } from "../store/composer-bridge.ts";
 import { gitStatusKey, useGitStatusStore } from "../store/git-status.ts";
@@ -66,7 +68,12 @@ export function TopBarLeft() {
             </button>
           }
         />
-        <TooltipPopup>Hide projects panel</TooltipPopup>
+        <TooltipPopup>
+          <TooltipShortcut
+            label="Hide projects panel"
+            shortcut={formatShortcut("toggle-left-sidebar")}
+          />
+        </TooltipPopup>
       </Tooltip>
     </header>
   );
@@ -134,7 +141,12 @@ export function TopBarMain({ folderId }: { folderId: FolderId | null }) {
               </button>
             }
           />
-          <TooltipPopup>Show projects panel</TooltipPopup>
+          <TooltipPopup>
+            <TooltipShortcut
+              label="Show projects panel"
+              shortcut={formatShortcut("toggle-left-sidebar")}
+            />
+          </TooltipPopup>
         </Tooltip>
       ) : null}
       <div className={`flex min-w-0 flex-1 items-center gap-1.5 ${ACTION_CLASS}`}>
@@ -173,7 +185,10 @@ export function TopBarMain({ folderId }: { folderId: FolderId | null }) {
           }
         />
         <TooltipPopup>
-          {rightSidebarOpen ? "Hide files panel" : "Show files panel"}
+          <TooltipShortcut
+            label={rightSidebarOpen ? "Hide files panel" : "Show files panel"}
+            shortcut={formatShortcut("toggle-right-sidebar")}
+          />
         </TooltipPopup>
       </Tooltip>
     </header>
