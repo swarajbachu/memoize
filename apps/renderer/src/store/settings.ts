@@ -26,6 +26,7 @@ type Persisted = {
    * seeds new repos from this value.
    */
   readonly defaultAutoCreateWorktree: boolean;
+  readonly onboardingCompleted: boolean;
 };
 
 const isProviderId = (v: unknown): v is ProviderId =>
@@ -34,25 +35,20 @@ const isProviderId = (v: unknown): v is ProviderId =>
 const isRuntimeMode = (v: unknown): v is RuntimeMode =>
   v === "approval-required" || v === "auto-accept-edits" || v === "full-access";
 
+const freshDefaults = (): Persisted => ({
+  defaultProviderId: DEFAULT_PROVIDER,
+  defaultModelByProvider: seedModels(),
+  defaultRuntimeMode: DEFAULT_RUNTIME_MODE,
+  defaultAutoCreateWorktree: false,
+  onboardingCompleted: false,
+});
+
 const loadPersisted = (): Persisted => {
-  if (typeof window === "undefined") {
-    return {
-      defaultProviderId: DEFAULT_PROVIDER,
-      defaultModelByProvider: seedModels(),
-      defaultRuntimeMode: DEFAULT_RUNTIME_MODE,
-      defaultAutoCreateWorktree: false,
-    };
-  }
+  if (typeof window === "undefined") return freshDefaults();
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (raw === null) {
-      return {
-        defaultProviderId: DEFAULT_PROVIDER,
-        defaultModelByProvider: seedModels(),
-        defaultRuntimeMode: DEFAULT_RUNTIME_MODE,
-        defaultAutoCreateWorktree: false,
-      };
-    }
+    // Genuine first launch — no blob at all.
+    if (raw === null) return freshDefaults();
     const parsed = JSON.parse(raw) as Partial<Persisted>;
     const seeded = seedModels();
     const models: Record<ProviderId, string> = {
@@ -77,14 +73,16 @@ const loadPersisted = (): Persisted => {
         typeof parsed.defaultAutoCreateWorktree === "boolean"
           ? parsed.defaultAutoCreateWorktree
           : false,
+      // Existing users — blob present but pre-dating the onboarding flag —
+      // skip the wizard. Only a missing blob (handled above) is treated as
+      // first launch.
+      onboardingCompleted:
+        typeof parsed.onboardingCompleted === "boolean"
+          ? parsed.onboardingCompleted
+          : true,
     };
   } catch {
-    return {
-      defaultProviderId: DEFAULT_PROVIDER,
-      defaultModelByProvider: seedModels(),
-      defaultRuntimeMode: DEFAULT_RUNTIME_MODE,
-      defaultAutoCreateWorktree: false,
-    };
+    return freshDefaults();
   }
 };
 
@@ -97,55 +95,44 @@ const persist = (state: Persisted) => {
   }
 };
 
+const snapshot = (s: Persisted): Persisted => ({
+  defaultProviderId: s.defaultProviderId,
+  defaultModelByProvider: s.defaultModelByProvider,
+  defaultRuntimeMode: s.defaultRuntimeMode,
+  defaultAutoCreateWorktree: s.defaultAutoCreateWorktree,
+  onboardingCompleted: s.onboardingCompleted,
+});
+
 type SettingsState = Persisted & {
   readonly setDefaultProvider: (providerId: ProviderId) => void;
   readonly setDefaultModel: (providerId: ProviderId, model: string) => void;
   readonly setDefaultRuntimeMode: (mode: RuntimeMode) => void;
   readonly setDefaultAutoCreateWorktree: (value: boolean) => void;
+  readonly setOnboardingCompleted: (value: boolean) => void;
 };
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   ...loadPersisted(),
   setDefaultProvider: (providerId) => {
     set({ defaultProviderId: providerId });
-    const s = get();
-    persist({
-      defaultProviderId: s.defaultProviderId,
-      defaultModelByProvider: s.defaultModelByProvider,
-      defaultRuntimeMode: s.defaultRuntimeMode,
-      defaultAutoCreateWorktree: s.defaultAutoCreateWorktree,
-    });
+    persist(snapshot(get()));
   },
   setDefaultModel: (providerId, model) => {
     set((s) => ({
       defaultModelByProvider: { ...s.defaultModelByProvider, [providerId]: model },
     }));
-    const s = get();
-    persist({
-      defaultProviderId: s.defaultProviderId,
-      defaultModelByProvider: s.defaultModelByProvider,
-      defaultRuntimeMode: s.defaultRuntimeMode,
-      defaultAutoCreateWorktree: s.defaultAutoCreateWorktree,
-    });
+    persist(snapshot(get()));
   },
   setDefaultRuntimeMode: (mode) => {
     set({ defaultRuntimeMode: mode });
-    const s = get();
-    persist({
-      defaultProviderId: s.defaultProviderId,
-      defaultModelByProvider: s.defaultModelByProvider,
-      defaultRuntimeMode: s.defaultRuntimeMode,
-      defaultAutoCreateWorktree: s.defaultAutoCreateWorktree,
-    });
+    persist(snapshot(get()));
   },
   setDefaultAutoCreateWorktree: (value) => {
     set({ defaultAutoCreateWorktree: value });
-    const s = get();
-    persist({
-      defaultProviderId: s.defaultProviderId,
-      defaultModelByProvider: s.defaultModelByProvider,
-      defaultRuntimeMode: s.defaultRuntimeMode,
-      defaultAutoCreateWorktree: s.defaultAutoCreateWorktree,
-    });
+    persist(snapshot(get()));
+  },
+  setOnboardingCompleted: (value) => {
+    set({ onboardingCompleted: value });
+    persist(snapshot(get()));
   },
 }));

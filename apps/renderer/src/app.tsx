@@ -14,6 +14,7 @@ import { ChatView } from "./components/chat-view";
 import { CostFooter } from "./components/cost-footer";
 import { FileEditor } from "./components/file-editor.tsx";
 import { MainTabs } from "./components/main-tabs.tsx";
+import { OnboardingWizard } from "./components/onboarding/onboarding-wizard.tsx";
 import { ProjectsSidebar } from "./components/projects-sidebar";
 import { RightPane } from "./components/right-pane";
 import { SettingsPage } from "./components/settings-page";
@@ -21,6 +22,7 @@ import { TopBarLeft, TopBarMain, TopBarRight } from "./components/top-bar.tsx";
 import { getRpcClient } from "./lib/rpc-client.ts";
 import { usePermissionsStore } from "./store/permissions.ts";
 import { useSessionsStore } from "./store/sessions.ts";
+import { useSettingsStore } from "./store/settings.ts";
 import { useUiStore } from "./store/ui.ts";
 import { useWorkspaceStore } from "./store/workspace.ts";
 
@@ -130,6 +132,17 @@ export function App() {
     if (rightSidebarOpen && collapsed) panel.expand();
     if (!rightSidebarOpen && !collapsed) panel.collapse();
   }, [rightPanelRef, rightSidebarOpen]);
+
+  const onboardingCompleted = useSettingsStore((s) => s.onboardingCompleted);
+  if (!onboardingCompleted) {
+    return (
+      <TooltipProvider>
+        <div className="dark relative flex h-dvh max-h-dvh min-h-0 w-screen overflow-hidden bg-background/40 text-foreground">
+          <OnboardingWizard />
+        </div>
+      </TooltipProvider>
+    );
+  }
 
   if (view === "settings") {
     return (
