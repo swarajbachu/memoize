@@ -108,6 +108,14 @@ const SessionSetModel = MemoizeRpcs.toLayerHandler(
     Effect.flatMap(MessageStore, (svc) => svc.setModel(sessionId, model)),
 );
 
+const SessionSetProvider = MemoizeRpcs.toLayerHandler(
+  "session.setProvider",
+  ({ sessionId, providerId, model }) =>
+    Effect.flatMap(MessageStore, (svc) =>
+      svc.setProvider(sessionId, providerId, model),
+    ),
+);
+
 const SessionArchive = MemoizeRpcs.toLayerHandler(
   "session.archive",
   ({ sessionId }) =>
@@ -274,6 +282,7 @@ export const ProviderHandlersLayer = Layer.mergeAll(
   SessionCreate,
   SessionRename,
   SessionSetModel,
+  SessionSetProvider,
   SessionArchive,
   SessionUnarchive,
   SessionDelete,
