@@ -590,6 +590,10 @@ function NewSessionButton({ projectId }: { projectId: FolderId }) {
   const onClick = async (e: React.MouseEvent) => {
     e.stopPropagation();
     // Cheap availability refresh in case the user just logged into a CLI.
+    // We don't gate the session creation on version status here — an
+    // outdated codex is surfaced as an inline banner in the chat view so
+    // the user can still open the session and switch model/provider from
+    // the chat header.
     await refresh();
     const model =
       defaultModelByProvider[defaultProviderId] ??

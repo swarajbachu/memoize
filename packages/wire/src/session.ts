@@ -54,10 +54,18 @@ export type SessionStatus = typeof SessionStatus.Type;
  *
  *   - `claude-session-id` — Claude SDK's `session_id` is stored in `cursor`
  *     and passed back as `options.resume` on the next start.
+ *   - `codex-thread-id` — Codex SDK's thread id is stored in `cursor` and
+ *     passed back via `Codex.resumeThread(id)`. Codex doesn't replay prior
+ *     items on resume; the renderer's persisted timeline is the source of
+ *     truth for what came before.
  *   - `none` — no resume; sending again starts a fresh provider session
  *     under the same DB row (existing chat-MVP behavior).
  */
-export const ResumeStrategy = Schema.Literal("claude-session-id", "none");
+export const ResumeStrategy = Schema.Literal(
+  "claude-session-id",
+  "codex-thread-id",
+  "none",
+);
 export type ResumeStrategy = typeof ResumeStrategy.Type;
 
 // `RuntimeMode` and `DEFAULT_RUNTIME_MODE` are defined in `agent.ts` so the

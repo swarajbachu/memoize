@@ -30,6 +30,7 @@ const PROVIDER_TAGLINE: Record<ProviderId, string> = {
 type ProviderState =
   | { readonly kind: "loading" }
   | { readonly kind: "missing" } // CLI not installed
+  | { readonly kind: "outdated"; readonly current: string; readonly required: string; readonly command: string | null } // installed but below SDK floor
   | { readonly kind: "signed-out" } // CLI installed, not logged in, no API key
   | { readonly kind: "ready"; readonly via: "cli" | "key" };
 
@@ -42,9 +43,20 @@ function deriveState(
   if (a === undefined) {
     return loading ? { kind: "loading" } : { kind: "missing" };
   }
+  if (!a.cliInstalled) return { kind: "missing" };
+  // Outdated trumps logged-in / ready: a stale CLI will reject the SDK's
+  // probe flags regardless of auth state, so showing "Connected" here would
+  // be misleading.
+  if (a.cliVersionStatus === "outdated") {
+    return {
+      kind: "outdated",
+      current: a.cliVersion ?? "unknown version",
+      required: a.cliVersionMinRequired ?? "a newer version",
+      command: a.cliUpgradeCommand ?? null,
+    };
+  }
   if (a.cliLoggedIn) return { kind: "ready", via: "cli" };
   if (a.hasApiKey) return { kind: "ready", via: "key" };
-  if (!a.cliInstalled) return { kind: "missing" };
   return { kind: "signed-out" };
 }
 
@@ -135,6 +147,7 @@ function StateDot({ state }: { state: ProviderState }) {
   const styles: Record<ProviderState["kind"], string> = {
     loading: "bg-muted-foreground/40 animate-pulse",
     missing: "bg-rose-400/80",
+    outdated: "bg-amber-400",
     "signed-out": "bg-amber-400",
     ready: "bg-emerald-400",
   };
@@ -155,15 +168,17 @@ function StateLine({ state }: { state: ProviderState }) {
       ? "Checking…"
       : state.kind === "missing"
         ? "Not installed"
-        : state.kind === "signed-out"
-          ? "Sign in required"
-          : state.via === "cli"
-            ? "CLI logged in"
-            : "API key set";
+        : state.kind === "outdated"
+          ? "Update required"
+          : state.kind === "signed-out"
+            ? "Sign in required"
+            : state.via === "cli"
+              ? "CLI logged in"
+              : "API key set";
   const tone =
     state.kind === "ready"
       ? "text-emerald-300/90"
-      : state.kind === "signed-out"
+      : state.kind === "signed-out" || state.kind === "outdated"
         ? "text-amber-300/90"
         : state.kind === "missing"
           ? "text-rose-300/90"
@@ -193,7 +208,9 @@ function ProviderStatus({
           : "Ready — using API key"
         : state.kind === "signed-out"
           ? "Sign in to the CLI"
-          : "Install the CLI";
+          : state.kind === "outdated"
+            ? "Update the CLI"
+            : "Install the CLI";
 
   const subline =
     state.kind === "loading"
@@ -204,10 +221,13 @@ function ProviderStatus({
           : "Stored in your OS keychain."
         : state.kind === "signed-out"
           ? "Already installed — just run the login command below."
-          : `${PROVIDER_LABEL[providerId]}'s CLI isn't on your PATH yet.`;
+          : state.kind === "outdated"
+            ? `${PROVIDER_LABEL[providerId]} ${state.current} is too old; memoize needs ${state.required}.`
+            : `${PROVIDER_LABEL[providerId]}'s CLI isn't on your PATH yet.`;
 
   const showLoginBlock = state.kind === "signed-out";
   const showInstallBlock = state.kind === "missing";
+  const showUpgradeBlock = state.kind === "outdated";
   const apiSummary = state.kind === "ready" && state.via === "key";
 
   return (
@@ -227,6 +247,12 @@ function ProviderStatus({
       {showInstallBlock && (
         <CodeRow
           command={INSTALL_HINT[providerId]}
+          onRecheck={() => void refresh()}
+        />
+      )}
+      {showUpgradeBlock && state.kind === "outdated" && (
+        <CodeRow
+          command={state.command ?? INSTALL_HINT[providerId]}
           onRecheck={() => void refresh()}
         />
       )}
@@ -289,6 +315,12 @@ function StatusPill({ state }: { state: ProviderState }) {
       dot: "bg-rose-400",
       bg: "bg-rose-400/12",
       text: "text-rose-300",
+    },
+    outdated: {
+      label: "Update",
+      dot: "bg-amber-400",
+      bg: "bg-amber-400/12",
+      text: "text-amber-300",
     },
     "signed-out": {
       label: "Sign in",

@@ -164,17 +164,6 @@ export const ProviderServiceLive = Layer.effect(
               resumeCursor,
             ).pipe(Effect.provideService(AttachmentService, attachmentService));
           } else {
-            // Codex SDK currently has no public resume API matching our
-            // cursor-based model; reject early with a stable reason the
-            // renderer can route to "Session ended — start new session".
-            if (resumeCursor !== null) {
-              return yield* Effect.fail(
-                new AgentSessionStartError({
-                  providerId: "codex",
-                  reason: "resume_unsupported",
-                }),
-              );
-            }
             // Same story as Claude: we don't ship the SDK's bundled native
             // CLI, so hand it the user's installed `codex` binary. Surface a
             // clean install message if it's missing instead of the SDK's
@@ -191,13 +180,25 @@ export const ProviderServiceLive = Layer.effect(
                 }),
               );
             }
+            // We used to also fail-fast here when `codex --version` was below
+            // the SDK pin. Pulled because `session.create` calls
+            // `provider.start` synchronously — failing at start blocked
+            // session creation outright, leaving the user with no surface to
+            // upgrade *from*. The renderer's `CliUpgradeBanner` is the
+            // canonical signal (driven by the periodic availability probe),
+            // and the codex driver translates the SDK's
+            // "unexpected argument '--experimental-json'" failure on the
+            // first turn into a clean upgrade message — so the user sees
+            // either the banner before sending or the friendly error after,
+            // never the cryptic SDK trace.
             handle = yield* startCodexSession(
               input,
               cwd,
               apiKey,
               codexPath,
               sessionId,
-            );
+              resumeCursor,
+            ).pipe(Effect.provideService(AttachmentService, attachmentService));
           }
           yield* Ref.update(sessions, (map) => {
             const next = new Map(map);

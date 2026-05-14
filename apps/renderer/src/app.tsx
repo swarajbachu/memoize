@@ -9,6 +9,7 @@ import {
 } from "react-resizable-panels";
 
 import { ChatComposer } from "./components/chat-composer";
+import { CliUpgradeBanner } from "./components/cli-upgrade-banner.tsx";
 import { TooltipProvider } from "./components/ui/tooltip.tsx";
 import { ChatView } from "./components/chat-view";
 import { CostFooter } from "./components/cost-footer";
@@ -223,6 +224,9 @@ function MainShell() {
                 <>
                   <ChatView sessionId={selectedSessionId} />
                   <CostFooter sessionId={selectedSessionId} />
+                  <CliUpgradeBanner
+                    providerId={selectedSession.providerId}
+                  />
                   <ChatComposer session={selectedSession} />
                 </>
               ) : (
