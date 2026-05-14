@@ -375,6 +375,22 @@ export const SessionSetModelRpc = Rpc.make("session.setModel", {
   error: SessionNotFoundError,
 });
 
+/**
+ * Switch a session's provider (and the model it runs under). Allowed only
+ * before the first user message is recorded — the new CLI cannot read the
+ * prior CLI's transcript, so mid-chat swaps would silently drop context.
+ * Returns `SessionAlreadyStartedError` once the session has started.
+ */
+export const SessionSetProviderRpc = Rpc.make("session.setProvider", {
+  payload: Schema.Struct({
+    sessionId: SessionId,
+    providerId: ProviderId,
+    model: Schema.String,
+  }),
+  success: Schema.Void,
+  error: Schema.Union(SessionNotFoundError, SessionAlreadyStartedError),
+});
+
 export const SessionArchiveRpc = Rpc.make("session.archive", {
   payload: Schema.Struct({ sessionId: SessionId }),
   success: Schema.Void,

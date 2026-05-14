@@ -259,6 +259,21 @@ export function ChatComposer({ session }: { session: Session }) {
     };
   }, []);
 
+  // Picker-triggered session changes (model / provider) can shift the
+  // composer's surrounding layout — chip icon swap, CliUpgradeBanner
+  // appearing or disappearing for the new provider, etc. CodeMirror's
+  // internal measurement occasionally lags those shifts, leaving the
+  // contentDOM mis-sized so typed keystrokes land in state but aren't
+  // painted until the editor is forced to re-measure. Forcing it here
+  // also returns focus to the editor after the Menu closes, so the user
+  // can type immediately without re-clicking into the composer.
+  useEffect(() => {
+    const view = editorViewRef.current;
+    if (view === null) return;
+    view.requestMeasure();
+    view.focus();
+  }, [session.providerId, session.model]);
+
   const clearComposer = (view: EditorView): void => {
     setComposerDoc(view, "");
     view.dispatch({ effects: clearChipsEffect.of() });
@@ -802,6 +817,16 @@ function ModelPicker({
   currentModel: string;
 }) {
   const setModel = useSessionsStore((s) => s.setModel);
+  const setProvider = useSessionsStore((s) => s.setProvider);
+  const userMessageCount = useMessagesStore((s) => {
+    const list = s.messagesBySession[sessionId] ?? [];
+    let count = 0;
+    for (const m of list) {
+      if (m.role === "user") count += 1;
+    }
+    return count;
+  });
+  const isFresh = userMessageCount === 0;
   const models = MODELS_BY_PROVIDER[providerId] ?? [];
   const current = models.find((m) => m.id === currentModel);
   const label = current?.label ?? currentModel;
@@ -826,17 +851,29 @@ function ModelPicker({
                 <MenuGroupLabel>{PROVIDER_LABEL[pid]}</MenuGroupLabel>
                 {MODELS_BY_PROVIDER[pid].map((m) => {
                   const active = pid === providerId && m.id === currentModel;
+                  const crossProvider = pid !== providerId;
+                  // Cross-provider switches only land on a fresh session —
+                  // the new CLI can't read the prior CLI's transcript, so
+                  // mid-chat callers see disabled rows with a tooltip.
+                  const disabled = crossProvider && !isFresh;
                   return (
                     <MenuItem
                       key={m.id}
                       onClick={() => {
-                        // For now, only switch within the current provider —
-                        // cross-provider model changes need a fresh session.
-                        if (pid !== providerId) return;
+                        if (disabled) return;
+                        if (crossProvider) {
+                          void setProvider(sessionId, pid, m.id);
+                          return;
+                        }
                         if (m.id !== currentModel)
                           void setModel(sessionId, m.id);
                       }}
-                      disabled={pid !== providerId}
+                      disabled={disabled}
+                      title={
+                        disabled
+                          ? "Start a new chat to switch provider"
+                          : undefined
+                      }
                       className={
                         active
                           ? "bg-accent/60 text-accent-foreground data-highlighted:bg-accent"

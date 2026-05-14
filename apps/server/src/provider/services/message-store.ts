@@ -99,6 +99,21 @@ export interface MessageStoreShape {
   ) => Effect.Effect<void, SessionNotFoundError>;
 
   /**
+   * Switch a session's provider and model. Allowed only before the first
+   * user message has been recorded — fails with `SessionAlreadyStartedError`
+   * otherwise, because the new CLI cannot read the prior CLI's transcript.
+   * Also clears the resume cursor since it's provider-specific.
+   */
+  readonly setProvider: (
+    sessionId: SessionId,
+    providerId: ProviderId,
+    model: string,
+  ) => Effect.Effect<
+    void,
+    SessionNotFoundError | SessionAlreadyStartedError
+  >;
+
+  /**
    * Update the per-session permission posture. The change applies to the
    * next tool call — running `canUseTool` callbacks observe the new value
    * via the runtime-mode getter `ProviderService` hands the driver.
