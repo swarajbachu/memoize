@@ -3,17 +3,47 @@ import { Duration, Effect, Stream } from "effect";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
 
-import { AgentAvailability, type ProviderId } from "@memoize/wire";
+import {
+  AgentAvailability,
+  type CliVersionStatus,
+  type ProviderId,
+} from "@memoize/wire";
 
 interface ProviderProbe {
   readonly providerId: ProviderId;
   readonly displayName: string;
   readonly cliBinary: string;
+  /**
+   * Minimum CLI version the bundled SDK requires. `null` means we don't
+   * enforce a floor for this provider — version status is reported as
+   * `"unknown"` and the renderer treats it as "let them try".
+   */
+  readonly minVersion: CliVersion | null;
+  /**
+   * Suggested one-liner the renderer shows in the upgrade card. Per-provider
+   * because npm vs brew vs cargo channels differ.
+   */
+  readonly upgradeCommand: string | null;
 }
 
 const PROBES: ReadonlyArray<ProviderProbe> = [
-  { providerId: "claude", displayName: "Claude Code", cliBinary: "claude" },
-  { providerId: "codex", displayName: "Codex", cliBinary: "codex" },
+  {
+    providerId: "claude",
+    displayName: "Claude Code",
+    cliBinary: "claude",
+    // Claude Agent SDK 0.2 doesn't break on older CLIs the way codex-sdk
+    // 0.128 does — leave the floor open until we see a concrete failure
+    // mode we can pin to a version.
+    minVersion: null,
+    upgradeCommand: null,
+  },
+  {
+    providerId: "codex",
+    displayName: "Codex",
+    cliBinary: "codex",
+    minVersion: { major: 0, minor: 128, patch: 0, raw: "0.128.0" },
+    upgradeCommand: "npm i -g @openai/codex@latest",
+  },
 ];
 
 const PROBE_TIMEOUT = Duration.seconds(4);
@@ -210,6 +240,27 @@ const probeOne = (
         ? versionResult.value.stdout.split(/\r?\n/)[0]?.trim() || undefined
         : undefined;
 
+    // Compute the version verdict alongside the raw string so the renderer
+    // doesn't need its own parser. `unknown` covers both "no min tracked for
+    // this provider" and "we tried to parse and failed" — both are
+    // "let them try" cases as far as the upgrade card is concerned.
+    let cliVersionStatus: CliVersionStatus = "unknown";
+    let cliVersionMinRequired: string | undefined;
+    let cliUpgradeCommand: string | undefined;
+    if (probe.minVersion !== null) {
+      cliVersionMinRequired = probe.minVersion.raw;
+      cliUpgradeCommand = probe.upgradeCommand ?? undefined;
+      const parsed =
+        cliVersion !== undefined ? parseCliVersion(cliVersion) : null;
+      if (parsed === null) {
+        cliVersionStatus = "unknown";
+      } else if (compareCliVersion(parsed, probe.minVersion) < 0) {
+        cliVersionStatus = "outdated";
+      } else {
+        cliVersionStatus = "ok";
+      }
+    }
+
     const cliLoggedIn = yield* probeLogin(probe.providerId);
 
     return AgentAvailability.make({
@@ -220,6 +271,9 @@ const probeOne = (
       cliPath,
       cliLoggedIn,
       hasApiKey: false,
+      cliVersionStatus,
+      cliVersionMinRequired,
+      cliUpgradeCommand,
     });
   });
 

@@ -79,6 +79,20 @@ export type PermissionMode = typeof PermissionMode.Type;
 export const DEFAULT_PERMISSION_MODE: PermissionMode = "default";
 
 /**
+ * Per-provider verdict on whether the installed CLI is new enough for the
+ * SDK we ship against.
+ *
+ *   - `ok` — version parsed and meets/exceeds the SDK's minimum
+ *   - `outdated` — version parsed but is below the minimum (`cliVersionMinRequired`
+ *     carries the floor so the renderer can render "Codex 0.27.0 < 0.128.0")
+ *   - `unknown` — no `--version` output, parser failed, or no minimum tracked
+ *     for this provider. Treat as "let them try" so a parser bug doesn't
+ *     block a legitimate session start.
+ */
+export const CliVersionStatus = Schema.Literal("ok", "outdated", "unknown");
+export type CliVersionStatus = typeof CliVersionStatus.Type;
+
+/**
  * Static availability report for a provider — does the user have the CLI on
  * PATH, is the CLI logged in (so the SDK can ride the local OAuth subprocess),
  * is an API key stored in the keychain. Either `cliLoggedIn` or `hasApiKey`
@@ -93,6 +107,23 @@ export const AgentAvailability = Schema.Struct({
   cliPath: Schema.optional(Schema.String),
   cliLoggedIn: Schema.Boolean,
   hasApiKey: Schema.Boolean,
+  /**
+   * Computed verdict on whether `cliVersion` meets the SDK's minimum. The
+   * renderer renders an "Upgrade Codex" card when this is `"outdated"` so
+   * the user sees the upgrade path *before* attempting to start a session.
+   */
+  cliVersionStatus: Schema.optional(CliVersionStatus),
+  /**
+   * Minimum CLI version the bundled SDK requires (e.g. `"0.128.0"`). Set in
+   * tandem with `cliVersionStatus`; rendered inside the upgrade card.
+   */
+  cliVersionMinRequired: Schema.optional(Schema.String),
+  /**
+   * One-line shell command we recommend the user run to fix an outdated
+   * CLI. Co-located with the version probe so renderer doesn't need its
+   * own per-provider install lookup.
+   */
+  cliUpgradeCommand: Schema.optional(Schema.String),
 });
 export type AgentAvailability = typeof AgentAvailability.Type;
 

@@ -575,6 +575,9 @@ const LOGIN_HINT: Record<ProviderId, string> = {
 
 function NewSessionButton({ projectId }: { projectId: FolderId }) {
   const refresh = useProvidersStore((s) => s.refresh);
+  const setUpgradeRequiredFor = useProvidersStore(
+    (s) => s.setUpgradeRequiredFor,
+  );
   const create = useSessionsStore((s) => s.create);
   const defaultProviderId = useSettingsStore((s) => s.defaultProviderId);
   const defaultModelByProvider = useSettingsStore(
@@ -591,6 +594,17 @@ function NewSessionButton({ projectId }: { projectId: FolderId }) {
     e.stopPropagation();
     // Cheap availability refresh in case the user just logged into a CLI.
     await refresh();
+    // After refresh, if the chosen provider's CLI is too old for the
+    // bundled SDK, route to the upgrade dialog instead of starting a
+    // session that's only going to fail at `agent.start` anyway. The
+    // server-side version check (`provider-service.ts`) still runs as
+    // defense-in-depth, but in normal flow this gate fires first.
+    const availability = useProvidersStore.getState().availability;
+    const row = availability.find((a) => a.providerId === defaultProviderId);
+    if (row?.cliVersionStatus === "outdated") {
+      setUpgradeRequiredFor(defaultProviderId);
+      return;
+    }
     const model =
       defaultModelByProvider[defaultProviderId] ??
       defaultModelFor(defaultProviderId);

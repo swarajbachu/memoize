@@ -9,6 +9,7 @@ import {
 } from "react-resizable-panels";
 
 import { ChatComposer } from "./components/chat-composer";
+import { CliUpgradeDialog } from "./components/cli-upgrade-dialog.tsx";
 import { TooltipProvider } from "./components/ui/tooltip.tsx";
 import { ChatView } from "./components/chat-view";
 import { CostFooter } from "./components/cost-footer";
@@ -267,6 +268,7 @@ function MainShell() {
           </div>
         </Panel>
       </Group>
+      <CliUpgradeDialog />
     </div>
   );
 }
