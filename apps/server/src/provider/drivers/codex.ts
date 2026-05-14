@@ -30,6 +30,20 @@ const SUPPORTED_CODEX_IMAGE_MIME = new Set([
   "image/webp",
 ]);
 
+type CodexSandboxConfig = {
+  readonly sandboxMode: "read-only" | "workspace-write";
+  readonly approvalPolicy: "never";
+};
+
+// Map memoize's PermissionMode onto codex's sandbox + approval knobs. Codex
+// SDK 0.128 has no JS approval callback (see codex driver comment at
+// thread-options below), so approvalPolicy stays "never" across modes;
+// only sandboxMode varies. `plan` → read-only is the user-facing toggle.
+const toCodexSandbox = (mode: PermissionMode): CodexSandboxConfig => ({
+  sandboxMode: mode === "plan" ? "read-only" : "workspace-write",
+  approvalPolicy: "never",
+});
+
 /**
  * Live-only handle for one Codex SDK conversation. Mirrors `ClaudeSessionHandle`
  * — the orchestrator owns the sessionId → handle map and forwards RPCs here.
@@ -48,10 +62,16 @@ export interface CodexSessionHandle {
   readonly interrupt: () => Effect.Effect<void>;
   readonly close: () => Effect.Effect<void>;
   /**
-   * Plan mode and `AskUserQuestion` are Claude-only for now. Codex
-   * sessions accept the calls but no-op so RPC routing stays uniform.
+   * Plan / default / acceptEdits maps onto codex's `sandboxMode`
+   * (`read-only` for plan, `workspace-write` otherwise). The SDK has no
+   * live-update API for sandbox, so toggle is implemented as
+   * `codex.resumeThread(id, newOpts)` — same conversation, new sandbox.
    */
   readonly setPermissionMode: (mode: PermissionMode) => Effect.Effect<void>;
+  /**
+   * `AskUserQuestion` is Claude-only — codex's SDK has no equivalent
+   * primitive. Accept the call but no-op so RPC routing stays uniform.
+   */
   readonly answerQuestion: (
     itemId: AgentItemId,
     answers: ReadonlyArray<UserQuestionAnswer>,
@@ -239,8 +259,40 @@ export const startCodexSession = (
     const attachments = yield* AttachmentService;
     const events = yield* Mailbox.make<AgentEvent>();
 
+    // The renderer's session row carries the initial mode in `input` and
+    // updates the same row on toggle; mirror it locally so we know what
+    // sandbox to use when rebuilding the thread on `setPermissionMode`.
+    let currentMode: PermissionMode =
+      input.permissionMode ?? "default";
+
+    const buildThreadOptions = (mode: PermissionMode) => {
+      const sandbox = toCodexSandbox(mode);
+      return {
+        workingDirectory: cwd,
+        // Codex SDK exposes `approvalPolicy` but no callback — when set to
+        // anything other than "never" it routes prompts to its own stdio,
+        // which we can't bridge to memoize's toast. Stay on "never" until
+        // the SDK exposes a programmatic hook; Claude is the primary
+        // permission path in Phase 4. `sandboxMode` is the user-facing
+        // lever — `plan` flips to read-only.
+        sandboxMode: sandbox.sandboxMode,
+        approvalPolicy: sandbox.approvalPolicy,
+        skipGitRepoCheck: true,
+        ...(input.model !== undefined ? { model: input.model } : {}),
+        // `input.agents` is deliberately ignored — the Codex SDK has no
+        // sub-agents primitive. Cross-provider delegation is sketched in
+        // specs/sub-agents/decisions/0012-codex-bridge-via-mcp.md and
+        // lands as a follow-up PR.
+      };
+    };
+
     let codex: Codex;
     let thread: Thread;
+    // Tracks the codex-side thread id once known. Set from the
+    // `thread.started` event for new threads, seeded from `resumeCursor`
+    // for resumes. Needed by `setPermissionMode` to rebuild the thread
+    // against the same conversation when the sandbox changes.
+    let activeThreadId: string | null = resumeCursor;
     try {
       codex = new Codex({
         ...(apiKey !== null ? { apiKey } : {}),
@@ -250,22 +302,7 @@ export const startCodexSession = (
         // Codex CLI binaries" inside the .dmg.
         ...(codexPath !== null ? { codexPathOverride: codexPath } : {}),
       });
-      const threadOptions = {
-        workingDirectory: cwd,
-        // Codex SDK exposes `approvalPolicy` but no callback — when set to
-        // anything other than "never" it routes prompts to its own stdio,
-        // which we can't bridge to memoize's toast. Stay on "never" until
-        // the SDK exposes a programmatic hook; Claude is the primary
-        // permission path in Phase 4.
-        sandboxMode: "read-only" as const,
-        approvalPolicy: "never" as const,
-        skipGitRepoCheck: true,
-        ...(input.model !== undefined ? { model: input.model } : {}),
-        // `input.agents` is deliberately ignored — the Codex SDK has no
-        // sub-agents primitive. Cross-provider delegation is sketched in
-        // specs/sub-agents/decisions/0012-codex-bridge-via-mcp.md and
-        // lands as a follow-up PR.
-      };
+      const threadOptions = buildThreadOptions(currentMode);
       // Resume reattaches to a prior codex thread by id; the SDK reuses the
       // server-side conversation state but does not replay items, so the
       // renderer's persisted timeline remains the source of truth for what
@@ -373,6 +410,12 @@ export const startCodexSession = (
         });
         for await (const ev of turnEvents) {
           for (const out of translateEvent(ev)) {
+            // Codex emits `thread.started` only on the very first turn of a
+            // new thread. Snapshot the id so `setPermissionMode` can rebuild
+            // the thread against the same conversation on sandbox toggle.
+            if (out._tag === "SessionCursor" && out.strategy === "codex-thread-id") {
+              activeThreadId = out.cursor;
+            }
             events.unsafeOffer(out);
           }
         }
@@ -395,6 +438,44 @@ export const startCodexSession = (
       pending = pending.then(() => runTurn(text, attachmentRefs));
     };
 
+    // Sandbox toggle for an already-running thread. Codex SDK 0.128 has no
+    // live `updateSandbox` — `sandboxMode` is locked in at thread creation —
+    // so the only way to flip read-only ↔ workspace-write mid-session is to
+    // resume the same thread id with new options. Renderer's persisted
+    // timeline is the source of truth; the conversation continues seamlessly
+    // from codex's side because the thread id is unchanged.
+    const rebuildThreadForMode = async (mode: PermissionMode): Promise<void> => {
+      if (closed) return;
+      if (activeThreadId === null) {
+        // First turn hasn't started yet, so no codex thread id exists.
+        // Update `currentMode` so the *next* startThread picks it up —
+        // but if the thread is already built (it is: we built it above
+        // synchronously), the mode is baked in. The simplest correct
+        // thing is a warn — the renderer can re-issue once the first
+        // turn lands. In practice the toggle only fires after a session
+        // has answered at least once.
+        currentMode = mode;
+        console.warn(
+          "[codex] setPermissionMode called before thread.started; mode cached but live thread keeps prior sandbox until next resume",
+        );
+        return;
+      }
+      // Abort any in-flight turn so the rebuild doesn't race a runStreamed
+      // that's already mid-flight against the old thread reference.
+      currentAbort?.abort();
+      try {
+        thread = codex.resumeThread(activeThreadId, buildThreadOptions(mode));
+        currentMode = mode;
+      } catch (cause) {
+        events.unsafeOffer({
+          _tag: "Error",
+          message: `codex setPermissionMode failed: ${
+            cause instanceof Error ? cause.message : String(cause)
+          }`,
+        });
+      }
+    };
+
     if (input.initialPrompt !== undefined && input.initialPrompt.length > 0) {
       enqueueTurn(input.initialPrompt);
     }
@@ -415,7 +496,18 @@ export const startCodexSession = (
           currentAbort?.abort();
           yield* events.end;
         }),
-      setPermissionMode: () => Effect.void,
+      setPermissionMode: (mode) =>
+        Effect.sync(() => {
+          // Chain the rebuild onto the pending queue so a toggle issued
+          // mid-turn doesn't race the runStreamed loop. Approval policy
+          // is still "never" across modes; only sandbox flips.
+          if (mode === currentMode) return;
+          pending = pending.then(() => rebuildThreadForMode(mode));
+          events.unsafeOffer({
+            _tag: "PermissionModeChanged",
+            mode,
+          });
+        }),
       answerQuestion: () => Effect.void,
     };
     return handle;
