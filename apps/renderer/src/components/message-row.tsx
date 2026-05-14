@@ -271,7 +271,7 @@ function ToolErrorRow({ output }: { output: unknown }) {
       <button
         type="button"
         onClick={() => setExpanded((e) => !e)}
-        className="group flex w-full items-center gap-2 rounded px-1.5 py-0.5 text-left text-xs hover:bg-red-500/10"
+        className="group flex w-full items-center gap-2 rounded px-1.5 py-0.5 text-left text-xs hover:bg-accent"
       >
         <div className="relative grid size-4 shrink-0 place-items-center">
           <HugeiconsIcon
@@ -279,24 +279,24 @@ function ToolErrorRow({ output }: { output: unknown }) {
             strokeWidth={2}
             aria-hidden="true"
             className={cn(
-              "col-start-1 row-start-1 size-3.5 text-red-400 transition-opacity duration-150 ease-out",
+              "col-start-1 row-start-1 size-3.5 text-destructive transition-opacity duration-150 ease-out",
               "group-hover:opacity-0 motion-reduce:transition-none",
             )}
           />
           <Chevron
             aria-hidden="true"
             className={cn(
-              "col-start-1 row-start-1 size-3.5 text-red-400 opacity-0 transition-opacity duration-150 ease-out",
+              "col-start-1 row-start-1 size-3.5 text-muted-foreground opacity-0 transition-opacity duration-150 ease-out",
               "group-hover:opacity-100 motion-reduce:transition-none",
             )}
           />
         </div>
-        <span className="font-medium text-red-300">Error</span>
-        <span className="truncate text-red-200/80">{firstLine}</span>
+        <span className="font-medium text-foreground">Error</span>
+        <span className="truncate text-muted-foreground">{firstLine}</span>
       </button>
       {expanded ? (
-        <div className="ml-7 mt-1 border-l border-red-500/30 pl-3">
-          <pre className="overflow-x-auto whitespace-pre-wrap break-words font-mono text-[11px] text-red-200">
+        <div className="ml-7 mt-1 border-l border-border/60 pl-3">
+          <pre className="overflow-x-auto whitespace-pre-wrap break-words font-mono text-[11px] text-muted-foreground">
             {text || "(empty)"}
           </pre>
         </div>
@@ -362,52 +362,52 @@ export function ErrorBubble({
   if (rateLimit !== null) {
     return (
       <div className="px-4 py-2">
-        <div className="max-w-[88%] rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+        <div className="max-w-[88%] rounded-xl bg-alert-warning-bg px-3 py-2 text-xs text-foreground">
           <div className="flex items-center gap-2">
             <HugeiconsIcon
               icon={AlertCircleIcon}
               strokeWidth={2}
               aria-hidden="true"
-              className="size-3.5 shrink-0 text-amber-300"
+              className="size-3.5 shrink-0 text-warning"
             />
-            <span className="font-medium text-amber-100">
+            <span className="font-medium text-foreground">
               Rate limit reached
             </span>
-            <span className="text-amber-200/50">·</span>
-            <span className="text-amber-200/90">
+            <span className="text-muted-foreground/50">·</span>
+            <span className="text-muted-foreground">
               {formatResetDetail(rateLimit)}
             </span>
             {onDismiss !== undefined && (
               <button
                 type="button"
                 onClick={onDismiss}
-                className="ml-auto rounded px-1.5 py-0.5 text-amber-200/70 hover:bg-amber-500/15 hover:text-amber-100"
+                className="ml-auto rounded px-1.5 py-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
               >
                 Dismiss
               </button>
             )}
           </div>
-          <div className="mt-1 break-words text-amber-200/70">{text}</div>
+          <div className="mt-1 break-words text-muted-foreground">{text}</div>
         </div>
       </div>
     );
   }
   return (
     <div className="px-4 py-2">
-      <div className="max-w-[88%] rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+      <div className="max-w-[88%] rounded-xl bg-alert-error-bg px-3 py-2 text-xs text-foreground">
         <div className="flex items-start gap-2">
           <HugeiconsIcon
             icon={AlertCircleIcon}
             strokeWidth={2}
             aria-hidden="true"
-            className="mt-px size-3.5 shrink-0 text-red-400"
+            className="mt-px size-3.5 shrink-0 text-destructive"
           />
-          <span className="break-words">{text}</span>
+          <span className="break-words text-muted-foreground">{text}</span>
           {onDismiss !== undefined && (
             <button
               type="button"
               onClick={onDismiss}
-              className="ml-auto rounded px-1.5 py-0.5 text-red-200/70 hover:bg-red-500/15 hover:text-red-100"
+              className="ml-auto rounded px-1.5 py-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
             >
               Dismiss
             </button>

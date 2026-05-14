@@ -399,13 +399,32 @@ export const MODELS_BY_PROVIDER: Record<ProviderId, ReadonlyArray<ModelOption>> 
     { id: "claude-haiku-4-5", label: "Haiku 4.5" },
   ],
   codex: [
-    { id: "gpt-5-codex", label: "GPT-5 Codex" },
-    { id: "gpt-5", label: "GPT-5" },
+    { id: "gpt-5.4", label: "GPT-5.4" },
+    { id: "gpt-5.4-mini", label: "GPT-5.4 mini" },
+    { id: "gpt-5.3-codex", label: "GPT-5.3 Codex" },
+    { id: "gpt-5.3-codex-spark", label: "GPT-5.3 Codex Spark" },
   ],
 };
 
 export const defaultModelFor = (providerId: ProviderId): string =>
   MODELS_BY_PROVIDER[providerId][0]!.id;
+
+/**
+ * Aliases for codex model slugs that no longer work — current Codex CLI rejects
+ * `gpt-5-codex` / `gpt-5` when the user is on a ChatGPT account. We rewrite
+ * persisted user settings and incoming requests through this map so existing
+ * sessions don't crash.
+ */
+export const MODEL_ALIASES_BY_PROVIDER: Record<ProviderId, Record<string, string>> = {
+  claude: {},
+  codex: {
+    "gpt-5-codex": "gpt-5.4",
+    "gpt-5": "gpt-5.4",
+  },
+};
+
+export const resolveModelSlug = (providerId: ProviderId, slug: string): string =>
+  MODEL_ALIASES_BY_PROVIDER[providerId][slug] ?? slug;
 
 /**
  * Per-million-token USD pricing used by the renderer to compute the

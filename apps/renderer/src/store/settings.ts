@@ -2,6 +2,7 @@ import { create } from "zustand";
 
 import {
   defaultModelFor,
+  resolveModelSlug,
   type ProviderId,
   type RuntimeMode,
 } from "@memoize/wire";
@@ -51,15 +52,22 @@ const loadPersisted = (): Persisted => {
     if (raw === null) return freshDefaults();
     const parsed = JSON.parse(raw) as Partial<Persisted>;
     const seeded = seedModels();
+    // Rewrite dead slugs (e.g. `gpt-5-codex` from older builds) through
+    // `resolveModelSlug` so a stale localStorage doesn't keep sending a
+    // model the current Codex CLI rejects.
     const models: Record<ProviderId, string> = {
-      claude:
+      claude: resolveModelSlug(
+        "claude",
         typeof parsed.defaultModelByProvider?.claude === "string"
           ? parsed.defaultModelByProvider.claude
           : seeded.claude,
-      codex:
+      ),
+      codex: resolveModelSlug(
+        "codex",
         typeof parsed.defaultModelByProvider?.codex === "string"
           ? parsed.defaultModelByProvider.codex
           : seeded.codex,
+      ),
     };
     return {
       defaultProviderId: isProviderId(parsed.defaultProviderId)

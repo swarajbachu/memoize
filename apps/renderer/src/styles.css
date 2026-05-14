@@ -87,6 +87,15 @@ body,
   --color-bg-overlay: var(--bg-overlay);
   --color-text-faint: var(--text-faint);
 
+  /* Alert surface tints. Distinct from `--destructive` / `--warning` (which
+     are pure saturated tokens for icons/text). These are dedicated card
+     surfaces — soft, warm, darker hues that read as "this card is red" /
+     "this card is amber" without being a loud saturated wash. */
+  --color-alert-error-bg: var(--alert-error-bg);
+  --color-alert-warning-bg: var(--alert-warning-bg);
+  --color-alert-info-bg: var(--alert-info-bg);
+  --color-alert-success-bg: var(--alert-success-bg);
+
   /* Chat + prose tokens. Kept separate from `primary` so the assistant
      prose body and the user bubble can be tuned independently of buttons. */
   --color-user-bubble: var(--user-bubble);
@@ -231,6 +240,13 @@ body,
   --info: oklch(0.62 0.16 245);
   --info-foreground: oklch(0.985 0.003 75);
 
+  /* Light-mode alert surfaces — soft warm tints, light enough to keep dark
+     foreground text legible. */
+  --alert-error-bg: oklch(0.95 0.035 25);
+  --alert-warning-bg: oklch(0.95 0.04 80);
+  --alert-info-bg: oklch(0.95 0.035 240);
+  --alert-success-bg: oklch(0.95 0.04 150);
+
   --border: oklch(0.9 0.006 70);
   --input: oklch(0.9 0.006 70);
   --ring: oklch(0.62 0.012 70);
@@ -301,6 +317,16 @@ body,
 
   --info: oklch(0.7 0.09 245);
   --info-foreground: oklch(0.985 0.003 260);
+
+  /* Dark-mode alert surfaces — soft warm hues, dark enough to be a card
+     background. L≈0.36 keeps it clearly "the card is red/amber" while the
+     reduced chroma (compared to `--destructive` at 0.19) keeps it soft, not
+     loud. Hue shifted slightly warm (25→18 for red, 85→70 for amber) so
+     the surface reads warmer than the icon's saturated stroke. */
+  --alert-error-bg: oklch(0.36 0.07 18);
+  --alert-warning-bg: oklch(0.36 0.06 70);
+  --alert-info-bg: oklch(0.36 0.05 240);
+  --alert-success-bg: oklch(0.36 0.06 150);
 
   --border: oklch(1 0 0 / 0.09);
   --input: oklch(1 0 0 / 0.14);
