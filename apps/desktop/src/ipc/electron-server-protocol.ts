@@ -59,17 +59,44 @@ export const makeElectronServerProtocol = (webContents: WebContents) =>
         Effect.interruptible,
       );
 
-      // ---- disconnects: webContents destroyed -----------------------------
-      const onDestroyed = () => {
+      // ---- disconnects: webContents destroyed OR top-level reload ---------
+      // The renderer's `RpcClient` request-id counter is module-level, so a
+      // Cmd+R reload restarts it at 0. Any stream RPC from the previous page
+      // (messages.stream, session.streamStatus, ...) is still alive in this
+      // server's per-client fiber map because `webContents.destroyed` never
+      // fired. When the new page's request IDs collide with those stale
+      // streams, `RpcServer.handleRequest` blocks on `Fiber.await(oldFiber)`
+      // and the new request hangs forever — sessions, file tree, etc. get
+      // stuck in loading state after every reload.
+      //
+      // Offering `SINGLE_WINDOW_CLIENT_ID` to `disconnects` makes the
+      // RpcServer interrupt every fiber for client 0 and drop the client
+      // entry; the reloaded renderer's next request creates a fresh client.
+      // `did-start-loading` fires for top-level loads (reload,
+      // `location.href = ...`) but NOT for devtools, subframes, or
+      // pushState/replaceState — exactly the "the renderer is throwing
+      // away its world" signal we want. On the very first load there is
+      // no client 0 yet, so the disconnect is a no-op.
+      const offerDisconnect = () => {
         disconnects.unsafeOffer(SINGLE_WINDOW_CLIENT_ID);
+      };
+      const onDestroyed = () => {
+        offerDisconnect();
         inbound.unsafeDone(Exit.void);
       };
+      const onStartLoading = () => {
+        offerDisconnect();
+      };
       yield* Effect.acquireRelease(
-        Effect.sync(() => webContents.once("destroyed", onDestroyed)),
+        Effect.sync(() => {
+          webContents.once("destroyed", onDestroyed);
+          webContents.on("did-start-loading", onStartLoading);
+        }),
         () =>
           Effect.sync(() => {
             if (!webContents.isDestroyed()) {
               webContents.off("destroyed", onDestroyed);
+              webContents.off("did-start-loading", onStartLoading);
             }
           }),
       );
