@@ -118,7 +118,11 @@ const sessionFromRow = (row: SessionRow): Session =>
     archivedAt: row.archived_at === null ? null : new Date(row.archived_at),
     cursor: row.cursor,
     resumeStrategy:
-      row.resume_strategy === "claude-session-id" ? "claude-session-id" : "none",
+      row.resume_strategy === "claude-session-id"
+        ? "claude-session-id"
+        : row.resume_strategy === "codex-thread-id"
+          ? "codex-thread-id"
+          : "none",
     runtimeMode: runtimeModeFromRow(row.runtime_mode),
     worktreeId:
       row.worktree_id === null

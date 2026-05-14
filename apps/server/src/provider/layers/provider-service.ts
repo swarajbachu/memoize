@@ -170,17 +170,6 @@ export const ProviderServiceLive = Layer.effect(
               resumeCursor,
             ).pipe(Effect.provideService(AttachmentService, attachmentService));
           } else {
-            // Codex SDK currently has no public resume API matching our
-            // cursor-based model; reject early with a stable reason the
-            // renderer can route to "Session ended — start new session".
-            if (resumeCursor !== null) {
-              return yield* Effect.fail(
-                new AgentSessionStartError({
-                  providerId: "codex",
-                  reason: "resume_unsupported",
-                }),
-              );
-            }
             // Same story as Claude: we don't ship the SDK's bundled native
             // CLI, so hand it the user's installed `codex` binary. Surface a
             // clean install message if it's missing instead of the SDK's
@@ -226,6 +215,7 @@ export const ProviderServiceLive = Layer.effect(
               apiKey,
               codexPath,
               sessionId,
+              resumeCursor,
             );
           }
           yield* Ref.update(sessions, (map) => {

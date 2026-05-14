@@ -175,6 +175,15 @@ const translateItem = (
 const translateEvent = (ev: ThreadEvent): ReadonlyArray<AgentEvent> => {
   switch (ev.type) {
     case "thread.started":
+      // Surface the codex thread id so MessageStore can persist it as the
+      // session's resume cursor. Same shape Claude uses for its session_id.
+      return [
+        {
+          _tag: "SessionCursor",
+          cursor: ev.thread_id,
+          strategy: "codex-thread-id",
+        },
+      ];
     case "turn.started":
       return [];
     case "item.started":
@@ -211,6 +220,7 @@ export const startCodexSession = (
   apiKey: string | null,
   codexPath: string | null,
   sessionId: AgentSessionId,
+  resumeCursor: string | null = null,
 ): Effect.Effect<CodexSessionHandle, AgentSessionStartError> =>
   Effect.gen(function* () {
     const events = yield* Mailbox.make<AgentEvent>();
@@ -226,22 +236,31 @@ export const startCodexSession = (
         // Codex CLI binaries" inside the .dmg.
         ...(codexPath !== null ? { codexPathOverride: codexPath } : {}),
       });
-      thread = codex.startThread({
+      const threadOptions = {
         workingDirectory: cwd,
         // Codex SDK exposes `approvalPolicy` but no callback — when set to
         // anything other than "never" it routes prompts to its own stdio,
         // which we can't bridge to memoize's toast. Stay on "never" until
         // the SDK exposes a programmatic hook; Claude is the primary
         // permission path in Phase 4.
-        sandboxMode: "read-only",
-        approvalPolicy: "never",
+        sandboxMode: "read-only" as const,
+        approvalPolicy: "never" as const,
         skipGitRepoCheck: true,
         ...(input.model !== undefined ? { model: input.model } : {}),
         // `input.agents` is deliberately ignored — the Codex SDK has no
         // sub-agents primitive. Cross-provider delegation is sketched in
         // specs/sub-agents/decisions/0012-codex-bridge-via-mcp.md and
         // lands as a follow-up PR.
-      });
+      };
+      // Resume reattaches to a prior codex thread by id; the SDK reuses the
+      // server-side conversation state but does not replay items, so the
+      // renderer's persisted timeline remains the source of truth for what
+      // happened before. Start vs resume is the only branch — turn shape
+      // is identical from here on.
+      thread =
+        resumeCursor !== null
+          ? codex.resumeThread(resumeCursor, threadOptions)
+          : codex.startThread(threadOptions);
     } catch (cause) {
       yield* events.end;
       return yield* Effect.fail(
@@ -258,6 +277,17 @@ export const startCodexSession = (
       providerId: "codex",
       mode: "sdk",
     });
+
+    // On resume the SDK won't emit `thread.started` again — re-announce the
+    // cursor so MessageStore reaffirms the persisted strategy. Idempotent on
+    // the DB side: cursor + strategy stay unchanged.
+    if (resumeCursor !== null) {
+      events.unsafeOffer({
+        _tag: "SessionCursor",
+        cursor: resumeCursor,
+        strategy: "codex-thread-id",
+      });
+    }
 
     // Per-turn abort + serialization. `currentAbort` is the abort controller
     // for whichever turn is in flight (null between turns); `pending` chains

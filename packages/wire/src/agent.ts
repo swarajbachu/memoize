@@ -211,14 +211,15 @@ const ErrorEvent = Schema.TaggedStruct("Error", {
 
 /**
  * Driver-emitted side-channel for the SDK's resume token. Claude exposes
- * its session UUID as `session_id` on every message; the driver captures
- * it on first sight and emits this event so MessageStore can persist it
- * onto `sessions.cursor` / `sessions.resume_strategy`. Lifecycle-only —
- * never persisted as a chat row.
+ * its session UUID as `session_id` on every message; Codex exposes its
+ * thread id via the `thread.started` event. Each driver captures the token
+ * on first sight and emits this event so MessageStore can persist it onto
+ * `sessions.cursor` / `sessions.resume_strategy`. Lifecycle-only — never
+ * persisted as a chat row.
  */
 const SessionCursorEvent = Schema.TaggedStruct("SessionCursor", {
   cursor: Schema.String,
-  strategy: Schema.Literal("claude-session-id"),
+  strategy: Schema.Literal("claude-session-id", "codex-thread-id"),
 });
 
 /**
