@@ -245,7 +245,7 @@ function Banner({
   onDismiss: () => void;
 }) {
   return (
-    <div className="flex shrink-0 items-center gap-2 bg-[color-mix(in_oklch,var(--warning)_22%,var(--card))] px-3 py-1.5 text-[11px] text-foreground">
+    <div className="flex shrink-0 items-center gap-2 bg-alert-warning-bg px-3 py-1.5 text-[11px] text-foreground">
       <span className="flex-1 text-muted-foreground">{message}</span>
       {actionLabel && (
         <button
