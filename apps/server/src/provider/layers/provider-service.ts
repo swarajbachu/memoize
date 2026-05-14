@@ -14,7 +14,13 @@ import {
   type ProviderId,
 } from "@memoize/wire";
 
-import { probeAllProviders, resolveCliPath } from "../availability.ts";
+import {
+  MIN_CODEX_CLI_VERSION,
+  compareCliVersion,
+  probeAllProviders,
+  probeCliVersion,
+  resolveCliPath,
+} from "../availability.ts";
 import {
   startClaudeSession,
   type ClaudeSessionHandle,
@@ -188,6 +194,29 @@ export const ProviderServiceLive = Layer.effect(
                   providerId: "codex",
                   reason:
                     "Codex CLI not found on PATH. Install Codex from https://github.com/openai/codex and try again.",
+                }),
+              );
+            }
+            // codex-sdk@0.128 spawns the binary with `exec --experimental-json`.
+            // Anything older crashes with "unexpected argument
+            // '--experimental-json'" before a single token is streamed. Probe
+            // the version up front and fail-fast with an upgrade hint. If the
+            // probe can't parse the output (unknown format on some distro),
+            // proceed — the SDK error path is still there as a fallback.
+            const codexVersion = yield* probeCliVersion("codex").pipe(
+              Effect.provideService(CommandExecutor.CommandExecutor, executor),
+            );
+            if (
+              codexVersion !== null &&
+              compareCliVersion(codexVersion, MIN_CODEX_CLI_VERSION) < 0
+            ) {
+              return yield* Effect.fail(
+                new AgentSessionStartError({
+                  providerId: "codex",
+                  reason:
+                    `Codex CLI ${codexVersion.raw} is too old for memoize ` +
+                    `(needs ${MIN_CODEX_CLI_VERSION.raw}+). Upgrade with ` +
+                    "`npm i -g @openai/codex@latest` and try again.",
                 }),
               );
             }
