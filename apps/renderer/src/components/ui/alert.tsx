@@ -16,12 +16,12 @@ const alertVariants = cva(
       variant: {
         default: "bg-card [&>svg]:text-muted-foreground",
         error:
-          "bg-[color-mix(in_oklch,var(--destructive)_14%,var(--card))] [&>svg]:text-destructive",
-        info: "bg-[color-mix(in_oklch,var(--info)_14%,var(--card))] [&>svg]:text-info",
+          "bg-[color-mix(in_oklch,var(--destructive)_22%,var(--card))] [&>svg]:text-destructive",
+        info: "bg-[color-mix(in_oklch,var(--info)_22%,var(--card))] [&>svg]:text-info",
         success:
-          "bg-[color-mix(in_oklch,var(--success)_14%,var(--card))] [&>svg]:text-success",
+          "bg-[color-mix(in_oklch,var(--success)_22%,var(--card))] [&>svg]:text-success",
         warning:
-          "bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] [&>svg]:text-warning",
+          "bg-[color-mix(in_oklch,var(--warning)_22%,var(--card))] [&>svg]:text-warning",
       },
     },
   },

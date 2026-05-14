@@ -164,7 +164,7 @@ function TerminalBlock({
       className={cn(
         "rounded px-3 py-2 font-mono text-[11px] leading-relaxed overflow-x-auto",
         isError
-          ? "bg-[color-mix(in_oklch,var(--destructive)_14%,var(--card))]"
+          ? "bg-[color-mix(in_oklch,var(--destructive)_22%,var(--card))]"
           : "bg-zinc-900/70",
       )}
     >
@@ -239,7 +239,7 @@ function PreBlock({
       className={cn(
         "overflow-x-auto whitespace-pre-wrap break-words rounded px-3 py-2 font-mono text-[11px] text-foreground/80",
         isError
-          ? "bg-[color-mix(in_oklch,var(--destructive)_14%,var(--card))]"
+          ? "bg-[color-mix(in_oklch,var(--destructive)_22%,var(--card))]"
           : "bg-zinc-900/70",
       )}
     >
