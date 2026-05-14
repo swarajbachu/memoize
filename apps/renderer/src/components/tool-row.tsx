@@ -163,7 +163,7 @@ function TerminalBlock({
     <div
       className={cn(
         "rounded bg-zinc-900/70 px-3 py-2 font-mono text-[11px] leading-relaxed overflow-x-auto",
-        isError ? "border border-red-500/30" : "",
+        isError ? "border border-destructive/15" : "",
       )}
     >
       {command !== undefined ? (
@@ -177,7 +177,7 @@ function TerminalBlock({
           className={cn(
             "whitespace-pre-wrap break-words",
             command !== undefined ? "mt-2" : "",
-            isError ? "text-red-200" : "text-foreground/80",
+            "text-foreground/80",
           )}
         >
           {output}
@@ -189,7 +189,7 @@ function TerminalBlock({
 
 function ErrorPill() {
   return (
-    <span className="mr-2 rounded bg-red-500/20 px-1.5 py-0.5 font-medium text-[10px] text-red-300">
+    <span className="mr-2 rounded bg-destructive/12 px-1.5 py-0.5 font-medium text-[10px] text-destructive">
       Error
     </span>
   );
@@ -236,7 +236,7 @@ function PreBlock({
     <pre
       className={cn(
         "overflow-x-auto whitespace-pre-wrap break-words rounded bg-zinc-900/70 px-3 py-2 font-mono text-[11px]",
-        isError ? "border border-red-500/30 text-red-200" : "text-foreground/80",
+        isError ? "border border-destructive/15 text-foreground/80" : "text-foreground/80",
       )}
     >
       {text || "(empty)"}

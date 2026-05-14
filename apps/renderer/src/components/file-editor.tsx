@@ -199,7 +199,7 @@ export function FileEditor() {
       )}
       {state.status === "error" && (
         <Placeholder>
-          <span className="text-red-300">{state.reason}</span>
+          <span className="text-destructive">{state.reason}</span>
           <button
             type="button"
             onClick={closeFileTab}
@@ -221,7 +221,11 @@ function Toolbar({ path, saving }: { path: string; saving: boolean }) {
         {path}
       </span>
       <span className="ml-auto flex items-center gap-2">
-        {dirty ? <span className="text-yellow-300">● modified</span> : null}
+        {dirty ? (
+          <span className="text-muted-foreground">
+            <span className="text-warning">●</span> modified
+          </span>
+        ) : null}
         {saving ? <span>saving…</span> : null}
         <span className="opacity-60">⌘S to save</span>
       </span>
@@ -241,13 +245,13 @@ function Banner({
   onDismiss: () => void;
 }) {
   return (
-    <div className="flex shrink-0 items-center gap-2 border-b border-border bg-yellow-500/10 px-3 py-1.5 text-[11px] text-yellow-200">
-      <span className="flex-1">{message}</span>
+    <div className="flex shrink-0 items-center gap-2 border-b border-warning/15 bg-warning/5 px-3 py-1.5 text-[11px] text-foreground">
+      <span className="flex-1 text-muted-foreground">{message}</span>
       {actionLabel && (
         <button
           type="button"
           onClick={onAction}
-          className="rounded bg-yellow-500/20 px-2 py-0.5 hover:bg-yellow-500/30"
+          className="rounded bg-accent px-2 py-0.5 text-foreground hover:bg-accent/80"
         >
           {actionLabel}
         </button>
@@ -256,7 +260,7 @@ function Banner({
         type="button"
         onClick={onDismiss}
         aria-label="Dismiss"
-        className="rounded px-1 text-yellow-200/80 hover:text-yellow-100"
+        className="rounded px-1 text-muted-foreground hover:text-foreground"
       >
         ×
       </button>
