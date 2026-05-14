@@ -25,6 +25,7 @@ import { useWorkspaceStore } from "../store/workspace.ts";
 import { ProviderIcon } from "./provider-icons.tsx";
 import { MODES_ORDER, MODE_META } from "./runtime-mode-meta.ts";
 import { RepositorySettings } from "./settings-repository.tsx";
+import { Button } from "./ui/button.tsx";
 import {
   Select,
   SelectItem,
@@ -272,6 +273,10 @@ function GeneralPane() {
   const setDefaultRuntimeMode = useSettingsStore(
     (s) => s.setDefaultRuntimeMode,
   );
+  const setOnboardingCompleted = useSettingsStore(
+    (s) => s.setOnboardingCompleted,
+  );
+  const setView = useUiStore((s) => s.setView);
   return (
     <>
       <Section
@@ -295,6 +300,23 @@ function GeneralPane() {
         </OptionGroup>
       </Section>
       <SubagentsSection />
+      <Section
+        title="Onboarding"
+        description="Replay the first-launch welcome flow. Your existing projects and credentials stay put."
+      >
+        <div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setView("chat");
+              setOnboardingCompleted(false);
+            }}
+          >
+            Show onboarding again
+          </Button>
+        </div>
+      </Section>
     </>
   );
 }
