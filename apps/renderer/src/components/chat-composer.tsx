@@ -245,11 +245,15 @@ export function ChatComposer({ session }: { session: Session }) {
       });
       v.focus();
     });
+    bridge.setFocus(() => {
+      editorViewRef.current?.focus();
+    });
 
     return () => {
       const b = useComposerBridge.getState();
       b.setAttachFile(null);
       b.setInsertText(null);
+      b.setFocus(null);
       view.destroy();
       editorViewRef.current = null;
     };

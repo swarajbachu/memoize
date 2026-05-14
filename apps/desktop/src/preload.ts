@@ -38,6 +38,16 @@ const bridge = {
       ipcRenderer.send("app:openExternal", url);
     },
   },
+  menu: {
+    onAction: (handler: (action: string) => void) => {
+      const wrapped = (_event: IpcRendererEvent, action: string) =>
+        handler(action);
+      ipcRenderer.on("menu:action", wrapped);
+      return () => {
+        ipcRenderer.off("menu:action", wrapped);
+      };
+    },
+  },
 };
 
 contextBridge.exposeInMainWorld("memoize", bridge);
