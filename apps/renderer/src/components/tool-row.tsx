@@ -162,8 +162,10 @@ function TerminalBlock({
   return (
     <div
       className={cn(
-        "rounded bg-zinc-900/70 px-3 py-2 font-mono text-[11px] leading-relaxed overflow-x-auto",
-        isError ? "border border-destructive/15" : "",
+        "rounded px-3 py-2 font-mono text-[11px] leading-relaxed overflow-x-auto",
+        isError
+          ? "bg-[color-mix(in_oklch,var(--destructive)_14%,var(--card))]"
+          : "bg-zinc-900/70",
       )}
     >
       {command !== undefined ? (
@@ -235,8 +237,10 @@ function PreBlock({
   return (
     <pre
       className={cn(
-        "overflow-x-auto whitespace-pre-wrap break-words rounded bg-zinc-900/70 px-3 py-2 font-mono text-[11px]",
-        isError ? "border border-destructive/15 text-foreground/80" : "text-foreground/80",
+        "overflow-x-auto whitespace-pre-wrap break-words rounded px-3 py-2 font-mono text-[11px] text-foreground/80",
+        isError
+          ? "bg-[color-mix(in_oklch,var(--destructive)_14%,var(--card))]"
+          : "bg-zinc-900/70",
       )}
     >
       {text || "(empty)"}

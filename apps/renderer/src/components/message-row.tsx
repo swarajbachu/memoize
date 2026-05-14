@@ -362,7 +362,7 @@ export function ErrorBubble({
   if (rateLimit !== null) {
     return (
       <div className="px-4 py-2">
-        <div className="max-w-[88%] rounded-xl border border-warning/15 bg-warning/5 px-3 py-2 text-xs text-foreground">
+        <div className="max-w-[88%] rounded-xl bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] px-3 py-2 text-xs text-foreground">
           <div className="flex items-center gap-2">
             <HugeiconsIcon
               icon={AlertCircleIcon}
@@ -394,7 +394,7 @@ export function ErrorBubble({
   }
   return (
     <div className="px-4 py-2">
-      <div className="max-w-[88%] rounded-xl border border-destructive/15 bg-destructive/5 px-3 py-2 text-xs text-foreground">
+      <div className="max-w-[88%] rounded-xl bg-[color-mix(in_oklch,var(--destructive)_14%,var(--card))] px-3 py-2 text-xs text-foreground">
         <div className="flex items-start gap-2">
           <HugeiconsIcon
             icon={AlertCircleIcon}

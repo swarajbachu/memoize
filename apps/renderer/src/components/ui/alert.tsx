@@ -2,25 +2,26 @@ import { cva, type VariantProps } from "class-variance-authority";
 import type * as React from "react";
 import { cn } from "~/lib/utils";
 
-// Minimal alert surface. The card carries a very subtle warm tint via the
-// semantic color (~5% bg, ~15% border) — barely perceptible but enough to
-// differentiate the surface. The icon is the only place the color reads at
-// full strength. No accent bars, no loud washes.
+// Minimal alert surface. The card uses a solid full-opacity warm tint —
+// `color-mix` blends ~14% of the semantic color into `--card` so the surface
+// reads as a single hard color (e.g. a dark warm red for error in dark
+// mode), not a transparent wash on top of the page. No borders.
 const alertVariants = cva(
-  "relative grid w-full items-start gap-x-2 gap-y-0.5 rounded-xl border px-3.5 py-3 text-foreground text-sm has-[>svg]:has-data-[slot=alert-action]:grid-cols-[calc(var(--spacing)*4)_1fr_auto] has-[>svg]:grid-cols-[calc(var(--spacing)*4)_1fr] has-data-[slot=alert-action]:grid-cols-[1fr_auto] has-[>svg]:gap-x-2 [&>svg]:h-lh [&>svg]:w-4",
+  "relative grid w-full items-start gap-x-2 gap-y-0.5 rounded-xl px-3.5 py-3 text-foreground text-sm has-[>svg]:has-data-[slot=alert-action]:grid-cols-[calc(var(--spacing)*4)_1fr_auto] has-[>svg]:grid-cols-[calc(var(--spacing)*4)_1fr] has-data-[slot=alert-action]:grid-cols-[1fr_auto] has-[>svg]:gap-x-2 [&>svg]:h-lh [&>svg]:w-4",
   {
     defaultVariants: {
       variant: "default",
     },
     variants: {
       variant: {
-        default:
-          "border-border/20 bg-muted/30 [&>svg]:text-muted-foreground",
+        default: "bg-card [&>svg]:text-muted-foreground",
         error:
-          "border-destructive/15 bg-destructive/5 [&>svg]:text-destructive",
-        info: "border-info/15 bg-info/5 [&>svg]:text-info",
-        success: "border-success/15 bg-success/5 [&>svg]:text-success",
-        warning: "border-warning/15 bg-warning/5 [&>svg]:text-warning",
+          "bg-[color-mix(in_oklch,var(--destructive)_14%,var(--card))] [&>svg]:text-destructive",
+        info: "bg-[color-mix(in_oklch,var(--info)_14%,var(--card))] [&>svg]:text-info",
+        success:
+          "bg-[color-mix(in_oklch,var(--success)_14%,var(--card))] [&>svg]:text-success",
+        warning:
+          "bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] [&>svg]:text-warning",
       },
     },
   },

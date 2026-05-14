@@ -60,7 +60,7 @@ export function CliUpgradeBanner({ providerId }: { providerId: ProviderId }) {
   };
 
   return (
-    <div className="mx-3 mb-2 mt-1 flex flex-col gap-2 rounded-2xl border border-warning/15 bg-warning/5 p-3">
+    <div className="mx-3 mb-2 mt-1 flex flex-col gap-2 rounded-2xl bg-[color-mix(in_oklch,var(--warning)_14%,var(--card))] p-3">
       <div className="flex items-start gap-2.5">
         <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg text-warning">
           <ArrowUpCircle className="size-3.5" />
@@ -87,7 +87,7 @@ export function CliUpgradeBanner({ providerId }: { providerId: ProviderId }) {
       </div>
 
       {command !== null && (
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-border/20 bg-background/40 px-3 py-1.5 font-mono text-[11.5px]">
+        <div className="flex items-center justify-between gap-3 rounded-lg bg-background/40 px-3 py-1.5 font-mono text-[11.5px]">
           <code className="truncate text-foreground/90">$ {command}</code>
           <Button
             size="xs"
