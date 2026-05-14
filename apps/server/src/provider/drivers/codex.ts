@@ -8,6 +8,7 @@ import { Effect, Mailbox, Stream } from "effect";
 
 import {
   AgentSessionStartError,
+  resolveModelSlug,
   type AgentEvent,
   type AgentItemId,
   type AgentSessionId,
@@ -284,7 +285,9 @@ export const startCodexSession = (
         sandboxMode: sandbox.sandboxMode,
         approvalPolicy: sandbox.approvalPolicy,
         skipGitRepoCheck: true,
-        ...(input.model !== undefined ? { model: input.model } : {}),
+        ...(input.model !== undefined
+          ? { model: resolveModelSlug("codex", input.model) }
+          : {}),
         // `input.agents` is deliberately ignored — the Codex SDK has no
         // sub-agents primitive. Cross-provider delegation is sketched in
         // specs/sub-agents/decisions/0012-codex-bridge-via-mcp.md and
