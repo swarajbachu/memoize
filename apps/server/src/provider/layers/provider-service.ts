@@ -175,10 +175,27 @@ export const ProviderServiceLive = Layer.effect(
                 }),
               );
             }
+            // Same story as Claude: we don't ship the SDK's bundled native
+            // CLI, so hand it the user's installed `codex` binary. Surface a
+            // clean install message if it's missing instead of the SDK's
+            // "Unable to locate Codex CLI binaries" error.
+            const codexPath = yield* resolveCliPath("codex").pipe(
+              Effect.provideService(CommandExecutor.CommandExecutor, executor),
+            );
+            if (codexPath === null) {
+              return yield* Effect.fail(
+                new AgentSessionStartError({
+                  providerId: "codex",
+                  reason:
+                    "Codex CLI not found on PATH. Install Codex from https://github.com/openai/codex and try again.",
+                }),
+              );
+            }
             handle = yield* startCodexSession(
               input,
               cwd,
               apiKey,
+              codexPath,
               sessionId,
             );
           }

@@ -209,6 +209,7 @@ export const startCodexSession = (
   input: StartSessionInput,
   cwd: string,
   apiKey: string | null,
+  codexPath: string | null,
   sessionId: AgentSessionId,
 ): Effect.Effect<CodexSessionHandle, AgentSessionStartError> =>
   Effect.gen(function* () {
@@ -219,6 +220,11 @@ export const startCodexSession = (
     try {
       codex = new Codex({
         ...(apiKey !== null ? { apiKey } : {}),
+        // Point the SDK at the user's installed `codex` binary; the SDK's
+        // bundled platform CLI ships as an optional native dep we don't
+        // package. Without this override the SDK throws "Unable to locate
+        // Codex CLI binaries" inside the .dmg.
+        ...(codexPath !== null ? { codexPathOverride: codexPath } : {}),
       });
       thread = codex.startThread({
         workingDirectory: cwd,
