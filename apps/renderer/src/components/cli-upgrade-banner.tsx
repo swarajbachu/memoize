@@ -73,7 +73,7 @@ export function CliUpgradeBanner({ providerId }: { providerId: ProviderId }) {
             You have <code className="text-foreground/80">{row.cliVersion ?? "an unknown version"}</code>
             {row.cliVersionMinRequired !== undefined &&
               ` — memoize needs ${row.cliVersionMinRequired} or newer.`}
-            {" Switch model in the header to keep working in the meantime."}
+            {" Sending in this session will fail until you upgrade; start a new session with a different provider to keep working in the meantime."}
           </span>
         </div>
         <button
