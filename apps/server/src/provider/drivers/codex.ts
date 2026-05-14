@@ -17,6 +17,19 @@ import {
   type UserQuestionAnswer,
 } from "@memoize/wire";
 
+import { AttachmentService } from "../../attachment/services/attachment-service.ts";
+
+// Codex SDK accepts only `local_image` input items — no PDFs or arbitrary
+// documents. Match Claude's image set so a single composer attachment chip
+// behaves consistently across providers; PDFs are silently dropped with a
+// warn (PDF support would need its own SDK item type).
+const SUPPORTED_CODEX_IMAGE_MIME = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+]);
+
 /**
  * Live-only handle for one Codex SDK conversation. Mirrors `ClaudeSessionHandle`
  * — the orchestrator owns the sessionId → handle map and forwards RPCs here.
@@ -221,8 +234,9 @@ export const startCodexSession = (
   codexPath: string | null,
   sessionId: AgentSessionId,
   resumeCursor: string | null = null,
-): Effect.Effect<CodexSessionHandle, AgentSessionStartError> =>
+): Effect.Effect<CodexSessionHandle, AgentSessionStartError, AttachmentService> =>
   Effect.gen(function* () {
+    const attachments = yield* AttachmentService;
     const events = yield* Mailbox.make<AgentEvent>();
 
     let codex: Codex;
@@ -289,6 +303,48 @@ export const startCodexSession = (
       });
     }
 
+    // Resolve attachments to `local_image` paths once per send — codex's SDK
+    // copies the file on each turn, so we don't need to keep handles open. PDFs
+    // and other non-image refs are dropped with a warn (Codex SDK 0.128 only
+    // accepts images). `pending-` ids are queued chips whose upload hadn't
+    // finished by the time `send` fired; skip them rather than block the turn.
+    const resolveImageInputs = async (
+      refs: ReadonlyArray<AttachmentRef>,
+    ): Promise<ReadonlyArray<{ readonly type: "local_image"; readonly path: string }>> => {
+      const resolved = await Promise.all(
+        refs.map(async (ref) => {
+          if (ref.id.startsWith("pending-")) {
+            console.warn(
+              `[codex.attach] skipping pending attachment id=${ref.id} (upload didn't finish before send)`,
+            );
+            return null;
+          }
+          const normalizedMime =
+            ref.mimeType.toLowerCase() === "image/jpg"
+              ? "image/jpeg"
+              : ref.mimeType.toLowerCase();
+          if (!SUPPORTED_CODEX_IMAGE_MIME.has(normalizedMime)) {
+            console.warn(
+              `[codex.attach] dropping unsupported mime id=${ref.id} mime=${ref.mimeType} (codex accepts images only)`,
+            );
+            return null;
+          }
+          const meta = await Effect.runPromise(attachments.readPath(ref.id));
+          if (meta === null) {
+            console.warn(
+              `[codex.attach] blob not found id=${ref.id} (db row missing or file deleted)`,
+            );
+            return null;
+          }
+          return { type: "local_image" as const, path: meta.path };
+        }),
+      );
+      return resolved.filter(
+        (item): item is { readonly type: "local_image"; readonly path: string } =>
+          item !== null,
+      );
+    };
+
     // Per-turn abort + serialization. `currentAbort` is the abort controller
     // for whichever turn is in flight (null between turns); `pending` chains
     // sends so they run sequentially against the same thread.
@@ -296,12 +352,23 @@ export const startCodexSession = (
     let pending: Promise<void> = Promise.resolve();
     let closed = false;
 
-    const runTurn = async (text: string): Promise<void> => {
+    const runTurn = async (
+      text: string,
+      attachmentRefs: ReadonlyArray<AttachmentRef>,
+    ): Promise<void> => {
       if (closed) return;
       const abort = new AbortController();
       currentAbort = abort;
       try {
-        const { events: turnEvents } = await thread.runStreamed(text, {
+        const imageInputs = await resolveImageInputs(attachmentRefs);
+        // SDK accepts `string | UserInput[]`. If we have no images, keep the
+        // plain-string path so `codex --version`-style trivial turns serialize
+        // the same as before; only build the structured array when needed.
+        const turnInput =
+          imageInputs.length === 0
+            ? text
+            : [{ type: "text" as const, text }, ...imageInputs];
+        const { events: turnEvents } = await thread.runStreamed(turnInput, {
           signal: abort.signal,
         });
         for await (const ev of turnEvents) {
@@ -321,8 +388,11 @@ export const startCodexSession = (
       }
     };
 
-    const enqueueTurn = (text: string): void => {
-      pending = pending.then(() => runTurn(text));
+    const enqueueTurn = (
+      text: string,
+      attachmentRefs: ReadonlyArray<AttachmentRef> = [],
+    ): void => {
+      pending = pending.then(() => runTurn(text, attachmentRefs));
     };
 
     if (input.initialPrompt !== undefined && input.initialPrompt.length > 0) {
@@ -333,12 +403,7 @@ export const startCodexSession = (
       events: Mailbox.toStream(events),
       send: (text, attachmentRefs) =>
         Effect.sync(() => {
-          if (attachmentRefs !== undefined && attachmentRefs.length > 0) {
-            console.warn(
-              `[codex] dropping ${attachmentRefs.length} attachment(s); image input not yet supported on Codex driver`,
-            );
-          }
-          enqueueTurn(text);
+          enqueueTurn(text, attachmentRefs ?? []);
         }),
       interrupt: () =>
         Effect.sync(() => {

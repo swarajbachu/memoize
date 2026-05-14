@@ -216,7 +216,7 @@ export const ProviderServiceLive = Layer.effect(
               codexPath,
               sessionId,
               resumeCursor,
-            );
+            ).pipe(Effect.provideService(AttachmentService, attachmentService));
           }
           yield* Ref.update(sessions, (map) => {
             const next = new Map(map);

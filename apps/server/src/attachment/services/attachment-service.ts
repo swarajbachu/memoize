@@ -33,6 +33,17 @@ export interface AttachmentServiceShape {
   ) => Effect.Effect<
     { readonly bytes: Uint8Array; readonly mimeType: string } | null
   >;
+  /**
+   * Resolve an attachment to its on-disk absolute path. The codex SDK's
+   * `local_image` input shape requires a path, not bytes — exposing the
+   * file directly avoids an extra read/write round-trip on every turn.
+   * Returns `null` when the row or file is gone (same shape as `read`).
+   */
+  readonly readPath: (
+    id: string,
+  ) => Effect.Effect<
+    { readonly path: string; readonly mimeType: string } | null
+  >;
 }
 
 export class AttachmentService extends Context.Tag("memoize/AttachmentService")<

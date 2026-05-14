@@ -113,24 +113,47 @@ export const AttachmentServiceLive = Layer.scoped(
         };
       });
 
-    const read: AttachmentServiceShape["read"] = (id) =>
+    interface AttachmentMetaRow {
+      readonly mime_type: string;
+      readonly original_name: string;
+    }
+
+    const resolveAttachmentPath = (id: string) =>
       Effect.gen(function* () {
-        interface Row {
-          readonly mime_type: string;
-          readonly original_name: string;
-        }
-        const rows = yield* sql<Row>`
+        const rows = yield* sql<AttachmentMetaRow>`
           SELECT mime_type, original_name FROM attachments WHERE id = ${id}
-        `.pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<Row>));
+        `.pipe(
+          Effect.orElseSucceed(
+            () => [] as ReadonlyArray<AttachmentMetaRow>,
+          ),
+        );
         const row = rows[0];
         if (row === undefined) return null;
         const ext = extForUpload(row.mime_type, row.original_name);
         const absPath = pathSvc.join(dir, blobFilename(id, ext));
+        return { absPath, mimeType: row.mime_type };
+      });
+
+    const read: AttachmentServiceShape["read"] = (id) =>
+      Effect.gen(function* () {
+        const resolved = yield* resolveAttachmentPath(id);
+        if (resolved === null) return null;
         const bytes = yield* fs
-          .readFile(absPath)
+          .readFile(resolved.absPath)
           .pipe(Effect.orElseSucceed(() => null));
         if (bytes === null) return null;
-        return { bytes, mimeType: row.mime_type };
+        return { bytes, mimeType: resolved.mimeType };
+      });
+
+    const readPath: AttachmentServiceShape["readPath"] = (id) =>
+      Effect.gen(function* () {
+        const resolved = yield* resolveAttachmentPath(id);
+        if (resolved === null) return null;
+        const exists = yield* fs
+          .exists(resolved.absPath)
+          .pipe(Effect.orElseSucceed(() => false));
+        if (!exists) return null;
+        return { path: resolved.absPath, mimeType: resolved.mimeType };
       });
 
     const touch: AttachmentServiceShape["touch"] = (ids) =>
@@ -200,6 +223,11 @@ export const AttachmentServiceLive = Layer.scoped(
     );
     yield* Effect.addFinalizer(() => Fiber.interrupt(gcFiber));
 
-    return { upload, touch, read } satisfies AttachmentServiceShape;
+    return {
+      upload,
+      touch,
+      read,
+      readPath,
+    } satisfies AttachmentServiceShape;
   }),
 );
