@@ -14,13 +14,7 @@ import {
   type ProviderId,
 } from "@memoize/wire";
 
-import {
-  MIN_CODEX_CLI_VERSION,
-  compareCliVersion,
-  probeAllProviders,
-  probeCliVersion,
-  resolveCliPath,
-} from "../availability.ts";
+import { probeAllProviders, resolveCliPath } from "../availability.ts";
 import {
   startClaudeSession,
   type ClaudeSessionHandle,
@@ -186,29 +180,17 @@ export const ProviderServiceLive = Layer.effect(
                 }),
               );
             }
-            // codex-sdk@0.128 spawns the binary with `exec --experimental-json`.
-            // Anything older crashes with "unexpected argument
-            // '--experimental-json'" before a single token is streamed. Probe
-            // the version up front and fail-fast with an upgrade hint. If the
-            // probe can't parse the output (unknown format on some distro),
-            // proceed — the SDK error path is still there as a fallback.
-            const codexVersion = yield* probeCliVersion("codex").pipe(
-              Effect.provideService(CommandExecutor.CommandExecutor, executor),
-            );
-            if (
-              codexVersion !== null &&
-              compareCliVersion(codexVersion, MIN_CODEX_CLI_VERSION) < 0
-            ) {
-              return yield* Effect.fail(
-                new AgentSessionStartError({
-                  providerId: "codex",
-                  reason:
-                    `Codex CLI ${codexVersion.raw} is too old for memoize ` +
-                    `(needs ${MIN_CODEX_CLI_VERSION.raw}+). Upgrade with ` +
-                    "`npm i -g @openai/codex@latest` and try again.",
-                }),
-              );
-            }
+            // We used to also fail-fast here when `codex --version` was below
+            // the SDK pin. Pulled because `session.create` calls
+            // `provider.start` synchronously — failing at start blocked
+            // session creation outright, leaving the user with no surface to
+            // upgrade *from*. The renderer's `CliUpgradeBanner` is the
+            // canonical signal (driven by the periodic availability probe),
+            // and the codex driver translates the SDK's
+            // "unexpected argument '--experimental-json'" failure on the
+            // first turn into a clean upgrade message — so the user sees
+            // either the banner before sending or the friendly error after,
+            // never the cryptic SDK trace.
             handle = yield* startCodexSession(
               input,
               cwd,

@@ -421,9 +421,19 @@ export const startCodexSession = (
         }
       } catch (cause) {
         if (!closed) {
+          const raw = cause instanceof Error ? cause.message : String(cause);
+          // codex-sdk 0.128 hard-codes `--experimental-json` and any pre-0.128
+          // codex CLI rejects it. The session was already created and the
+          // upgrade banner is visible — but if the user sent anyway, translate
+          // the SDK's argument-parsing trace into a sentence they can act on.
+          const isExperimentalJsonError =
+            raw.includes("--experimental-json") ||
+            raw.includes("Codex Exec exited with code 2");
           events.unsafeOffer({
             _tag: "Error",
-            message: cause instanceof Error ? cause.message : String(cause),
+            message: isExperimentalJsonError
+              ? "Codex CLI is older than memoize expects. Upgrade with `npm i -g @openai/codex@latest`, then try again — or switch to a Claude session in the meantime."
+              : raw,
           });
         }
       } finally {
