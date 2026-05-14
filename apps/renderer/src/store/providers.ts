@@ -15,15 +15,8 @@ type ProvidersState = {
   readonly loading: boolean;
   readonly error: string | null;
   readonly credentialsOpen: boolean;
-  /**
-   * When set, the renderer shows an "Upgrade required" sheet for this
-   * provider instead of starting a session. Driven by
-   * `cliVersionStatus === "outdated"` on the availability row.
-   */
-  readonly upgradeRequiredFor: ProviderId | null;
   readonly refresh: () => Promise<void>;
   readonly setCredentialsOpen: (open: boolean) => void;
-  readonly setUpgradeRequiredFor: (providerId: ProviderId | null) => void;
   readonly setCredential: (
     providerId: ProviderId,
     apiKey: string,
@@ -43,7 +36,6 @@ export const useProvidersStore = create<ProvidersState>((set, get) => ({
   loading: false,
   error: null,
   credentialsOpen: false,
-  upgradeRequiredFor: null,
   refresh: async () => {
     set({ loading: true, error: null });
     try {
@@ -55,7 +47,6 @@ export const useProvidersStore = create<ProvidersState>((set, get) => ({
     }
   },
   setCredentialsOpen: (open) => set({ credentialsOpen: open }),
-  setUpgradeRequiredFor: (providerId) => set({ upgradeRequiredFor: providerId }),
   setCredential: async (providerId, apiKey) => {
     try {
       const client = await getRpcClient();
