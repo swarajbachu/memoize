@@ -54,6 +54,16 @@ const PROBES: ReadonlyArray<ProviderProbe> = [
     minVersion: null,
     upgradeCommand: "curl -fsSL https://x.ai/cli/install.sh | bash",
   },
+  {
+    providerId: "gemini",
+    displayName: "Gemini",
+    cliBinary: "gemini",
+    // We speak ACP directly via `gemini --experimental-acp`, so there's no
+    // SDK pin to keep in lock-step with. Revisit if Google renames the
+    // flag or breaks the handshake.
+    minVersion: null,
+    upgradeCommand: "npm i -g @google/gemini-cli",
+  },
 ];
 
 const PROBE_TIMEOUT = Duration.seconds(4);
@@ -212,6 +222,19 @@ const probeGrokLogin: Effect.Effect<boolean, never, FileSystem.FileSystem> =
     return yield* fs.exists(path).pipe(Effect.catchAll(() => Effect.succeed(false)));
   });
 
+// Gemini CLI writes its OAuth tokens and settings under `~/.gemini/` after
+// the first interactive sign-in. Same heuristic as Grok — directory presence
+// is a cheap proxy for "they've completed at least one login". If the user
+// only sets `GEMINI_API_KEY` and never runs the CLI interactively, the dir
+// may not exist; the renderer still flips to "ready" via `hasApiKey` once
+// a key is saved in the keychain.
+const probeGeminiLogin: Effect.Effect<boolean, never, FileSystem.FileSystem> =
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = join(homedir(), ".gemini");
+    return yield* fs.exists(path).pipe(Effect.catchAll(() => Effect.succeed(false)));
+  });
+
 const probeLogin = (
   providerId: ProviderId,
 ): Effect.Effect<boolean, never, FileSystem.FileSystem | CommandExecutor.CommandExecutor> => {
@@ -222,6 +245,8 @@ const probeLogin = (
       return probeCodexLogin;
     case "grok":
       return probeGrokLogin;
+    case "gemini":
+      return probeGeminiLogin;
   }
 };
 

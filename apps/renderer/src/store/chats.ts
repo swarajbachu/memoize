@@ -15,6 +15,7 @@ import type {
 } from "@memoize/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
+import { formatError } from "../lib/format-error.ts";
 import { useSessionsStore } from "./sessions.ts";
 import { useWorkspaceStore } from "./workspace.ts";
 
@@ -69,14 +70,6 @@ type ChatsState = {
   readonly remove: (chatId: ChatId) => Promise<void>;
   readonly select: (chatId: ChatId | null) => void;
   readonly toggleShowArchived: (projectId: FolderId) => void;
-};
-
-const formatError = (err: unknown): string => {
-  if (err instanceof Error) return err.message;
-  if (typeof err === "object" && err !== null && "_tag" in err) {
-    return String((err as { _tag: unknown })._tag);
-  }
-  return String(err);
 };
 
 const findChatProject = (

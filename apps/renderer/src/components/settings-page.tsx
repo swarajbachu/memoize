@@ -40,6 +40,7 @@ const PROVIDER_LABEL: Record<ProviderId, string> = {
   claude: "Claude Code",
   codex: "Codex",
   grok: "Grok",
+  gemini: "Gemini",
 };
 
 type RailItemBase = {
