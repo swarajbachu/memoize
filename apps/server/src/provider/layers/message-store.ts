@@ -9,6 +9,10 @@ import {
 } from "effect";
 
 import {
+  Chat,
+  ChatAlreadyStartedError,
+  type ChatId,
+  ChatNotFoundError,
   DEFAULT_PERMISSION_MODE,
   DEFAULT_RUNTIME_MODE,
   Message,
@@ -21,6 +25,7 @@ import {
   type FileRef,
   type FolderId,
   type MessageContent,
+  type MessageId as MessageIdType,
   type MessageRole,
   type ProviderId,
   type RuntimeMode,
@@ -37,6 +42,7 @@ import { WorktreeService } from "../../worktree/services/worktree-service.ts";
 import { NdjsonLogger } from "../../persistence/ndjson-logger.ts";
 import {
   MessageStore,
+  type CreateChatInput,
   type CreateSessionInput,
   type MessageStoreShape,
 } from "../services/message-store.ts";
@@ -58,11 +64,35 @@ interface SessionRow {
   readonly runtime_mode: string;
   readonly agents_json: string | null;
   readonly worktree_id: string | null;
+  readonly chat_id: string;
+  readonly forked_from_session_id: string | null;
+  readonly forked_from_message_id: string | null;
   readonly permission_mode: string;
   readonly tool_search: number;
   readonly created_at: string;
   readonly updated_at: string;
 }
+
+interface ChatRow {
+  readonly id: string;
+  readonly project_id: string;
+  readonly worktree_id: string | null;
+  readonly title: string;
+  readonly active_session_id: string | null;
+  readonly archived_at: string | null;
+  readonly created_at: string;
+  readonly updated_at: string;
+}
+
+const SESSION_COLUMNS =
+  "id, project_id, title, provider_id, model, status, " +
+  "archived_at, cursor, resume_strategy, runtime_mode, " +
+  "agents_json, worktree_id, chat_id, forked_from_session_id, " +
+  "forked_from_message_id, permission_mode, tool_search, created_at, updated_at";
+
+const CHAT_COLUMNS =
+  "id, project_id, worktree_id, title, active_session_id, " +
+  "archived_at, created_at, updated_at";
 
 const parseAgents = (
   raw: string | null,
@@ -128,8 +158,35 @@ const sessionFromRow = (row: SessionRow): Session =>
       row.worktree_id === null
         ? null
         : (row.worktree_id as unknown as WorktreeId),
+    chatId: row.chat_id as unknown as ChatId,
+    forkedFromSessionId:
+      row.forked_from_session_id === null
+        ? null
+        : SessionId.make(row.forked_from_session_id),
+    forkedFromMessageId:
+      row.forked_from_message_id === null
+        ? null
+        : (row.forked_from_message_id as MessageIdType),
     permissionMode: permissionModeFromRow(row.permission_mode),
     toolSearch: row.tool_search === 1,
+    createdAt: new Date(row.created_at),
+    updatedAt: new Date(row.updated_at),
+  });
+
+const chatFromRow = (row: ChatRow): Chat =>
+  Chat.make({
+    id: row.id as unknown as ChatId,
+    projectId: row.project_id as FolderId,
+    worktreeId:
+      row.worktree_id === null
+        ? null
+        : (row.worktree_id as unknown as WorktreeId),
+    title: row.title,
+    activeSessionId:
+      row.active_session_id === null
+        ? null
+        : SessionId.make(row.active_session_id),
+    archivedAt: row.archived_at === null ? null : new Date(row.archived_at),
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   });
@@ -399,7 +456,8 @@ export const MessageStoreLive = Layer.scoped(
         const rows = yield* sql<SessionRow>`
           SELECT id, project_id, title, provider_id, model, status,
                  archived_at, cursor, resume_strategy, runtime_mode,
-                 agents_json, worktree_id, permission_mode, tool_search,
+                 agents_json, worktree_id, chat_id, forked_from_session_id,
+                 forked_from_message_id, permission_mode, tool_search,
                  created_at, updated_at
           FROM sessions WHERE id = ${sessionId} LIMIT 1
         `.pipe(Effect.orDie);
@@ -608,7 +666,8 @@ export const MessageStoreLive = Layer.scoped(
           ? yield* sql<SessionRow>`
               SELECT id, project_id, title, provider_id, model, status,
                      archived_at, cursor, resume_strategy, runtime_mode,
-                     agents_json, worktree_id, permission_mode, tool_search,
+                     agents_json, worktree_id, chat_id, forked_from_session_id,
+                     forked_from_message_id, permission_mode, tool_search,
                      created_at, updated_at
               FROM sessions WHERE project_id = ${projectId}
               ORDER BY updated_at DESC
@@ -616,7 +675,8 @@ export const MessageStoreLive = Layer.scoped(
           : yield* sql<SessionRow>`
               SELECT id, project_id, title, provider_id, model, status,
                      archived_at, cursor, resume_strategy, runtime_mode,
-                     agents_json, worktree_id, permission_mode, tool_search,
+                     agents_json, worktree_id, chat_id, forked_from_session_id,
+                     forked_from_message_id, permission_mode, tool_search,
                      created_at, updated_at
               FROM sessions
               WHERE project_id = ${projectId} AND archived_at IS NULL
@@ -625,10 +685,54 @@ export const MessageStoreLive = Layer.scoped(
         return rows.map(sessionFromRow);
       });
 
+    /**
+     * Resolve a chat row for createSession. Failures surface as
+     * SessionStartError so the renderer treats unknown / archived chat ids
+     * the same as provider boot failures.
+     */
+    const lookupChatForSession = (
+      chatId: ChatId,
+      providerId: ProviderId,
+    ): Effect.Effect<ChatRow, SessionStartError> =>
+      Effect.gen(function* () {
+        const rows = yield* sql<ChatRow>`
+          SELECT id, project_id, worktree_id, title, active_session_id,
+                 archived_at, created_at, updated_at
+          FROM chats WHERE id = ${chatId} LIMIT 1
+        `.pipe(Effect.orDie);
+        const row = rows[0];
+        if (row === undefined) {
+          return yield* Effect.fail(
+            new SessionStartError({
+              providerId,
+              reason: `chat ${chatId} not found`,
+            }),
+          );
+        }
+        if (row.archived_at !== null) {
+          return yield* Effect.fail(
+            new SessionStartError({
+              providerId,
+              reason: "cannot create a session in an archived chat",
+            }),
+          );
+        }
+        return row;
+      });
+
     const createSession: MessageStoreShape["createSession"] = (
       input: CreateSessionInput,
     ) =>
       Effect.gen(function* () {
+        // Project + worktree are inherited from the chat row — clients no
+        // longer pass them at session-create time. Fail-fast on missing /
+        // archived chats so we never leave a stray provider session behind.
+        const chatRow = yield* lookupChatForSession(input.chatId, input.providerId);
+        const projectId = chatRow.project_id as FolderId;
+        const worktreeId: WorktreeId | null =
+          chatRow.worktree_id === null
+            ? null
+            : (chatRow.worktree_id as unknown as WorktreeId);
         // Provider mints the canonical session id; we mirror it into the row
         // so the in-memory map and the persisted row stay in lockstep. New
         // sessions always start at the default runtime mode — `canUseTool`
@@ -642,7 +746,6 @@ export const MessageStoreLive = Layer.scoped(
         const effectiveEnableSubagents =
           input.enableSubagents ??
           (input.agents !== undefined && Object.keys(input.agents).length > 0);
-        const worktreeId = input.worktreeId ?? null;
         const cwdOverride = yield* cwdForWorktree(worktreeId);
         const initialPermissionMode =
           input.permissionMode ?? DEFAULT_PERMISSION_MODE;
@@ -650,7 +753,7 @@ export const MessageStoreLive = Layer.scoped(
         const started = yield* provider
           .start(
             {
-              folderId: input.projectId,
+              folderId: projectId,
               providerId: input.providerId,
               mode: "sdk",
               initialPrompt: input.initialPrompt,
@@ -708,14 +811,22 @@ export const MessageStoreLive = Layer.scoped(
         yield* sql`
           INSERT INTO sessions
             (id, project_id, title, provider_id, model, status, runtime_mode,
-             agents_json, worktree_id, permission_mode, tool_search,
-             created_at, updated_at)
+             agents_json, worktree_id, chat_id, permission_mode,
+             tool_search, created_at, updated_at)
           VALUES
-            (${sessionId}, ${input.projectId}, ${title}, ${input.providerId},
+            (${sessionId}, ${projectId}, ${title}, ${input.providerId},
              ${input.model}, ${initialStatus}, ${initialRuntimeMode},
-             ${agentsJson}, ${worktreeId}, ${initialPermissionMode},
-             ${initialToolSearch ? 1 : 0}, ${nowIso}, ${nowIso})
+             ${agentsJson}, ${worktreeId}, ${input.chatId},
+             ${initialPermissionMode}, ${initialToolSearch ? 1 : 0},
+             ${nowIso}, ${nowIso})
         `.pipe(Effect.orDie);
+        // Mark this session as the chat's last-active tab so the next
+        // sidebar click lands on it.
+        yield* sql`
+          UPDATE chats
+          SET active_session_id = ${sessionId}, updated_at = ${nowIso}
+          WHERE id = ${input.chatId}
+        `.pipe(Effect.asVoid, Effect.orDie);
         if (hasInitial) {
           yield* persistMessage(sessionId, {
             _tag: "user",
@@ -725,7 +836,7 @@ export const MessageStoreLive = Layer.scoped(
         yield* startSubscription(sessionId);
         return Session.make({
           id: sessionId,
-          projectId: input.projectId,
+          projectId,
           title,
           providerId: input.providerId,
           model: input.model,
@@ -735,6 +846,9 @@ export const MessageStoreLive = Layer.scoped(
           resumeStrategy: "none",
           runtimeMode: initialRuntimeMode,
           worktreeId,
+          chatId: input.chatId,
+          forkedFromSessionId: null,
+          forkedFromMessageId: null,
           permissionMode: initialPermissionMode,
           toolSearch: initialToolSearch,
           createdAt: now,
@@ -916,6 +1030,210 @@ export const MessageStoreLive = Layer.scoped(
           Effect.orDie,
         );
         // ON DELETE CASCADE removes messages.
+      });
+
+    // -------------------------------------------------------------------------
+    // Chats — sidebar containers. Each chat hosts ≥ 1 session as a tab.
+    // -------------------------------------------------------------------------
+
+    const lookupChat = (
+      chatId: ChatId,
+    ): Effect.Effect<Chat, ChatNotFoundError> =>
+      Effect.gen(function* () {
+        const rows = yield* sql<ChatRow>`
+          SELECT id, project_id, worktree_id, title, active_session_id,
+                 archived_at, created_at, updated_at
+          FROM chats WHERE id = ${chatId} LIMIT 1
+        `.pipe(Effect.orDie);
+        if (rows.length === 0) {
+          return yield* Effect.fail(new ChatNotFoundError({ chatId }));
+        }
+        return chatFromRow(rows[0]!);
+      });
+
+    const listChats: MessageStoreShape["listChats"] = (
+      projectId,
+      includeArchived,
+    ) =>
+      Effect.gen(function* () {
+        const rows = includeArchived
+          ? yield* sql<ChatRow>`
+              SELECT id, project_id, worktree_id, title, active_session_id,
+                     archived_at, created_at, updated_at
+              FROM chats WHERE project_id = ${projectId}
+              ORDER BY updated_at DESC
+            `.pipe(Effect.orDie)
+          : yield* sql<ChatRow>`
+              SELECT id, project_id, worktree_id, title, active_session_id,
+                     archived_at, created_at, updated_at
+              FROM chats
+              WHERE project_id = ${projectId} AND archived_at IS NULL
+              ORDER BY updated_at DESC
+            `.pipe(Effect.orDie);
+        return rows.map(chatFromRow);
+      });
+
+    const getChat: MessageStoreShape["getChat"] = (chatId) => lookupChat(chatId);
+
+    /**
+     * Create a chat row AND its initial session in one effect. Both rows
+     * land or neither does — we INSERT the chat first, attempt the
+     * provider boot, and if the boot fails we DELETE the chat to leave
+     * the DB clean.
+     */
+    const createChat: MessageStoreShape["createChat"] = (
+      input: CreateChatInput,
+    ) =>
+      Effect.gen(function* () {
+        const now = new Date();
+        const nowIso = now.toISOString();
+        const chatId = crypto.randomUUID() as unknown as ChatId;
+        const title =
+          input.title?.trim() || titleFromInitial(input.initialPrompt);
+        const worktreeId = input.worktreeId ?? null;
+        yield* sql`
+          INSERT INTO chats
+            (id, project_id, worktree_id, title, active_session_id,
+             archived_at, created_at, updated_at)
+          VALUES
+            (${chatId}, ${input.projectId}, ${worktreeId}, ${title}, NULL,
+             NULL, ${nowIso}, ${nowIso})
+        `.pipe(Effect.asVoid, Effect.orDie);
+        const initialSession = yield* createSession({
+          chatId,
+          providerId: input.providerId,
+          model: input.model,
+          title: input.title,
+          initialPrompt: input.initialPrompt,
+          runtimeMode: input.runtimeMode,
+          agents: input.agents,
+          enableSubagents: input.enableSubagents,
+          permissionMode: input.permissionMode,
+          toolSearch: input.toolSearch,
+        }).pipe(
+          Effect.tapError(() =>
+            // Roll back the chat row if the provider failed to boot —
+            // otherwise the sidebar would show an empty container the
+            // user can't escape from.
+            sql`DELETE FROM chats WHERE id = ${chatId}`.pipe(
+              Effect.asVoid,
+              Effect.orDie,
+            ),
+          ),
+        );
+        const chat = yield* lookupChat(chatId).pipe(Effect.orDie);
+        return { chat, initialSession };
+      });
+
+    const renameChat: MessageStoreShape["renameChat"] = (chatId, title) =>
+      Effect.gen(function* () {
+        yield* lookupChat(chatId);
+        const nowIso = new Date().toISOString();
+        yield* sql`
+          UPDATE chats SET title = ${title}, updated_at = ${nowIso}
+          WHERE id = ${chatId}
+        `.pipe(Effect.asVoid, Effect.orDie);
+      });
+
+    /**
+     * Worktrees are immutable past the first user message in any of the
+     * chat's sessions. Mirrors `session.setWorktree`'s pre-message check
+     * but lifted to the chat scope.
+     */
+    const setChatWorktree: MessageStoreShape["setChatWorktree"] = (
+      chatId,
+      worktreeId,
+    ) =>
+      Effect.gen(function* () {
+        yield* lookupChat(chatId);
+        const existing = yield* sql<{ readonly id: string }>`
+          SELECT m.id FROM messages m
+          INNER JOIN sessions s ON s.id = m.session_id
+          WHERE s.chat_id = ${chatId} AND m.role = 'user'
+          LIMIT 1
+        `.pipe(Effect.orDie);
+        if (existing.length > 0) {
+          return yield* Effect.fail(new ChatAlreadyStartedError({ chatId }));
+        }
+        const nowIso = new Date().toISOString();
+        yield* sql`
+          UPDATE chats SET worktree_id = ${worktreeId}, updated_at = ${nowIso}
+          WHERE id = ${chatId}
+        `.pipe(Effect.asVoid, Effect.orDie);
+        // Mirror onto every member session so renderer reads of
+        // session.worktreeId stay accurate without a second round-trip.
+        yield* sql`
+          UPDATE sessions SET worktree_id = ${worktreeId}, updated_at = ${nowIso}
+          WHERE chat_id = ${chatId}
+        `.pipe(Effect.asVoid, Effect.orDie);
+        return yield* lookupChat(chatId);
+      });
+
+    const setChatActiveSession: MessageStoreShape["setChatActiveSession"] = (
+      chatId,
+      sessionId,
+    ) =>
+      Effect.gen(function* () {
+        yield* lookupChat(chatId);
+        const nowIso = new Date().toISOString();
+        // Defensive: only update if the session belongs to this chat.
+        // Stale renderer state shouldn't be able to scramble the memo.
+        yield* sql`
+          UPDATE chats
+          SET active_session_id = ${sessionId}, updated_at = ${nowIso}
+          WHERE id = ${chatId}
+            AND EXISTS (
+              SELECT 1 FROM sessions
+              WHERE id = ${sessionId} AND chat_id = ${chatId}
+            )
+        `.pipe(Effect.asVoid, Effect.orDie);
+      });
+
+    const archiveChat: MessageStoreShape["archiveChat"] = (chatId) =>
+      Effect.gen(function* () {
+        yield* lookupChat(chatId);
+        const nowIso = new Date().toISOString();
+        yield* sql`
+          UPDATE chats SET archived_at = ${nowIso}, updated_at = ${nowIso}
+          WHERE id = ${chatId}
+        `.pipe(Effect.asVoid, Effect.orDie);
+        yield* sql`
+          UPDATE sessions SET archived_at = ${nowIso}, updated_at = ${nowIso}
+          WHERE chat_id = ${chatId} AND archived_at IS NULL
+        `.pipe(Effect.asVoid, Effect.orDie);
+      });
+
+    const unarchiveChat: MessageStoreShape["unarchiveChat"] = (chatId) =>
+      Effect.gen(function* () {
+        yield* lookupChat(chatId);
+        const nowIso = new Date().toISOString();
+        yield* sql`
+          UPDATE chats SET archived_at = NULL, updated_at = ${nowIso}
+          WHERE id = ${chatId}
+        `.pipe(Effect.asVoid, Effect.orDie);
+      });
+
+    const deleteChat: MessageStoreShape["deleteChat"] = (chatId) =>
+      Effect.gen(function* () {
+        yield* lookupChat(chatId);
+        // Tear down each child session's provider state before the SQL
+        // CASCADE wipes the rows so we don't leak an in-memory pubsub /
+        // fiber after the data is gone.
+        const childIds = yield* sql<{ readonly id: string }>`
+          SELECT id FROM sessions WHERE chat_id = ${chatId}
+        `.pipe(Effect.orDie);
+        for (const { id } of childIds) {
+          const sessionId = SessionId.make(id);
+          yield* provider
+            .close(sessionId)
+            .pipe(Effect.catchAll(() => Effect.void));
+          yield* teardownSubscription(sessionId);
+        }
+        yield* sql`DELETE FROM chats WHERE id = ${chatId}`.pipe(
+          Effect.asVoid,
+          Effect.orDie,
+        );
+        // ON DELETE CASCADE handles sessions + messages.
       });
 
     const listMessages: MessageStoreShape["listMessages"] = (sessionId) =>
@@ -1183,6 +1501,15 @@ export const MessageStoreLive = Layer.scoped(
       archiveSession,
       unarchiveSession,
       deleteSession,
+      listChats,
+      getChat,
+      createChat,
+      renameChat,
+      setChatWorktree,
+      setChatActiveSession,
+      archiveChat,
+      unarchiveChat,
+      deleteChat,
       resumeSession,
       listMessages,
       streamMessages,

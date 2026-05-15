@@ -16,6 +16,10 @@ export interface WindowBridge {
   ) => () => void;
 }
 
+export interface MenuBridge {
+  readonly onCloseTab: (handler: () => void) => () => void;
+}
+
 export interface AppBridge {
   readonly openExternal: (url: string) => void;
 }
@@ -23,6 +27,7 @@ export interface AppBridge {
 export interface MemoizeBridge {
   readonly rpc: RpcBridge;
   readonly window?: WindowBridge;
+  readonly menu?: MenuBridge;
   readonly app?: AppBridge;
 }
 

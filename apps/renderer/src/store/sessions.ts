@@ -3,6 +3,7 @@ import { create } from "zustand";
 
 import type {
   AgentItemId,
+  ChatId,
   FolderId,
   PermissionMode,
   ProviderId,
@@ -46,13 +47,12 @@ type SessionsState = {
   readonly error: string | null;
   readonly hydrate: (projectId: FolderId) => Promise<void>;
   readonly create: (
-    projectId: FolderId,
+    chatId: ChatId,
     providerId: ProviderId,
     model: string,
     opts?: {
       initialPrompt?: string;
       runtimeMode?: RuntimeMode;
-      worktreeId?: WorktreeId | null;
       permissionMode?: PermissionMode;
       toolSearch?: boolean;
     },
@@ -81,16 +81,6 @@ type SessionsState = {
     itemId: AgentItemId,
     answers: ReadonlyArray<UserQuestionAnswer>,
   ) => Promise<void>;
-  /**
-   * Switch the worktree the session runs in. Allowed only before the first
-   * user message has been recorded — server returns
-   * `SessionAlreadyStartedError` otherwise. Returns `{ ok: false, reason }`
-   * with a renderer-friendly message in that case.
-   */
-  readonly setWorktree: (
-    sessionId: SessionId,
-    worktreeId: WorktreeId | null,
-  ) => Promise<{ readonly ok: true } | { readonly ok: false; reason: string }>;
   readonly refreshOne: (sessionId: SessionId) => Promise<void>;
   readonly archive: (sessionId: SessionId) => Promise<void>;
   readonly unarchive: (sessionId: SessionId) => Promise<void>;
@@ -148,7 +138,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       }));
     }
   },
-  create: async (projectId, providerId, model, opts) => {
+  create: async (chatId, providerId, model, opts) => {
     set({ error: null });
     try {
       const client = await getRpcClient();
@@ -161,18 +151,18 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
         useSubagentsStore.getState().enableForNewSessions;
       const session = await Effect.runPromise(
         client.session.create({
-          projectId,
+          chatId,
           providerId,
           model,
           initialPrompt: opts?.initialPrompt,
           runtimeMode: opts?.runtimeMode,
           agents,
           enableSubagents,
-          worktreeId: opts?.worktreeId ?? null,
           permissionMode: opts?.permissionMode,
           toolSearch: opts?.toolSearch,
         }),
       );
+      const projectId = session.projectId;
       set((s) => {
         const existing = s.sessionsByProject[projectId] ?? [];
         return {
@@ -306,33 +296,6 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       set({ error: formatError(err) });
     }
   },
-  setWorktree: async (sessionId, worktreeId) => {
-    set({ error: null });
-    try {
-      const client = await getRpcClient();
-      await Effect.runPromise(
-        client.session.setWorktree({ sessionId, worktreeId }),
-      );
-      set((s) => {
-        const projectId = findSessionProject(s.sessionsByProject, sessionId);
-        if (projectId === null) return {};
-        const sessions = s.sessionsByProject[projectId] ?? [];
-        return {
-          sessionsByProject: {
-            ...s.sessionsByProject,
-            [projectId]: sessions.map((session) =>
-              session.id === sessionId ? { ...session, worktreeId } : session,
-            ),
-          },
-        };
-      });
-      return { ok: true } as const;
-    } catch (err) {
-      const reason = formatError(err);
-      set({ error: reason });
-      return { ok: false, reason } as const;
-    }
-  },
   archive: async (sessionId) => {
     set({ error: null });
     try {
@@ -374,8 +337,8 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     try {
       const client = await getRpcClient();
       await Effect.runPromise(client.session.delete({ sessionId }));
+      const projectId = findSessionProject(get().sessionsByProject, sessionId);
       set((s) => {
-        const projectId = findSessionProject(s.sessionsByProject, sessionId);
         if (projectId === null) return {};
         const sessions = s.sessionsByProject[projectId] ?? [];
         const perProject = s.selectedSessionByProject[projectId] === sessionId
@@ -474,6 +437,21 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
           ? { ...s.selectedSessionByProject, [projectId]: sessionId }
           : s.selectedSessionByProject,
     }));
+    // Mirror the active tab into the owning chat row so a later sidebar
+    // click restores this tab. Lookup is best-effort — we skip when the
+    // session row hasn't hit the renderer cache yet (e.g. just-created
+    // session whose hydrate is still in flight).
+    const sessionRow =
+      projectId !== null
+        ? get().sessionsByProject[projectId]?.find((row) => row.id === sessionId)
+        : undefined;
+    if (sessionRow !== undefined) {
+      // Lazy require to dodge an import cycle with chats.ts which depends
+      // on this store.
+      void import("./chats.ts").then(({ useChatsStore }) =>
+        useChatsStore.getState().setActiveSession(sessionRow.chatId, sessionId),
+      );
+    }
     // If the session lives in a different project than the currently-active
     // one, switch projects too. Without this the chat would jump to the new
     // session but the right pane, top bar, terminal cwd, etc. would stay on

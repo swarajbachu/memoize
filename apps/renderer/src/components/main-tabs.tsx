@@ -1,16 +1,27 @@
-import { X } from "lucide-react";
+import { Plus, X } from "lucide-react";
+import { useMemo } from "react";
 
-import { MODELS_BY_PROVIDER, type ProviderId } from "@memoize/wire";
+import {
+  defaultModelFor,
+  type FolderId,
+  MODELS_BY_PROVIDER,
+  type ProviderId,
+  type Session,
+  type SessionId,
+} from "@memoize/wire";
 
+import { useChatsStore } from "../store/chats.ts";
+import { useProvidersStore } from "../store/providers.ts";
+import { useSessionsStore } from "../store/sessions.ts";
+import { useSettingsStore } from "../store/settings.ts";
 import { useUiStore } from "../store/ui.ts";
 import { FileIcon } from "./file-icon.tsx";
 import { ProviderIcon } from "./provider-icons.tsx";
 
 type Props = {
-  readonly headerLabel: string;
-  readonly headerTitle?: string;
-  readonly providerId?: ProviderId;
-  readonly model?: string;
+  readonly projectId: FolderId | null;
+  /** Fallback label when no chat is selected yet. */
+  readonly emptyLabel: string;
 };
 
 const PROVIDER_LABEL: Record<ProviderId, string> = {
@@ -27,46 +38,102 @@ const lookupModelLabel = (
   return opt?.label ?? model;
 };
 
+const EMPTY_SESSIONS: ReadonlyArray<Session> = [];
+
 /**
- * Top-of-main-pane tab strip. Always renders the Chat tab; the file tab only
- * appears when a file has been opened from the right-side tree. The empty
- * region at the right keeps the macOS window-drag handle alive — the prior
- * static `<header>` did the same with `[-webkit-app-region:drag]`.
+ * Top-of-main-pane tab strip. Every tab is a session belonging to the
+ * currently-active chat — uniform, no first-tab special case. The strip is
+ * derived purely from server data (sessions filtered by `chatId`); there is
+ * no UI-side open/closed list. Closing a tab archives the session; if it
+ * was the last one in the chat, a fresh empty session is created so the
+ * strip never goes empty.
  *
- * Active state is signalled by a 2px bottom underline on the tab itself,
- * not a filled background — keeps the strip flat and lets the chat surface
- * read as one continuous panel with the body below.
+ * "+" creates a new session in the active chat. The server enforces that
+ * the new session inherits the chat's worktree.
  */
-export function MainTabs({ headerLabel, headerTitle, providerId, model }: Props) {
+export function MainTabs({ projectId, emptyLabel }: Props) {
   const activeMainTab = useUiStore((s) => s.activeMainTab);
   const setActiveMainTab = useUiStore((s) => s.setActiveMainTab);
   const openFile = useUiStore((s) => s.openFile);
   const closeFileTab = useUiStore((s) => s.closeFileTab);
   const fileDirty = useUiStore((s) => s.fileDirty);
 
-  const modelLabel = lookupModelLabel(providerId, model);
-  const tabTitle =
-    providerId && modelLabel
-      ? `${headerTitle ?? headerLabel} — ${PROVIDER_LABEL[providerId]} · ${modelLabel}`
-      : headerTitle;
+  const selectedSessionId = useSessionsStore((s) => s.selectedSessionId);
+  const projectSessions = useSessionsStore((s) =>
+    projectId !== null
+      ? (s.sessionsByProject[projectId] ?? EMPTY_SESSIONS)
+      : EMPTY_SESSIONS,
+  );
+  const selectSession = useSessionsStore((s) => s.select);
+
+  // The active chat = the chat owning the active session (if any), else
+  // the sidebar's selected chat. We prefer the session-derived value
+  // because it reflects the actual surface the user is looking at; the
+  // chats store's `selectedChatId` may lag during transitions.
+  const selectedChatId = useChatsStore((s) => s.selectedChatId);
+  const activeChatId = useMemo(() => {
+    if (selectedSessionId !== null) {
+      const row = projectSessions.find((s) => s.id === selectedSessionId);
+      if (row !== undefined) return row.chatId;
+    }
+    return selectedChatId;
+  }, [selectedSessionId, projectSessions, selectedChatId]);
+
+  // Tabs = all non-archived sessions in the active chat, ordered by
+  // creation time so the user's mental order stays stable.
+  const tabs = useMemo(() => {
+    if (activeChatId === null) return EMPTY_SESSIONS;
+    return projectSessions
+      .filter(
+        (row) => row.chatId === activeChatId && row.archivedAt === null,
+      )
+      .slice()
+      .sort((a, b) => {
+        const aTs = new Date(a.createdAt).getTime();
+        const bTs = new Date(b.createdAt).getTime();
+        return aTs - bTs;
+      });
+  }, [projectSessions, activeChatId]);
 
   return (
     <header className="flex h-10 shrink-0 items-stretch border-b border-border">
       <div className="flex items-stretch gap-1 px-2">
-        <TabButton
-          active={activeMainTab === "chat"}
-          onClick={() => setActiveMainTab("chat")}
-          label={headerLabel}
-          title={tabTitle}
-          leading={
-            providerId ? (
-              <ProviderIcon
-                providerId={providerId}
-                className="size-3.5 shrink-0 text-foreground"
-              />
-            ) : null
-          }
-        />
+        {tabs.length === 0 && (
+          <TabButton
+            active={activeMainTab === "chat"}
+            onClick={() => setActiveMainTab("chat")}
+            label={emptyLabel}
+          />
+        )}
+        {tabs.map((session) => {
+          const isActive =
+            activeMainTab === "chat" && selectedSessionId === session.id;
+          const modelLabel = lookupModelLabel(session.providerId, session.model);
+          const tooltip = modelLabel
+            ? `${session.title} — ${PROVIDER_LABEL[session.providerId]} · ${modelLabel}`
+            : session.title;
+          return (
+            <ChatTabButton
+              key={session.id}
+              active={isActive}
+              label={session.title}
+              title={tooltip}
+              providerId={session.providerId}
+              onClick={() => {
+                if (selectedSessionId !== session.id) {
+                  selectSession(session.id);
+                }
+                setActiveMainTab("chat");
+              }}
+              onClose={() => {
+                void closeChatTab(session.id);
+              }}
+            />
+          );
+        })}
+        {projectId !== null && activeChatId !== null && (
+          <NewChatTabButton chatId={activeChatId} />
+        )}
         {openFile && (
           <FileTabButton
             active={activeMainTab === "file"}
@@ -83,18 +150,102 @@ export function MainTabs({ headerLabel, headerTitle, providerId, model }: Props)
   );
 }
 
+/**
+ * Close the active chat tab. Shared between the X click and the Cmd+W menu
+ * accelerator (subscribed in `app.tsx`). Logic lives outside the component
+ * so the keyboard handler doesn't depend on which tab the user is hovering.
+ */
+export const closeActiveChatTab = async (): Promise<void> => {
+  const sessions = useSessionsStore.getState();
+  const sessionId = sessions.selectedSessionId;
+  if (sessionId === null) return;
+  await closeChatTab(sessionId);
+};
+
+const closeChatTab = async (sessionId: SessionId): Promise<void> => {
+  const sessions = useSessionsStore.getState();
+  // Locate the session row + its project group.
+  let projectId: FolderId | null = null;
+  let session: Session | null = null;
+  for (const [pid, list] of Object.entries(sessions.sessionsByProject)) {
+    const match = list.find((row) => row.id === sessionId);
+    if (match !== undefined) {
+      projectId = pid as FolderId;
+      session = match;
+      break;
+    }
+  }
+  if (projectId === null || session === null) return;
+
+  const projectRows =
+    sessions.sessionsByProject[projectId] ?? EMPTY_SESSIONS;
+  // Live siblings in the same chat (excluding the one we're closing) sorted
+  // by creation time — used to pick the next active tab and to detect the
+  // "last tab" case.
+  const siblings = projectRows
+    .filter(
+      (row) =>
+        row.chatId === session!.chatId &&
+        row.archivedAt === null &&
+        row.id !== session!.id,
+    )
+    .slice()
+    .sort(
+      (a, b) =>
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+    );
+
+  if (siblings.length > 0) {
+    // Not the last tab — archive and refocus the right neighbor (else left).
+    const idx = projectRows
+      .filter((row) => row.chatId === session!.chatId && row.archivedAt === null)
+      .sort(
+        (a, b) =>
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+      )
+      .findIndex((row) => row.id === session!.id);
+    const ordered = projectRows
+      .filter(
+        (row) =>
+          row.chatId === session!.chatId &&
+          row.archivedAt === null &&
+          row.id !== session!.id,
+      )
+      .sort(
+        (a, b) =>
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+      );
+    const next = ordered[idx] ?? ordered[idx - 1] ?? ordered[0] ?? null;
+    await sessions.archive(sessionId);
+    sessions.select(next?.id ?? null);
+    return;
+  }
+
+  // Last tab in the chat — archive AND spawn a fresh empty session in the
+  // same chat so the strip never goes empty. Provider/model defaults come
+  // from the user's settings.
+  const settings = useSettingsStore.getState();
+  const providersRefresh = useProvidersStore.getState().refresh;
+  await providersRefresh();
+  const providerId = settings.defaultProviderId;
+  const model =
+    settings.defaultModelByProvider[providerId] ?? defaultModelFor(providerId);
+  await sessions.archive(session.id);
+  await sessions.create(session.chatId, providerId, model, {
+    runtimeMode: settings.defaultRuntimeMode,
+  });
+};
+
 function TabButton({
   active,
   onClick,
   label,
   title,
-  leading,
 }: {
   active: boolean;
   onClick: () => void;
   label: string;
   title?: string;
-  leading?: React.ReactNode;
 }) {
   return (
     <button
@@ -107,8 +258,91 @@ function TabButton({
           : "text-muted-foreground hover:text-foreground after:bg-transparent"
       }`}
     >
-      {leading}
       <span className="truncate">{label}</span>
+    </button>
+  );
+}
+
+function ChatTabButton({
+  active,
+  label,
+  title,
+  providerId,
+  onClick,
+  onClose,
+}: {
+  active: boolean;
+  label: string;
+  title?: string;
+  providerId: ProviderId;
+  onClick: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className={`group relative flex max-w-[280px] items-center gap-1.5 px-3 text-[12px] transition-colors after:pointer-events-none after:absolute after:inset-x-2 after:-bottom-px after:h-[2px] after:rounded-full after:transition-colors ${
+        active
+          ? "text-foreground after:bg-foreground"
+          : "text-muted-foreground hover:text-foreground after:bg-transparent"
+      }`}
+    >
+      <button
+        type="button"
+        onClick={onClick}
+        title={title ?? label}
+        className="flex min-w-0 flex-1 items-center gap-1.5 py-0"
+      >
+        <ProviderIcon
+          providerId={providerId}
+          className="size-3.5 shrink-0 text-foreground"
+        />
+        <span className="truncate">{label}</span>
+      </button>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
+        aria-label="Close chat"
+        className="relative z-10 rounded p-0.5 opacity-0 transition-opacity hover:bg-foreground/10 group-hover:opacity-100"
+      >
+        <X className="size-3" />
+      </button>
+    </div>
+  );
+}
+
+function NewChatTabButton({ chatId }: { chatId: import("@memoize/wire").ChatId }) {
+  const refresh = useProvidersStore((s) => s.refresh);
+  const create = useSessionsStore((s) => s.create);
+  const defaultProviderId = useSettingsStore((s) => s.defaultProviderId);
+  const defaultModelByProvider = useSettingsStore(
+    (s) => s.defaultModelByProvider,
+  );
+  const defaultRuntimeMode = useSettingsStore((s) => s.defaultRuntimeMode);
+
+  // Creates a new session inside the active chat. Worktree is inherited
+  // from the chat row server-side.
+  const onClick = async () => {
+    await refresh();
+    const model =
+      defaultModelByProvider[defaultProviderId] ??
+      defaultModelFor(defaultProviderId);
+    void create(chatId, defaultProviderId, model, {
+      runtimeMode: defaultRuntimeMode,
+    });
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={() => void onClick()}
+      title="New tab in this chat"
+      aria-label="New tab in this chat"
+      className="relative flex items-center justify-center rounded px-2 text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground"
+    >
+      <Plus className="size-3.5" />
     </button>
   );
 }

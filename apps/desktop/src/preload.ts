@@ -33,6 +33,15 @@ const bridge = {
       };
     },
   },
+  menu: {
+    onCloseTab: (handler: () => void) => {
+      const wrapped = () => handler();
+      ipcRenderer.on("menu:close-tab", wrapped);
+      return () => {
+        ipcRenderer.off("menu:close-tab", wrapped);
+      };
+    },
+  },
   app: {
     openExternal: (url: string) => {
       ipcRenderer.send("app:openExternal", url);

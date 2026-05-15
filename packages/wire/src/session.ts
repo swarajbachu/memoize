@@ -12,10 +12,13 @@ import { AttachmentRef, ComposerInput, FileRef, SkillRef } from "./composer.ts";
 import {
   AgentItemId,
   AgentSessionId,
+  ChatId,
   FolderId,
   MessageId,
   WorktreeId,
 } from "./ids.ts";
+
+export { ChatId } from "./ids.ts";
 
 export {
   DEFAULT_PERMISSION_MODE,
@@ -86,10 +89,30 @@ export class Session extends Schema.Class<Session>("Session")({
   runtimeMode: RuntimeMode,
   /**
    * Optional git worktree the session runs in. When null, the session runs
-   * in the project's main checkout (`projects.path`). Locked once the first
-   * user message is recorded — see `SessionSetWorktreeRpc`.
+   * in the project's main checkout (`projects.path`). Mirrors the owning
+   * chat's `worktreeId` — sessions in a chat always share its worktree;
+   * server-side `chat.setWorktree` updates both. Locked once the chat has
+   * any message recorded.
    */
   worktreeId: Schema.NullOr(WorktreeId),
+  /**
+   * Chat (sidebar entry) this session belongs to. Every session is a tab
+   * inside exactly one chat — the chat row is the container; sessions are
+   * its uniform members. CASCADEs on chat delete.
+   */
+  chatId: ChatId,
+  /**
+   * If this session was forked from another, the source session id. Null
+   * for sessions started fresh. Reserved for the upcoming "fork from
+   * message" feature — column ships now so the future capability is a
+   * pure code change.
+   */
+  forkedFromSessionId: Schema.NullOr(SessionId),
+  /**
+   * The message in the source session the fork branched from, when
+   * applicable. Paired with `forkedFromSessionId`.
+   */
+  forkedFromMessageId: Schema.NullOr(MessageId),
   /**
    * SDK lifecycle mode. Distinct from `runtimeMode` (our own auto-allow
    * policy). `plan` means the agent is currently restricted to read-only
@@ -313,7 +336,12 @@ export const SessionGetRpc = Rpc.make("session.get", {
 
 export const SessionCreateRpc = Rpc.make("session.create", {
   payload: Schema.Struct({
-    projectId: FolderId,
+    /**
+     * The chat (sidebar entry) the new session is created in. Worktree
+     * and project are inherited from the chat row — clients never pick
+     * them at session-create time anymore.
+     */
+    chatId: ChatId,
     providerId: ProviderId,
     model: Schema.String,
     title: Schema.optional(Schema.String),
@@ -326,13 +354,6 @@ export const SessionCreateRpc = Rpc.make("session.create", {
       Schema.Record({ key: Schema.String, value: AgentDefinition }),
     ),
     enableSubagents: Schema.optional(Schema.Boolean),
-    /**
-     * Optional worktree to run the session in. When omitted (or null), the
-     * session runs in the project's main checkout. The renderer pre-creates
-     * the worktree and passes its id when the per-repo `autoCreateWorktree`
-     * setting is on.
-     */
-    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
     /**
      * Start the session in plan mode. The agent will explore read-only
      * and end its first turn by calling `ExitPlanMode`. Defaults to
@@ -391,6 +412,137 @@ export const SessionDeleteRpc = Rpc.make("session.delete", {
   payload: Schema.Struct({ sessionId: SessionId }),
   success: Schema.Void,
   error: SessionNotFoundError,
+});
+
+// ---------------------------------------------------------------------------
+// Chats (sidebar containers; each chat hosts ≥1 session as tabs)
+// ---------------------------------------------------------------------------
+
+/**
+ * A chat is the sidebar-level container. It owns a workspace (project +
+ * optional worktree) and a title; the actual conversations live in its
+ * child sessions, every one of which carries the chat's `chatId`. The
+ * chat row itself has no provider state and no messages — it's metadata.
+ *
+ * `activeSessionId` is the last tab the user was on, persisted server-side
+ * so a future tab restore works across reloads / devices.
+ */
+export class Chat extends Schema.Class<Chat>("Chat")({
+  id: ChatId,
+  projectId: FolderId,
+  worktreeId: Schema.NullOr(WorktreeId),
+  title: Schema.String,
+  activeSessionId: Schema.NullOr(SessionId),
+  archivedAt: Schema.NullOr(Schema.DateFromString),
+  createdAt: Schema.DateFromString,
+  updatedAt: Schema.DateFromString,
+}) {}
+
+export class ChatNotFoundError extends Schema.TaggedError<ChatNotFoundError>()(
+  "ChatNotFoundError",
+  { chatId: ChatId },
+) {}
+
+/**
+ * Raised by `chat.setWorktree` when any session in the chat already has a
+ * recorded user message. Worktrees are immutable past the first message —
+ * mirrors the per-session `SessionAlreadyStartedError` semantics.
+ */
+export class ChatAlreadyStartedError extends Schema.TaggedError<ChatAlreadyStartedError>()(
+  "ChatAlreadyStartedError",
+  { chatId: ChatId },
+) {}
+
+export const ChatListRpc = Rpc.make("chat.list", {
+  payload: Schema.Struct({
+    projectId: FolderId,
+    includeArchived: Schema.optional(Schema.Boolean),
+  }),
+  success: Schema.Array(Chat),
+});
+
+export const ChatGetRpc = Rpc.make("chat.get", {
+  payload: Schema.Struct({ chatId: ChatId }),
+  success: Chat,
+  error: ChatNotFoundError,
+});
+
+/**
+ * Create a new chat AND its initial session in one transaction. Returns
+ * both so the renderer can land on the new session immediately without a
+ * follow-up round-trip. The chat's `activeSessionId` is set to the new
+ * session id.
+ */
+export const ChatCreateRpc = Rpc.make("chat.create", {
+  payload: Schema.Struct({
+    projectId: FolderId,
+    providerId: ProviderId,
+    model: Schema.String,
+    title: Schema.optional(Schema.String),
+    initialPrompt: Schema.optional(Schema.String),
+    runtimeMode: Schema.optional(RuntimeMode),
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
+    agents: Schema.optional(
+      Schema.Record({ key: Schema.String, value: AgentDefinition }),
+    ),
+    enableSubagents: Schema.optional(Schema.Boolean),
+    permissionMode: Schema.optional(PermissionMode),
+    toolSearch: Schema.optional(Schema.Boolean),
+  }),
+  success: Schema.Struct({ chat: Chat, initialSession: Session }),
+  error: SessionStartError,
+});
+
+export const ChatRenameRpc = Rpc.make("chat.rename", {
+  payload: Schema.Struct({ chatId: ChatId, title: Schema.String }),
+  success: Schema.Void,
+  error: ChatNotFoundError,
+});
+
+/**
+ * Change the chat's worktree. Allowed only when no session in the chat has
+ * any user message yet — fails with `ChatAlreadyStartedError` otherwise.
+ * Updates `chat.worktreeId` AND mirrors the change onto every member
+ * session's `worktreeId` so renderer reads of `session.worktreeId` stay
+ * accurate without a second round-trip.
+ */
+export const ChatSetWorktreeRpc = Rpc.make("chat.setWorktree", {
+  payload: Schema.Struct({
+    chatId: ChatId,
+    worktreeId: Schema.NullOr(WorktreeId),
+  }),
+  success: Chat,
+  error: Schema.Union(ChatNotFoundError, ChatAlreadyStartedError),
+});
+
+/**
+ * Record the user's last-active tab within this chat. Called whenever the
+ * tab strip selection changes so a future click on this chat's sidebar
+ * row restores the correct tab. No-op if `sessionId` doesn't belong to
+ * the chat (defensive against races).
+ */
+export const ChatSetActiveSessionRpc = Rpc.make("chat.setActiveSession", {
+  payload: Schema.Struct({ chatId: ChatId, sessionId: SessionId }),
+  success: Schema.Void,
+  error: ChatNotFoundError,
+});
+
+export const ChatArchiveRpc = Rpc.make("chat.archive", {
+  payload: Schema.Struct({ chatId: ChatId }),
+  success: Schema.Void,
+  error: ChatNotFoundError,
+});
+
+export const ChatUnarchiveRpc = Rpc.make("chat.unarchive", {
+  payload: Schema.Struct({ chatId: ChatId }),
+  success: Schema.Void,
+  error: ChatNotFoundError,
+});
+
+export const ChatDeleteRpc = Rpc.make("chat.delete", {
+  payload: Schema.Struct({ chatId: ChatId }),
+  success: Schema.Void,
+  error: ChatNotFoundError,
 });
 
 // ---------------------------------------------------------------------------
