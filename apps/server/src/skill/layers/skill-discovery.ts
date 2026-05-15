@@ -6,6 +6,7 @@ import { Effect, Layer } from "effect";
 
 import { Skill, type ProviderId } from "@memoize/wire";
 
+import { CodexAppServerClient } from "../../provider/codex-app-server-client.ts";
 import { SkillDiscoveryService } from "../services/skill-discovery.ts";
 
 interface RawSkill {
@@ -255,6 +256,50 @@ export const SkillDiscoveryServiceLive = Layer.effect(
       projectCwd: string,
     ): Effect.Effect<ReadonlyArray<Skill>> =>
       Effect.gen(function* () {
+        const viaAppServer = yield* Effect.tryPromise({
+          try: async (): Promise<ReadonlyArray<Skill>> => {
+            const client = await CodexAppServerClient.start({
+              codexPath: null,
+              onNotification: () => undefined,
+              onServerRequest: (_request, respond) => respond({}),
+            });
+            try {
+              const response = await client.request<{
+                data: ReadonlyArray<{
+                  cwd: string;
+                  skills: ReadonlyArray<{
+                    name: string;
+                    description: string;
+                    shortDescription?: string;
+                    path: string;
+                    scope: "user" | "repo" | "system" | "admin";
+                    enabled: boolean;
+                  }>;
+                }>;
+              }>("skills/list", { cwds: [projectCwd], forceReload: false });
+              return response.data.flatMap((entry) =>
+                entry.skills
+                  .filter((skill) => skill.enabled)
+                  .map((skill) =>
+                    Skill.make({
+                      name: skill.name,
+                      scope: skill.scope === "repo" ? "project" : "global",
+                      description:
+                        skill.shortDescription ?? skill.description ?? "",
+                      arguments: [],
+                      filePath: skill.path,
+                      providerId: "codex",
+                    }),
+                  ),
+              );
+            } finally {
+              client.close();
+            }
+          },
+          catch: (cause) => cause,
+        }).pipe(Effect.catchAll(() => Effect.succeed(null)));
+        if (viaAppServer !== null) return dedupeProjectFirst(viaAppServer);
+
         const projectRoot = path.join(projectCwd, ".codex", "prompts");
         const globalRoot = path.join(home, ".codex", "prompts");
         const projectRaw = yield* readCodexPromptsRoot(projectRoot);

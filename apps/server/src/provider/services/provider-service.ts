@@ -9,10 +9,12 @@ import type {
   AgentSessionStartError,
   AgentTurnId,
   AttachmentRef,
+  FileRef,
   PermissionMode,
   ProviderId,
   ProviderNotAvailableError,
   RuntimeMode,
+  SkillRef,
   StartSessionInput,
   UserQuestionAnswer,
 } from "@memoize/wire";
@@ -48,6 +50,8 @@ export interface ProviderServiceShape {
     sessionId: AgentSessionId,
     text: string,
     attachments?: ReadonlyArray<AttachmentRef>,
+    fileRefs?: ReadonlyArray<FileRef>,
+    skillRefs?: ReadonlyArray<SkillRef>,
   ) => Effect.Effect<void, AgentSessionNotFoundError>;
 
   readonly interrupt: (

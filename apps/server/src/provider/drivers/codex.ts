@@ -1,9 +1,3 @@
-import {
-  Codex,
-  type Thread,
-  type ThreadEvent,
-  type ThreadItem,
-} from "@openai/codex-sdk";
 import { Effect, Mailbox, Stream } from "effect";
 
 import {
@@ -12,17 +6,23 @@ import {
   type AgentItemId,
   type AgentSessionId,
   type AttachmentRef,
+  type FileRef,
+  type PermissionDecision,
+  type PermissionKind,
   type PermissionMode,
+  type SkillRef,
   type StartSessionInput,
   type UserQuestionAnswer,
 } from "@memoize/wire";
 
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
+import { CodexAppServerClient } from "../codex-app-server-client.ts";
+import type { ServerNotification } from "../codex-app-protocol/ServerNotification";
+import type { ServerRequest } from "../codex-app-protocol/ServerRequest";
+import type { SandboxPolicy } from "../codex-app-protocol/v2/SandboxPolicy";
+import type { ThreadItem } from "../codex-app-protocol/v2/ThreadItem";
+import type { UserInput } from "../codex-app-protocol/v2/UserInput";
 
-// Codex SDK accepts only `local_image` input items — no PDFs or arbitrary
-// documents. Match Claude's image set so a single composer attachment chip
-// behaves consistently across providers; PDFs are silently dropped with a
-// warn (PDF support would need its own SDK item type).
 const SUPPORTED_CODEX_IMAGE_MIME = new Set([
   "image/png",
   "image/jpeg",
@@ -30,48 +30,39 @@ const SUPPORTED_CODEX_IMAGE_MIME = new Set([
   "image/webp",
 ]);
 
-type CodexSandboxConfig = {
-  readonly sandboxMode: "read-only" | "workspace-write";
-  readonly approvalPolicy: "never";
-};
+export type RequestPermission = (
+  sessionId: AgentSessionId,
+  kind: PermissionKind,
+  options: { readonly forcePrompt: boolean },
+) => Promise<PermissionDecision>;
 
-// Map memoize's PermissionMode onto codex's sandbox + approval knobs. Codex
-// SDK 0.128 has no JS approval callback (see codex driver comment at
-// thread-options below), so approvalPolicy stays "never" across modes;
-// only sandboxMode varies. `plan` → read-only is the user-facing toggle.
-const toCodexSandbox = (mode: PermissionMode): CodexSandboxConfig => ({
-  sandboxMode: mode === "plan" ? "read-only" : "workspace-write",
-  approvalPolicy: "never",
-});
+const toSandboxMode = (
+  mode: PermissionMode,
+): "read-only" | "workspace-write" =>
+  mode === "plan" ? "read-only" : "workspace-write";
 
-/**
- * Live-only handle for one Codex SDK conversation. Mirrors `ClaudeSessionHandle`
- * — the orchestrator owns the sessionId → handle map and forwards RPCs here.
- *
- * Codex's Thread API is turn-scoped (each `runStreamed` is one turn) rather
- * than the streaming-input loop Claude uses. We model `send()` as "start a new
- * turn"; only one turn runs at a time per session, so a second `send()` while
- * a turn is in flight is queued behind the current one.
- */
+const toSandboxPolicy = (mode: PermissionMode, cwd: string): SandboxPolicy =>
+  mode === "plan"
+    ? { type: "readOnly", networkAccess: false }
+    : {
+        type: "workspaceWrite",
+        writableRoots: [cwd],
+        networkAccess: false,
+        excludeTmpdirEnvVar: false,
+        excludeSlashTmp: false,
+      };
+
 export interface CodexSessionHandle {
   readonly events: Stream.Stream<AgentEvent>;
   readonly send: (
     text: string,
     attachments?: ReadonlyArray<AttachmentRef>,
+    fileRefs?: ReadonlyArray<FileRef>,
+    skillRefs?: ReadonlyArray<SkillRef>,
   ) => Effect.Effect<void>;
   readonly interrupt: () => Effect.Effect<void>;
   readonly close: () => Effect.Effect<void>;
-  /**
-   * Plan / default / acceptEdits maps onto codex's `sandboxMode`
-   * (`read-only` for plan, `workspace-write` otherwise). The SDK has no
-   * live-update API for sandbox, so toggle is implemented as
-   * `codex.resumeThread(id, newOpts)` — same conversation, new sandbox.
-   */
   readonly setPermissionMode: (mode: PermissionMode) => Effect.Effect<void>;
-  /**
-   * `AskUserQuestion` is Claude-only — codex's SDK has no equivalent
-   * primitive. Accept the call but no-op so RPC routing stays uniform.
-   */
   readonly answerQuestion: (
     itemId: AgentItemId,
     answers: ReadonlyArray<UserQuestionAnswer>,
@@ -82,81 +73,83 @@ let itemCounter = 0;
 const nextItemId = (): AgentItemId =>
   `i_${Date.now()}_${++itemCounter}` as AgentItemId;
 
-/**
- * Translate one Codex ThreadItem into zero-or-more wire AgentEvents. We only
- * surface the kinds that have a meaningful UI in Phase 2; reasoning, todo
- * lists, and web search show up as `AssistantMessage` summaries so the panel
- * isn't silent. Phase 3 will give them dedicated rows.
- */
+const firstLine = (text: string): string => text.split("\n", 1)[0] ?? "";
+
+const asText = (value: unknown): string =>
+  typeof value === "string" ? value : JSON.stringify(value, null, 2);
+
+const decisionToCodex = (
+  decision: PermissionDecision,
+): "accept" | "acceptForSession" | "decline" =>
+  decision._tag === "AllowForSession" || decision._tag === "AlwaysAllow"
+    ? "acceptForSession"
+    : decision._tag === "AllowOnce"
+      ? "accept"
+      : "decline";
+
 const translateItem = (
   item: ThreadItem,
   phase: "started" | "completed",
 ): ReadonlyArray<AgentEvent> => {
   switch (item.type) {
-    case "agent_message":
-      // Only emit on completion to avoid double-rendering streaming partials.
+    case "agentMessage":
       if (phase !== "completed") return [];
-      return [
-        {
-          _tag: "AssistantMessage",
-          itemId: nextItemId(),
-          text: item.text,
-        },
-      ];
-    case "reasoning":
+      return [{ _tag: "AssistantMessage", itemId: nextItemId(), text: item.text }];
+    case "plan":
       if (phase !== "completed") return [];
-      return [
-        {
-          _tag: "AssistantMessage",
-          itemId: nextItemId(),
-          text: `(reasoning) ${item.text}`,
-        },
-      ];
-    case "command_execution":
+      return [{ _tag: "AssistantMessage", itemId: nextItemId(), text: item.text }];
+    case "reasoning": {
+      if (phase !== "completed") return [];
+      const text = [...item.summary, ...item.content].join("\n").trim();
+      return text.length === 0
+        ? []
+        : [{ _tag: "Thinking", itemId: nextItemId(), text, redacted: false }];
+    }
+    case "commandExecution":
       if (phase === "started") {
         return [
           {
             _tag: "ToolUse",
-            itemId: nextItemId(),
+            itemId: item.id as AgentItemId,
             tool: "command_execution",
-            input: { command: item.command },
+            input: { command: item.command, cwd: item.cwd },
           },
         ];
       }
       return [
         {
           _tag: "ToolResult",
-          itemId: nextItemId(),
+          itemId: item.id as AgentItemId,
           output: {
             command: item.command,
-            exit_code: item.exit_code,
-            output: item.aggregated_output,
+            exit_code: item.exitCode,
+            output: item.aggregatedOutput ?? "",
           },
           isError: item.status === "failed",
         },
       ];
-    case "file_change":
+    case "fileChange":
       if (phase !== "completed") return [];
       return [
         {
           _tag: "ToolUse",
-          itemId: nextItemId(),
+          itemId: item.id as AgentItemId,
           tool: "file_change",
           input: { changes: item.changes },
         },
         {
           _tag: "ToolResult",
-          itemId: nextItemId(),
+          itemId: item.id as AgentItemId,
           output: { changes: item.changes, status: item.status },
           isError: item.status === "failed",
         },
       ];
-    case "mcp_tool_call":
+    case "mcpToolCall":
       if (phase === "started") {
         return [
           {
             _tag: "ToolUse",
-            itemId: nextItemId(),
+            itemId: item.id as AgentItemId,
             tool: `${item.server}/${item.tool}`,
             input: item.arguments,
           },
@@ -165,39 +158,63 @@ const translateItem = (
       return [
         {
           _tag: "ToolResult",
-          itemId: nextItemId(),
+          itemId: item.id as AgentItemId,
           output: item.result ?? item.error ?? null,
           isError: item.status === "failed",
         },
       ];
-    case "web_search":
+    case "dynamicToolCall":
+      if (phase === "started") {
+        return [
+          {
+            _tag: "ToolUse",
+            itemId: item.id as AgentItemId,
+            tool:
+              item.namespace !== null
+                ? `${item.namespace}/${item.tool}`
+                : item.tool,
+            input: item.arguments,
+          },
+        ];
+      }
+      return [
+        {
+          _tag: "ToolResult",
+          itemId: item.id as AgentItemId,
+          output: item.contentItems ?? null,
+          isError: item.success === false,
+        },
+      ];
+    case "webSearch":
       if (phase !== "completed") return [];
       return [
         {
           _tag: "ToolUse",
-          itemId: nextItemId(),
+          itemId: item.id as AgentItemId,
           tool: "web_search",
-          input: { query: item.query },
+          input: { query: item.query, action: item.action },
         },
       ];
-    case "todo_list":
+    case "enteredReviewMode":
+    case "exitedReviewMode":
       if (phase !== "completed") return [];
       return [
         {
           _tag: "AssistantMessage",
-          itemId: nextItemId(),
+          itemId: item.id as AgentItemId,
           text:
-            "todo:\n" +
-            item.items
-              .map((t) => `${t.completed ? "[x]" : "[ ]"} ${t.text}`)
-              .join("\n"),
+            item.type === "enteredReviewMode"
+              ? `Entered review mode: ${item.review}`
+              : `Exited review mode: ${item.review}`,
         },
       ];
-    case "error":
+    case "contextCompaction":
+      if (phase !== "completed") return [];
       return [
         {
-          _tag: "Error",
-          message: item.message,
+          _tag: "AssistantMessage",
+          itemId: item.id as AgentItemId,
+          text: "Conversation context compacted.",
         },
       ];
     default:
@@ -205,331 +222,586 @@ const translateItem = (
   }
 };
 
-const translateEvent = (ev: ThreadEvent): ReadonlyArray<AgentEvent> => {
-  switch (ev.type) {
-    case "thread.started":
-      // Surface the codex thread id so MessageStore can persist it as the
-      // session's resume cursor. Same shape Claude uses for its session_id.
-      return [
-        {
-          _tag: "SessionCursor",
-          cursor: ev.thread_id,
-          strategy: "codex-thread-id",
-        },
-      ];
-    case "turn.started":
-      return [];
-    case "item.started":
-      return translateItem(ev.item, "started");
-    case "item.updated":
-      return [];
-    case "item.completed":
-      return translateItem(ev.item, "completed");
-    case "turn.completed":
-      // Turn ends but session stays open. Flip status to idle so the
-      // renderer's composer drops out of "loading" — Claude does this
-      // via `Completed("ended")`, but for codex we keep the session alive
-      // across turns, so `Status: idle` is the right shape.
-      return [{ _tag: "Status", status: "idle" }];
-    case "turn.failed":
-      return [
-        { _tag: "Error", message: ev.error.message },
-        { _tag: "Status", status: "idle" },
-      ];
-    case "error":
-      return [{ _tag: "Error", message: ev.message }];
-    default:
-      return [];
-  }
-};
-
-/**
- * Spin up a Codex conversation. Codex doesn't expose a streaming-input mode,
- * so each `send()` launches a fresh `runStreamed` turn against the same
- * Thread. A small queue serializes overlapping sends; `interrupt()` aborts
- * the in-flight turn but leaves the thread alive for subsequent sends.
- *
- * `apiKey` is read from the keychain by the caller and passed to the SDK
- * constructor. `null` is tolerated — the SDK will fall back to Codex CLI
- * default auth (`~/.codex/auth.json`).
- */
 export const startCodexSession = (
   input: StartSessionInput,
   cwd: string,
   apiKey: string | null,
   codexPath: string | null,
   sessionId: AgentSessionId,
+  requestPermission: RequestPermission,
   resumeCursor: string | null = null,
 ): Effect.Effect<CodexSessionHandle, AgentSessionStartError, AttachmentService> =>
   Effect.gen(function* () {
     const attachments = yield* AttachmentService;
     const events = yield* Mailbox.make<AgentEvent>();
+    let currentMode: PermissionMode = input.permissionMode ?? "default";
+    let activeThreadId = resumeCursor;
+    let currentTurnId: string | null = null;
+    let latestDiff = "";
+    let closed = false;
+    let pending: Promise<void> = Promise.resolve();
 
-    // The renderer's session row carries the initial mode in `input` and
-    // updates the same row on toggle; mirror it locally so we know what
-    // sandbox to use when rebuilding the thread on `setPermissionMode`.
-    let currentMode: PermissionMode =
-      input.permissionMode ?? "default";
+    type QuestionWaiter = {
+      readonly questionIds: ReadonlyArray<string>;
+      readonly resolve: (answers: ReadonlyArray<UserQuestionAnswer>) => void;
+    };
+    const questionWaiters = new Map<string, QuestionWaiter>();
 
-    const buildThreadOptions = (mode: PermissionMode) => {
-      const sandbox = toCodexSandbox(mode);
-      return {
-        workingDirectory: cwd,
-        // Codex SDK exposes `approvalPolicy` but no callback — when set to
-        // anything other than "never" it routes prompts to its own stdio,
-        // which we can't bridge to memoize's toast. Stay on "never" until
-        // the SDK exposes a programmatic hook; Claude is the primary
-        // permission path in Phase 4. `sandboxMode` is the user-facing
-        // lever — `plan` flips to read-only.
-        sandboxMode: sandbox.sandboxMode,
-        approvalPolicy: sandbox.approvalPolicy,
-        skipGitRepoCheck: true,
-        ...(input.model !== undefined ? { model: input.model } : {}),
-        // `input.agents` is deliberately ignored — the Codex SDK has no
-        // sub-agents primitive. Cross-provider delegation is sketched in
-        // specs/sub-agents/decisions/0012-codex-bridge-via-mcp.md and
-        // lands as a follow-up PR.
-      };
+    const emit = (event: AgentEvent): void => {
+      if (!closed) events.unsafeOffer(event);
     };
 
-    let codex: Codex;
-    let thread: Thread;
-    // Tracks the codex-side thread id once known. Set from the
-    // `thread.started` event for new threads, seeded from `resumeCursor`
-    // for resumes. Needed by `setPermissionMode` to rebuild the thread
-    // against the same conversation when the sandbox changes.
-    let activeThreadId: string | null = resumeCursor;
-    try {
-      codex = new Codex({
-        ...(apiKey !== null ? { apiKey } : {}),
-        // Point the SDK at the user's installed `codex` binary; the SDK's
-        // bundled platform CLI ships as an optional native dep we don't
-        // package. Without this override the SDK throws "Unable to locate
-        // Codex CLI binaries" inside the .dmg.
-        ...(codexPath !== null ? { codexPathOverride: codexPath } : {}),
-      });
-      const threadOptions = buildThreadOptions(currentMode);
-      // Resume reattaches to a prior codex thread by id; the SDK reuses the
-      // server-side conversation state but does not replay items, so the
-      // renderer's persisted timeline remains the source of truth for what
-      // happened before. Start vs resume is the only branch — turn shape
-      // is identical from here on.
-      thread =
-        resumeCursor !== null
-          ? codex.resumeThread(resumeCursor, threadOptions)
-          : codex.startThread(threadOptions);
-    } catch (cause) {
-      yield* events.end;
-      return yield* Effect.fail(
+    const app = yield* Effect.tryPromise({
+      try: () =>
+        CodexAppServerClient.start({
+          codexPath,
+          onNotification: (notification) => {
+            for (const event of translateNotification(notification)) emit(event);
+          },
+          onServerRequest: (request, respond) => {
+            void handleServerRequest(request).then(respond).catch((cause) => {
+              console.warn("[codex-app-server] request failed", cause);
+              respond(defaultServerRequestResponse(request));
+            });
+          },
+        }),
+      catch: (cause) =>
         new AgentSessionStartError({
           providerId: "codex",
           reason: cause instanceof Error ? cause.message : String(cause),
         }),
-      );
-    }
-
-    events.unsafeOffer({
-      _tag: "Started",
-      sessionId,
-      providerId: "codex",
-      mode: "sdk",
     });
 
-    // On resume the SDK won't emit `thread.started` again — re-announce the
-    // cursor so MessageStore reaffirms the persisted strategy. Idempotent on
-    // the DB side: cursor + strategy stay unchanged.
-    if (resumeCursor !== null) {
-      events.unsafeOffer({
-        _tag: "SessionCursor",
-        cursor: resumeCursor,
-        strategy: "codex-thread-id",
-      });
+    if (apiKey !== null && apiKey.length > 0) {
+      // app-server uses the same CLI auth stack as the TUI. The key is still
+      // accepted by the legacy SDK path, but app-server currently reads auth
+      // from the user's Codex home; keep a visible note for future debugging.
+      console.warn("[codex] API key credential present; app-server uses Codex CLI auth");
     }
 
-    // Resolve attachments to `local_image` paths once per send — codex's SDK
-    // copies the file on each turn, so we don't need to keep handles open. PDFs
-    // and other non-image refs are dropped with a warn (Codex SDK 0.128 only
-    // accepts images). `pending-` ids are queued chips whose upload hadn't
-    // finished by the time `send` fired; skip them rather than block the turn.
+    const commonThreadParams = {
+      model: input.model ?? null,
+      cwd,
+      approvalPolicy: "never" as const,
+      sandbox: toSandboxMode(currentMode),
+      serviceName: "memoize",
+    };
+
+    const startOrResume = async (): Promise<void> => {
+      if (activeThreadId !== null) {
+        const resumed = await app.request<{ thread: { id: string } }>(
+          "thread/resume",
+          {
+            threadId: activeThreadId,
+            ...commonThreadParams,
+          },
+        );
+        activeThreadId = resumed.thread.id;
+      } else {
+        const started = await app.request<{ thread: { id: string } }>(
+          "thread/start",
+          commonThreadParams,
+        );
+        activeThreadId = started.thread.id;
+      }
+      emit({
+        _tag: "SessionCursor",
+        cursor: activeThreadId,
+        strategy: "codex-thread-id",
+      });
+    };
+
+    yield* Effect.tryPromise({
+      try: startOrResume,
+      catch: (cause) =>
+        new AgentSessionStartError({
+          providerId: "codex",
+          reason: cause instanceof Error ? cause.message : String(cause),
+        }),
+    });
+
     const resolveImageInputs = async (
       refs: ReadonlyArray<AttachmentRef>,
-    ): Promise<ReadonlyArray<{ readonly type: "local_image"; readonly path: string }>> => {
-      const resolved = await Promise.all(
+    ): Promise<ReadonlyArray<UserInput>> => {
+      const resolved: Array<UserInput | null> = await Promise.all(
         refs.map(async (ref) => {
-          if (ref.id.startsWith("pending-")) {
-            console.warn(
-              `[codex.attach] skipping pending attachment id=${ref.id} (upload didn't finish before send)`,
-            );
-            return null;
-          }
+          if (ref.id.startsWith("pending-")) return null;
           const normalizedMime =
             ref.mimeType.toLowerCase() === "image/jpg"
               ? "image/jpeg"
               : ref.mimeType.toLowerCase();
-          if (!SUPPORTED_CODEX_IMAGE_MIME.has(normalizedMime)) {
-            console.warn(
-              `[codex.attach] dropping unsupported mime id=${ref.id} mime=${ref.mimeType} (codex accepts images only)`,
-            );
-            return null;
-          }
+          if (!SUPPORTED_CODEX_IMAGE_MIME.has(normalizedMime)) return null;
           const meta = await Effect.runPromise(attachments.readPath(ref.id));
-          if (meta === null) {
-            console.warn(
-              `[codex.attach] blob not found id=${ref.id} (db row missing or file deleted)`,
-            );
-            return null;
-          }
-          return { type: "local_image" as const, path: meta.path };
+          return meta === null
+            ? null
+            : ({ type: "localImage", path: meta.path } as const);
         }),
       );
-      return resolved.filter(
-        (item): item is { readonly type: "local_image"; readonly path: string } =>
-          item !== null,
-      );
+      return resolved.filter((item): item is UserInput => item !== null);
     };
 
-    // Per-turn abort + serialization. `currentAbort` is the abort controller
-    // for whichever turn is in flight (null between turns); `pending` chains
-    // sends so they run sequentially against the same thread.
-    let currentAbort: AbortController | null = null;
-    let pending: Promise<void> = Promise.resolve();
-    let closed = false;
+    const findSkillPath = async (name: string): Promise<string | null> => {
+      const response = await app.request<{
+        data: ReadonlyArray<{
+          skills: ReadonlyArray<{ name: string; path: string; enabled: boolean }>;
+        }>;
+      }>("skills/list", { cwds: [cwd], forceReload: false });
+      for (const entry of response.data) {
+        const found = entry.skills.find((s) => s.enabled && s.name === name);
+        if (found !== undefined) return found.path;
+      }
+      return null;
+    };
+
+    const buildUserInput = async (
+      text: string,
+      attachmentRefs: ReadonlyArray<AttachmentRef>,
+      fileRefs: ReadonlyArray<FileRef>,
+      skillRefs: ReadonlyArray<SkillRef>,
+    ): Promise<ReadonlyArray<UserInput>> => {
+      const out: UserInput[] = [];
+      for (const skill of skillRefs) {
+        const path = await findSkillPath(skill.name);
+        if (path !== null) {
+          out.push({ type: "skill", name: skill.name, path });
+        }
+      }
+      for (const file of fileRefs) {
+        out.push({ type: "mention", name: file.relPath, path: file.absPath });
+      }
+      const skillPrefix = skillRefs[0]?.name;
+      const cleanText =
+        skillPrefix !== undefined
+          ? text.replace(new RegExp(`^/${skillPrefix}\\s*`), "").trim()
+          : text.trim();
+      if (cleanText.length > 0) {
+        out.push({ type: "text", text: cleanText, text_elements: [] });
+      }
+      out.push(...(await resolveImageInputs(attachmentRefs)));
+      return out;
+    };
 
     const runTurn = async (
       text: string,
       attachmentRefs: ReadonlyArray<AttachmentRef>,
+      fileRefs: ReadonlyArray<FileRef>,
+      skillRefs: ReadonlyArray<SkillRef>,
     ): Promise<void> => {
-      if (closed) return;
-      const abort = new AbortController();
-      currentAbort = abort;
-      try {
-        const imageInputs = await resolveImageInputs(attachmentRefs);
-        // SDK accepts `string | UserInput[]`. If we have no images, keep the
-        // plain-string path so `codex --version`-style trivial turns serialize
-        // the same as before; only build the structured array when needed.
-        const turnInput =
-          imageInputs.length === 0
-            ? text
-            : [{ type: "text" as const, text }, ...imageInputs];
-        const { events: turnEvents } = await thread.runStreamed(turnInput, {
-          signal: abort.signal,
-        });
-        for await (const ev of turnEvents) {
-          for (const out of translateEvent(ev)) {
-            // Codex emits `thread.started` only on the very first turn of a
-            // new thread. Snapshot the id so `setPermissionMode` can rebuild
-            // the thread against the same conversation on sandbox toggle.
-            if (out._tag === "SessionCursor" && out.strategy === "codex-thread-id") {
-              activeThreadId = out.cursor;
-            }
-            events.unsafeOffer(out);
-          }
-        }
-      } catch (cause) {
-        if (!closed) {
-          const raw = cause instanceof Error ? cause.message : String(cause);
-          // codex-sdk 0.128 hard-codes `--experimental-json` and any pre-0.128
-          // codex CLI rejects it. The session was already created and the
-          // upgrade banner is visible — but if the user sent anyway, translate
-          // the SDK's argument-parsing trace into a sentence they can act on.
-          const isExperimentalJsonError =
-            raw.includes("--experimental-json") ||
-            raw.includes("Codex Exec exited with code 2");
-          events.unsafeOffer({
-            _tag: "Error",
-            message: isExperimentalJsonError
-              ? "Codex CLI is older than memoize expects. Upgrade with `npm i -g @openai/codex@latest`, then try again — or switch to a Claude session in the meantime."
-              : raw,
-          });
-          // The SDK threw before emitting `turn.failed`, so the translate
-          // path never gets a chance to flip status. Emit it here so the
-          // composer drops out of "loading" and the user can switch /
-          // upgrade / try again instead of seeing a stuck spinner.
-          events.unsafeOffer({ _tag: "Status", status: "idle" });
-        }
-      } finally {
-        if (currentAbort === abort) currentAbort = null;
-      }
+      if (closed || activeThreadId === null) return;
+      const commandHandled =
+        skillRefs.length === 0 && (await runSlashCommand(text));
+      if (commandHandled) return;
+
+      emit({ _tag: "Status", status: "running" });
+      const turn = await app.request<{ turn: { id: string } }>("turn/start", {
+        threadId: activeThreadId,
+        input: [...(await buildUserInput(text, attachmentRefs, fileRefs, skillRefs))],
+        cwd,
+        approvalPolicy: "never",
+        sandboxPolicy: toSandboxPolicy(currentMode, cwd),
+        model: input.model ?? null,
+      });
+      currentTurnId = turn.turn.id;
     };
 
     const enqueueTurn = (
       text: string,
       attachmentRefs: ReadonlyArray<AttachmentRef> = [],
+      fileRefs: ReadonlyArray<FileRef> = [],
+      skillRefs: ReadonlyArray<SkillRef> = [],
     ): void => {
-      pending = pending.then(() => runTurn(text, attachmentRefs));
+      pending = pending
+        .then(() => runTurn(text, attachmentRefs, fileRefs, skillRefs))
+        .catch((cause) => {
+          emit({
+            _tag: "Error",
+            message: cause instanceof Error ? cause.message : String(cause),
+          });
+          emit({ _tag: "Status", status: "idle" });
+        });
     };
 
-    // Sandbox toggle for an already-running thread. Codex SDK 0.128 has no
-    // live `updateSandbox` — `sandboxMode` is locked in at thread creation —
-    // so the only way to flip read-only ↔ workspace-write mid-session is to
-    // resume the same thread id with new options. Renderer's persisted
-    // timeline is the source of truth; the conversation continues seamlessly
-    // from codex's side because the thread id is unchanged.
-    const rebuildThreadForMode = async (mode: PermissionMode): Promise<void> => {
-      if (closed) return;
-      if (activeThreadId === null) {
-        // First turn hasn't started yet, so no codex thread id exists.
-        // Update `currentMode` so the *next* startThread picks it up —
-        // but if the thread is already built (it is: we built it above
-        // synchronously), the mode is baked in. The simplest correct
-        // thing is a warn — the renderer can re-issue once the first
-        // turn lands. In practice the toggle only fires after a session
-        // has answered at least once.
-        currentMode = mode;
-        console.warn(
-          "[codex] setPermissionMode called before thread.started; mode cached but live thread keeps prior sandbox until next resume",
-        );
-        return;
-      }
-      // Abort any in-flight turn so the rebuild doesn't race a runStreamed
-      // that's already mid-flight against the old thread reference.
-      currentAbort?.abort();
-      try {
-        thread = codex.resumeThread(activeThreadId, buildThreadOptions(mode));
-        currentMode = mode;
-      } catch (cause) {
-        events.unsafeOffer({
-          _tag: "Error",
-          message: `codex setPermissionMode failed: ${
-            cause instanceof Error ? cause.message : String(cause)
-          }`,
-        });
+    const runSlashCommand = async (rawText: string): Promise<boolean> => {
+      const trimmed = rawText.trim();
+      const match = trimmed.match(/^\/([A-Za-z0-9_-]+)(?:\s+([\s\S]*))?$/);
+      if (match === null || activeThreadId === null) return false;
+      const command = match[1]!;
+      const args = (match[2] ?? "").trim();
+      const say = (text: string) =>
+        emit({ _tag: "AssistantMessage", itemId: nextItemId(), text });
+
+      switch (command) {
+        case "compact":
+          await app.request("thread/compact/start", { threadId: activeThreadId });
+          say("Compaction started.");
+          return true;
+        case "fork": {
+          const forked = await app.request<{ thread: { id: string } }>(
+            "thread/fork",
+            {
+              threadId: activeThreadId,
+              ...commonThreadParams,
+            },
+          );
+          activeThreadId = forked.thread.id;
+          emit({
+            _tag: "SessionCursor",
+            cursor: activeThreadId,
+            strategy: "codex-thread-id",
+          });
+          say(`Forked Codex thread ${activeThreadId}.`);
+          return true;
+        }
+        case "undo":
+        case "rollback":
+          await app.request("thread/rollback", {
+            threadId: activeThreadId,
+            numTurns: 1,
+          });
+          say("Rolled back the last Codex turn. Local file changes are not reverted by Codex app-server rollback.");
+          return true;
+        case "review":
+          emit({ _tag: "Status", status: "running" });
+          await app.request("review/start", {
+            threadId: activeThreadId,
+            target:
+              args.length > 0
+                ? { type: "custom", instructions: args }
+                : { type: "uncommittedChanges" },
+            delivery: "inline",
+          });
+          return true;
+        case "status": {
+          const status = await app.request<{
+            thread: { id: string; status: string; modelProvider: string; cwd: string };
+          }>("thread/read", { threadId: activeThreadId, includeTurns: false });
+          say(
+            `Codex thread ${status.thread.id}\nstatus: ${status.thread.status}\nprovider: ${status.thread.modelProvider}\ncwd: ${status.thread.cwd}`,
+          );
+          return true;
+        }
+        case "diff":
+          say(latestDiff.length > 0 ? latestDiff : "No Codex turn diff is available yet.");
+          return true;
+        case "mcp": {
+          const result = await app.request("mcpServerStatus/list", {});
+          say(`MCP servers:\n${asText(result)}`);
+          return true;
+        }
+        case "apps": {
+          const result = await app.request("app/list", {});
+          say(`Apps:\n${asText(result)}`);
+          return true;
+        }
+        case "plugins": {
+          const result = await app.request("plugin/list", {});
+          say(`Plugins:\n${asText(result)}`);
+          return true;
+        }
+        case "experimental": {
+          const result = await app.request("experimentalFeature/list", {});
+          say(`Experimental features:\n${asText(result)}`);
+          return true;
+        }
+        case "debug-config": {
+          const result = await app.request("config/read", {});
+          say(`Codex config:\n${asText(result)}`);
+          return true;
+        }
+        case "permissions":
+          say("Codex approval policy is managed by this app. Current embedded policy: never.");
+          return true;
+        case "approval":
+          say("Codex embedded approval policy is currently fixed at never; permission prompts are bridged through this app when app-server requests them.");
+          return true;
+        case "sandbox":
+          if (
+            args === "read-only" ||
+            args === "plan" ||
+            args === "readonly"
+          ) {
+            currentMode = "plan";
+            emit({ _tag: "PermissionModeChanged", mode: "plan" });
+            say("Codex sandbox set to read-only.");
+          } else if (
+            args === "workspace-write" ||
+            args === "write" ||
+            args === "default" ||
+            args.length === 0
+          ) {
+            currentMode = "default";
+            emit({ _tag: "PermissionModeChanged", mode: "default" });
+            say("Codex sandbox set to workspace-write.");
+          } else {
+            say("Usage: /sandbox read-only | workspace-write");
+          }
+          return true;
+        case "init":
+          emit({ _tag: "Status", status: "running" });
+          await app.request("turn/start", {
+            threadId: activeThreadId,
+            input: [
+              {
+                type: "text",
+                text:
+                  args.length > 0
+                    ? `Initialize repository instructions. ${args}`
+                    : "Initialize or update AGENTS.md with concise project instructions for Codex.",
+                text_elements: [],
+              },
+            ],
+            cwd,
+          });
+          return true;
+        case "ps":
+        case "stop":
+        case "sandbox-add-read-dir":
+        case "agent":
+        case "personality":
+        case "fast":
+        case "mention":
+        case "copy":
+        case "theme":
+        case "statusline":
+        case "title":
+        case "feedback":
+        case "logout":
+        case "resume":
+        case "quit":
+        case "exit":
+          say("Closed the active Codex thread.");
+          emit({ _tag: "Completed", reason: "ended" });
+          closed = true;
+          app.close();
+          return true;
+        default:
+          return false;
       }
     };
+
+    function translateNotification(
+      notification: ServerNotification,
+    ): ReadonlyArray<AgentEvent> {
+      switch (notification.method) {
+        case "thread/started":
+          activeThreadId = notification.params.thread.id;
+          return [
+            {
+              _tag: "SessionCursor",
+              cursor: activeThreadId,
+              strategy: "codex-thread-id",
+            },
+          ];
+        case "turn/started":
+          if (notification.params.threadId !== activeThreadId) return [];
+          currentTurnId = notification.params.turn.id;
+          return [{ _tag: "Status", status: "running" }];
+        case "turn/completed":
+          if (notification.params.threadId !== activeThreadId) return [];
+          currentTurnId = null;
+          return [{ _tag: "Status", status: "idle" }];
+        case "turn/diff/updated":
+          if (notification.params.threadId === activeThreadId) {
+            latestDiff = notification.params.diff;
+          }
+          return [];
+        case "item/started":
+          if (notification.params.threadId !== activeThreadId) return [];
+          return translateItem(notification.params.item, "started");
+        case "item/completed":
+          if (notification.params.threadId !== activeThreadId) return [];
+          return translateItem(notification.params.item, "completed");
+        case "error":
+          return [{ _tag: "Error", message: notification.params.error.message }];
+        default:
+          return [];
+      }
+    }
+
+    async function handleServerRequest(
+      request: ServerRequest,
+    ): Promise<unknown> {
+      switch (request.method) {
+        case "item/commandExecution/requestApproval": {
+          const p = request.params;
+          emit({
+            _tag: "PermissionRequest",
+            itemId: p.itemId as AgentItemId,
+            kind: "command_execution",
+            details: p,
+          });
+          const decision = await requestPermission(
+            sessionId,
+            { _tag: "Bash", command: p.command ?? "" },
+            { forcePrompt: false },
+          );
+          return { decision: decisionToCodex(decision) };
+        }
+        case "item/fileChange/requestApproval": {
+          const p = request.params;
+          emit({
+            _tag: "PermissionRequest",
+            itemId: p.itemId as AgentItemId,
+            kind: "file_change",
+            details: p,
+          });
+          const decision = await requestPermission(
+            sessionId,
+            { _tag: "FileWrite", path: p.grantRoot ?? cwd },
+            { forcePrompt: false },
+          );
+          return { decision: decisionToCodex(decision) };
+        }
+        case "item/permissions/requestApproval": {
+          const p = request.params;
+          emit({
+            _tag: "PermissionRequest",
+            itemId: p.itemId as AgentItemId,
+            kind: "permissions",
+            details: p,
+          });
+          const decision = await requestPermission(
+            sessionId,
+            {
+              _tag: "Other",
+              tool: "request_permissions",
+              summary: p.reason ?? "Codex requested additional permissions",
+            },
+            { forcePrompt: false },
+          );
+          return decision._tag === "Deny"
+            ? { permissions: {}, scope: "turn" }
+            : { permissions: {}, scope: "session" };
+        }
+        case "item/tool/requestUserInput": {
+          const p = request.params;
+          const answers = await new Promise<ReadonlyArray<UserQuestionAnswer>>(
+            (resolve) => {
+              questionWaiters.set(p.itemId, {
+                questionIds: p.questions.map((q) => q.id),
+                resolve,
+              });
+              emit({
+                _tag: "UserQuestion",
+                itemId: p.itemId as AgentItemId,
+                questions: p.questions.map((q) => ({
+                  question: q.question,
+                  options: (q.options ?? []).map(
+                    (opt) => `${opt.label}: ${opt.description}`,
+                  ),
+                  multiSelect: false,
+                })),
+              });
+            },
+          );
+          const waiter = questionWaiters.get(p.itemId);
+          const questionIds = waiter?.questionIds ?? p.questions.map((q) => q.id);
+          const out: Record<string, { answers: string[] }> = {};
+          for (const answer of answers) {
+            const question = p.questions[answer.questionIndex];
+            const id = questionIds[answer.questionIndex];
+            if (question === undefined || id === undefined) continue;
+            const selected = answer.selected
+              .map((idx) => question.options?.[idx]?.label)
+              .filter((v): v is string => typeof v === "string");
+            if (answer.other !== undefined) selected.push(answer.other);
+            out[id] = { answers: selected };
+          }
+          return { answers: out };
+        }
+        case "mcpServer/elicitation/request": {
+          const p = request.params;
+          const itemId = nextItemId();
+          const answers = await new Promise<ReadonlyArray<UserQuestionAnswer>>(
+            (resolve) => {
+              questionWaiters.set(itemId, {
+                questionIds: ["elicitation"],
+                resolve,
+              });
+              emit({
+                _tag: "UserQuestion",
+                itemId,
+                questions: [
+                  {
+                    question: `${p.serverName}: ${p.message}`,
+                    options: ["Accept", "Cancel"],
+                    multiSelect: false,
+                  },
+                ],
+              });
+            },
+          );
+          const accept = answers[0]?.selected.includes(0) === true;
+          return {
+            action: accept ? "accept" : "cancel",
+            content: null,
+            _meta: null,
+          };
+        }
+        default:
+          return defaultServerRequestResponse(request);
+      }
+    }
+
+    function defaultServerRequestResponse(request: ServerRequest): unknown {
+      switch (request.method) {
+        case "item/commandExecution/requestApproval":
+          return { decision: "decline" };
+        case "item/fileChange/requestApproval":
+          return { decision: "decline" };
+        case "item/permissions/requestApproval":
+          return { permissions: {}, scope: "turn" };
+        case "item/tool/requestUserInput":
+          return { answers: {} };
+        case "mcpServer/elicitation/request":
+          return { action: "cancel", content: null, _meta: null };
+        default:
+          return {};
+      }
+    }
 
     if (input.initialPrompt !== undefined && input.initialPrompt.length > 0) {
       enqueueTurn(input.initialPrompt);
     }
 
-    const handle: CodexSessionHandle = {
+    return {
       events: Mailbox.toStream(events),
-      send: (text, attachmentRefs) =>
+      send: (text, attachmentRefs, fileRefs, skillRefs) =>
         Effect.sync(() => {
-          enqueueTurn(text, attachmentRefs ?? []);
+          enqueueTurn(
+            text,
+            attachmentRefs ?? [],
+            fileRefs ?? [],
+            skillRefs ?? [],
+          );
         }),
       interrupt: () =>
-        Effect.sync(() => {
-          currentAbort?.abort();
+        Effect.promise(async () => {
+          if (activeThreadId !== null && currentTurnId !== null) {
+            await app.request("turn/interrupt", {
+              threadId: activeThreadId,
+              turnId: currentTurnId,
+            });
+          }
         }),
       close: () =>
-        Effect.gen(function* () {
+        Effect.sync(() => {
+          emit({ _tag: "Completed", reason: "ended" });
           closed = true;
-          currentAbort?.abort();
-          yield* events.end;
+          app.close();
+          void Effect.runPromise(events.end);
         }),
       setPermissionMode: (mode) =>
         Effect.sync(() => {
-          // Chain the rebuild onto the pending queue so a toggle issued
-          // mid-turn doesn't race the runStreamed loop. Approval policy
-          // is still "never" across modes; only sandbox flips.
-          if (mode === currentMode) return;
-          pending = pending.then(() => rebuildThreadForMode(mode));
-          events.unsafeOffer({
-            _tag: "PermissionModeChanged",
-            mode,
-          });
+          currentMode = mode;
+          emit({ _tag: "PermissionModeChanged", mode });
         }),
-      answerQuestion: () => Effect.void,
+      answerQuestion: (itemId, answers) =>
+        Effect.sync(() => {
+          const waiter = questionWaiters.get(itemId);
+          if (waiter === undefined) return;
+          questionWaiters.delete(itemId);
+          waiter.resolve(answers);
+        }),
     };
-    return handle;
   });

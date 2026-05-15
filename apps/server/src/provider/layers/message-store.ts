@@ -1141,7 +1141,7 @@ export const MessageStoreLive = Layer.scoped(
           })`,
         );
         const sendResult = yield* provider
-          .send(sessionId, text, cleanAttachments)
+          .send(sessionId, text, cleanAttachments, fileRefs, skillRefs)
           .pipe(
             Effect.matchEffect({
               onFailure: () => Effect.succeed("retry" as const),

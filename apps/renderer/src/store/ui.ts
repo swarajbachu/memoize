@@ -25,6 +25,7 @@ export type SettingsSection =
  * replaces (never stacks) the file tab — see specs/0.02-MVP/features/file-viewer.md.
  */
 export type MainTab = "chat" | "file";
+export type RightPaneTab = "files" | "terminal" | "changes" | "pr";
 
 export type OpenFile = {
   readonly folderId: FolderId;
@@ -51,6 +52,7 @@ type UiState = {
   readonly autosave: boolean;
   readonly leftSidebarOpen: boolean;
   readonly rightSidebarOpen: boolean;
+  readonly rightPaneTab: RightPaneTab;
   readonly isFullScreen: boolean;
   readonly setActiveMainTab: (tab: MainTab) => void;
   readonly openFileInTab: (file: OpenFile) => void;
@@ -58,6 +60,7 @@ type UiState = {
   readonly setFileDirty: (dirty: boolean) => void;
   readonly setLeftSidebarOpen: (open: boolean) => void;
   readonly setRightSidebarOpen: (open: boolean) => void;
+  readonly setRightPaneTab: (tab: RightPaneTab) => void;
   readonly setFullScreen: (full: boolean) => void;
 };
 
@@ -72,6 +75,7 @@ export const useUiStore = create<UiState>((set) => ({
   autosave: false,
   leftSidebarOpen: true,
   rightSidebarOpen: true,
+  rightPaneTab: "files",
   isFullScreen: false,
   setActiveMainTab: (tab) => set({ activeMainTab: tab }),
   openFileInTab: (file) =>
@@ -81,5 +85,6 @@ export const useUiStore = create<UiState>((set) => ({
   setFileDirty: (dirty) => set({ fileDirty: dirty }),
   setLeftSidebarOpen: (open) => set({ leftSidebarOpen: open }),
   setRightSidebarOpen: (open) => set({ rightSidebarOpen: open }),
+  setRightPaneTab: (tab) => set({ rightPaneTab: tab }),
   setFullScreen: (full) => set({ isFullScreen: full }),
 }));

@@ -1,5 +1,4 @@
 import { FolderClosed, GitBranch } from "lucide-react";
-import { useState } from "react";
 
 import type { FolderId } from "@memoize/wire";
 
@@ -9,14 +8,13 @@ import { prDetailsKey, usePrDetailsStore } from "../store/pr-details.ts";
 import { prStateKey, usePrStateStore } from "../store/pr-state.ts";
 import { useWorkspaceStore } from "../store/workspace.ts";
 import { EMPTY_WORKTREES, useWorktreesStore } from "../store/worktrees.ts";
+import { useUiStore } from "../store/ui.ts";
 import { DiffPane } from "./diff-pane.tsx";
 import { FileTree } from "./file-tree.tsx";
 import { PrPane } from "./pr-pane.tsx";
 import { RightPaneHeader } from "./right-pane-header.tsx";
 import { TerminalPane } from "./terminal-pane.tsx";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip.tsx";
-
-type Tab = "files" | "terminal" | "changes" | "pr";
 
 /**
  * Right-pane shell with four tabs: file tree, terminal, changes
@@ -46,7 +44,8 @@ export function RightPane() {
       ? (s.byKey[prDetailsKey(selectedFolderId, worktreeId)] ?? null)
       : null,
   );
-  const [tab, setTab] = useState<Tab>("files");
+  const tab = useUiStore((s) => s.rightPaneTab);
+  const setTab = useUiStore((s) => s.setRightPaneTab);
 
   return (
     <aside className="flex h-full min-h-0 w-full flex-col">

@@ -193,6 +193,10 @@ export function ChatComposer({ session }: { session: Session }) {
   const setModel = useSessionsStore((s) => s.setModel);
   const setRuntimeMode = useSessionsStore((s) => s.setRuntimeMode);
   const setPermissionMode = useSessionsStore((s) => s.setPermissionMode);
+  const setRightSidebarOpen = useUiStore((s) => s.setRightSidebarOpen);
+  const setRightPaneTab = useUiStore((s) => s.setRightPaneTab);
+  const setView = useUiStore((s) => s.setView);
+  const setSettingsSection = useUiStore((s) => s.setSettingsSection);
 
   const canSend = hasText;
 
@@ -287,6 +291,28 @@ export function ChatComposer({ session }: { session: Session }) {
         break;
       case "run":
         void setPermissionMode(sessionId, "default");
+        break;
+      case "diff":
+        setRightSidebarOpen(true);
+        setRightPaneTab("changes");
+        break;
+      case "copy": {
+        const latest = [...(sessionMessages ?? [])].reverse().find((m) =>
+          m.content._tag === "assistant" || m.content._tag === "thinking"
+        );
+        const text =
+          latest?.content._tag === "assistant" ||
+          latest?.content._tag === "thinking"
+            ? latest.content.text
+            : "";
+        if (text.length > 0) void navigator.clipboard?.writeText(text);
+        break;
+      }
+      case "theme":
+      case "statusline":
+      case "title":
+        setView("settings");
+        setSettingsSection({ kind: "general" });
         break;
       case "new":
       case "help":
