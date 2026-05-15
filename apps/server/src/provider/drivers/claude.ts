@@ -38,6 +38,8 @@ export interface ClaudeSessionHandle {
   readonly send: (
     text: string,
     attachments?: ReadonlyArray<AttachmentRef>,
+    fileRefs?: unknown,
+    skillRefs?: unknown,
   ) => Effect.Effect<void>;
   readonly interrupt: () => Effect.Effect<void>;
   readonly close: () => Effect.Effect<void>;

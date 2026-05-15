@@ -197,6 +197,7 @@ export const ProviderServiceLive = Layer.effect(
               apiKey,
               codexPath,
               sessionId,
+              buildRequestPermission(input.folderId),
               resumeCursor,
             ).pipe(Effect.provideService(AttachmentService, attachmentService));
           }
@@ -207,9 +208,9 @@ export const ProviderServiceLive = Layer.effect(
           });
           return { sessionId };
         }),
-      send: (sessionId, text, attachments) =>
+      send: (sessionId, text, attachments, fileRefs, skillRefs) =>
         Effect.flatMap(lookup(sessionId), ({ handle }) =>
-          handle.send(text, attachments),
+          handle.send(text, attachments, fileRefs, skillRefs),
         ),
       interrupt: (sessionId) =>
         Effect.flatMap(lookup(sessionId), ({ handle }) => handle.interrupt()),
