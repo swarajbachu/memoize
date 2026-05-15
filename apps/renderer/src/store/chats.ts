@@ -35,6 +35,9 @@ type ChatsState = {
   readonly selectedChatByProject: Record<string, ChatId | null>;
   readonly showArchivedByProject: Record<string, boolean>;
   readonly loadingByProject: Record<string, boolean>;
+  /** Per-project in-flight flag for `create()`. Drives the sidebar
+   * "New chat" button's icon swap (SquarePen → Diffusion). */
+  readonly creatingByProject: Record<string, boolean>;
   readonly error: string | null;
   readonly hydrate: (projectId: FolderId) => Promise<void>;
   readonly create: (
@@ -92,6 +95,7 @@ export const useChatsStore = create<ChatsState>((set, get) => ({
   selectedChatByProject: {},
   showArchivedByProject: {},
   loadingByProject: {},
+  creatingByProject: {},
   error: null,
   hydrate: async (projectId) => {
     set((s) => ({
@@ -117,7 +121,10 @@ export const useChatsStore = create<ChatsState>((set, get) => ({
     }
   },
   create: async (projectId, providerId, model, opts) => {
-    set({ error: null });
+    set((s) => ({
+      error: null,
+      creatingByProject: { ...s.creatingByProject, [projectId]: true },
+    }));
     try {
       const client = await getRpcClient();
       const result = await Effect.runPromise(
@@ -150,6 +157,10 @@ export const useChatsStore = create<ChatsState>((set, get) => ({
             ...s.selectedChatByProject,
             [projectId]: chat.id,
           },
+          creatingByProject: {
+            ...s.creatingByProject,
+            [projectId]: false,
+          },
         };
       });
       // Mirror the initial session into the sessions store and select it
@@ -172,7 +183,10 @@ export const useChatsStore = create<ChatsState>((set, get) => ({
       });
       return chat.id;
     } catch (err) {
-      set({ error: formatError(err) });
+      set((s) => ({
+        error: formatError(err),
+        creatingByProject: { ...s.creatingByProject, [projectId]: false },
+      }));
       return null;
     }
   },
