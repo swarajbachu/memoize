@@ -4,6 +4,10 @@ import type {
   AgentDefinition,
   AgentItemId,
   AttachmentRef,
+  Chat,
+  ChatAlreadyStartedError,
+  ChatId,
+  ChatNotFoundError,
   FileRef,
   FolderId,
   Message,
@@ -36,7 +40,12 @@ import type {
  * - `streamMessages` emits the full backfill before any live row.
  */
 export interface CreateSessionInput {
-  readonly projectId: FolderId;
+  /**
+   * The chat (sidebar container) this session belongs to. Project +
+   * worktree are derived from the chat — clients no longer pass either
+   * directly to session create.
+   */
+  readonly chatId: ChatId;
   readonly providerId: ProviderId;
   readonly model: string;
   readonly title?: string;
@@ -55,12 +64,6 @@ export interface CreateSessionInput {
    */
   readonly enableSubagents?: boolean;
   /**
-   * Optional git worktree the session runs in. When omitted, runs in the
-   * project's main checkout. The renderer passes a `WorktreeId` it created
-   * via `worktree.create` for the "auto-create worktree" flow.
-   */
-  readonly worktreeId?: WorktreeId | null;
-  /**
    * SDK lifecycle mode. `'plan'` starts the session in plan mode; the
    * agent is restricted to read-only tools and ends its turn by calling
    * `ExitPlanMode`. Defaults to `'default'`.
@@ -71,6 +74,20 @@ export interface CreateSessionInput {
    * (the AskUserQuestion server is the only MCP server and is small);
    * the flag is here so 0.04's code-index MCP servers can ride on it.
    */
+  readonly toolSearch?: boolean;
+}
+
+export interface CreateChatInput {
+  readonly projectId: FolderId;
+  readonly providerId: ProviderId;
+  readonly model: string;
+  readonly title?: string;
+  readonly initialPrompt?: string;
+  readonly runtimeMode?: RuntimeMode;
+  readonly worktreeId?: WorktreeId | null;
+  readonly agents?: Readonly<Record<string, AgentDefinition>>;
+  readonly enableSubagents?: boolean;
+  readonly permissionMode?: PermissionMode;
   readonly toolSearch?: boolean;
 }
 
@@ -169,6 +186,67 @@ export interface MessageStoreShape {
   readonly deleteSession: (
     sessionId: SessionId,
   ) => Effect.Effect<void, SessionNotFoundError>;
+
+  // -------------------------------------------------------------------------
+  // Chats — sidebar containers; each chat hosts ≥1 session as a tab.
+  // -------------------------------------------------------------------------
+
+  readonly listChats: (
+    projectId: FolderId,
+    includeArchived: boolean,
+  ) => Effect.Effect<ReadonlyArray<Chat>>;
+
+  readonly getChat: (
+    chatId: ChatId,
+  ) => Effect.Effect<Chat, ChatNotFoundError>;
+
+  /**
+   * Creates the chat row AND its initial session in one transaction.
+   * Returns both so the renderer lands directly on the new session.
+   */
+  readonly createChat: (
+    input: CreateChatInput,
+  ) => Effect.Effect<
+    { readonly chat: Chat; readonly initialSession: Session },
+    SessionStartError
+  >;
+
+  readonly renameChat: (
+    chatId: ChatId,
+    title: string,
+  ) => Effect.Effect<void, ChatNotFoundError>;
+
+  /**
+   * Update the chat's worktree. Allowed only when no session in the chat
+   * has any user message yet. Mirrors the new value onto every member
+   * session's `worktreeId` in the same transaction.
+   */
+  readonly setChatWorktree: (
+    chatId: ChatId,
+    worktreeId: WorktreeId | null,
+  ) => Effect.Effect<Chat, ChatNotFoundError | ChatAlreadyStartedError>;
+
+  /**
+   * Persist the user's last-active tab inside the chat. Called whenever
+   * the user switches tabs in the strip so a future click on the chat's
+   * sidebar row restores the right one.
+   */
+  readonly setChatActiveSession: (
+    chatId: ChatId,
+    sessionId: SessionId,
+  ) => Effect.Effect<void, ChatNotFoundError>;
+
+  readonly archiveChat: (
+    chatId: ChatId,
+  ) => Effect.Effect<void, ChatNotFoundError>;
+
+  readonly unarchiveChat: (
+    chatId: ChatId,
+  ) => Effect.Effect<void, ChatNotFoundError>;
+
+  readonly deleteChat: (
+    chatId: ChatId,
+  ) => Effect.Effect<void, ChatNotFoundError>;
 
   readonly resumeSession: (
     sessionId: SessionId,

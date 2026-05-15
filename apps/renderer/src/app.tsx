@@ -14,7 +14,7 @@ import { TooltipProvider } from "./components/ui/tooltip.tsx";
 import { ChatView } from "./components/chat-view";
 import { CostFooter } from "./components/cost-footer";
 import { FileEditor } from "./components/file-editor.tsx";
-import { MainTabs } from "./components/main-tabs.tsx";
+import { closeActiveChatTab, MainTabs } from "./components/main-tabs.tsx";
 import { OnboardingWizard } from "./components/onboarding/onboarding-wizard.tsx";
 import { ProjectsSidebar } from "./components/projects-sidebar";
 import { RightPane } from "./components/right-pane";
@@ -150,11 +150,19 @@ function MainShell() {
     closeFileTab();
   }, [selectedFolderId, openFile, closeFileTab]);
 
-  const headerLabel = selectedSession
-    ? selectedSession.title
-    : selectedFolder
-      ? selectedFolder.name
-      : "no project selected";
+  // Cmd+W in the menu dispatches `menu:close-tab` over IPC; the renderer
+  // owns the close-tab logic because it knows which chat tab is active.
+  useEffect(() => {
+    const menu = window.memoize?.menu;
+    if (menu === undefined) return;
+    return menu.onCloseTab(() => {
+      void closeActiveChatTab();
+    });
+  }, []);
+
+  const emptyTabLabel = selectedFolder
+    ? selectedFolder.name
+    : "no project selected";
 
   // Persist the three-pane layout in localStorage so widths survive reloads.
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
@@ -218,10 +226,8 @@ function MainShell() {
             <TopBarMain folderId={selectedFolderId} />
             <UpdateBanner />
             <MainTabs
-              headerLabel={headerLabel}
-              headerTitle={selectedFolder?.path}
-              providerId={selectedSession?.providerId}
-              model={selectedSession?.model}
+              projectId={selectedFolderId}
+              emptyLabel={emptyTabLabel}
             />
             <div
               hidden={activeMainTab !== "chat"}

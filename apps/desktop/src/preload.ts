@@ -73,6 +73,13 @@ const bridge = {
         ipcRenderer.off("menu:action", wrapped);
       };
     },
+    onCloseTab: (handler: () => void) => {
+      const wrapped = () => handler();
+      ipcRenderer.on("menu:close-tab", wrapped);
+      return () => {
+        ipcRenderer.off("menu:close-tab", wrapped);
+      };
+    },
   },
 };
 

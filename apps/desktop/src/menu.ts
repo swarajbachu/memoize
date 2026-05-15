@@ -34,6 +34,12 @@ export function installAppMenu(getWindow: () => BrowserWindow | null): void {
     win.webContents.send("menu:action", action);
   };
 
+  const sendCloseTab = () => {
+    const win = getWindow();
+    if (win === null) return;
+    win.webContents.send("menu:close-tab");
+  };
+
   const fileMenu: MenuItemConstructorOptions = {
     label: "File",
     submenu: [
@@ -46,6 +52,15 @@ export function installAppMenu(getWindow: () => BrowserWindow | null): void {
         label: "Open Project…",
         accelerator: "CmdOrCtrl+O",
         click: send("open-project"),
+      },
+      { type: "separator" },
+      {
+        // Cmd+W → close the active CHAT tab, not the OS window. The
+        // renderer owns the close-tab logic (it knows which tab is
+        // active); we just hand the signal across IPC.
+        label: "Close Tab",
+        accelerator: "CmdOrCtrl+W",
+        click: sendCloseTab,
       },
       ...(isMac
         ? []
@@ -119,16 +134,18 @@ export function installAppMenu(getWindow: () => BrowserWindow | null): void {
 
   const windowMenu: MenuItemConstructorOptions = {
     label: "Window",
+    // Intentionally omits `role: "close"`. Electron's default close-window
+    // accelerator is also Cmd+W, which would shadow the File → Close Tab
+    // item — and the user wants Cmd+W to close the active chat tab, not
+    // the OS window. Window close is still reachable via the traffic light.
     submenu: isMac
       ? [
           { role: "minimize" },
           { role: "zoom" },
           { type: "separator" },
           { role: "front" },
-          { type: "separator" },
-          { role: "close" },
         ]
-      : [{ role: "minimize" }, { role: "zoom" }, { role: "close" }],
+      : [{ role: "minimize" }, { role: "zoom" }],
   };
 
   const helpMenu: MenuItemConstructorOptions = {

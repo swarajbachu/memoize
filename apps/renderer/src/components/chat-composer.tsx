@@ -70,6 +70,7 @@ import {
 } from "~/components/ui/tooltip";
 import { useMessagesStore } from "../store/messages.ts";
 import { usePermissionsStore } from "../store/permissions.ts";
+import { useChatsStore } from "../store/chats.ts";
 import { useSessionsStore } from "../store/sessions.ts";
 import { useUiStore } from "../store/ui.ts";
 import { EMPTY_WORKTREES, useWorktreesStore } from "../store/worktrees.ts";
@@ -1057,15 +1058,14 @@ function SessionTimer({
  * agent.
  */
 function WorkspacePicker({ session }: { session: Session }) {
-  const sessionId = session.id;
-  const setWorktree = useSessionsStore((s) => s.setWorktree);
+  const setChatWorktree = useChatsStore((s) => s.setWorktree);
   const create = useWorktreesStore((s) => s.create);
   const refresh = useWorktreesStore((s) => s.refresh);
   const worktrees = useWorktreesStore(
     (s) => s.byProject[session.projectId] ?? EMPTY_WORKTREES,
   );
   const userMessageCount = useMessagesStore((s) => {
-    const list = s.messagesBySession[sessionId] ?? [];
+    const list = s.messagesBySession[session.id] ?? [];
     let count = 0;
     for (const m of list) {
       if (m.role === "user") count += 1;
@@ -1110,12 +1110,12 @@ function WorkspacePicker({ session }: { session: Session }) {
 
   const onPickCurrent = () => {
     if (session.worktreeId === null) return;
-    void setWorktree(sessionId, null);
+    void setChatWorktree(session.chatId, null);
   };
   const onPickNewWorktree = async () => {
     const wt = await create(session.projectId);
     if (wt === null) return;
-    await setWorktree(sessionId, wt.id);
+    await setChatWorktree(session.chatId, wt.id);
   };
 
   return (

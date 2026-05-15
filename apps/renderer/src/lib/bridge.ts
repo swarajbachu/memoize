@@ -47,14 +47,21 @@ export type MenuAction =
 
 export interface MenuBridge {
   readonly onAction: (handler: (action: MenuAction) => void) => () => void;
+  /**
+   * Cmd+W on the native menu fires a dedicated signal — kept separate from
+   * the generic action stream because close-tab is a renderer-side
+   * imperative (archive the active tab + maybe spawn a fresh one) rather
+   * than a navigation intent.
+   */
+  readonly onCloseTab: (handler: () => void) => () => void;
 }
 
 export interface MemoizeBridge {
   readonly rpc: RpcBridge;
   readonly window?: WindowBridge;
+  readonly menu?: MenuBridge;
   readonly app?: AppBridge;
   readonly updates?: UpdatesBridge;
-  readonly menu?: MenuBridge;
 }
 
 declare global {

@@ -81,7 +81,7 @@ const SessionGet = MemoizeRpcs.toLayerHandler(
 const SessionCreate = MemoizeRpcs.toLayerHandler("session.create", (input) =>
   Effect.flatMap(MessageStore, (svc) =>
     svc.createSession({
-      projectId: input.projectId,
+      chatId: input.chatId,
       providerId: input.providerId,
       model: input.model,
       title: input.title,
@@ -89,11 +89,76 @@ const SessionCreate = MemoizeRpcs.toLayerHandler("session.create", (input) =>
       runtimeMode: input.runtimeMode,
       agents: input.agents,
       enableSubagents: input.enableSubagents,
-      worktreeId: input.worktreeId ?? null,
       permissionMode: input.permissionMode,
       toolSearch: input.toolSearch,
     }),
   ),
+);
+
+const ChatList = MemoizeRpcs.toLayerHandler(
+  "chat.list",
+  ({ projectId, includeArchived }) =>
+    Effect.flatMap(MessageStore, (svc) =>
+      svc.listChats(projectId, includeArchived ?? false),
+    ),
+);
+
+const ChatGet = MemoizeRpcs.toLayerHandler("chat.get", ({ chatId }) =>
+  Effect.flatMap(MessageStore, (svc) => svc.getChat(chatId)),
+);
+
+const ChatCreate = MemoizeRpcs.toLayerHandler("chat.create", (input) =>
+  Effect.flatMap(MessageStore, (svc) =>
+    svc.createChat({
+      projectId: input.projectId,
+      providerId: input.providerId,
+      model: input.model,
+      title: input.title,
+      initialPrompt: input.initialPrompt,
+      runtimeMode: input.runtimeMode,
+      worktreeId: input.worktreeId ?? null,
+      agents: input.agents,
+      enableSubagents: input.enableSubagents,
+      permissionMode: input.permissionMode,
+      toolSearch: input.toolSearch,
+    }),
+  ),
+);
+
+const ChatRename = MemoizeRpcs.toLayerHandler(
+  "chat.rename",
+  ({ chatId, title }) =>
+    Effect.flatMap(MessageStore, (svc) => svc.renameChat(chatId, title)),
+);
+
+const ChatSetWorktree = MemoizeRpcs.toLayerHandler(
+  "chat.setWorktree",
+  ({ chatId, worktreeId }) =>
+    Effect.flatMap(MessageStore, (svc) =>
+      svc.setChatWorktree(chatId, worktreeId),
+    ),
+);
+
+const ChatSetActiveSession = MemoizeRpcs.toLayerHandler(
+  "chat.setActiveSession",
+  ({ chatId, sessionId }) =>
+    Effect.flatMap(MessageStore, (svc) =>
+      svc.setChatActiveSession(chatId, sessionId),
+    ),
+);
+
+const ChatArchive = MemoizeRpcs.toLayerHandler("chat.archive", ({ chatId }) =>
+  Effect.flatMap(MessageStore, (svc) => svc.archiveChat(chatId)),
+);
+
+const ChatUnarchive = MemoizeRpcs.toLayerHandler(
+  "chat.unarchive",
+  ({ chatId }) =>
+    Effect.flatMap(MessageStore, (svc) => svc.unarchiveChat(chatId)),
+);
+
+const ChatDelete = MemoizeRpcs.toLayerHandler("chat.delete", ({ chatId }) =>
+  Effect.flatMap(MessageStore, (svc) => svc.deleteChat(chatId)),
 );
 
 const SessionRename = MemoizeRpcs.toLayerHandler(
@@ -286,6 +351,15 @@ export const ProviderHandlersLayer = Layer.mergeAll(
   SessionArchive,
   SessionUnarchive,
   SessionDelete,
+  ChatList,
+  ChatGet,
+  ChatCreate,
+  ChatRename,
+  ChatSetWorktree,
+  ChatSetActiveSession,
+  ChatArchive,
+  ChatUnarchive,
+  ChatDelete,
   SessionResume,
   SessionSetRuntimeMode,
   SessionSetPermissionMode,

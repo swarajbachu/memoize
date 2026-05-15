@@ -18,11 +18,12 @@ import {
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  type Chat,
+  type ChatId,
   defaultModelFor,
   type FolderId,
   type GitOriginInfo,
   type ProviderId,
-  type Session,
   type SessionId,
 } from "@memoize/wire";
 
@@ -32,6 +33,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn, formatCompactNumber } from "~/lib/utils";
 import { formatShortcut } from "../lib/shortcuts.ts";
 import { getRpcClient } from "../lib/rpc-client.ts";
+import { useChatsStore } from "../store/chats.ts";
 import { useMessagesStore } from "../store/messages.ts";
 import { prStateKey, usePrStateStore } from "../store/pr-state.ts";
 import { useProvidersStore } from "../store/providers.ts";
@@ -168,12 +170,16 @@ export function ProjectsSidebar() {
   const select = useWorkspaceStore((s) => s.select);
 
   const sessionsByProject = useSessionsStore((s) => s.sessionsByProject);
-  const showArchivedByProject = useSessionsStore(
+  const hydrateSessions = useSessionsStore((s) => s.hydrate);
+  const sessionsError = useSessionsStore((s) => s.error);
+
+  const chatsByProject = useChatsStore((s) => s.chatsByProject);
+  const showArchivedByProject = useChatsStore(
     (s) => s.showArchivedByProject,
   );
-  const sessionsError = useSessionsStore((s) => s.error);
-  const hydrateSessions = useSessionsStore((s) => s.hydrate);
-  const toggleShowArchived = useSessionsStore((s) => s.toggleShowArchived);
+  const chatsError = useChatsStore((s) => s.error);
+  const hydrateChats = useChatsStore((s) => s.hydrate);
+  const toggleShowArchived = useChatsStore((s) => s.toggleShowArchived);
 
   const [origins, setOrigins] = useState<Record<string, GitOriginInfo | null>>(
     {},
@@ -193,14 +199,23 @@ export function ProjectsSidebar() {
     );
   }, [selectedFolderId]);
 
-  // Lazy-hydrate sessions for any expanded project that hasn't been loaded.
+  // Lazy-hydrate chats AND sessions for any expanded project that hasn't
+  // been loaded. Sidebar reads chats; tab strip reads sessions; both stores
+  // are populated up-front so switching projects doesn't show empty tabs.
   useEffect(() => {
     for (const folder of folders) {
-      if (expanded[folder.id] && !(folder.id in sessionsByProject)) {
-        void hydrateSessions(folder.id);
-      }
+      if (!expanded[folder.id]) continue;
+      if (!(folder.id in chatsByProject)) void hydrateChats(folder.id);
+      if (!(folder.id in sessionsByProject)) void hydrateSessions(folder.id);
     }
-  }, [expanded, folders, sessionsByProject, hydrateSessions]);
+  }, [
+    expanded,
+    folders,
+    chatsByProject,
+    sessionsByProject,
+    hydrateChats,
+    hydrateSessions,
+  ]);
 
   // PR state is keyed per-session by `(folderId, worktreeId)` because each
   // worktree has its own branch and therefore its own PR. Hydration happens
@@ -279,9 +294,9 @@ export function ProjectsSidebar() {
         </Tooltip>
       </div>
 
-      {(error ?? sessionsError) !== null && (
+      {(error ?? chatsError ?? sessionsError) !== null && (
         <p className="mx-3 mb-2 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-200">
-          {error ?? sessionsError}
+          {error ?? chatsError ?? sessionsError}
         </p>
       )}
 
@@ -299,7 +314,8 @@ export function ProjectsSidebar() {
             path={folder.path}
             origin={origins[folder.id] ?? null}
             isExpanded={expanded[folder.id] === true}
-            sessions={sessionsByProject[folder.id] ?? []}
+            chats={chatsByProject[folder.id] ?? []}
+            projectSessions={sessionsByProject[folder.id] ?? []}
             showArchived={showArchivedByProject[folder.id] === true}
             onSelect={() => void select(folder.id)}
             onToggleExpanded={() => onToggleExpanded(folder.id)}
@@ -352,7 +368,8 @@ function ProjectGroup({
   path,
   origin,
   isExpanded,
-  sessions,
+  chats,
+  projectSessions,
   showArchived,
   onSelect,
   onToggleExpanded,
@@ -364,7 +381,12 @@ function ProjectGroup({
   path: string;
   origin: GitOriginInfo | null;
   isExpanded: boolean;
-  sessions: ReadonlyArray<Session>;
+  chats: ReadonlyArray<Chat>;
+  projectSessions: ReadonlyArray<{
+    readonly id: SessionId;
+    readonly chatId: ChatId;
+    readonly archivedAt: Date | null;
+  }>;
   showArchived: boolean;
   onSelect: () => void;
   onToggleExpanded: () => void;
@@ -376,20 +398,21 @@ function ProjectGroup({
   const fallbackText = initialsOf(origin?.owner ?? name);
   const [inspectorOpen, setInspectorOpen] = useState(false);
 
-  const visibleSessions = useMemo(
+  const visibleChats = useMemo(
     () =>
-      showArchived ? sessions : sessions.filter((s) => s.archivedAt === null),
-    [sessions, showArchived],
+      showArchived
+        ? chats
+        : chats.filter((c) => c.archivedAt === null),
+    [chats, showArchived],
   );
-  const archivedCount = sessions.filter((s) => s.archivedAt !== null).length;
+  const archivedCount = chats.filter((c) => c.archivedAt !== null).length;
 
-  // Surface a busy hint on the collapsed project header when any of its
-  // non-archived sessions are running, so users see activity even without
-  // expanding the group.
+  // Surface a busy hint on the collapsed project header when any session
+  // inside any of this project's live chats is running.
   const liveSessionIds = useMemo(
     () =>
-      sessions.filter((s) => s.archivedAt === null).map((s) => s.id),
-    [sessions],
+      projectSessions.filter((s) => s.archivedAt === null).map((s) => s.id),
+    [projectSessions],
   );
   const anyRunning = useMessagesStore((s) =>
     liveSessionIds.some((id) => s.runningBySession[id] === true),
@@ -477,7 +500,7 @@ function ProjectGroup({
             onToggleShowArchived={onToggleShowArchived}
             onRemove={onRemove}
           />
-          <NewSessionButton projectId={id} />
+          <NewChatButton projectId={id} />
         </div>
 
         <PermissionsInspector
@@ -490,13 +513,13 @@ function ProjectGroup({
 
       {isExpanded && (
         <>
-          {visibleSessions.length === 0 && (
+          {visibleChats.length === 0 && (
             <li className="px-12 py-1 text-[11px] text-muted-foreground">
-              No sessions yet.
+              No chats yet.
             </li>
           )}
-          {visibleSessions.map((session) => (
-            <SessionRow key={session.id} session={session} />
+          {visibleChats.map((chat) => (
+            <ChatRow key={chat.id} chat={chat} />
           ))}
           {archivedCount > 0 && (
             <li>
@@ -585,17 +608,12 @@ const LOGIN_HINT: Record<ProviderId, string> = {
 };
 
 /**
- * Spawn a new chat session in the given project. Reads default
- * provider/model/runtime-mode/auto-worktree settings from the stores
- * directly so this is callable from anywhere (sidebar button + the
- * Cmd+N menu shortcut) without prop-drilling.
+ * Spawn a new chat (sidebar container) plus its initial session in the
+ * given project. Worktree is auto-created when the per-repo or global
+ * setting says so. Reads from stores directly so callers (the sidebar
+ * button + the Cmd+N menu shortcut) don't need prop drilling.
  */
 export async function createNewSession(projectId: FolderId): Promise<void> {
-  // Cheap availability refresh in case the user just logged into a CLI.
-  // We don't gate the session creation on version status here — an
-  // outdated codex is surfaced as an inline banner in the chat view so
-  // the user can still open the session and switch model/provider from
-  // the chat header.
   await useProvidersStore.getState().refresh();
   const settings = useSettingsStore.getState();
   const defaultProviderId = settings.defaultProviderId;
@@ -613,7 +631,7 @@ export async function createNewSession(projectId: FolderId): Promise<void> {
     const wt = await useWorktreesStore.getState().create(projectId);
     if (wt !== null) worktreeId = wt.id;
   }
-  void useSessionsStore
+  void useChatsStore
     .getState()
     .create(projectId, defaultProviderId, model, {
       runtimeMode: settings.defaultRuntimeMode,
@@ -621,7 +639,7 @@ export async function createNewSession(projectId: FolderId): Promise<void> {
     });
 }
 
-function NewSessionButton({ projectId }: { projectId: FolderId }) {
+function NewChatButton({ projectId }: { projectId: FolderId }) {
   const onClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     void createNewSession(projectId);
@@ -669,39 +687,57 @@ export function TooltipShortcut({
   );
 }
 
-function SessionRow({ session }: { session: Session }) {
+function ChatRow({ chat }: { chat: Chat }) {
   const selectedSessionId = useSessionsStore((s) => s.selectedSessionId);
-  const select = useSessionsStore((s) => s.select);
-  const rename = useSessionsStore((s) => s.rename);
-  const archive = useSessionsStore((s) => s.archive);
-  const unarchive = useSessionsStore((s) => s.unarchive);
-  const remove = useSessionsStore((s) => s.remove);
-  // Each session's PR state lives behind its (project, worktree) pair —
-  // sessions on a worktree show that worktree's branch's PR; sessions on
-  // the main checkout share the project-level entry. Hydrated lazily on
-  // first render so the diff stats / branch tone reflect the right branch.
+  const selectedChatId = useChatsStore((s) => s.selectedChatId);
+  const sessionsByProject = useSessionsStore((s) => s.sessionsByProject);
+
+  const selectChat = useChatsStore((s) => s.select);
+  const renameChat = useChatsStore((s) => s.rename);
+  const archiveChat = useChatsStore((s) => s.archive);
+  const unarchiveChat = useChatsStore((s) => s.unarchive);
+  const removeChat = useChatsStore((s) => s.remove);
+
+  // PR state is keyed by (project, worktree). A chat owns its worktree,
+  // so all its sessions share the same PR row — hydrate once per chat.
   const prInfo = usePrStateStore(
-    (s) =>
-      s.byKey[prStateKey(session.projectId, session.worktreeId)] ?? null,
+    (s) => s.byKey[prStateKey(chat.projectId, chat.worktreeId)] ?? null,
   );
   const hydratePrState = usePrStateStore((s) => s.hydrate);
   useEffect(() => {
-    void hydratePrState(session.projectId, session.worktreeId);
-  }, [hydratePrState, session.projectId, session.worktreeId]);
-  // Live "agent is working" signal — replaces the branch icon while running
-  // so users scanning the sidebar see at a glance which sessions are busy
-  // even when they're focused on a different chat. The map is populated by
-  // `useSessionRunningSubscriptions` mounted at the sidebar root, so this
-  // row's indicator survives collapse/expand of the project group.
-  const isRunning = useMessagesStore(
-    (s) => s.runningBySession[session.id] === true,
+    void hydratePrState(chat.projectId, chat.worktreeId);
+  }, [hydratePrState, chat.projectId, chat.worktreeId]);
+
+  // Ids of this chat's non-archived sessions — so the sidebar busy
+  // indicator reflects ANY tab being active, not just the currently
+  // selected one.
+  const sessionIds = useMemo(
+    () =>
+      (sessionsByProject[chat.projectId] ?? [])
+        .filter(
+          (row) => row.chatId === chat.id && row.archivedAt === null,
+        )
+        .map((row) => row.id),
+    [sessionsByProject, chat.projectId, chat.id],
   );
 
-  const isSelected = selectedSessionId === session.id;
-  const isArchived = session.archivedAt !== null;
+  const isRunning = useMessagesStore((s) => {
+    for (const id of sessionIds) {
+      if (s.runningBySession[id] === true) return true;
+    }
+    return false;
+  });
 
-  // PR state colors the branch icon and toggles the right-side slot between
-  // diff stats (when a PR exists) and a relative timestamp (otherwise).
+  // Highlight this row when its own chat is selected, OR when the active
+  // session (any tab inside this chat) lives in it. Covers the transient
+  // window where `selectedChatId` hasn't caught up to `selectedSessionId`.
+  const sessionBelongsToChat = useMemo(() => {
+    if (selectedSessionId === null) return false;
+    return sessionIds.includes(selectedSessionId);
+  }, [selectedSessionId, sessionIds]);
+  const isSelected = selectedChatId === chat.id || sessionBelongsToChat;
+  const isArchived = chat.archivedAt !== null;
+
   const branchState: BranchState =
     prInfo === null
       ? "default"
@@ -717,22 +753,19 @@ function SessionRow({ session }: { session: Session }) {
       prInfo.state === "closed");
 
   const onRename = () => {
-    const next = window.prompt("Rename session", session.title);
+    const next = window.prompt("Rename chat", chat.title);
     if (next === null) return;
     const trimmed = next.trim();
-    if (trimmed.length === 0 || trimmed === session.title) return;
-    void rename(session.id, trimmed);
+    if (trimmed.length === 0 || trimmed === chat.title) return;
+    void renameChat(chat.id, trimmed);
   };
 
   const onDelete = () => {
-    if (!window.confirm(`Delete "${session.title}"? This can't be undone.`))
+    if (!window.confirm(`Delete "${chat.title}"? This can't be undone.`))
       return;
-    void remove(session.id);
+    void removeChat(chat.id);
   };
 
-  // Right-click context menu uses a virtual anchor positioned at the cursor.
-  // The visible button on hover (Archive / Unarchive) is the primary action;
-  // the full action set (Rename / Archive / Delete) lives in the context menu.
   const [menuOpen, setMenuOpen] = useState(false);
   const anchorRef = useRef<{ getBoundingClientRect: () => DOMRect } | null>(
     null,
@@ -755,12 +788,12 @@ function SessionRow({ session }: { session: Session }) {
       <li
         role="button"
         tabIndex={0}
-        onClick={() => select(session.id)}
+        onClick={() => selectChat(chat.id)}
         onContextMenu={onContextMenu}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
-            select(session.id);
+            selectChat(chat.id);
           }
         }}
         className={cn(
@@ -771,7 +804,7 @@ function SessionRow({ session }: { session: Session }) {
             "text-muted-foreground hover:bg-sidebar-accent/40",
           !isSelected && !isArchived && "hover:bg-sidebar-accent/40",
         )}
-        title={`${session.providerId} · ${session.model}`}
+        title={chat.title}
       >
         {isRunning ? (
           <span
@@ -796,11 +829,7 @@ function SessionRow({ session }: { session: Session }) {
             className="ml-3"
           />
         )}
-        <span className="min-w-0 flex-1 truncate">{session.title}</span>
-        {/* Right-side slot: idle row shows diff stats (if PR open/closed) or
-            timestamp (no PR). On hover the slot swaps to a single Archive
-            (or Unarchive) action — no menu glyph; the rest of the actions
-            live behind right-click. tabular-nums keeps digit widths stable. */}
+        <span className="min-w-0 flex-1 truncate">{chat.title}</span>
         <div className="relative flex h-4 w-16 shrink-0 items-center justify-end">
           <span className="tabular-nums text-[10px] text-muted-foreground transition-opacity duration-150 ease-out motion-reduce:transition-none group-hover:hidden">
             {showDiff && prInfo !== null ? (
@@ -813,17 +842,17 @@ function SessionRow({ session }: { session: Session }) {
                 </span>
               </>
             ) : (
-              formatRelative(session.updatedAt)
+              formatRelative(chat.updatedAt)
             )}
           </span>
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              void (isArchived ? unarchive(session.id) : archive(session.id));
+              void (isArchived ? unarchiveChat(chat.id) : archiveChat(chat.id));
             }}
             className="hidden items-center rounded p-0.5 text-muted-foreground transition-opacity duration-150 ease-out hover:text-sidebar-accent-foreground group-hover:flex motion-reduce:transition-none"
-            aria-label={`${primaryActionLabel} ${session.title}`}
+            aria-label={`${primaryActionLabel} ${chat.title}`}
             title={primaryActionLabel}
           >
             <PrimaryActionIcon className="size-3.5" />
@@ -846,7 +875,7 @@ function SessionRow({ session }: { session: Session }) {
           </MenuItem>
           {isArchived ? (
             <MenuItem
-              onClick={() => void unarchive(session.id)}
+              onClick={() => void unarchiveChat(chat.id)}
               className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
             >
               <ArchiveRestore className="size-3.5" />
@@ -854,7 +883,7 @@ function SessionRow({ session }: { session: Session }) {
             </MenuItem>
           ) : (
             <MenuItem
-              onClick={() => void archive(session.id)}
+              onClick={() => void archiveChat(chat.id)}
               className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
             >
               <Archive className="size-3.5" />
