@@ -5,6 +5,7 @@ import {
   FolderClosed,
   GitBranch,
   Keyboard,
+  RotateCw,
   Settings as SettingsIcon,
 } from "lucide-react";
 import { useEffect, useMemo } from "react";
@@ -17,13 +18,19 @@ import {
   type RuntimeMode,
 } from "@memoize/wire";
 
+import {
+  formatRelativeTime,
+  useRelativeTimeTick,
+} from "~/lib/use-relative-time.ts";
 import { cn } from "~/lib/utils";
 import { formatAccelerator, SHORTCUTS } from "../lib/shortcuts.ts";
 import { DEFAULT_SUBAGENT_PRESETS } from "../lib/subagent-presets.ts";
+import { useProvidersStore } from "../store/providers.ts";
 import { useSettingsStore } from "../store/settings.ts";
 import { useSubagentsStore } from "../store/subagents.ts";
 import { useUiStore, type SettingsSection } from "../store/ui.ts";
 import { useWorkspaceStore } from "../store/workspace.ts";
+import { ProviderCard } from "./provider-card.tsx";
 import { ProviderIcon } from "./provider-icons.tsx";
 import { MODES_ORDER, MODE_META } from "./runtime-mode-meta.ts";
 import { RepositorySettings } from "./settings-repository.tsx";
@@ -58,10 +65,10 @@ const TOP_RAIL: ReadonlyArray<RailItemBase> = [
     section: { kind: "general" },
   },
   {
-    id: "models",
-    label: "Models & Providers",
+    id: "providers",
+    label: "Providers",
     Icon: Box,
-    section: { kind: "models" },
+    section: { kind: "providers" },
   },
   {
     id: "workspace",
@@ -233,10 +240,11 @@ function SectionTitle({
         subtitle: "Defaults for new chats and sub-agents.",
       };
     }
-    if (section.kind === "models") {
+    if (section.kind === "providers") {
       return {
-        title: "Models & Providers",
-        subtitle: "Default provider and model for new sessions.",
+        title: "Providers",
+        subtitle:
+          "Verify what's installed, signed in, and which subscription each provider runs on.",
       };
     }
     if (section.kind === "workspace") {
@@ -279,7 +287,7 @@ function SectionTitle({
 
 function Pane({ section }: { section: SettingsSection }) {
   if (section.kind === "general") return <GeneralPane />;
-  if (section.kind === "models") return <ModelsPane />;
+  if (section.kind === "providers") return <ProvidersPane />;
   if (section.kind === "workspace") return <WorkspacePane />;
   if (section.kind === "shortcuts") return <ShortcutsPane />;
   return <RepositorySettings projectId={section.projectId} />;
@@ -380,21 +388,94 @@ function GeneralPane() {
   );
 }
 
-function ModelsPane() {
+function ProvidersPane() {
+  const availability = useProvidersStore((s) => s.availability);
+  const loading = useProvidersStore((s) => s.loading);
+  const error = useProvidersStore((s) => s.error);
+  const refresh = useProvidersStore((s) => s.refresh);
   const defaultProviderId = useSettingsStore((s) => s.defaultProviderId);
-  const defaultModelByProvider = useSettingsStore(
-    (s) => s.defaultModelByProvider,
-  );
   const setDefaultProvider = useSettingsStore((s) => s.setDefaultProvider);
-  const setDefaultModel = useSettingsStore((s) => s.setDefaultModel);
-  const providers: ReadonlyArray<ProviderId> = ["claude", "codex"];
+
+  // Refresh once on mount + re-poll when the window regains focus so the
+  // "Checked X ago" line reflects reality without forcing the user to hit
+  // refresh themselves.
+  useEffect(() => {
+    void refresh();
+    const onFocus = () => void refresh();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [refresh]);
+
+  const now = useRelativeTimeTick(15_000);
+  const lastCheckedAt = useMemo(() => {
+    let latest: Date | null = null;
+    for (const a of availability) {
+      const ts = a.lastCheckedAt;
+      if (ts === undefined) continue;
+      if (latest === null || ts.getTime() > latest.getTime()) latest = ts;
+    }
+    return latest;
+  }, [availability]);
+
+  const providers: ReadonlyArray<ProviderId> = [
+    "claude",
+    "codex",
+    "grok",
+    "gemini",
+  ];
+  const availabilityById = useMemo(() => {
+    const map = new Map<ProviderId, (typeof availability)[number]>();
+    for (const a of availability) map.set(a.providerId, a);
+    return map;
+  }, [availability]);
+
   return (
-    <Section
-      title="Default agent"
-      description="New chats start with this provider and model. You can still change them per session from the composer."
-    >
-      <div className="flex flex-col gap-4">
-        <OptionGroup columns={2}>
+    <>
+      <Section
+        title="Installed providers"
+        description="memoize uses your existing CLI credentials — Claude Code, Codex, and Grok all sign in through their own login flows."
+      >
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>
+            {loading
+              ? "Checking…"
+              : error !== null
+                ? `Probe failed · ${error}`
+                : lastCheckedAt
+                  ? `Checked ${formatRelativeTime(lastCheckedAt, now) ?? "just now"}`
+                  : availability.length > 0
+                    ? "Checked"
+                    : "Not checked yet"}
+          </span>
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={() => void refresh()}
+            disabled={loading}
+            aria-label="Refresh provider status"
+          >
+            <RotateCw
+              className={cn("size-3.5", loading && "animate-spin")}
+              aria-hidden
+            />
+          </Button>
+        </div>
+        <div className="flex flex-col gap-2">
+          {providers.map((pid) => (
+            <ProviderCard
+              key={pid}
+              providerId={pid}
+              availability={availabilityById.get(pid)}
+              loading={loading}
+            />
+          ))}
+        </div>
+      </Section>
+      <Section
+        title="Default agent"
+        description="Which provider new chats start in. Change per session from the composer."
+      >
+        <OptionGroup columns={3}>
           {providers.map((pid) => (
             <OptionCard
               key={pid}
@@ -405,13 +486,8 @@ function ModelsPane() {
             />
           ))}
         </OptionGroup>
-        <ModelSelect
-          providerId={defaultProviderId}
-          value={defaultModelByProvider[defaultProviderId]}
-          onChange={(model) => setDefaultModel(defaultProviderId, model)}
-        />
-      </div>
-    </Section>
+      </Section>
+    </>
   );
 }
 

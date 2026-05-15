@@ -1,13 +1,64 @@
 import { Effect, Fiber, Stream } from "effect";
 import { create } from "zustand";
 
-import type { ComposerInput, Message, SessionId } from "@memoize/wire";
+import {
+  ComposerInput,
+  type Message,
+  type ProviderId,
+  type SessionId,
+} from "@memoize/wire";
 
 import { formatError } from "../lib/format-error.ts";
 import { getRpcClient } from "../lib/rpc-client.ts";
 import { usePrDetailsStore } from "./pr-details.ts";
 import { usePrStateStore } from "./pr-state.ts";
 import { useSessionsStore } from "./sessions.ts";
+
+/**
+ * Tagged chat error shown in the message bubble at the bottom of a session.
+ * The renderer classifies once on ingest so the bubble can show the right
+ * CTA — "Sign in to Codex" for auth, "Connection lost" for network,
+ * generic Retry otherwise — without re-parsing the message string on every
+ * render.
+ */
+export type ChatError =
+  | {
+      readonly kind: "auth";
+      readonly providerId?: ProviderId;
+      readonly message: string;
+    }
+  | { readonly kind: "network"; readonly message: string }
+  | { readonly kind: "generic"; readonly message: string };
+
+const AUTH_PATTERN =
+  /\b401\b|\bunauthorized\b|expired token|invalid_grant|signed?\s?out|sign\s?in required|please log in/i;
+const NETWORK_PATTERN =
+  /\b(network|fetch|econn|enotfound|etimedout|timeout|getaddrinfo)\b/i;
+
+const classifyMessage = (
+  message: string,
+  providerId?: ProviderId,
+): ChatError => {
+  if (AUTH_PATTERN.test(message)) {
+    return providerId
+      ? { kind: "auth", providerId, message }
+      : { kind: "auth", message };
+  }
+  if (NETWORK_PATTERN.test(message)) return { kind: "network", message };
+  return { kind: "generic", message };
+};
+
+const classifyError = (err: unknown, providerId?: ProviderId): ChatError =>
+  classifyMessage(formatError(err), providerId);
+
+const lookupSessionProvider = (sessionId: SessionId): ProviderId | undefined => {
+  const buckets = useSessionsStore.getState().sessionsByProject;
+  for (const list of Object.values(buckets)) {
+    const sess = list.find((s) => s.id === sessionId);
+    if (sess !== undefined) return sess.providerId;
+  }
+  return undefined;
+};
 
 /**
  * Live view of one session's message log. Subscribes to `messages.stream`
@@ -34,7 +85,7 @@ export interface QueuedMessage {
 
 type MessagesState = {
   readonly messagesBySession: Record<string, ReadonlyArray<Message>>;
-  readonly errorBySession: Record<string, string | null>;
+  readonly errorBySession: Record<string, ChatError | null>;
   /**
    * Mirror of `Session.status === "running"`, fed by the `session.streamStatus`
    * subscription. The composer reads this for its in-flight indicator so the
@@ -64,6 +115,12 @@ type MessagesState = {
   /** Silently drop a queue chip — no RPC call. */
   readonly dropFromQueue: (sessionId: SessionId, queueId: string) => void;
   readonly clearError: (sessionId: SessionId) => void;
+  /**
+   * Re-send the most recent user turn. Used by the error-bubble Retry button
+   * after the user fixed the underlying issue (re-auth, network back up).
+   * No-op when there's no prior user message on the session.
+   */
+  readonly retry: (sessionId: SessionId) => Promise<void>;
 };
 
 let liveFiber: Fiber.RuntimeFiber<unknown, unknown> | null = null;
@@ -289,7 +346,7 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
       set((s) => ({
         errorBySession: {
           ...s.errorBySession,
-          [sessionId]: formatError(err),
+          [sessionId]: classifyError(err, lookupSessionProvider(sessionId)),
         },
       }));
     }
@@ -317,7 +374,7 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
       set((s) => ({
         errorBySession: {
           ...s.errorBySession,
-          [sessionId]: formatError(err),
+          [sessionId]: classifyError(err, lookupSessionProvider(sessionId)),
         },
         runningBySession: { ...s.runningBySession, [sessionId]: false },
       }));
@@ -331,7 +388,7 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
       set((s) => ({
         errorBySession: {
           ...s.errorBySession,
-          [sessionId]: formatError(err),
+          [sessionId]: classifyError(err, lookupSessionProvider(sessionId)),
         },
       }));
     }
@@ -388,7 +445,7 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
       set((s) => ({
         errorBySession: {
           ...s.errorBySession,
-          [sessionId]: formatError(err),
+          [sessionId]: classifyError(err, lookupSessionProvider(sessionId)),
         },
       }));
     }
@@ -397,4 +454,27 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
     set((s) => ({
       errorBySession: { ...s.errorBySession, [sessionId]: null },
     })),
+  retry: async (sessionId) => {
+    const msgs = get().messagesBySession[sessionId] ?? [];
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const m = msgs[i]!;
+      const c = m.content;
+      if (c._tag === "user_rich") {
+        await get().send(
+          sessionId,
+          new ComposerInput({
+            text: c.text,
+            attachments: c.attachments,
+            fileRefs: c.fileRefs,
+            skillRefs: c.skillRefs,
+          }),
+        );
+        return;
+      }
+      if (c._tag === "user") {
+        await get().send(sessionId, c.text);
+        return;
+      }
+    }
+  },
 }));

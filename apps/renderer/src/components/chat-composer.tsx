@@ -16,6 +16,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   MODELS_BY_PROVIDER,
+  type AgentAvailability,
   type Message,
   type PermissionMode,
   type PermissionRequest,
@@ -69,6 +70,8 @@ import {
   TooltipTrigger,
 } from "~/components/ui/tooltip";
 import { useMessagesStore } from "../store/messages.ts";
+import { useProvidersStore } from "../store/providers.ts";
+import { useSettingsStore } from "../store/settings.ts";
 import { usePermissionsStore } from "../store/permissions.ts";
 import { useChatsStore } from "../store/chats.ts";
 import { useSessionsStore } from "../store/sessions.ts";
@@ -847,6 +850,8 @@ function ModelPicker({
 }) {
   const setModel = useSessionsStore((s) => s.setModel);
   const setProvider = useSessionsStore((s) => s.setProvider);
+  const providerEnabled = useSettingsStore((s) => s.providerEnabled);
+  const availability = useProvidersStore((s) => s.availability);
   const userMessageCount = useMessagesStore((s) => {
     const list = s.messagesBySession[sessionId] ?? [];
     let count = 0;
@@ -857,6 +862,33 @@ function ModelPicker({
   });
   const isFresh = userMessageCount === 0;
   const models = MODELS_BY_PROVIDER[providerId] ?? [];
+
+  // A provider is pickable when: user hasn't toggled it off in Settings AND
+  // the server-side health probe didn't return `error` (e.g. CLI missing).
+  // The current session's provider is always included so the user can see
+  // their selection even if its toggle just got flipped — switching away
+  // is the cure.
+  const availabilityById = useMemo(() => {
+    const m = new globalThis.Map<ProviderId, AgentAvailability>();
+    for (const a of availability) m.set(a.providerId, a);
+    return m;
+  }, [availability]);
+  const pickableProviders = useMemo(() => {
+    return (Object.keys(MODELS_BY_PROVIDER) as ReadonlyArray<ProviderId>).filter(
+      (pid) => {
+        if (pid === providerId) return true;
+        // Subscription-gated providers (Grok → SuperGrok Heavy) are
+        // intentionally unselectable until we can verify the plan — see
+        // SUBSCRIPTION_GATED in provider-card. Mirror the list here rather
+        // than importing it cross-feature; the set is small and rare.
+        if (pid === "grok") return false;
+        if (providerEnabled[pid] === false) return false;
+        const a = availabilityById.get(pid);
+        if (a !== undefined && a.status === "error") return false;
+        return true;
+      },
+    );
+  }, [providerId, providerEnabled, availabilityById]);
   const current = models.find((m) => m.id === currentModel);
   const label = current?.label ?? currentModel;
 
@@ -872,7 +904,7 @@ function ModelPicker({
         <ChevronDown className="size-3 opacity-60" />
       </MenuTrigger>
       <MenuPopup side="top" align="start" className="w-72">
-        {(Object.keys(MODELS_BY_PROVIDER) as ReadonlyArray<ProviderId>).map(
+        {pickableProviders.map(
           (pid, i) => (
             <Fragment key={pid}>
               {i > 0 && <MenuSeparator />}
