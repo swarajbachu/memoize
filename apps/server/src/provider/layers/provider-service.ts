@@ -23,6 +23,10 @@ import {
   startCodexSession,
   type CodexSessionHandle,
 } from "../drivers/codex.ts";
+import {
+  startGrokSession,
+  type GrokSessionHandle,
+} from "../drivers/grok.ts";
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
 import { CredentialsService } from "../services/credentials-service.ts";
 import { PermissionService } from "../services/permission-service.ts";
@@ -38,7 +42,7 @@ import { WorkspaceService } from "../../workspace/services/workspace-service.ts"
  * own their own scope so `close()` is the canonical teardown — there is no
  * autocleanup tied to the renderer subscription.
  */
-type SessionHandle = ClaudeSessionHandle | CodexSessionHandle;
+type SessionHandle = ClaudeSessionHandle | CodexSessionHandle | GrokSessionHandle;
 type SessionEntry = {
   readonly providerId: ProviderId;
   readonly handle: SessionHandle;
@@ -134,7 +138,32 @@ export const ProviderServiceLive = Layer.effect(
           );
           const sessionId = input.sessionId ?? nextSessionId();
           let handle: SessionHandle;
-          if (input.providerId === "claude") {
+          if (input.providerId === "grok") {
+            // Same story as Claude/Codex: hand the driver the user's
+            // installed `grok` binary (no bundled CLI in our package).
+            // Surface a clean install message rather than letting spawn
+            // fail with ENOENT inside the driver.
+            const grokPath = yield* resolveCliPath("grok").pipe(
+              Effect.provideService(CommandExecutor.CommandExecutor, executor),
+            );
+            if (grokPath === null) {
+              return yield* Effect.fail(
+                new AgentSessionStartError({
+                  providerId: "grok",
+                  reason:
+                    "Grok CLI not found on PATH. Install Grok from https://x.ai/cli and try again.",
+                }),
+              );
+            }
+            handle = yield* startGrokSession(
+              input,
+              cwd,
+              apiKey,
+              grokPath,
+              sessionId,
+              resumeCursor,
+            ).pipe(Effect.provideService(AttachmentService, attachmentService));
+          } else if (input.providerId === "claude") {
             // Point the SDK at the user's installed `claude` binary. We
             // don't ship the SDK's bundled optional native CLI (216 MB per
             // arch) — if `which claude` finds nothing here, the SDK would
