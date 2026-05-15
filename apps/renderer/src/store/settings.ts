@@ -29,6 +29,12 @@ type Persisted = {
    */
   readonly defaultAutoCreateWorktree: boolean;
   readonly onboardingCompleted: boolean;
+  /**
+   * Per-provider on/off toggle from the Providers settings card. Defaults to
+   * `true` for every provider; flipping it to `false` filters the provider
+   * from the new-session picker without uninstalling its CLI.
+   */
+  readonly providerEnabled: Record<ProviderId, boolean>;
 };
 
 const isProviderId = (v: unknown): v is ProviderId =>
@@ -37,12 +43,19 @@ const isProviderId = (v: unknown): v is ProviderId =>
 const isRuntimeMode = (v: unknown): v is RuntimeMode =>
   v === "approval-required" || v === "auto-accept-edits" || v === "full-access";
 
+const seedEnabled = (): Record<ProviderId, boolean> => ({
+  claude: true,
+  codex: true,
+  grok: true,
+});
+
 const freshDefaults = (): Persisted => ({
   defaultProviderId: DEFAULT_PROVIDER,
   defaultModelByProvider: seedModels(),
   defaultRuntimeMode: DEFAULT_RUNTIME_MODE,
   defaultAutoCreateWorktree: false,
   onboardingCompleted: false,
+  providerEnabled: seedEnabled(),
 });
 
 const loadPersisted = (): Persisted => {
@@ -95,6 +108,20 @@ const loadPersisted = (): Persisted => {
         typeof parsed.onboardingCompleted === "boolean"
           ? parsed.onboardingCompleted
           : true,
+      providerEnabled: {
+        claude:
+          typeof parsed.providerEnabled?.claude === "boolean"
+            ? parsed.providerEnabled.claude
+            : true,
+        codex:
+          typeof parsed.providerEnabled?.codex === "boolean"
+            ? parsed.providerEnabled.codex
+            : true,
+        grok:
+          typeof parsed.providerEnabled?.grok === "boolean"
+            ? parsed.providerEnabled.grok
+            : true,
+      },
     };
   } catch {
     return freshDefaults();
@@ -116,6 +143,7 @@ const snapshot = (s: Persisted): Persisted => ({
   defaultRuntimeMode: s.defaultRuntimeMode,
   defaultAutoCreateWorktree: s.defaultAutoCreateWorktree,
   onboardingCompleted: s.onboardingCompleted,
+  providerEnabled: s.providerEnabled,
 });
 
 type SettingsState = Persisted & {
@@ -124,6 +152,7 @@ type SettingsState = Persisted & {
   readonly setDefaultRuntimeMode: (mode: RuntimeMode) => void;
   readonly setDefaultAutoCreateWorktree: (value: boolean) => void;
   readonly setOnboardingCompleted: (value: boolean) => void;
+  readonly setProviderEnabled: (providerId: ProviderId, value: boolean) => void;
 };
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
@@ -148,6 +177,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
   setOnboardingCompleted: (value) => {
     set({ onboardingCompleted: value });
+    persist(snapshot(get()));
+  },
+  setProviderEnabled: (providerId, value) => {
+    set((s) => ({
+      providerEnabled: { ...s.providerEnabled, [providerId]: value },
+    }));
     persist(snapshot(get()));
   },
 }));

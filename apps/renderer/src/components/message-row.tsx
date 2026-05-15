@@ -1,6 +1,6 @@
 import { AlertCircleIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, RotateCw, Settings } from "lucide-react";
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -10,6 +10,7 @@ import type {
   AttachmentRef,
   FileRef,
   Message,
+  ProviderId,
   SessionId,
   SkillRef,
   UserQuestionAnswer,
@@ -20,6 +21,9 @@ import {
   getFolderIconUrl,
 } from "~/lib/icons/material-icons";
 import { cn } from "~/lib/utils";
+import { useMessagesStore, type ChatError } from "~/store/messages";
+import { useUiStore } from "~/store/ui";
+import { Button } from "./ui/button";
 
 import {
   ExitPlanModeRow,
@@ -130,7 +134,11 @@ export function MessageRow({
       // the standalone answer row is suppressed.
       return null;
     case "error":
-      return <ErrorBubble text={message.content.message} />;
+      return (
+        <ErrorBubble
+          error={{ kind: "generic", message: message.content.message }}
+        />
+      );
   }
 }
 
@@ -351,14 +359,34 @@ const formatResetDetail = (info: RateLimitInfo): string => {
   return "Try again later";
 };
 
+const PROVIDER_LABEL_FOR_ERROR: Record<ProviderId, string> = {
+  claude: "Claude Code",
+  codex: "Codex",
+  grok: "Grok",
+};
+
 export function ErrorBubble({
-  text,
+  error,
+  sessionId,
   onDismiss,
 }: {
-  text: string;
+  error: ChatError;
+  sessionId?: SessionId;
   onDismiss?: () => void;
 }) {
-  const rateLimit = parseRateLimit(text);
+  const retry = useMessagesStore((s) => s.retry);
+  const setView = useUiStore((s) => s.setView);
+  const setSettingsSection = useUiStore((s) => s.setSettingsSection);
+
+  const onRetry = () => {
+    if (sessionId !== undefined) void retry(sessionId);
+  };
+  const onOpenSettings = () => {
+    setView("settings");
+    setSettingsSection({ kind: "providers" });
+  };
+
+  const rateLimit = parseRateLimit(error.message);
   if (rateLimit !== null) {
     return (
       <div className="px-4 py-2">
@@ -387,27 +415,86 @@ export function ErrorBubble({
               </button>
             )}
           </div>
-          <div className="mt-1 break-words text-muted-foreground">{text}</div>
+          <div className="mt-1 break-words text-muted-foreground">
+            {error.message}
+          </div>
         </div>
       </div>
     );
   }
+
+  const headline =
+    error.kind === "auth"
+      ? `Sign in to ${
+          error.providerId ? PROVIDER_LABEL_FOR_ERROR[error.providerId] : "your provider"
+        }`
+      : error.kind === "network"
+        ? "Connection lost"
+        : null;
+
+  const iconTone =
+    error.kind === "auth"
+      ? "text-destructive"
+      : error.kind === "network"
+        ? "text-warning"
+        : "text-destructive";
+  const bg =
+    error.kind === "network" ? "bg-alert-warning-bg" : "bg-alert-error-bg";
+
   return (
     <div className="px-4 py-2">
-      <div className="max-w-[88%] rounded-xl bg-alert-error-bg px-3 py-2 text-xs text-foreground">
+      <div
+        className={cn(
+          "max-w-[88%] rounded-xl px-3 py-2 text-xs text-foreground",
+          bg,
+        )}
+      >
         <div className="flex items-start gap-2">
           <HugeiconsIcon
             icon={AlertCircleIcon}
             strokeWidth={2}
             aria-hidden="true"
-            className="mt-px size-3.5 shrink-0 text-destructive"
+            className={cn("mt-px size-3.5 shrink-0", iconTone)}
           />
-          <span className="break-words text-muted-foreground">{text}</span>
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            {headline !== null && (
+              <span className="font-medium text-foreground">{headline}</span>
+            )}
+            <span className="break-words text-muted-foreground">
+              {error.message}
+            </span>
+            {sessionId !== undefined && (
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  onClick={onRetry}
+                  className="gap-1"
+                >
+                  <RotateCw className="size-3" aria-hidden />
+                  Retry
+                </Button>
+                {error.kind === "auth" && (
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant="ghost"
+                    onClick={onOpenSettings}
+                    className="gap-1"
+                  >
+                    <Settings className="size-3" aria-hidden />
+                    Open Provider Settings
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
           {onDismiss !== undefined && (
             <button
               type="button"
               onClick={onDismiss}
-              className="ml-auto rounded px-1.5 py-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+              className="rounded px-1.5 py-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
             >
               Dismiss
             </button>

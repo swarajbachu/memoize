@@ -284,7 +284,11 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
         </div>
       )}
       {error !== null && (
-        <ErrorBubble text={error} onDismiss={() => clearError(sessionId)} />
+        <ErrorBubble
+          error={error}
+          sessionId={sessionId}
+          onDismiss={() => clearError(sessionId)}
+        />
       )}
     </div>
   );
