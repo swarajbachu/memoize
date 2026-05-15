@@ -16,6 +16,7 @@ const seedModels = (): Record<ProviderId, string> => ({
   claude: defaultModelFor("claude"),
   codex: defaultModelFor("codex"),
   grok: defaultModelFor("grok"),
+  cursor: defaultModelFor("cursor"),
 });
 
 type Persisted = {
@@ -32,7 +33,7 @@ type Persisted = {
 };
 
 const isProviderId = (v: unknown): v is ProviderId =>
-  v === "claude" || v === "codex" || v === "grok";
+  v === "claude" || v === "codex" || v === "grok" || v === "cursor";
 
 const isRuntimeMode = (v: unknown): v is RuntimeMode =>
   v === "approval-required" || v === "auto-accept-edits" || v === "full-access";
@@ -74,6 +75,12 @@ const loadPersisted = (): Persisted => {
         typeof parsed.defaultModelByProvider?.grok === "string"
           ? parsed.defaultModelByProvider.grok
           : seeded.grok,
+      ),
+      cursor: resolveModelSlug(
+        "cursor",
+        typeof parsed.defaultModelByProvider?.cursor === "string"
+          ? parsed.defaultModelByProvider.cursor
+          : seeded.cursor,
       ),
     };
     return {

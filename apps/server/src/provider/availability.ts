@@ -54,6 +54,17 @@ const PROBES: ReadonlyArray<ProviderProbe> = [
     minVersion: null,
     upgradeCommand: "curl -fsSL https://x.ai/cli/install.sh | bash",
   },
+  {
+    providerId: "cursor",
+    displayName: "Cursor",
+    cliBinary: "cursor-agent",
+    // No version floor yet. ACP support landed in a recent `cursor-agent`
+    // release; older builds will surface a handshake timeout when the user
+    // tries to start a session. Revisit once we pin the exact
+    // ACP-introducing version.
+    minVersion: null,
+    upgradeCommand: "curl https://cursor.com/install -fsS | bash",
+  },
 ];
 
 const PROBE_TIMEOUT = Duration.seconds(4);
@@ -212,6 +223,19 @@ const probeGrokLogin: Effect.Effect<boolean, never, FileSystem.FileSystem> =
     return yield* fs.exists(path).pipe(Effect.catchAll(() => Effect.succeed(false)));
   });
 
+// Cursor Agent stores its installation (and any cached login) under
+// `~/.local/share/cursor-agent/` on Unix; the dir is created on first
+// install regardless of auth state, so its mere presence isn't proof of
+// login. We use it as a "you've used cursor-agent" proxy — the strongest
+// signal of "logged in" comes from `hasApiKey` once a key is saved in
+// the keychain, or from the live ACP probe failing with a usable error.
+const probeCursorLogin: Effect.Effect<boolean, never, FileSystem.FileSystem> =
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = join(homedir(), ".local", "share", "cursor-agent");
+    return yield* fs.exists(path).pipe(Effect.catchAll(() => Effect.succeed(false)));
+  });
+
 const probeLogin = (
   providerId: ProviderId,
 ): Effect.Effect<boolean, never, FileSystem.FileSystem | CommandExecutor.CommandExecutor> => {
@@ -222,6 +246,8 @@ const probeLogin = (
       return probeCodexLogin;
     case "grok":
       return probeGrokLogin;
+    case "cursor":
+      return probeCursorLogin;
   }
 };
 
