@@ -11,5 +11,6 @@ export * from "./repository-settings.ts";
 export * from "./rpc.ts";
 export * from "./session.ts";
 export * from "./skill.ts";
+export * from "./update.ts";
 export * from "./workspace.ts";
 export * from "./worktree.ts";

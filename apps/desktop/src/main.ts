@@ -271,8 +271,8 @@ const registerMemoizeProtocol = (): void => {
 void app.whenReady().then(() => {
   registerMemoizeProtocol();
   createMainWindow();
-  if (!isDevelopment) {
-    startAutoUpdater();
+  if (!isDevelopment && mainWindow !== null) {
+    startAutoUpdater(mainWindow);
   }
 
   app.on("activate", () => {
