@@ -402,7 +402,12 @@ export function ErrorBubble({
             aria-hidden="true"
             className="mt-px size-3.5 shrink-0 text-destructive"
           />
-          <span className="break-words text-muted-foreground">{text}</span>
+          <div className="min-w-0 flex-1">
+            <div className="font-medium text-foreground">Provider error</div>
+            <pre className="mt-1 whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-muted-foreground">
+              {text || "(empty)"}
+            </pre>
+          </div>
           {onDismiss !== undefined && (
             <button
               type="button"

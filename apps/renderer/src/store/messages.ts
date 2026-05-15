@@ -3,6 +3,7 @@ import { create } from "zustand";
 
 import type { ComposerInput, Message, SessionId } from "@memoize/wire";
 
+import { formatError } from "../lib/format-error.ts";
 import { getRpcClient } from "../lib/rpc-client.ts";
 import { usePrDetailsStore } from "./pr-details.ts";
 import { usePrStateStore } from "./pr-state.ts";
@@ -63,14 +64,6 @@ type MessagesState = {
   /** Silently drop a queue chip — no RPC call. */
   readonly dropFromQueue: (sessionId: SessionId, queueId: string) => void;
   readonly clearError: (sessionId: SessionId) => void;
-};
-
-const formatError = (err: unknown): string => {
-  if (err instanceof Error) return err.message;
-  if (typeof err === "object" && err !== null && "_tag" in err) {
-    return String((err as { _tag: unknown })._tag);
-  }
-  return String(err);
 };
 
 let liveFiber: Fiber.RuntimeFiber<unknown, unknown> | null = null;

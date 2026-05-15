@@ -3,6 +3,7 @@ import { create } from "zustand";
 
 import type { AgentAvailability, ProviderId } from "@memoize/wire";
 
+import { formatError } from "../lib/format-error.ts";
 import { getRpcClient } from "../lib/rpc-client.ts";
 
 /**
@@ -21,14 +22,6 @@ type ProvidersState = {
     providerId: ProviderId,
     apiKey: string,
   ) => Promise<void>;
-};
-
-const formatError = (err: unknown): string => {
-  if (err instanceof Error) return err.message;
-  if (typeof err === "object" && err !== null && "_tag" in err) {
-    return String((err as { _tag: unknown })._tag);
-  }
-  return String(err);
 };
 
 export const useProvidersStore = create<ProvidersState>((set, get) => ({

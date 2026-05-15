@@ -13,7 +13,7 @@ import {
  * the literal union is the contract — adding a new provider is an additive
  * change here plus a new driver in `apps/server/src/provider/drivers/`.
  */
-export const ProviderId = Schema.Literal("claude", "codex", "grok");
+export const ProviderId = Schema.Literal("claude", "codex", "grok", "gemini");
 export type ProviderId = typeof ProviderId.Type;
 
 /**
@@ -421,6 +421,14 @@ export const MODELS_BY_PROVIDER: Record<ProviderId, ReadonlyArray<ModelOption>> 
     { id: "grok-4-fast", label: "Grok 4 Fast" },
     { id: "grok-code-fast-1", label: "Grok Code Fast" },
   ],
+  // Gemini CLI accepts any model slug it knows via the ACP `_meta.model`
+  // hint; this list is just what the picker offers by default.
+  gemini: [
+    { id: "gemini-3-pro-preview", label: "Gemini 3 Pro" },
+    { id: "gemini-3-flash-preview", label: "Gemini 3 Flash" },
+    { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+    { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+  ],
 };
 
 export const defaultModelFor = (providerId: ProviderId): string =>
@@ -439,6 +447,10 @@ export const MODEL_ALIASES_BY_PROVIDER: Record<ProviderId, Record<string, string
     "gpt-5": "gpt-5.4",
   },
   grok: {},
+  gemini: {
+    "gemini-3-pro": "gemini-3-pro-preview",
+    "gemini-3.1-pro-preview": "gemini-3-pro-preview",
+  },
 };
 
 export const resolveModelSlug = (providerId: ProviderId, slug: string): string =>

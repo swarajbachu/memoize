@@ -606,6 +606,7 @@ const LOGIN_HINT: Record<ProviderId, string> = {
   claude: "Run `claude /login` in your terminal",
   codex: "Run `codex login` in your terminal",
   grok: "Run `grok` in your terminal to sign in",
+  gemini: "Run `gemini` in your terminal to sign in",
 };
 
 /**
