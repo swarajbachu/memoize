@@ -15,6 +15,7 @@ const DEFAULT_RUNTIME_MODE: RuntimeMode = "approval-required";
 const seedModels = (): Record<ProviderId, string> => ({
   claude: defaultModelFor("claude"),
   codex: defaultModelFor("codex"),
+  grok: defaultModelFor("grok"),
 });
 
 type Persisted = {
@@ -31,7 +32,7 @@ type Persisted = {
 };
 
 const isProviderId = (v: unknown): v is ProviderId =>
-  v === "claude" || v === "codex";
+  v === "claude" || v === "codex" || v === "grok";
 
 const isRuntimeMode = (v: unknown): v is RuntimeMode =>
   v === "approval-required" || v === "auto-accept-edits" || v === "full-access";
@@ -67,6 +68,12 @@ const loadPersisted = (): Persisted => {
         typeof parsed.defaultModelByProvider?.codex === "string"
           ? parsed.defaultModelByProvider.codex
           : seeded.codex,
+      ),
+      grok: resolveModelSlug(
+        "grok",
+        typeof parsed.defaultModelByProvider?.grok === "string"
+          ? parsed.defaultModelByProvider.grok
+          : seeded.grok,
       ),
     };
     return {
