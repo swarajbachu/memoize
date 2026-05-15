@@ -556,18 +556,32 @@ export const MessageStoreLive = Layer.scoped(
         });
       });
 
-    const teardownSubscription = (sessionId: SessionId): Effect.Effect<void> =>
+    // Interrupt only the provider → pubsub event-pump fiber, leaving the
+    // message and status PubSubs alive. The renderer's `messages.stream`
+    // and `session.streamStatus` subscriptions stay connected; the next
+    // `sendMessage` lazy-restarts the provider and a fresh pump-fiber
+    // publishes to the same pubsubs. Use this for setModel / setProvider /
+    // resumeSession — anything that swaps the provider session out and
+    // back in. Use `teardownSubscription` instead when the session itself
+    // is going away (deleteSession).
+    const interruptProviderFiber = (
+      sessionId: SessionId,
+    ): Effect.Effect<void> =>
       Effect.gen(function* () {
         const fiberMap = yield* Ref.get(fibers);
         const fiber = fiberMap.get(sessionId);
-        if (fiber !== undefined) {
-          yield* Fiber.interrupt(fiber);
-          yield* Ref.update(fibers, (m) => {
-            const next = new Map(m);
-            next.delete(sessionId);
-            return next;
-          });
-        }
+        if (fiber === undefined) return;
+        yield* Fiber.interrupt(fiber);
+        yield* Ref.update(fibers, (m) => {
+          const next = new Map(m);
+          next.delete(sessionId);
+          return next;
+        });
+      });
+
+    const teardownSubscription = (sessionId: SessionId): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        yield* interruptProviderFiber(sessionId);
         const pubsubMap = yield* Ref.get(pubsubs);
         const pubsub = pubsubMap.get(sessionId);
         if (pubsub !== undefined) {
@@ -875,11 +889,53 @@ export const MessageStoreLive = Layer.scoped(
           UPDATE sessions SET model = ${model}, updated_at = ${nowIso}
           WHERE id = ${sessionId}
         `.pipe(Effect.orDie);
-        // Drop the provider's in-memory session and tear down our event pump;
-        // sendMessage's "send fails → restart" path reads sessions.model so
-        // the next turn picks up the new model.
+        // Drop the provider's in-memory session and interrupt the event pump
+        // fiber; the message + status pubsubs stay alive so the renderer's
+        // streams remain connected. sendMessage's "send fails → restart"
+        // path reads sessions.model so the next turn picks up the new model.
         yield* provider.close(sessionId).pipe(Effect.catchAll(() => Effect.void));
-        yield* teardownSubscription(sessionId);
+        yield* interruptProviderFiber(sessionId);
+        yield* setStatus(sessionId, "idle");
+      });
+
+    /**
+     * Switch a session's provider (and the model it runs under) before any
+     * user message has been sent. The new CLI can't read the prior CLI's
+     * transcript, so this is fresh-session-only — mid-chat callers get
+     * `SessionAlreadyStartedError`. Resets `cursor` / `resume_strategy`
+     * since both are provider-specific.
+     */
+    const setProvider: MessageStoreShape["setProvider"] = (
+      sessionId,
+      providerId,
+      model,
+    ) =>
+      Effect.gen(function* () {
+        yield* lookupSession(sessionId);
+        const existing = yield* sql<{ readonly id: string }>`
+          SELECT id FROM messages
+          WHERE session_id = ${sessionId} AND role = 'user'
+          LIMIT 1
+        `.pipe(Effect.orDie);
+        if (existing.length > 0) {
+          return yield* Effect.fail(
+            new SessionAlreadyStartedError({ sessionId }),
+          );
+        }
+        const nowIso = new Date().toISOString();
+        yield* sql`
+          UPDATE sessions
+          SET provider_id = ${providerId},
+              model = ${model},
+              cursor = NULL,
+              resume_strategy = 'none',
+              updated_at = ${nowIso}
+          WHERE id = ${sessionId}
+        `.pipe(Effect.orDie);
+        // See setModel: keep the pubsubs alive so the renderer's streams
+        // stay connected across the provider swap.
+        yield* provider.close(sessionId).pipe(Effect.catchAll(() => Effect.void));
+        yield* interruptProviderFiber(sessionId);
         yield* setStatus(sessionId, "idle");
       });
 
@@ -1038,9 +1094,11 @@ export const MessageStoreLive = Layer.scoped(
           );
         }
         // Best-effort cleanup of any stale in-memory session before opening
-        // a fresh handle attached to the same DB row.
+        // a fresh handle attached to the same DB row. Keep the pubsubs
+        // alive so renderer subscriptions stay connected across the
+        // resume — only the event-pump fiber needs to restart.
         yield* provider.close(sessionId).pipe(Effect.catchAll(() => Effect.void));
-        yield* teardownSubscription(sessionId);
+        yield* interruptProviderFiber(sessionId);
         runtimeModeBySession.set(session.id, session.runtimeMode);
         permissionModeBySession.set(session.id, session.permissionMode);
         const subagents = agentsFor(session.id);
@@ -1176,6 +1234,7 @@ export const MessageStoreLive = Layer.scoped(
       createSession,
       renameSession,
       setModel,
+      setProvider,
       setRuntimeMode,
       setPermissionMode,
       answerQuestion,

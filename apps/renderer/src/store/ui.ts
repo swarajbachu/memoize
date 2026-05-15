@@ -17,6 +17,7 @@ export type SettingsSection =
   | { readonly kind: "general" }
   | { readonly kind: "models" }
   | { readonly kind: "workspace" }
+  | { readonly kind: "shortcuts" }
   | { readonly kind: "repository"; readonly projectId: FolderId };
 
 /**
@@ -25,7 +26,12 @@ export type SettingsSection =
  * replaces (never stacks) the file tab — see specs/0.02-MVP/features/file-viewer.md.
  */
 export type MainTab = "chat" | "file";
-export type RightPaneTab = "files" | "terminal" | "changes" | "pr";
+
+/**
+ * Tabs in the right-hand workspace pane. Lifted from `RightPane`'s local
+ * state so the native menu (Cmd+J → Toggle Terminal) can drive it.
+ */
+export type RightTab = "files" | "terminal" | "changes" | "pr";
 
 export type OpenFile = {
   readonly folderId: FolderId;
@@ -52,16 +58,16 @@ type UiState = {
   readonly autosave: boolean;
   readonly leftSidebarOpen: boolean;
   readonly rightSidebarOpen: boolean;
-  readonly rightPaneTab: RightPaneTab;
   readonly isFullScreen: boolean;
+  readonly activeRightTab: RightTab;
   readonly setActiveMainTab: (tab: MainTab) => void;
   readonly openFileInTab: (file: OpenFile) => void;
   readonly closeFileTab: () => void;
   readonly setFileDirty: (dirty: boolean) => void;
   readonly setLeftSidebarOpen: (open: boolean) => void;
   readonly setRightSidebarOpen: (open: boolean) => void;
-  readonly setRightPaneTab: (tab: RightPaneTab) => void;
   readonly setFullScreen: (full: boolean) => void;
+  readonly setActiveRightTab: (tab: RightTab) => void;
 };
 
 export const useUiStore = create<UiState>((set) => ({
@@ -75,8 +81,8 @@ export const useUiStore = create<UiState>((set) => ({
   autosave: false,
   leftSidebarOpen: true,
   rightSidebarOpen: true,
-  rightPaneTab: "files",
   isFullScreen: false,
+  activeRightTab: "files",
   setActiveMainTab: (tab) => set({ activeMainTab: tab }),
   openFileInTab: (file) =>
     set({ openFile: file, activeMainTab: "file", fileDirty: false }),
@@ -85,6 +91,6 @@ export const useUiStore = create<UiState>((set) => ({
   setFileDirty: (dirty) => set({ fileDirty: dirty }),
   setLeftSidebarOpen: (open) => set({ leftSidebarOpen: open }),
   setRightSidebarOpen: (open) => set({ rightSidebarOpen: open }),
-  setRightPaneTab: (tab) => set({ rightPaneTab: tab }),
   setFullScreen: (full) => set({ isFullScreen: full }),
+  setActiveRightTab: (tab) => set({ activeRightTab: tab }),
 }));

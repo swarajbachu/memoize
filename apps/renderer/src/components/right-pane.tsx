@@ -2,13 +2,14 @@ import { FolderClosed, GitBranch } from "lucide-react";
 
 import type { FolderId } from "@memoize/wire";
 
+import { formatShortcut } from "../lib/shortcuts.ts";
 import { useActiveWorktreeId } from "../store/active-workspace.ts";
 import { gitStatusKey, useGitStatusStore } from "../store/git-status.ts";
 import { prDetailsKey, usePrDetailsStore } from "../store/pr-details.ts";
 import { prStateKey, usePrStateStore } from "../store/pr-state.ts";
+import { useUiStore } from "../store/ui.ts";
 import { useWorkspaceStore } from "../store/workspace.ts";
 import { EMPTY_WORKTREES, useWorktreesStore } from "../store/worktrees.ts";
-import { useUiStore } from "../store/ui.ts";
 import { DiffPane } from "./diff-pane.tsx";
 import { FileTree } from "./file-tree.tsx";
 import { PrPane } from "./pr-pane.tsx";
@@ -44,8 +45,8 @@ export function RightPane() {
       ? (s.byKey[prDetailsKey(selectedFolderId, worktreeId)] ?? null)
       : null,
   );
-  const tab = useUiStore((s) => s.rightPaneTab);
-  const setTab = useUiStore((s) => s.setRightPaneTab);
+  const tab = useUiStore((s) => s.activeRightTab);
+  const setTab = useUiStore((s) => s.setActiveRightTab);
 
   return (
     <aside className="flex h-full min-h-0 w-full flex-col">
@@ -62,6 +63,7 @@ export function RightPane() {
           onClick={() => setTab("terminal")}
           label="Terminal"
           tooltip="Open a terminal in the project root"
+          shortcut={formatShortcut("toggle-terminal")}
         />
         <TabButton
           active={tab === "changes"}
@@ -198,12 +200,14 @@ function TabButton({
   label,
   tooltip,
   badge,
+  shortcut,
 }: {
   active: boolean;
   onClick: () => void;
   label: string;
   tooltip: string;
   badge?: React.ReactNode;
+  shortcut?: string;
 }) {
   return (
     <Tooltip>
@@ -223,7 +227,16 @@ function TabButton({
           </button>
         }
       />
-      <TooltipPopup>{tooltip}</TooltipPopup>
+      <TooltipPopup>
+        {shortcut !== undefined && shortcut !== "" ? (
+          <span className="inline-flex items-baseline gap-2 whitespace-nowrap">
+            <span>{tooltip}</span>
+            <kbd className="font-sans text-muted-foreground/80">{shortcut}</kbd>
+          </span>
+        ) : (
+          tooltip
+        )}
+      </TooltipPopup>
     </Tooltip>
   );
 }

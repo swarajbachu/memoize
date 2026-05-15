@@ -2,6 +2,7 @@ import { Effect, Mailbox, Stream } from "effect";
 
 import {
   AgentSessionStartError,
+  resolveModelSlug,
   type AgentEvent,
   type AgentItemId,
   type AgentSessionId,
