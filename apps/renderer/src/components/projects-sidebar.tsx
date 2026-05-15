@@ -45,7 +45,7 @@ import { useUiStore } from "../store/ui.ts";
 import { useWorkspaceStore } from "../store/workspace.ts";
 import { BranchIcon, type BranchState } from "./branch-icon.tsx";
 import { PermissionsInspector } from "./permissions-inspector.tsx";
-import { Beacon } from "./ui/loaders";
+import { Beacon, Diffusion } from "./ui/loaders";
 
 const initialsOf = (name: string): string => {
   const parts = name.split(/[-_.\s]+/).filter(Boolean);
@@ -640,8 +640,12 @@ export async function createNewSession(projectId: FolderId): Promise<void> {
 }
 
 function NewChatButton({ projectId }: { projectId: FolderId }) {
+  const creating = useChatsStore(
+    (s) => s.creatingByProject[projectId] === true,
+  );
   const onClick = (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (creating) return;
     void createNewSession(projectId);
   };
 
@@ -652,15 +656,23 @@ function NewChatButton({ projectId }: { projectId: FolderId }) {
           <button
             type="button"
             onClick={onClick}
-            className="rounded p-0.5 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            disabled={creating}
+            className="rounded p-0.5 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground disabled:cursor-default disabled:hover:bg-transparent"
             aria-label="New chat"
           >
-            <SquarePen className="size-3.5" />
+            {creating ? (
+              <Diffusion className="size-3.5" />
+            ) : (
+              <SquarePen className="size-3.5" />
+            )}
           </button>
         }
       />
       <TooltipPopup>
-        <TooltipShortcut label="New chat" shortcut={formatShortcut("new-chat")} />
+        <TooltipShortcut
+          label={creating ? "Creating chat…" : "New chat"}
+          shortcut={creating ? "" : formatShortcut("new-chat")}
+        />
       </TooltipPopup>
     </Tooltip>
   );
