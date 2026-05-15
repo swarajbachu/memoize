@@ -13,6 +13,7 @@ const UPGRADE_DOCS_URL: Record<ProviderId, string> = {
   codex: "https://github.com/openai/codex#installation",
   grok: "https://docs.x.ai/build/overview",
   cursor: "https://cursor.com/cli",
+  gemini: "https://github.com/google-gemini/gemini-cli#installation",
 };
 
 /**

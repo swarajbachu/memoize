@@ -17,6 +17,7 @@ const LOGIN_HINT: Record<ProviderId, string> = {
   codex: "codex login",
   grok: "grok",
   cursor: "cursor-agent login",
+  gemini: "gemini",
 };
 
 const INSTALL_HINT: Record<ProviderId, string> = {
@@ -24,6 +25,7 @@ const INSTALL_HINT: Record<ProviderId, string> = {
   codex: "npm i -g @openai/codex",
   grok: "curl -fsSL https://x.ai/cli/install.sh | bash",
   cursor: "curl https://cursor.com/install -fsS | bash",
+  gemini: "npm i -g @google/gemini-cli",
 };
 
 const PROVIDER_TAGLINE: Record<ProviderId, string> = {
@@ -31,6 +33,7 @@ const PROVIDER_TAGLINE: Record<ProviderId, string> = {
   codex: "OpenAI · GPT-5 family",
   grok: "xAI · Grok",
   cursor: "Cursor · GPT, Sonnet, Opus",
+  gemini: "Google · Gemini 3 Pro",
 };
 
 type ProviderState =
@@ -72,7 +75,13 @@ export function ProviderStep() {
   const availability = useProvidersStore((s) => s.availability);
   const loading = useProvidersStore((s) => s.loading);
 
-  const providers: ReadonlyArray<ProviderId> = ["claude", "codex", "grok", "cursor"];
+  const providers: ReadonlyArray<ProviderId> = [
+    "claude",
+    "codex",
+    "grok",
+    "gemini",
+    "cursor",
+  ];
 
   return (
     <div className="flex flex-col gap-7">

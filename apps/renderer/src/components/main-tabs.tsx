@@ -31,6 +31,7 @@ const PROVIDER_LABEL: Record<ProviderId, string> = {
   codex: "Codex",
   grok: "Grok",
   cursor: "Cursor",
+  gemini: "Gemini",
 };
 
 const lookupModelLabel = (

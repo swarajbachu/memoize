@@ -6,8 +6,15 @@ import { join } from "node:path";
 import {
   AgentAvailability,
   type CliVersionStatus,
+  type ProviderAuthStatus,
+  type ProviderHealthStatus,
   type ProviderId,
 } from "@memoize/wire";
+
+import type { Account } from "./codex-app-protocol/v2/Account.ts";
+import type { GetAccountResponse } from "./codex-app-protocol/v2/GetAccountResponse.ts";
+import type { PlanType } from "./codex-app-protocol/PlanType.ts";
+import { CodexAppServerClient } from "./codex-app-server-client.ts";
 
 interface ProviderProbe {
   readonly providerId: ProviderId;
@@ -53,6 +60,16 @@ const PROBES: ReadonlyArray<ProviderProbe> = [
     // Revisit if a future release breaks the streaming-json contract.
     minVersion: null,
     upgradeCommand: "curl -fsSL https://x.ai/cli/install.sh | bash",
+  },
+  {
+    providerId: "gemini",
+    displayName: "Gemini",
+    cliBinary: "gemini",
+    // We speak ACP directly via `gemini --experimental-acp`, so there's no
+    // SDK pin to keep in lock-step with. Revisit if Google renames the
+    // flag or breaks the handshake.
+    minVersion: null,
+    upgradeCommand: "npm i -g @google/gemini-cli",
   },
   {
     providerId: "cursor",
@@ -164,91 +181,298 @@ export const probeCliVersion = (
     return parseCliVersion(result.value.stdout);
   });
 
-// Heuristic existence checks for local CLI login. We never read the
-// credential contents — only confirm the artifact is there. The SDK validates
-// on actual use; if the token is stale the first turn fails with an Error
-// agent event and we surface it in the UI.
-const probeClaudeLogin: Effect.Effect<
-  boolean,
+// ---------------------------------------------------------------------------
+// Verified-auth probes per provider.
+//
+// `cliLoggedIn` proves a credential *file* exists; `AccountInfo` proves we
+// could actually parse the credential and extract a user identity (email +
+// subscription tier). The renderer uses both: `cliLoggedIn` lights up the dot
+// before the slow per-driver verification finishes, and `AccountInfo`
+// upgrades the card to "Authenticated as <email> · <subscription>".
+// ---------------------------------------------------------------------------
+
+interface AccountInfo {
+  readonly authStatus: ProviderAuthStatus;
+  readonly authEmail?: string;
+  readonly authLabel?: string;
+  readonly authType?: string;
+  /**
+   * One-line probe error to display under the "Needs attention" headline
+   * when verification failed even though a credential file is present.
+   */
+  readonly statusMessage?: string;
+}
+
+const ACCOUNT_PROBE_TIMEOUT = Duration.seconds(5);
+
+const CODEX_PLAN_LABEL: Partial<Record<PlanType, string>> = {
+  plus: "ChatGPT Plus Subscription",
+  pro: "ChatGPT Pro Subscription",
+  prolite: "ChatGPT Pro Lite Subscription",
+  team: "ChatGPT Team Subscription",
+  enterprise: "ChatGPT Enterprise Subscription",
+  enterprise_cbp_usage_based: "ChatGPT Enterprise Subscription",
+  business: "ChatGPT Business Subscription",
+  self_serve_business_usage_based: "ChatGPT Business Subscription",
+  edu: "ChatGPT Edu",
+  go: "ChatGPT Go",
+  free: "Free",
+};
+
+const codexAccountLabel = (account: Account): string | undefined => {
+  switch (account.type) {
+    case "apiKey":
+      return "OpenAI API Key";
+    case "amazonBedrock":
+      return "Amazon Bedrock";
+    case "chatgpt":
+      return CODEX_PLAN_LABEL[account.planType] ?? "ChatGPT Subscription";
+  }
+};
+
+const ACCOUNT_PROBE_TIMEOUT_MS = 5_000;
+
+/**
+ * Spawn a short-lived `codex app-server`, call `account/read`, and pull
+ * email + plan label off the response. Always resolves to an `AccountInfo`
+ * — spawn failures, timeouts, and protocol errors all flow through to a
+ * tagged "unknown" result with the error message in `statusMessage` so the
+ * UI can show "Needs attention" without crashing the whole availability
+ * RPC.
+ */
+const probeCodexAccount = (codexPath: string): Effect.Effect<AccountInfo> =>
+  Effect.promise(async () => {
+    let client: CodexAppServerClient | null = null;
+    let timer: NodeJS.Timeout | null = null;
+    try {
+      const startWithTimeout = new Promise<CodexAppServerClient>(
+        (resolve, reject) => {
+          timer = setTimeout(() => {
+            reject(new Error("Codex auth probe timed out"));
+          }, ACCOUNT_PROBE_TIMEOUT_MS);
+          CodexAppServerClient.start({
+            codexPath,
+            onNotification: () => {},
+            onServerRequest: (_req, respond) => respond(null),
+          }).then(resolve, reject);
+        },
+      );
+      client = await startWithTimeout;
+      const response = await client.request<GetAccountResponse>(
+        "account/read",
+        {},
+      );
+      if (response.account === null) {
+        return {
+          authStatus: "unauthenticated",
+          ...(response.requiresOpenaiAuth
+            ? { statusMessage: "Sign in required" }
+            : {}),
+        } satisfies AccountInfo;
+      }
+      const account = response.account;
+      const label = codexAccountLabel(account);
+      return {
+        authStatus: "authenticated",
+        authType: account.type,
+        ...(label ? { authLabel: label } : {}),
+        ...(account.type === "chatgpt" && account.email.length > 0
+          ? { authEmail: account.email }
+          : {}),
+      } satisfies AccountInfo;
+    } catch (err) {
+      return {
+        authStatus: "unknown",
+        statusMessage:
+          err instanceof Error ? err.message : "Could not verify Codex auth",
+      } satisfies AccountInfo;
+    } finally {
+      if (timer !== null) clearTimeout(timer);
+      // Kill the child process — without this the `codex app-server`
+      // subprocess leaks for several minutes per probe.
+      client?.close();
+    }
+  });
+
+const CLAUDE_SUB_LABEL: Record<string, string> = {
+  max: "Claude Max Subscription",
+  pro: "Claude Pro Subscription",
+  free: "Free",
+};
+
+interface ClaudeCredentialBlob {
+  readonly claudeAiOauth?: {
+    readonly subscriptionType?: string;
+    readonly emailAddress?: string;
+    readonly email?: string;
+  };
+}
+
+const parseClaudeCredentials = (raw: string): AccountInfo => {
+  let parsed: ClaudeCredentialBlob;
+  try {
+    parsed = JSON.parse(raw) as ClaudeCredentialBlob;
+  } catch {
+    return { authStatus: "authenticated" };
+  }
+  const oauth = parsed.claudeAiOauth;
+  if (!oauth) return { authStatus: "authenticated" };
+  const sub = oauth.subscriptionType?.toLowerCase();
+  const email = oauth.emailAddress ?? oauth.email;
+  return {
+    authStatus: "authenticated",
+    authType: "oauth",
+    ...(sub && CLAUDE_SUB_LABEL[sub]
+      ? { authLabel: CLAUDE_SUB_LABEL[sub] }
+      : sub
+        ? { authLabel: `Claude ${sub[0]!.toUpperCase()}${sub.slice(1)}` }
+        : {}),
+    ...(email ? { authEmail: email } : {}),
+  };
+};
+
+const probeClaudeAccount: Effect.Effect<
+  AccountInfo,
   never,
   FileSystem.FileSystem | CommandExecutor.CommandExecutor
-> =
-  Effect.gen(function* () {
-    if (platform() === "darwin") {
-      // macOS: `claude /login` writes an OAuth token to keychain entry
-      // "Claude Code-credentials". `security find-generic-password` exits 0
-      // when present and non-zero otherwise; we only check the exit code.
-      const exists = yield* runCapture(
-        Command.make(
-          "security",
-          "find-generic-password",
-          "-s",
-          "Claude Code-credentials",
-        ),
-      ).pipe(
-        Effect.timeoutOption(PROBE_TIMEOUT),
-        Effect.map((opt) =>
-          opt._tag === "Some" && opt.value.exitCode === 0,
-        ),
-        Effect.catchAll(() => Effect.succeed(false)),
-      );
-      return exists;
+> = Effect.gen(function* () {
+  if (platform() === "darwin") {
+    // macOS: `security find-generic-password -w` prints the password (the
+    // OAuth credential blob) to stdout when present, exits non-zero
+    // otherwise. The presence-check (without `-w`) used to live in
+    // `probeClaudeLogin`; we now read the value so we can extract the
+    // subscription tier and email.
+    const result = yield* runCapture(
+      Command.make(
+        "security",
+        "find-generic-password",
+        "-s",
+        "Claude Code-credentials",
+        "-w",
+      ),
+    ).pipe(
+      Effect.timeoutOption(ACCOUNT_PROBE_TIMEOUT),
+      Effect.catchAll(() => Effect.succeedNone),
+    );
+    if (result._tag !== "Some" || result.value.exitCode !== 0) {
+      return { authStatus: "unauthenticated" } satisfies AccountInfo;
     }
-    // Linux / Windows: best-effort filesystem probe. Newer Claude CLIs write
-    // `~/.claude/.credentials.json`; older builds keep tokens elsewhere. If
-    // either is missing we still let the user try — the SDK will report the
-    // real auth state on first turn.
-    const fs = yield* FileSystem.FileSystem;
-    const path = join(homedir(), ".claude", ".credentials.json");
-    return yield* fs.exists(path).pipe(Effect.catchAll(() => Effect.succeed(false)));
-  });
+    return parseClaudeCredentials(result.value.stdout);
+  }
+  const fs = yield* FileSystem.FileSystem;
+  const path = join(homedir(), ".claude", ".credentials.json");
+  const exists = yield* fs
+    .exists(path)
+    .pipe(Effect.catchAll(() => Effect.succeed(false)));
+  if (!exists) return { authStatus: "unauthenticated" };
+  const raw = yield* fs
+    .readFileString(path)
+    .pipe(Effect.catchAll(() => Effect.succeed("")));
+  return raw.length === 0
+    ? { authStatus: "authenticated" }
+    : parseClaudeCredentials(raw);
+});
 
-const probeCodexLogin: Effect.Effect<boolean, never, FileSystem.FileSystem> =
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const path = join(homedir(), ".codex", "auth.json");
-    return yield* fs.exists(path).pipe(Effect.catchAll(() => Effect.succeed(false)));
-  });
-
-// Grok writes both browser-OAuth credentials and `config.toml` under
-// `~/.grok/` on first authenticated launch. The directory's presence is a
-// cheap proxy for "they've completed at least one login"; we don't read it.
-// If the user only sets `GROK_CODE_XAI_API_KEY` and never opens the TUI the
-// dir may not exist — that's fine, the renderer still flips to "ready" via
-// `hasApiKey` once a key is saved in the keychain.
-const probeGrokLogin: Effect.Effect<boolean, never, FileSystem.FileSystem> =
+// Grok writes browser-OAuth credentials + `config.toml` under `~/.grok/`
+// on first authenticated launch; directory presence is a cheap proxy for
+// "completed at least one login". If only `GROK_CODE_XAI_API_KEY` is set,
+// the dir may not exist — the renderer still flips to "ready" via
+// `hasApiKey` once a key lands in the keychain.
+//
+// We can't currently verify the user's subscription tier from the CLI
+// alone — Grok's agent CLI requires an active SuperGrok Heavy plan to
+// actually drive sessions, but the OAuth artifact alone doesn't tell us
+// whether that plan is active. Carry the requirement in `authLabel` so
+// the card surfaces "Requires SuperGrok Heavy subscription" + a subscribe
+// CTA, and the user finds out before they hit a session-runtime 403.
+const probeGrokAccount: Effect.Effect<AccountInfo, never, FileSystem.FileSystem> =
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = join(homedir(), ".grok");
-    return yield* fs.exists(path).pipe(Effect.catchAll(() => Effect.succeed(false)));
+    const exists = yield* fs
+      .exists(path)
+      .pipe(Effect.catchAll(() => Effect.succeed(false)));
+    return exists
+      ? ({
+          authStatus: "authenticated",
+          authType: "cli",
+          authLabel: "Requires SuperGrok Heavy",
+        } satisfies AccountInfo)
+      : ({ authStatus: "unauthenticated" } satisfies AccountInfo);
   });
 
-// Cursor Agent stores its installation (and any cached login) under
-// `~/.local/share/cursor-agent/` on Unix; the dir is created on first
-// install regardless of auth state, so its mere presence isn't proof of
-// login. We use it as a "you've used cursor-agent" proxy — the strongest
-// signal of "logged in" comes from `hasApiKey` once a key is saved in
-// the keychain, or from the live ACP probe failing with a usable error.
-const probeCursorLogin: Effect.Effect<boolean, never, FileSystem.FileSystem> =
+// Gemini CLI writes OAuth tokens + settings under `~/.gemini/` after the
+// first interactive sign-in. Same file-existence heuristic as Grok — we
+// don't yet have a verified-auth call we can make to the gemini CLI to
+// extract email/plan, so the card stays at "Authenticated" without the
+// subscription label.
+const probeGeminiAccount: Effect.Effect<AccountInfo, never, FileSystem.FileSystem> =
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = join(homedir(), ".gemini");
+    const exists = yield* fs
+      .exists(path)
+      .pipe(Effect.catchAll(() => Effect.succeed(false)));
+    return exists
+      ? ({ authStatus: "authenticated", authType: "cli" } satisfies AccountInfo)
+      : ({ authStatus: "unauthenticated" } satisfies AccountInfo);
+  });
+
+// Cursor Agent stores OAuth credentials under `~/.local/share/cursor-agent/`
+// after `cursor-agent login`. The directory is also created on first install
+// regardless of auth state, so its mere presence isn't a perfect proxy — but
+// it's the best we have without driving the ACP probe. The renderer also
+// flips to "ready" via `hasApiKey` once a key lands in the keychain.
+const probeCursorAccount: Effect.Effect<AccountInfo, never, FileSystem.FileSystem> =
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = join(homedir(), ".local", "share", "cursor-agent");
-    return yield* fs.exists(path).pipe(Effect.catchAll(() => Effect.succeed(false)));
+    const exists = yield* fs
+      .exists(path)
+      .pipe(Effect.catchAll(() => Effect.succeed(false)));
+    return exists
+      ? ({ authStatus: "authenticated", authType: "cli" } satisfies AccountInfo)
+      : ({ authStatus: "unauthenticated" } satisfies AccountInfo);
   });
 
-const probeLogin = (
+const probeAccount = (
   providerId: ProviderId,
-): Effect.Effect<boolean, never, FileSystem.FileSystem | CommandExecutor.CommandExecutor> => {
+  cliPath: string,
+): Effect.Effect<
+  AccountInfo,
+  never,
+  FileSystem.FileSystem | CommandExecutor.CommandExecutor
+> => {
   switch (providerId) {
     case "claude":
-      return probeClaudeLogin;
+      return probeClaudeAccount;
     case "codex":
-      return probeCodexLogin;
+      return probeCodexAccount(cliPath);
     case "grok":
-      return probeGrokLogin;
+      return probeGrokAccount;
+    case "gemini":
+      return probeGeminiAccount;
     case "cursor":
-      return probeCursorLogin;
+      return probeCursorAccount;
   }
+};
+
+/**
+ * Roll the per-field signals (`cliInstalled`, `cliVersionStatus`, `authStatus`)
+ * up into the single dot color the renderer paints. Mirrors t3code's
+ * `getProviderSummary` precedence so server-derived status agrees with the
+ * client-side fallback when both run.
+ */
+const computeHealthStatus = (input: {
+  cliInstalled: boolean;
+  cliVersionStatus: CliVersionStatus;
+  authStatus: ProviderAuthStatus;
+}): ProviderHealthStatus => {
+  if (!input.cliInstalled) return "error";
+  if (input.cliVersionStatus === "outdated") return "warning";
+  if (input.authStatus === "authenticated") return "ready";
+  if (input.authStatus === "unauthenticated") return "warning";
+  return "warning";
 };
 
 const probeOne = (
@@ -259,6 +483,7 @@ const probeOne = (
   CommandExecutor.CommandExecutor | FileSystem.FileSystem
 > =>
   Effect.gen(function* () {
+    const lastCheckedAt = new Date();
     const whichResult = yield* runCapture(Command.make("which", probe.cliBinary)).pipe(
       Effect.timeoutOption(PROBE_TIMEOUT),
       Effect.catchAll(() => Effect.succeedNone),
@@ -276,6 +501,9 @@ const probeOne = (
         cliInstalled: false,
         cliLoggedIn: false,
         hasApiKey: false,
+        status: "error",
+        statusMessage: `${probe.displayName} CLI not found on PATH.`,
+        lastCheckedAt,
       });
     }
 
@@ -312,7 +540,22 @@ const probeOne = (
       }
     }
 
-    const cliLoggedIn = yield* probeLogin(probe.providerId);
+    const account = yield* probeAccount(probe.providerId, cliPath);
+    const cliLoggedIn = account.authStatus === "authenticated";
+
+    const status = computeHealthStatus({
+      cliInstalled: true,
+      cliVersionStatus,
+      authStatus: account.authStatus,
+    });
+
+    const statusMessage =
+      account.statusMessage ??
+      (cliVersionStatus === "outdated"
+        ? `Update required — ${probe.displayName} ${cliVersion ?? ""} below ${
+            cliVersionMinRequired ?? "minimum"
+          }.`
+        : undefined);
 
     return AgentAvailability.make({
       providerId: probe.providerId,
@@ -325,6 +568,13 @@ const probeOne = (
       cliVersionStatus,
       cliVersionMinRequired,
       cliUpgradeCommand,
+      authStatus: account.authStatus,
+      authEmail: account.authEmail,
+      authLabel: account.authLabel,
+      authType: account.authType,
+      status,
+      statusMessage,
+      lastCheckedAt,
     });
   });
 

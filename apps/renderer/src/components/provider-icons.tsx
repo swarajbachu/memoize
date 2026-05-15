@@ -1,21 +1,28 @@
-import { ChatGptIcon, ClaudeIcon, GrokIcon } from "@hugeicons/core-free-icons";
+import {
+  ChatGptIcon,
+  ClaudeIcon,
+  GoogleGeminiIcon,
+} from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { ComponentProps } from "react";
 
 import type { ProviderId } from "@memoize/wire";
 
 import { cn } from "~/lib/utils";
+import { GrokIcon } from "./icons/grok-icon";
 
 type HugeProps = ComponentProps<typeof HugeiconsIcon>;
 type ProviderIconProps = Omit<HugeProps, "icon"> & {
   providerId: ProviderId;
 };
 
-const ICON_BY_PROVIDER = {
+type HugeProviderId = Exclude<ProviderId, "grok" | "cursor">;
+
+const HUGE_ICON_BY_PROVIDER = {
   claude: ClaudeIcon,
   codex: ChatGptIcon,
-  grok: GrokIcon,
-} as const satisfies Record<Exclude<ProviderId, "cursor">, HugeProps["icon"]>;
+  gemini: GoogleGeminiIcon,
+} as const satisfies Record<HugeProviderId, HugeProps["icon"]>;
 
 /**
  * Cursor brand mark. HugeIcons doesn't ship a Cursor logo, so we inline the
@@ -41,11 +48,11 @@ function CursorBrandIcon({
 }
 
 /**
- * Provider glyph for Claude, Codex, Grok, and Cursor sessions. Uses
- * HugeIcons for the first three (no remote downloads, no inline SVGs to
- * maintain); Cursor falls back to an inline brand mark because HugeIcons
- * doesn't ship one. Default size matches the `size-3.5` lucide pattern
- * used elsewhere in the sidebar/composer.
+ * Provider glyph for Claude, Codex, Grok, Gemini, and Cursor sessions.
+ * Uses HugeIcons where available; Grok uses a custom icon component and
+ * Cursor falls back to an inline brand mark because HugeIcons doesn't ship
+ * one. Default size matches the `size-3.5` lucide pattern used elsewhere
+ * in the sidebar/composer.
  */
 export function ProviderIcon({
   providerId,
@@ -53,12 +60,15 @@ export function ProviderIcon({
   strokeWidth = 1.75,
   ...props
 }: ProviderIconProps) {
+  if (providerId === "grok") {
+    return <GrokIcon className={cn("size-3.5 shrink-0", className)} />;
+  }
   if (providerId === "cursor") {
     return <CursorBrandIcon className={className} {...props} />;
   }
   return (
     <HugeiconsIcon
-      icon={ICON_BY_PROVIDER[providerId]}
+      icon={HUGE_ICON_BY_PROVIDER[providerId]}
       strokeWidth={strokeWidth}
       className={cn("size-3.5 shrink-0", className)}
       aria-hidden="true"

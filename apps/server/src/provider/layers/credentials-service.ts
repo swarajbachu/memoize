@@ -16,7 +16,13 @@ const SERVICE_NAME = "memoize";
  */
 const accountFor = (providerId: ProviderId): string => `apiKey:${providerId}`;
 
-const KNOWN_PROVIDERS: ReadonlyArray<ProviderId> = ["claude", "codex", "grok", "cursor"];
+const KNOWN_PROVIDERS: ReadonlyArray<ProviderId> = [
+  "claude",
+  "codex",
+  "grok",
+  "gemini",
+  "cursor",
+];
 
 const isKnownProvider = (id: string): id is ProviderId =>
   (KNOWN_PROVIDERS as ReadonlyArray<string>).includes(id);

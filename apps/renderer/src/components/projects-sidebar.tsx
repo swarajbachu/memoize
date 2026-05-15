@@ -607,6 +607,7 @@ const LOGIN_HINT: Record<ProviderId, string> = {
   codex: "Run `codex login` in your terminal",
   grok: "Run `grok` in your terminal to sign in",
   cursor: "Run `cursor-agent login` in your terminal",
+  gemini: "Run `gemini` in your terminal to sign in",
 };
 
 /**

@@ -28,6 +28,10 @@ import {
   type GrokSessionHandle,
 } from "../drivers/grok.ts";
 import {
+  startGeminiSession,
+  type GeminiSessionHandle,
+} from "../drivers/gemini.ts";
+import {
   startCursorSession,
   type CursorSessionHandle,
 } from "../drivers/cursor.ts";
@@ -50,6 +54,7 @@ type SessionHandle =
   | ClaudeSessionHandle
   | CodexSessionHandle
   | GrokSessionHandle
+  | GeminiSessionHandle
   | CursorSessionHandle;
 type SessionEntry = {
   readonly providerId: ProviderId;
@@ -146,7 +151,31 @@ export const ProviderServiceLive = Layer.effect(
           );
           const sessionId = input.sessionId ?? nextSessionId();
           let handle: SessionHandle;
-          if (input.providerId === "grok") {
+          if (input.providerId === "gemini") {
+            // Same story as Grok: hand the driver the user's installed
+            // `gemini` binary. Surface a clean install message rather than
+            // letting spawn fail with ENOENT inside the driver.
+            const geminiPath = yield* resolveCliPath("gemini").pipe(
+              Effect.provideService(CommandExecutor.CommandExecutor, executor),
+            );
+            if (geminiPath === null) {
+              return yield* Effect.fail(
+                new AgentSessionStartError({
+                  providerId: "gemini",
+                  reason:
+                    "Gemini CLI not found on PATH. Install via `npm i -g @google/gemini-cli` and try again.",
+                }),
+              );
+            }
+            handle = yield* startGeminiSession(
+              input,
+              cwd,
+              apiKey,
+              geminiPath,
+              sessionId,
+              resumeCursor,
+            ).pipe(Effect.provideService(AttachmentService, attachmentService));
+          } else if (input.providerId === "grok") {
             // Same story as Claude/Codex: hand the driver the user's
             // installed `grok` binary (no bundled CLI in our package).
             // Surface a clean install message rather than letting spawn
