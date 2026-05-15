@@ -44,6 +44,16 @@ const PROBES: ReadonlyArray<ProviderProbe> = [
     minVersion: { major: 0, minor: 128, patch: 0, raw: "0.128.0" },
     upgradeCommand: "npm i -g @openai/codex@latest",
   },
+  {
+    providerId: "grok",
+    displayName: "Grok",
+    cliBinary: "grok",
+    // No floor yet — xAI ships Grok Build CLI as a single official channel
+    // and hasn't published an SDK we'd need to keep in lock-step with.
+    // Revisit if a future release breaks the streaming-json contract.
+    minVersion: null,
+    upgradeCommand: "curl -fsSL https://x.ai/cli/install.sh | bash",
+  },
 ];
 
 const PROBE_TIMEOUT = Duration.seconds(4);
@@ -189,6 +199,19 @@ const probeCodexLogin: Effect.Effect<boolean, never, FileSystem.FileSystem> =
     return yield* fs.exists(path).pipe(Effect.catchAll(() => Effect.succeed(false)));
   });
 
+// Grok writes both browser-OAuth credentials and `config.toml` under
+// `~/.grok/` on first authenticated launch. The directory's presence is a
+// cheap proxy for "they've completed at least one login"; we don't read it.
+// If the user only sets `GROK_CODE_XAI_API_KEY` and never opens the TUI the
+// dir may not exist — that's fine, the renderer still flips to "ready" via
+// `hasApiKey` once a key is saved in the keychain.
+const probeGrokLogin: Effect.Effect<boolean, never, FileSystem.FileSystem> =
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = join(homedir(), ".grok");
+    return yield* fs.exists(path).pipe(Effect.catchAll(() => Effect.succeed(false)));
+  });
+
 const probeLogin = (
   providerId: ProviderId,
 ): Effect.Effect<boolean, never, FileSystem.FileSystem | CommandExecutor.CommandExecutor> => {
@@ -197,6 +220,8 @@ const probeLogin = (
       return probeClaudeLogin;
     case "codex":
       return probeCodexLogin;
+    case "grok":
+      return probeGrokLogin;
   }
 };
 

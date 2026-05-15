@@ -13,7 +13,7 @@ import {
  * the literal union is the contract — adding a new provider is an additive
  * change here plus a new driver in `apps/server/src/provider/drivers/`.
  */
-export const ProviderId = Schema.Literal("claude", "codex");
+export const ProviderId = Schema.Literal("claude", "codex", "grok");
 export type ProviderId = typeof ProviderId.Type;
 
 /**
@@ -250,7 +250,11 @@ const ErrorEvent = Schema.TaggedStruct("Error", {
  */
 const SessionCursorEvent = Schema.TaggedStruct("SessionCursor", {
   cursor: Schema.String,
-  strategy: Schema.Literal("claude-session-id", "codex-thread-id"),
+  strategy: Schema.Literal(
+    "claude-session-id",
+    "codex-thread-id",
+    "grok-session-id",
+  ),
 });
 
 /**
@@ -404,6 +408,19 @@ export const MODELS_BY_PROVIDER: Record<ProviderId, ReadonlyArray<ModelOption>> 
     { id: "gpt-5.3-codex", label: "GPT-5.3 Codex" },
     { id: "gpt-5.3-codex-spark", label: "GPT-5.3 Codex Spark" },
   ],
+  // Seed list — Grok CLI's `-m` flag accepts any model id it knows, so a
+  // custom slug typed by the user still works; this list is just what the
+  // picker shows by default. `grok-build` is the only model free-tier
+  // accounts can run (verified via `grok models`); the rest unlock with a
+  // SuperGrok subscription. Passing a slug the account can't access yields
+  // a clean 403 surfaced through grok's streaming-json `type: "error"`
+  // envelope, so no client-side validation needed.
+  grok: [
+    { id: "grok-build", label: "Grok Build" },
+    { id: "grok-4", label: "Grok 4" },
+    { id: "grok-4-fast", label: "Grok 4 Fast" },
+    { id: "grok-code-fast-1", label: "Grok Code Fast" },
+  ],
 };
 
 export const defaultModelFor = (providerId: ProviderId): string =>
@@ -421,6 +438,7 @@ export const MODEL_ALIASES_BY_PROVIDER: Record<ProviderId, Record<string, string
     "gpt-5-codex": "gpt-5.4",
     "gpt-5": "gpt-5.4",
   },
+  grok: {},
 };
 
 export const resolveModelSlug = (providerId: ProviderId, slug: string): string =>

@@ -11,6 +11,7 @@ import { useProvidersStore } from "../store/providers.ts";
 const UPGRADE_DOCS_URL: Record<ProviderId, string> = {
   claude: "https://docs.claude.com/en/docs/claude-code/setup",
   codex: "https://github.com/openai/codex#installation",
+  grok: "https://docs.x.ai/build/overview",
 };
 
 /**

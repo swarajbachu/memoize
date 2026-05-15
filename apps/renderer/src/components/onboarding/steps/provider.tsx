@@ -15,16 +15,19 @@ import { StepHeader } from "./shared.tsx";
 const LOGIN_HINT: Record<ProviderId, string> = {
   claude: "claude /login",
   codex: "codex login",
+  grok: "grok",
 };
 
 const INSTALL_HINT: Record<ProviderId, string> = {
   claude: "npm i -g @anthropic-ai/claude-code",
   codex: "npm i -g @openai/codex",
+  grok: "curl -fsSL https://x.ai/cli/install.sh | bash",
 };
 
 const PROVIDER_TAGLINE: Record<ProviderId, string> = {
   claude: "Anthropic · Opus, Sonnet, Haiku",
   codex: "OpenAI · GPT-5 family",
+  grok: "xAI · Grok",
 };
 
 type ProviderState =
@@ -66,7 +69,7 @@ export function ProviderStep() {
   const availability = useProvidersStore((s) => s.availability);
   const loading = useProvidersStore((s) => s.loading);
 
-  const providers: ReadonlyArray<ProviderId> = ["claude", "codex"];
+  const providers: ReadonlyArray<ProviderId> = ["claude", "codex", "grok"];
 
   return (
     <div className="flex flex-col gap-7">
@@ -76,7 +79,7 @@ export function ProviderStep() {
         subtitle="memoize uses your existing CLI credentials — no API keys required."
       />
 
-      <div className="grid grid-cols-2 gap-2.5">
+      <div className="grid grid-cols-3 gap-2.5">
         {providers.map((pid) => (
           <ProviderCard
             key={pid}
