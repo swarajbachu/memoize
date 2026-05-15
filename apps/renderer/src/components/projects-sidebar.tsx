@@ -662,7 +662,9 @@ function NewChatButton({ projectId }: { projectId: FolderId }) {
             aria-label="New chat"
           >
             {creating ? (
-              <Diffusion className="size-3.5" />
+              <span className="inline-flex size-3.5 items-center justify-center">
+                <Diffusion dotSize={3} cellPadding={1} />
+              </span>
             ) : (
               <SquarePen className="size-3.5" />
             )}
