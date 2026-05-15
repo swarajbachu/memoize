@@ -21,11 +21,15 @@ import { RightPane } from "./components/right-pane";
 import { SettingsPage } from "./components/settings-page";
 import { TopBarLeft, TopBarMain, TopBarRight } from "./components/top-bar.tsx";
 import { UpdateBanner } from "./components/update-banner.tsx";
+import { useKeybindingDispatch } from "./hooks/use-keybinding-dispatch.ts";
+import { useSyncWhenContextFromUi } from "./hooks/use-keybinding-context.ts";
 import { useMenuShortcuts } from "./hooks/use-menu-shortcuts.ts";
 import { getRpcClient } from "./lib/rpc-client.ts";
+import { useKeybindingsStore } from "./store/keybindings.ts";
 import { usePermissionsStore } from "./store/permissions.ts";
 import { useSessionsStore } from "./store/sessions.ts";
 import { useSettingsStore } from "./store/settings.ts";
+import { hydrateSubagentsStore } from "./store/subagents.ts";
 import { useUiStore } from "./store/ui.ts";
 import { useWorkspaceStore } from "./store/workspace.ts";
 
@@ -49,6 +53,24 @@ export function App() {
   // Native Application Menu → renderer action dispatcher. Lives on the
   // root so the bindings work in every view (chat, settings, onboarding).
   useMenuShortcuts();
+
+  // Document-level keybinding dispatcher. Walks the live keybindings store
+  // on every keydown and fires the matching application command. Composer
+  // and editor commands are handled by CodeMirror keymaps, so this hook
+  // ignores them.
+  useKeybindingDispatch();
+  useSyncWhenContextFromUi();
+
+  // Hydrate settings + keybindings + subagents from the on-disk config
+  // store. Each call is idempotent; subsequent emits flow through the
+  // RPC streams maintained by the stores themselves.
+  const hydrateSettings = useSettingsStore((s) => s.hydrate);
+  const hydrateKeybindings = useKeybindingsStore((s) => s.hydrate);
+  useEffect(() => {
+    void hydrateSettings();
+    void hydrateKeybindings();
+    void hydrateSubagentsStore();
+  }, [hydrateSettings, hydrateKeybindings]);
 
   // Mirror Electron's fullscreen state into the ui store so the top bars
   // can drop the macOS traffic-light gutter.

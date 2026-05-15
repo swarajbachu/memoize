@@ -1,13 +1,26 @@
+import { Effect, Fiber, Stream } from "effect";
 import { create } from "zustand";
 
 import {
   defaultModelFor,
-  resolveModelSlug,
   type ProviderId,
+  resolveModelSlug,
   type RuntimeMode,
+  type SettingsFile,
 } from "@memoize/wire";
 
-const STORAGE_KEY = "memoize.settings.v1";
+import { getRpcClient } from "../lib/rpc-client";
+
+/**
+ * Renderer view of `settings.json`. Lives in the main process — this store
+ * is just a hot mirror kept in sync via `settings.stream`. Setters POST
+ * patches via `settings.update`; the resulting echo through the stream
+ * updates the store, so we don't optimistically write twice.
+ *
+ * Two pre-existing localStorage keys (`memoize.settings.v1` and
+ * `memoize.subagents`) are migrated to disk on first launch via
+ * `settings.migrateLocalStorage` and then cleared.
+ */
 
 const DEFAULT_PROVIDER: ProviderId = "claude";
 const DEFAULT_RUNTIME_MODE: RuntimeMode = "approval-required";
@@ -18,26 +31,10 @@ const seedModels = (): Record<ProviderId, string> => ({
   grok: defaultModelFor("grok"),
 });
 
-type Persisted = {
-  readonly defaultProviderId: ProviderId;
-  readonly defaultModelByProvider: Record<ProviderId, string>;
-  readonly defaultRuntimeMode: RuntimeMode;
-  /**
-   * Global preference for "create a fresh worktree on new chat." Per-repo
-   * `autoCreateWorktree` overrides this; the Repositories pane in Settings
-   * seeds new repos from this value.
-   */
-  readonly defaultAutoCreateWorktree: boolean;
-  readonly onboardingCompleted: boolean;
-};
+const OLD_SETTINGS_KEY = "memoize.settings.v1";
+const OLD_SUBAGENTS_KEY = "memoize.subagents";
 
-const isProviderId = (v: unknown): v is ProviderId =>
-  v === "claude" || v === "codex" || v === "grok";
-
-const isRuntimeMode = (v: unknown): v is RuntimeMode =>
-  v === "approval-required" || v === "auto-accept-edits" || v === "full-access";
-
-const freshDefaults = (): Persisted => ({
+const fallbackSnapshot = (): SettingsSlice => ({
   defaultProviderId: DEFAULT_PROVIDER,
   defaultModelByProvider: seedModels(),
   defaultRuntimeMode: DEFAULT_RUNTIME_MODE,
@@ -45,80 +42,38 @@ const freshDefaults = (): Persisted => ({
   onboardingCompleted: false,
 });
 
-const loadPersisted = (): Persisted => {
-  if (typeof window === "undefined") return freshDefaults();
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    // Genuine first launch — no blob at all.
-    if (raw === null) return freshDefaults();
-    const parsed = JSON.parse(raw) as Partial<Persisted>;
-    const seeded = seedModels();
-    // Rewrite dead slugs (e.g. `gpt-5-codex` from older builds) through
-    // `resolveModelSlug` so a stale localStorage doesn't keep sending a
-    // model the current Codex CLI rejects.
-    const models: Record<ProviderId, string> = {
-      claude: resolveModelSlug(
-        "claude",
-        typeof parsed.defaultModelByProvider?.claude === "string"
-          ? parsed.defaultModelByProvider.claude
-          : seeded.claude,
-      ),
-      codex: resolveModelSlug(
-        "codex",
-        typeof parsed.defaultModelByProvider?.codex === "string"
-          ? parsed.defaultModelByProvider.codex
-          : seeded.codex,
-      ),
-      grok: resolveModelSlug(
-        "grok",
-        typeof parsed.defaultModelByProvider?.grok === "string"
-          ? parsed.defaultModelByProvider.grok
-          : seeded.grok,
-      ),
-    };
-    return {
-      defaultProviderId: isProviderId(parsed.defaultProviderId)
-        ? parsed.defaultProviderId
-        : DEFAULT_PROVIDER,
-      defaultModelByProvider: models,
-      defaultRuntimeMode: isRuntimeMode(parsed.defaultRuntimeMode)
-        ? parsed.defaultRuntimeMode
-        : DEFAULT_RUNTIME_MODE,
-      defaultAutoCreateWorktree:
-        typeof parsed.defaultAutoCreateWorktree === "boolean"
-          ? parsed.defaultAutoCreateWorktree
-          : false,
-      // Existing users — blob present but pre-dating the onboarding flag —
-      // skip the wizard. Only a missing blob (handled above) is treated as
-      // first launch.
-      onboardingCompleted:
-        typeof parsed.onboardingCompleted === "boolean"
-          ? parsed.onboardingCompleted
-          : true,
-    };
-  } catch {
-    return freshDefaults();
+const sliceFromFile = (file: SettingsFile): SettingsSlice => {
+  const models: Record<ProviderId, string> = {
+    ...seedModels(),
+    ...file.defaultModelByProvider,
+  };
+  // Re-run resolveModelSlug on every emit so a stale alias doesn't sneak
+  // back through a follow-up edit to the JSON file.
+  for (const id of Object.keys(models) as ProviderId[]) {
+    models[id] = resolveModelSlug(id, models[id]);
   }
+  return {
+    defaultProviderId: file.defaultProviderId,
+    defaultModelByProvider: models,
+    defaultRuntimeMode: file.defaultRuntimeMode,
+    defaultAutoCreateWorktree: file.defaultAutoCreateWorktree,
+    onboardingCompleted: file.onboardingCompleted,
+  };
 };
 
-const persist = (state: Persisted) => {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch {
-    // Quota / private-mode failures are non-fatal — settings stay in memory.
-  }
-};
+interface SettingsSlice {
+  readonly defaultProviderId: ProviderId;
+  readonly defaultModelByProvider: Record<ProviderId, string>;
+  readonly defaultRuntimeMode: RuntimeMode;
+  readonly defaultAutoCreateWorktree: boolean;
+  readonly onboardingCompleted: boolean;
+}
 
-const snapshot = (s: Persisted): Persisted => ({
-  defaultProviderId: s.defaultProviderId,
-  defaultModelByProvider: s.defaultModelByProvider,
-  defaultRuntimeMode: s.defaultRuntimeMode,
-  defaultAutoCreateWorktree: s.defaultAutoCreateWorktree,
-  onboardingCompleted: s.onboardingCompleted,
-});
-
-type SettingsState = Persisted & {
+type SettingsState = SettingsSlice & {
+  /** True once the first RPC fetch has resolved. Used by gates that need
+   *  to wait before reading defaults (e.g. onboarding). */
+  readonly loaded: boolean;
+  readonly hydrate: () => Promise<void>;
   readonly setDefaultProvider: (providerId: ProviderId) => void;
   readonly setDefaultModel: (providerId: ProviderId, model: string) => void;
   readonly setDefaultRuntimeMode: (mode: RuntimeMode) => void;
@@ -126,28 +81,117 @@ type SettingsState = Persisted & {
   readonly setOnboardingCompleted: (value: boolean) => void;
 };
 
+let streamFiber: Fiber.RuntimeFiber<unknown, unknown> | null = null;
+
+const stopStream = async () => {
+  if (streamFiber !== null) {
+    const f = streamFiber;
+    streamFiber = null;
+    await Effect.runPromise(Fiber.interrupt(f));
+  }
+};
+
+/**
+ * One-shot localStorage migration. Reads the two pre-feature keys and
+ * forwards them to the main process; the main process merges them onto
+ * the on-disk settings only if the file still looks fresh, so a second
+ * call (e.g. from a hot-reloaded renderer) is a no-op. Always clear
+ * localStorage afterwards so the renderer doesn't carry stale data.
+ */
+const migrateLocalStorageOnce = async (): Promise<SettingsFile | null> => {
+  if (typeof window === "undefined") return null;
+  const settingsV1Raw = window.localStorage.getItem(OLD_SETTINGS_KEY);
+  const subagentsRaw = window.localStorage.getItem(OLD_SUBAGENTS_KEY);
+  if (settingsV1Raw === null && subagentsRaw === null) return null;
+  try {
+    const client = await getRpcClient();
+    const file = await Effect.runPromise(
+      client.settings.migrateLocalStorage({
+        settingsV1Raw: settingsV1Raw ?? undefined,
+        subagentsRaw: subagentsRaw ?? undefined,
+      }),
+    );
+    window.localStorage.removeItem(OLD_SETTINGS_KEY);
+    window.localStorage.removeItem(OLD_SUBAGENTS_KEY);
+    return file;
+  } catch {
+    // If the RPC fails (rare — main is up by now), leave localStorage in
+    // place so the next reload can retry. The store falls back to defaults.
+    return null;
+  }
+};
+
 export const useSettingsStore = create<SettingsState>((set, get) => ({
-  ...loadPersisted(),
+  ...fallbackSnapshot(),
+  loaded: false,
+
+  hydrate: async () => {
+    // Drain any pre-existing localStorage first so a successful migration
+    // is visible on the very first `settings.get` we do below.
+    await migrateLocalStorageOnce();
+
+    try {
+      const client = await getRpcClient();
+      const file = await Effect.runPromise(client.settings.get());
+      set({ ...sliceFromFile(file), loaded: true });
+
+      await stopStream();
+      streamFiber = Effect.runFork(
+        Stream.runForEach(client.settings.stream(), (next) =>
+          Effect.sync(() => set(sliceFromFile(next))),
+        ),
+      );
+    } catch {
+      set({ loaded: true });
+    }
+  },
+
   setDefaultProvider: (providerId) => {
     set({ defaultProviderId: providerId });
-    persist(snapshot(get()));
+    void (async () => {
+      const client = await getRpcClient();
+      await Effect.runPromise(
+        client.settings.update({ patch: { defaultProviderId: providerId } }),
+      );
+    })();
   },
   setDefaultModel: (providerId, model) => {
-    set((s) => ({
-      defaultModelByProvider: { ...s.defaultModelByProvider, [providerId]: model },
-    }));
-    persist(snapshot(get()));
+    const next = { ...get().defaultModelByProvider, [providerId]: model };
+    set({ defaultModelByProvider: next });
+    void (async () => {
+      const client = await getRpcClient();
+      await Effect.runPromise(
+        client.settings.update({ patch: { defaultModelByProvider: next } }),
+      );
+    })();
   },
   setDefaultRuntimeMode: (mode) => {
     set({ defaultRuntimeMode: mode });
-    persist(snapshot(get()));
+    void (async () => {
+      const client = await getRpcClient();
+      await Effect.runPromise(
+        client.settings.update({ patch: { defaultRuntimeMode: mode } }),
+      );
+    })();
   },
   setDefaultAutoCreateWorktree: (value) => {
     set({ defaultAutoCreateWorktree: value });
-    persist(snapshot(get()));
+    void (async () => {
+      const client = await getRpcClient();
+      await Effect.runPromise(
+        client.settings.update({
+          patch: { defaultAutoCreateWorktree: value },
+        }),
+      );
+    })();
   },
   setOnboardingCompleted: (value) => {
     set({ onboardingCompleted: value });
-    persist(snapshot(get()));
+    void (async () => {
+      const client = await getRpcClient();
+      await Effect.runPromise(
+        client.settings.update({ patch: { onboardingCompleted: value } }),
+      );
+    })();
   },
 }));

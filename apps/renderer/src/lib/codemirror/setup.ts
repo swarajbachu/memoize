@@ -12,13 +12,23 @@ import {
   highlightActiveLineGutter,
   keymap,
   lineNumbers,
+  type KeyBinding,
 } from "@codemirror/view";
 
+import { useKeybindingsStore } from "../../store/keybindings";
+import { keyToCodeMirrorKey } from "./keybinding-bridge.ts";
 import { memoizeTheme } from "./theme.ts";
 
 // One compartment for the language extension so opening a different file
 // reconfigures it via a single transaction instead of rebuilding the view.
 export const languageCompartment = new Compartment();
+
+/**
+ * One editor-keymap compartment per view — same pattern as the composer.
+ * Lets `reconfigureEditorKeymap` swap the `editor.save` chord (and any
+ * future editor.* commands) without re-mounting the editor.
+ */
+const editorKeymapCompartment = new WeakMap<EditorView, Compartment>();
 
 export type CreateEditorParams = {
   parent: HTMLElement;
@@ -28,14 +38,52 @@ export type CreateEditorParams = {
   onChange: (doc: string) => void;
 };
 
+/**
+ * Build the editor-scoped keymap from the live keybindings store. v1 only
+ * surfaces `editor.save`; adding more editor.* commands later is just a
+ * new case in the switch.
+ */
+const buildEditorKeymap = (onSave: () => void): readonly KeyBinding[] => {
+  const rules = useKeybindingsStore.getState().resolvedRules;
+  const out: KeyBinding[] = [];
+  const seen = new Set<string>();
+  // Walk last-first so user rules win over defaults on the same chord.
+  for (let i = rules.length - 1; i >= 0; i--) {
+    const r = rules[i];
+    if (r === undefined) continue;
+    if (!r.rule.command.startsWith("editor.")) continue;
+    const key = keyToCodeMirrorKey(r.shortcut);
+    if (key === null) continue;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    switch (r.rule.command) {
+      case "editor.save":
+        out.push({
+          key,
+          preventDefault: true,
+          run: () => {
+            onSave();
+            return true;
+          },
+        });
+        break;
+      default:
+        break;
+    }
+  }
+  return out;
+};
+
 export const createEditor = ({
   parent,
   doc,
   language,
   onSave,
   onChange,
-}: CreateEditorParams): EditorView =>
-  new EditorView({
+}: CreateEditorParams): EditorView => {
+  const userKeymapCompartment = new Compartment();
+
+  const view = new EditorView({
     parent,
     state: EditorState.create({
       doc,
@@ -47,19 +95,10 @@ export const createEditor = ({
         indentOnInput(),
         bracketMatching(),
         highlightActiveLine(),
-        keymap.of([
-          ...defaultKeymap,
-          ...historyKeymap,
-          ...foldKeymap,
-          {
-            key: "Mod-s",
-            preventDefault: true,
-            run: () => {
-              onSave();
-              return true;
-            },
-          },
-        ]),
+        // User-bindable editor commands live in their own compartment so
+        // a rebind in settings takes effect without re-mounting the view.
+        userKeymapCompartment.of(keymap.of([...buildEditorKeymap(onSave)])),
+        keymap.of([...defaultKeymap, ...historyKeymap, ...foldKeymap]),
         memoizeTheme,
         languageCompartment.of(language ?? []),
         EditorView.updateListener.of((u) => {
@@ -68,3 +107,22 @@ export const createEditor = ({
       ],
     }),
   });
+  editorKeymapCompartment.set(view, userKeymapCompartment);
+  return view;
+};
+
+/**
+ * Re-derive the editor's keymap from the keybindings store and dispatch a
+ * compartment reconfigure. Call after every emit from `useKeybindingsStore`
+ * — keybinding edits take effect without losing the open document.
+ */
+export const reconfigureEditorKeymap = (
+  view: EditorView,
+  onSave: () => void,
+): void => {
+  const compartment = editorKeymapCompartment.get(view);
+  if (compartment === undefined) return;
+  view.dispatch({
+    effects: compartment.reconfigure(keymap.of([...buildEditorKeymap(onSave)])),
+  });
+};

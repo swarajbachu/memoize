@@ -5,8 +5,10 @@ import { getRpcClient } from "../lib/rpc-client.ts";
 import {
   createEditor,
   languageCompartment,
+  reconfigureEditorKeymap,
 } from "../lib/codemirror/setup.ts";
 import { languageForFile } from "../lib/codemirror/languages.ts";
+import { useKeybindingsStore } from "../store/keybindings.ts";
 import { useUiStore, type OpenFile } from "../store/ui.ts";
 
 import type { EditorView } from "@codemirror/view";
@@ -98,18 +100,28 @@ export function FileEditor() {
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+    const onSave = () => void saveRef.current();
     const view = createEditor({
       parent: el,
       doc: "",
       language: null,
-      onSave: () => void saveRef.current(),
+      onSave,
       onChange: (doc) => {
         docRef.current = doc;
         useUiStore.getState().setFileDirty(doc !== baselineRef.current);
       },
     });
     viewRef.current = view;
+
+    // Live-reconfigure the editor keymap when the user edits keybindings —
+    // `editor.save` (and any future editor.* commands) take effect without
+    // unmounting the view or losing the open document.
+    const unsubKeybindings = useKeybindingsStore.subscribe(() => {
+      reconfigureEditorKeymap(view, onSave);
+    });
+
     return () => {
+      unsubKeybindings();
       view.destroy();
       viewRef.current = null;
     };

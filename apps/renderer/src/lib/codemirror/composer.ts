@@ -1,14 +1,26 @@
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-import { EditorState, type Extension } from "@codemirror/state";
-import { EditorView, keymap, placeholder } from "@codemirror/view";
+import { Compartment, EditorState, type Extension } from "@codemirror/state";
+import {
+  EditorView,
+  keymap,
+  placeholder,
+  type KeyBinding,
+} from "@codemirror/view";
 
 import { addChipEffect, chipExtensions, type ChipMeta } from "./composer-chips.ts";
-import { composerKeymap } from "./composer-keymap.ts";
+import { buildComposerKeymap, composerKeymap } from "./composer-keymap.ts";
 import { composerTheme } from "./composer-theme.ts";
 import {
   composerTriggerPlugin,
   type ActiveTrigger,
 } from "./composer-triggers.ts";
+
+/**
+ * One compartment per view so the composer's keymap can be rebuilt when
+ * the user edits keybindings — without re-mounting the editor or losing
+ * its document / selection.
+ */
+const composerKeymapCompartment = new WeakMap<EditorView, Compartment>();
 
 export type ComposerCallbacks = {
   /**
@@ -56,6 +68,10 @@ export const createComposerView = ({
   placeholderText,
   callbacks,
 }: ComposerCreateParams): EditorView => {
+  const userKeymapCompartment = new Compartment();
+  const buildUserKeymap = (): readonly KeyBinding[] =>
+    composerKeymap(callbacks);
+
   const extensions: Extension[] = [
     history(),
     placeholder(placeholderText),
@@ -63,8 +79,10 @@ export const createComposerView = ({
     composerTheme,
     ...chipExtensions,
     composerTriggerPlugin(callbacks.onTrigger),
+    // The user-bindable composer commands live in a compartment so
+    // `reconfigureComposerKeymap` can swap them without re-mounting.
+    userKeymapCompartment.of(keymap.of([...buildUserKeymap()])),
     keymap.of([
-      ...composerKeymap(callbacks),
       ...historyKeymap,
       // `defaultKeymap` last so our composer-specific bindings win on overlap.
       ...defaultKeymap,
@@ -100,12 +118,35 @@ export const createComposerView = ({
     }),
   ];
 
-  return new EditorView({
+  const view = new EditorView({
     parent,
     state: EditorState.create({
       doc: initialDoc,
       extensions,
     }),
+  });
+  // Pin the compartment to the view so `reconfigureComposerKeymap` can find
+  // it. WeakMap means the entry vanishes with the view; no manual cleanup.
+  composerKeymapCompartment.set(view, userKeymapCompartment);
+  return view;
+};
+
+/**
+ * Re-derive the composer's user-bindable keymap from the current
+ * keybindings store and dispatch a compartment reconfigure on the view.
+ * Call this after every emit from `useKeybindingsStore` — keybinding
+ * edits take effect immediately, no re-mount, no lost cursor.
+ */
+export const reconfigureComposerKeymap = (
+  view: EditorView,
+  callbacks: ComposerCallbacks,
+): void => {
+  const compartment = composerKeymapCompartment.get(view);
+  if (compartment === undefined) return;
+  view.dispatch({
+    effects: compartment.reconfigure(
+      keymap.of([...buildComposerKeymap(callbacks)]),
+    ),
   });
 };
 
