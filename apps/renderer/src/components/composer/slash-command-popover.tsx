@@ -101,14 +101,17 @@ export function SlashCommandPopover({
         });
         view.focus();
       } else {
-        // Forwarded built-ins (e.g. /compact) become atomic chips so the
-        // user can append context after them — submit forwards the rendered
-        // doc text to the provider.
-        replaceWithChip(view, trigger.from, trigger.to, `/${cmd.name}`, {
-          kind: "skill",
-          name: cmd.name,
-          scope: "global",
+        // Provider built-ins are sent as plain leading slash text. The server
+        // provider intercepts them before the normal model-turn path.
+        view.dispatch({
+          changes: {
+            from: trigger.from,
+            to: trigger.to,
+            insert: `/${cmd.name} `,
+          },
+          selection: { anchor: trigger.from + cmd.name.length + 2 },
         });
+        view.focus();
       }
     } else {
       replaceWithChip(view, trigger.from, trigger.to, `/${row.skill.name}`, {

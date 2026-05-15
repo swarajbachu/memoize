@@ -31,11 +31,30 @@ export interface UpdatesBridge {
   readonly __demoSet?: (status: UpdateStatus) => Promise<void>;
 }
 
+/**
+ * Action ids the main process emits when the user picks an item in the
+ * native Application Menu. The renderer subscribes via `menu.onAction` and
+ * dispatches to the appropriate store — see `use-menu-shortcuts.ts`.
+ */
+export type MenuAction =
+  | "new-chat"
+  | "open-project"
+  | "settings"
+  | "toggle-left-sidebar"
+  | "toggle-right-sidebar"
+  | "toggle-terminal"
+  | "focus-composer";
+
+export interface MenuBridge {
+  readonly onAction: (handler: (action: MenuAction) => void) => () => void;
+}
+
 export interface MemoizeBridge {
   readonly rpc: RpcBridge;
   readonly window?: WindowBridge;
   readonly app?: AppBridge;
   readonly updates?: UpdatesBridge;
+  readonly menu?: MenuBridge;
 }
 
 declare global {

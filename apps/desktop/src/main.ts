@@ -29,6 +29,7 @@ if (process.platform === "darwin" && app.isPackaged) {
 }
 
 import { electronServerProtocolLayer } from "./ipc/electron-server-protocol.ts";
+import { installAppMenu } from "./menu.ts";
 import { registerUpdaterDemo, startAutoUpdater } from "./updater.ts";
 
 /**
@@ -270,6 +271,7 @@ const registerMemoizeProtocol = (): void => {
 
 void app.whenReady().then(() => {
   registerMemoizeProtocol();
+  installAppMenu(() => mainWindow);
   createMainWindow();
   if (mainWindow !== null) {
     if (isDevelopment) {

@@ -64,6 +64,16 @@ const bridge = {
     __demoSet: (status: UpdateStatus) =>
       ipcRenderer.invoke("memoize:update-demo-set", status) as Promise<void>,
   },
+  menu: {
+    onAction: (handler: (action: string) => void) => {
+      const wrapped = (_event: IpcRendererEvent, action: string) =>
+        handler(action);
+      ipcRenderer.on("menu:action", wrapped);
+      return () => {
+        ipcRenderer.off("menu:action", wrapped);
+      };
+    },
+  },
 };
 
 contextBridge.exposeInMainWorld("memoize", bridge);

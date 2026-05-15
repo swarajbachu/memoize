@@ -17,6 +17,7 @@ export type SettingsSection =
   | { readonly kind: "general" }
   | { readonly kind: "models" }
   | { readonly kind: "workspace" }
+  | { readonly kind: "shortcuts" }
   | { readonly kind: "repository"; readonly projectId: FolderId };
 
 /**
@@ -25,6 +26,12 @@ export type SettingsSection =
  * replaces (never stacks) the file tab — see specs/0.02-MVP/features/file-viewer.md.
  */
 export type MainTab = "chat" | "file";
+
+/**
+ * Tabs in the right-hand workspace pane. Lifted from `RightPane`'s local
+ * state so the native menu (Cmd+J → Toggle Terminal) can drive it.
+ */
+export type RightTab = "files" | "terminal" | "changes" | "pr";
 
 export type OpenFile = {
   readonly folderId: FolderId;
@@ -52,6 +59,7 @@ type UiState = {
   readonly leftSidebarOpen: boolean;
   readonly rightSidebarOpen: boolean;
   readonly isFullScreen: boolean;
+  readonly activeRightTab: RightTab;
   readonly setActiveMainTab: (tab: MainTab) => void;
   readonly openFileInTab: (file: OpenFile) => void;
   readonly closeFileTab: () => void;
@@ -59,6 +67,7 @@ type UiState = {
   readonly setLeftSidebarOpen: (open: boolean) => void;
   readonly setRightSidebarOpen: (open: boolean) => void;
   readonly setFullScreen: (full: boolean) => void;
+  readonly setActiveRightTab: (tab: RightTab) => void;
 };
 
 export const useUiStore = create<UiState>((set) => ({
@@ -73,6 +82,7 @@ export const useUiStore = create<UiState>((set) => ({
   leftSidebarOpen: true,
   rightSidebarOpen: true,
   isFullScreen: false,
+  activeRightTab: "files",
   setActiveMainTab: (tab) => set({ activeMainTab: tab }),
   openFileInTab: (file) =>
     set({ openFile: file, activeMainTab: "file", fileDirty: false }),
@@ -82,4 +92,5 @@ export const useUiStore = create<UiState>((set) => ({
   setLeftSidebarOpen: (open) => set({ leftSidebarOpen: open }),
   setRightSidebarOpen: (open) => set({ rightSidebarOpen: open }),
   setFullScreen: (full) => set({ isFullScreen: full }),
+  setActiveRightTab: (tab) => set({ activeRightTab: tab }),
 }));
