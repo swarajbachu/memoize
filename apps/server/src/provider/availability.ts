@@ -367,6 +367,13 @@ const probeClaudeAccount: Effect.Effect<
 // "completed at least one login". If only `GROK_CODE_XAI_API_KEY` is set,
 // the dir may not exist — the renderer still flips to "ready" via
 // `hasApiKey` once a key lands in the keychain.
+//
+// We can't currently verify the user's subscription tier from the CLI
+// alone — Grok's agent CLI requires an active SuperGrok Heavy plan to
+// actually drive sessions, but the OAuth artifact alone doesn't tell us
+// whether that plan is active. Carry the requirement in `authLabel` so
+// the card surfaces "Requires SuperGrok Heavy subscription" + a subscribe
+// CTA, and the user finds out before they hit a session-runtime 403.
 const probeGrokAccount: Effect.Effect<AccountInfo, never, FileSystem.FileSystem> =
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -375,7 +382,11 @@ const probeGrokAccount: Effect.Effect<AccountInfo, never, FileSystem.FileSystem>
       .exists(path)
       .pipe(Effect.catchAll(() => Effect.succeed(false)));
     return exists
-      ? ({ authStatus: "authenticated", authType: "cli" } satisfies AccountInfo)
+      ? ({
+          authStatus: "authenticated",
+          authType: "cli",
+          authLabel: "Requires SuperGrok Heavy",
+        } satisfies AccountInfo)
       : ({ authStatus: "unauthenticated" } satisfies AccountInfo);
   });
 

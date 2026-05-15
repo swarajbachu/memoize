@@ -2,7 +2,6 @@ import {
   ChatGptIcon,
   ClaudeIcon,
   GoogleGeminiIcon,
-  GrokIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { ComponentProps } from "react";
@@ -10,18 +9,20 @@ import type { ComponentProps } from "react";
 import type { ProviderId } from "@memoize/wire";
 
 import { cn } from "~/lib/utils";
+import { GrokIcon } from "./icons/grok-icon";
 
 type HugeProps = ComponentProps<typeof HugeiconsIcon>;
 type ProviderIconProps = Omit<HugeProps, "icon"> & {
   providerId: ProviderId;
 };
 
-const ICON_BY_PROVIDER = {
+type HugeProviderId = Exclude<ProviderId, "grok">;
+
+const HUGE_ICON_BY_PROVIDER = {
   claude: ClaudeIcon,
   codex: ChatGptIcon,
-  grok: GrokIcon,
   gemini: GoogleGeminiIcon,
-} as const satisfies Record<ProviderId, HugeProps["icon"]>;
+} as const satisfies Record<HugeProviderId, HugeProps["icon"]>;
 
 /**
  * Provider glyph for both Claude and Codex sessions. Uses HugeIcons (no
@@ -34,9 +35,12 @@ export function ProviderIcon({
   strokeWidth = 1.75,
   ...props
 }: ProviderIconProps) {
+  if (providerId === "grok") {
+    return <GrokIcon className={cn("size-3.5 shrink-0", className)} />;
+  }
   return (
     <HugeiconsIcon
-      icon={ICON_BY_PROVIDER[providerId]}
+      icon={HUGE_ICON_BY_PROVIDER[providerId]}
       strokeWidth={strokeWidth}
       className={cn("size-3.5 shrink-0", className)}
       aria-hidden="true"

@@ -11,6 +11,10 @@ export const PROVIDER_STATUS_STYLES = {
   error: { dot: "bg-rose-400" },
   disabled: { dot: "bg-muted-foreground/40" },
   loading: { dot: "bg-muted-foreground/40 animate-pulse" },
+  // Subscription-gated providers (Grok → SuperGrok Heavy) — distinct from
+  // amber "sign in required" because the user already signed in; their
+  // plan is what's missing.
+  subscription: { dot: "bg-violet-400" },
 } as const;
 
 export type ProviderStatusKey = keyof typeof PROVIDER_STATUS_STYLES;
@@ -19,6 +23,12 @@ export interface ProviderSummary {
   readonly statusKey: ProviderStatusKey;
   readonly headline: string;
   readonly detail: string | null;
+  /**
+   * Email rendered alongside the headline when known. Surfaced separately
+   * from `headline` so the renderer can blur it for screen-record privacy
+   * and reveal on click.
+   */
+  readonly authEmail: string | null;
   /** When true, the headline is a CTA — render with stronger emphasis. */
   readonly actionable: boolean;
 }
@@ -47,12 +57,14 @@ export function getProviderSummary(
           statusKey: "loading",
           headline: "Checking…",
           detail: null,
+          authEmail: null,
           actionable: false,
         }
       : {
           statusKey: "warning",
           headline: "Checking provider status",
           detail: "Waiting for the server to report install + auth state.",
+          authEmail: null,
           actionable: false,
         };
   }
@@ -61,7 +73,8 @@ export function getProviderSummary(
     return {
       statusKey: "disabled",
       headline: "Disabled",
-      detail: `${name} is hidden from the new-session picker.`,
+      detail: null,
+      authEmail: null,
       actionable: false,
     };
   }
@@ -70,6 +83,7 @@ export function getProviderSummary(
       statusKey: "error",
       headline: "Not installed",
       detail: a.statusMessage ?? `${name} CLI not detected on PATH.`,
+      authEmail: null,
       actionable: true,
     };
   }
@@ -80,18 +94,21 @@ export function getProviderSummary(
       detail:
         a.statusMessage ??
         `${name} ${a.cliVersion ?? ""} below ${a.cliVersionMinRequired ?? "minimum"}.`,
+      authEmail: null,
       actionable: true,
     };
   }
   if (a.authStatus === "authenticated") {
-    const subscription = a.authLabel ?? "Authenticated";
-    const email = a.authEmail;
+    const subscription = a.authLabel ?? null;
     return {
       statusKey: "ready",
-      headline: email
-        ? `Authenticated as ${email}`
-        : `Authenticated · ${subscription}`,
-      detail: email ? subscription : null,
+      headline: a.authEmail
+        ? "Authenticated as"
+        : subscription
+          ? `Authenticated · ${subscription}`
+          : "Authenticated",
+      detail: a.authEmail ? subscription : null,
+      authEmail: a.authEmail ?? null,
       actionable: false,
     };
   }
@@ -100,6 +117,7 @@ export function getProviderSummary(
       statusKey: "warning",
       headline: "Sign in required",
       detail: a.statusMessage ?? `Run the ${name} login command to continue.`,
+      authEmail: null,
       actionable: true,
     };
   }
@@ -110,6 +128,7 @@ export function getProviderSummary(
       detail:
         a.statusMessage ??
         (a.hasApiKey ? "API key set." : "Credentials found — not yet verified."),
+      authEmail: null,
       actionable: false,
     };
   }
@@ -118,6 +137,7 @@ export function getProviderSummary(
     headline: "Needs attention",
     detail:
       a.statusMessage ?? "Installed, but the server could not verify auth.",
+    authEmail: null,
     actionable: true,
   };
 }

@@ -1,4 +1,4 @@
-import { ChevronDown, Copy } from "lucide-react";
+import { ChevronDown, Copy, ExternalLink } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import {
@@ -47,6 +47,18 @@ const LOGIN_HINT: Record<ProviderId, string> = {
   gemini: "gemini /auth",
 };
 
+/**
+ * Provider-specific subscription pages. When a provider gates session
+ * driving behind a paid plan (Grok → SuperGrok Heavy), the card renders
+ * an inline notice + this button so the user lands on the upgrade flow
+ * before they hit a session-runtime 403.
+ */
+const SUBSCRIPTION_INFO: Partial<
+  Record<ProviderId, { readonly plan: string; readonly url: string }>
+> = {
+  grok: { plan: "SuperGrok Heavy", url: "https://grok.com/#subscribe" },
+};
+
 export function ProviderCard({
   providerId,
   availability,
@@ -57,13 +69,35 @@ export function ProviderCard({
   loading: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const enabled =
+  const subscription = SUBSCRIPTION_INFO[providerId];
+  const persistedEnabled =
     useSettingsStore((s) => s.providerEnabled[providerId]) ?? true;
+  // Subscription-gated providers (Grok → SuperGrok Heavy) can never be
+  // "enabled" until the user confirms the upgrade — until we have a way
+  // to actually verify the plan from the CLI, we force the toggle off so
+  // sessions can't be launched into a doomed 403. The visible state lies
+  // to the user with intent: the underlying persisted value is whatever
+  // they set, but the rendering + composer filter treat it as off.
+  const enabled = subscription !== undefined ? false : persistedEnabled;
   const setProviderEnabled = useSettingsStore((s) => s.setProviderEnabled);
-  const summary = useMemo(
+  const baseSummary = useMemo(
     () => getProviderSummary(availability, enabled, loading),
     [availability, enabled, loading],
   );
+  // Promote the card to the violet "subscription" status when this provider
+  // is plan-gated, regardless of whether the CLI itself reports
+  // authenticated. The headline reads "Subscription required" so the dot
+  // color isn't doing all the work.
+  const summary =
+    subscription !== undefined
+      ? {
+          ...baseSummary,
+          statusKey: "subscription" as const,
+          headline: `Requires ${subscription.plan}`,
+          detail: null,
+          authEmail: null,
+        }
+      : baseSummary;
   const styles = PROVIDER_STATUS_STYLES[summary.statusKey];
   const versionLabel = formatVersionLabel(availability?.cliVersion);
   const showUpgrade =
@@ -73,7 +107,7 @@ export function ProviderCard({
     <div
       className={cn(
         "flex flex-col overflow-hidden rounded-lg border border-border/50 bg-card transition-colors",
-        !enabled && "opacity-70",
+        !enabled && subscription === undefined && "opacity-70",
       )}
     >
       <button
@@ -99,8 +133,11 @@ export function ProviderCard({
               </span>
             )}
           </div>
-          <div className="flex items-center gap-2 truncate text-xs text-muted-foreground">
+          <div className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
             <span className="truncate">{summary.headline}</span>
+            {summary.authEmail !== null && (
+              <BlurredEmail email={summary.authEmail} />
+            )}
             {summary.detail !== null && (
               <span className="truncate">· {summary.detail}</span>
             )}
@@ -108,9 +145,22 @@ export function ProviderCard({
         </div>
         <Switch
           checked={enabled}
+          disabled={subscription !== undefined}
           onClick={(e) => e.stopPropagation()}
-          onCheckedChange={(value) => setProviderEnabled(providerId, value)}
-          aria-label={`Enable ${PROVIDER_LABEL[providerId]}`}
+          onCheckedChange={(value) => {
+            if (subscription !== undefined) return;
+            setProviderEnabled(providerId, value);
+          }}
+          aria-label={
+            subscription !== undefined
+              ? `${PROVIDER_LABEL[providerId]} requires a ${subscription.plan} subscription`
+              : `Enable ${PROVIDER_LABEL[providerId]}`
+          }
+          title={
+            subscription !== undefined
+              ? `Requires ${subscription.plan} subscription`
+              : undefined
+          }
         />
         <ChevronDown
           className={cn(
@@ -143,6 +193,7 @@ export function ProviderCard({
             availability.authStatus === "unauthenticated" && (
               <CodeRow label="Sign in" command={LOGIN_HINT[providerId]} />
             )}
+          <SubscriptionRow providerId={providerId} />
 
           <ModelDefault providerId={providerId} />
 
@@ -191,6 +242,85 @@ function ModelDefault({ providerId }: { providerId: ProviderId }) {
         </SelectPopup>
       </Select>
     </div>
+  );
+}
+
+/**
+ * Subscription-gate notice for providers that need a paid plan beyond the
+ * CLI's local OAuth (Grok → SuperGrok Heavy). The card shows this whenever
+ * `SUBSCRIPTION_INFO[providerId]` is set; clicking the button opens the
+ * provider's subscribe page in the user's default browser.
+ */
+/**
+ * Open a URL in the user's OS browser via the preload bridge (Electron's
+ * `shell.openExternal`). Falls back to `window.open` for web/dev contexts.
+ * We intentionally avoid an in-app webview here: a paid-checkout flow
+ * needs the user's real browser session, password manager, and cookies.
+ */
+const openExternal = (url: string) => {
+  const bridge = window.memoize?.app;
+  if (bridge !== undefined) {
+    bridge.openExternal(url);
+    return;
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
+};
+
+function SubscriptionRow({ providerId }: { providerId: ProviderId }) {
+  const info = SUBSCRIPTION_INFO[providerId];
+  if (info === undefined) return null;
+  return (
+    <div className="flex flex-col gap-1.5 rounded-md border border-violet-400/25 bg-violet-500/[0.06] px-3 py-2.5">
+      <span className="text-[11px] font-medium text-violet-300">
+        Requires {info.plan} subscription
+      </span>
+      <p className="text-[11px] leading-snug text-muted-foreground">
+        Sessions will fail if your plan doesn&apos;t include {info.plan}.
+        Subscribe (or confirm your existing plan) before using {PROVIDER_LABEL[providerId]}.
+      </p>
+      <div>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            openExternal(info.url);
+          }}
+          className="inline-flex items-center gap-1 rounded border border-violet-400/40 bg-violet-500/10 px-2 py-1 text-[11px] font-medium text-violet-100 transition-colors hover:bg-violet-500/20"
+        >
+          Subscribe
+          <ExternalLink className="size-3" aria-hidden />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Privacy-aware email pill. Blurs the address by default (so screen-records
+ * and screenshots don't leak it) and reveals on click; clicking again
+ * re-blurs. Stops propagation so clicking it doesn't also collapse/expand
+ * the parent card.
+ */
+function BlurredEmail({ email }: { email: string }) {
+  const [revealed, setRevealed] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        setRevealed((r) => !r);
+      }}
+      title={revealed ? "Click to hide" : "Click to reveal"}
+      aria-label={revealed ? "Hide email" : "Reveal email"}
+      className={cn(
+        "max-w-[16rem] truncate rounded px-1 py-0.5 text-left font-mono text-[11px] transition-[filter,background-color] duration-150",
+        revealed
+          ? "bg-muted/40 text-foreground"
+          : "bg-muted/40 text-foreground blur-[5px] select-none hover:blur-[3px]",
+      )}
+    >
+      {email}
+    </button>
   );
 }
 
