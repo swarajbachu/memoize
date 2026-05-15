@@ -39,7 +39,9 @@ const watchRoots = (
           path.join(projectCwd, ".claude", "skills"),
         ]
       : [
+          path.join(home, ".codex", "skills"),
           path.join(home, ".codex", "prompts"),
+          path.join(projectCwd, ".codex", "skills"),
           path.join(projectCwd, ".codex", "prompts"),
         ];
 

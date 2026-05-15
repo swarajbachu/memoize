@@ -11,7 +11,6 @@ import type {
   Session,
   SessionId,
   UserQuestionAnswer,
-  WorktreeId,
 } from "@memoize/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
@@ -81,6 +80,17 @@ type SessionsState = {
     itemId: AgentItemId,
     answers: ReadonlyArray<UserQuestionAnswer>,
   ) => Promise<void>;
+  /**
+   * Switch the session's provider and model. Allowed only before the first
+   * user message — server returns `SessionAlreadyStartedError` otherwise,
+   * surfaced here as `{ ok: false, reason }`. Worktree changes go through
+   * `chats.setWorktree` instead — the chat owns the workspace binding.
+   */
+  readonly setProvider: (
+    sessionId: SessionId,
+    providerId: ProviderId,
+    model: string,
+  ) => Promise<{ readonly ok: true } | { readonly ok: false; reason: string }>;
   readonly refreshOne: (sessionId: SessionId) => Promise<void>;
   readonly archive: (sessionId: SessionId) => Promise<void>;
   readonly unarchive: (sessionId: SessionId) => Promise<void>;
@@ -294,6 +304,39 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       );
     } catch (err) {
       set({ error: formatError(err) });
+    }
+  },
+  setProvider: async (sessionId, providerId, model) => {
+    set({ error: null });
+    try {
+      const client = await getRpcClient();
+      await Effect.runPromise(
+        client.session.setProvider({ sessionId, providerId, model }),
+      );
+      set((s) => {
+        const projectId = findSessionProject(s.sessionsByProject, sessionId);
+        if (projectId === null) return {};
+        const sessions = s.sessionsByProject[projectId] ?? [];
+        return {
+          sessionsByProject: {
+            ...s.sessionsByProject,
+            [projectId]: sessions.map((session) =>
+              session.id === sessionId
+                ? { ...session, providerId, model }
+                : session,
+            ),
+          },
+        };
+      });
+      return { ok: true } as const;
+    } catch (err) {
+      const raw = formatError(err);
+      const reason =
+        raw === "SessionAlreadyStartedError"
+          ? "Start a new chat to switch provider."
+          : raw;
+      set({ error: reason });
+      return { ok: false, reason } as const;
     }
   },
   archive: async (sessionId) => {

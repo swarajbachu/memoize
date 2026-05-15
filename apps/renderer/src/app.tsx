@@ -20,6 +20,8 @@ import { ProjectsSidebar } from "./components/projects-sidebar";
 import { RightPane } from "./components/right-pane";
 import { SettingsPage } from "./components/settings-page";
 import { TopBarLeft, TopBarMain, TopBarRight } from "./components/top-bar.tsx";
+import { UpdateBanner } from "./components/update-banner.tsx";
+import { useMenuShortcuts } from "./hooks/use-menu-shortcuts.ts";
 import { getRpcClient } from "./lib/rpc-client.ts";
 import { usePermissionsStore } from "./store/permissions.ts";
 import { useSessionsStore } from "./store/sessions.ts";
@@ -43,6 +45,10 @@ export function App() {
   useEffect(() => {
     startPermissionsStream();
   }, [startPermissionsStream]);
+
+  // Native Application Menu → renderer action dispatcher. Lives on the
+  // root so the bindings work in every view (chat, settings, onboarding).
+  useMenuShortcuts();
 
   // Mirror Electron's fullscreen state into the ui store so the top bars
   // can drop the macOS traffic-light gutter.
@@ -218,6 +224,7 @@ function MainShell() {
         <Panel id="main" minSize="30%">
           <main className="flex h-full min-h-0 min-w-0 flex-col bg-background/70 backdrop-blur-3xl">
             <TopBarMain folderId={selectedFolderId} />
+            <UpdateBanner />
             <MainTabs
               projectId={selectedFolderId}
               emptyLabel={emptyTabLabel}

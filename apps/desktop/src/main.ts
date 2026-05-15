@@ -4,7 +4,6 @@ import {
   BrowserWindow,
   dialog,
   ipcMain,
-  Menu,
   nativeTheme,
   net,
   protocol,
@@ -30,7 +29,8 @@ if (process.platform === "darwin" && app.isPackaged) {
 }
 
 import { electronServerProtocolLayer } from "./ipc/electron-server-protocol.ts";
-import { startAutoUpdater } from "./updater.ts";
+import { installAppMenu } from "./menu.ts";
+import { registerUpdaterDemo, startAutoUpdater } from "./updater.ts";
 
 /**
  * Privileged scheme registration. Must run before `app.whenReady()` —
@@ -269,53 +269,18 @@ const registerMemoizeProtocol = (): void => {
   });
 };
 
-/**
- * Install the application menu before the first window is created. Electron's
- * implicit default menu isn't installed reliably in this build (the symptom
- * is "Cmd+W / Cmd+C / Cmd+V do nothing"), so we build an explicit one. Cmd+W
- * sends a `menu:close-tab` signal over IPC — the renderer owns the
- * close-tab logic since it knows which chat tab is active. The remaining
- * `editMenu`/`viewMenu`/`windowMenu` roles give us copy-paste, devtools, and
- * minimize for free.
- */
-function buildAppMenu(): Electron.Menu {
-  const isMac = process.platform === "darwin";
-  const template: Electron.MenuItemConstructorOptions[] = [
-    ...(isMac
-      ? ([{ role: "appMenu" }] as Electron.MenuItemConstructorOptions[])
-      : []),
-    {
-      label: "File",
-      submenu: [
-        {
-          label: "Close Tab",
-          accelerator: "CmdOrCtrl+W",
-          // Single-window app, so the focused window is always `mainWindow`
-          // when one exists. Electron's `focusedWindow` callback param is
-          // typed as `BaseWindow` which doesn't expose `webContents`; using
-          // the module-level handle sidesteps the cast.
-          click: () => {
-            mainWindow?.webContents.send("menu:close-tab");
-          },
-        },
-        ...(isMac
-          ? []
-          : ([{ role: "quit" }] as Electron.MenuItemConstructorOptions[])),
-      ],
-    },
-    { role: "editMenu" },
-    { role: "viewMenu" },
-    { role: "windowMenu" },
-  ];
-  return Menu.buildFromTemplate(template);
-}
-
 void app.whenReady().then(() => {
-  Menu.setApplicationMenu(buildAppMenu());
   registerMemoizeProtocol();
+  installAppMenu(() => mainWindow);
   createMainWindow();
-  if (!isDevelopment) {
-    startAutoUpdater();
+  if (mainWindow !== null) {
+    if (isDevelopment) {
+      // Wire the dev console helper (window.__memoizeUpdateDemo) to a real
+      // IPC round-trip so the banner can be exercised without a release.
+      registerUpdaterDemo(mainWindow);
+    } else {
+      startAutoUpdater(mainWindow);
+    }
   }
 
   app.on("activate", () => {

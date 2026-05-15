@@ -1,6 +1,13 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 
-import { IPC_CHANNEL } from "@memoize/wire";
+import {
+  IPC_CHANNEL,
+  UPDATE_CHECK_CHANNEL,
+  UPDATE_DOWNLOAD_CHANNEL,
+  UPDATE_INSTALL_CHANNEL,
+  UPDATE_STATUS_CHANNEL,
+  type UpdateStatus,
+} from "@memoize/wire";
 
 /**
  * Preload bridge — the only seam between the renderer and the main process.
@@ -33,18 +40,45 @@ const bridge = {
       };
     },
   },
+  app: {
+    openExternal: (url: string) => {
+      ipcRenderer.send("app:openExternal", url);
+    },
+  },
+  updates: {
+    onStatus: (handler: (status: UpdateStatus) => void) => {
+      const wrapped = (_event: IpcRendererEvent, status: UpdateStatus) =>
+        handler(status);
+      ipcRenderer.on(UPDATE_STATUS_CHANNEL, wrapped);
+      return () => {
+        ipcRenderer.off(UPDATE_STATUS_CHANNEL, wrapped);
+      };
+    },
+    check: () => ipcRenderer.invoke(UPDATE_CHECK_CHANNEL) as Promise<void>,
+    download: () =>
+      ipcRenderer.invoke(UPDATE_DOWNLOAD_CHANNEL) as Promise<void>,
+    installNow: () =>
+      ipcRenderer.invoke(UPDATE_INSTALL_CHANNEL) as Promise<void>,
+    // Dev-only escape hatch: only handled in dev (see updater.ts
+    // `registerUpdaterDemo`). Calling in a packaged build rejects harmlessly.
+    __demoSet: (status: UpdateStatus) =>
+      ipcRenderer.invoke("memoize:update-demo-set", status) as Promise<void>,
+  },
   menu: {
+    onAction: (handler: (action: string) => void) => {
+      const wrapped = (_event: IpcRendererEvent, action: string) =>
+        handler(action);
+      ipcRenderer.on("menu:action", wrapped);
+      return () => {
+        ipcRenderer.off("menu:action", wrapped);
+      };
+    },
     onCloseTab: (handler: () => void) => {
       const wrapped = () => handler();
       ipcRenderer.on("menu:close-tab", wrapped);
       return () => {
         ipcRenderer.off("menu:close-tab", wrapped);
       };
-    },
-  },
-  app: {
-    openExternal: (url: string) => {
-      ipcRenderer.send("app:openExternal", url);
     },
   },
 };

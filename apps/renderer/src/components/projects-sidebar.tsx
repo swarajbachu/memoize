@@ -31,6 +31,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn, formatCompactNumber } from "~/lib/utils";
+import { formatShortcut } from "../lib/shortcuts.ts";
 import { getRpcClient } from "../lib/rpc-client.ts";
 import { useChatsStore } from "../store/chats.ts";
 import { useMessagesStore } from "../store/messages.ts";
@@ -284,7 +285,12 @@ export function ProjectsSidebar() {
               </button>
             }
           />
-          <TooltipPopup>Add project</TooltipPopup>
+          <TooltipPopup>
+            <TooltipShortcut
+              label="Add project"
+              shortcut={formatShortcut("open-project")}
+            />
+          </TooltipPopup>
         </Tooltip>
       </div>
 
@@ -345,7 +351,12 @@ function SidebarFooter() {
             </button>
           }
         />
-        <TooltipPopup side="top">Open settings</TooltipPopup>
+        <TooltipPopup side="top">
+          <TooltipShortcut
+            label="Open settings"
+            shortcut={formatShortcut("settings")}
+          />
+        </TooltipPopup>
       </Tooltip>
     </div>
   );
@@ -596,43 +607,42 @@ const LOGIN_HINT: Record<ProviderId, string> = {
   codex: "Run `codex login` in your terminal",
 };
 
-function NewChatButton({ projectId }: { projectId: FolderId }) {
-  const refresh = useProvidersStore((s) => s.refresh);
-  const createChat = useChatsStore((s) => s.create);
-  const defaultProviderId = useSettingsStore((s) => s.defaultProviderId);
-  const defaultModelByProvider = useSettingsStore(
-    (s) => s.defaultModelByProvider,
-  );
-  const defaultRuntimeMode = useSettingsStore((s) => s.defaultRuntimeMode);
-  const defaultAutoCreateWorktree = useSettingsStore(
-    (s) => s.defaultAutoCreateWorktree,
-  );
-  const refreshRepoSettings = useRepositorySettingsStore((s) => s.refresh);
-  const createWorktree = useWorktreesStore((s) => s.create);
-
-  const onClick = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    // Cheap availability refresh in case the user just logged into a CLI.
-    await refresh();
-    const model =
-      defaultModelByProvider[defaultProviderId] ??
-      defaultModelFor(defaultProviderId);
-    // Auto-create a worktree before chat.create when either the global
-    // default is on or the per-repo override flips it on. Failure is
-    // non-fatal — fall back to main checkout.
-    const repoSettings = await refreshRepoSettings(projectId);
-    const shouldAutoCreate =
-      repoSettings?.autoCreateWorktree === true ||
-      defaultAutoCreateWorktree === true;
-    let worktreeId = null;
-    if (shouldAutoCreate) {
-      const wt = await createWorktree(projectId);
-      if (wt !== null) worktreeId = wt.id;
-    }
-    void createChat(projectId, defaultProviderId, model, {
-      runtimeMode: defaultRuntimeMode,
+/**
+ * Spawn a new chat (sidebar container) plus its initial session in the
+ * given project. Worktree is auto-created when the per-repo or global
+ * setting says so. Reads from stores directly so callers (the sidebar
+ * button + the Cmd+N menu shortcut) don't need prop drilling.
+ */
+export async function createNewSession(projectId: FolderId): Promise<void> {
+  await useProvidersStore.getState().refresh();
+  const settings = useSettingsStore.getState();
+  const defaultProviderId = settings.defaultProviderId;
+  const model =
+    settings.defaultModelByProvider[defaultProviderId] ??
+    defaultModelFor(defaultProviderId);
+  const repoSettings = await useRepositorySettingsStore
+    .getState()
+    .refresh(projectId);
+  const shouldAutoCreate =
+    repoSettings?.autoCreateWorktree === true ||
+    settings.defaultAutoCreateWorktree === true;
+  let worktreeId = null;
+  if (shouldAutoCreate) {
+    const wt = await useWorktreesStore.getState().create(projectId);
+    if (wt !== null) worktreeId = wt.id;
+  }
+  void useChatsStore
+    .getState()
+    .create(projectId, defaultProviderId, model, {
+      runtimeMode: settings.defaultRuntimeMode,
       worktreeId,
     });
+}
+
+function NewChatButton({ projectId }: { projectId: FolderId }) {
+  const onClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    void createNewSession(projectId);
   };
 
   return (
@@ -649,8 +659,31 @@ function NewChatButton({ projectId }: { projectId: FolderId }) {
           </button>
         }
       />
-      <TooltipPopup>New chat</TooltipPopup>
+      <TooltipPopup>
+        <TooltipShortcut label="New chat" shortcut={formatShortcut("new-chat")} />
+      </TooltipPopup>
     </Tooltip>
+  );
+}
+
+/**
+ * Tooltip body with a trailing `<kbd>` shortcut hint. Co-located here
+ * because almost every shortcut-bearing tooltip lives in this file or in
+ * `top-bar.tsx`; exporting keeps the markup consistent across both.
+ */
+export function TooltipShortcut({
+  label,
+  shortcut,
+}: {
+  label: string;
+  shortcut: string;
+}) {
+  if (shortcut === "") return <>{label}</>;
+  return (
+    <span className="inline-flex items-baseline gap-2 whitespace-nowrap">
+      <span>{label}</span>
+      <kbd className="font-sans text-muted-foreground/80">{shortcut}</kbd>
+    </span>
   );
 }
 
