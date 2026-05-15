@@ -30,7 +30,7 @@ if (process.platform === "darwin" && app.isPackaged) {
 
 import { electronServerProtocolLayer } from "./ipc/electron-server-protocol.ts";
 import { installAppMenu } from "./menu.ts";
-import { startAutoUpdater } from "./updater.ts";
+import { registerUpdaterDemo, startAutoUpdater } from "./updater.ts";
 
 /**
  * Privileged scheme registration. Must run before `app.whenReady()` —
@@ -273,8 +273,14 @@ void app.whenReady().then(() => {
   registerMemoizeProtocol();
   installAppMenu(() => mainWindow);
   createMainWindow();
-  if (!isDevelopment) {
-    startAutoUpdater();
+  if (mainWindow !== null) {
+    if (isDevelopment) {
+      // Wire the dev console helper (window.__memoizeUpdateDemo) to a real
+      // IPC round-trip so the banner can be exercised without a release.
+      registerUpdaterDemo(mainWindow);
+    } else {
+      startAutoUpdater(mainWindow);
+    }
   }
 
   app.on("activate", () => {

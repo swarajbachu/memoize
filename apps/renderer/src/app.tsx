@@ -20,6 +20,7 @@ import { ProjectsSidebar } from "./components/projects-sidebar";
 import { RightPane } from "./components/right-pane";
 import { SettingsPage } from "./components/settings-page";
 import { TopBarLeft, TopBarMain, TopBarRight } from "./components/top-bar.tsx";
+import { UpdateBanner } from "./components/update-banner.tsx";
 import { useMenuShortcuts } from "./hooks/use-menu-shortcuts.ts";
 import { getRpcClient } from "./lib/rpc-client.ts";
 import { usePermissionsStore } from "./store/permissions.ts";
@@ -215,6 +216,7 @@ function MainShell() {
         <Panel id="main" minSize="30%">
           <main className="flex h-full min-h-0 min-w-0 flex-col bg-background/70 backdrop-blur-3xl">
             <TopBarMain folderId={selectedFolderId} />
+            <UpdateBanner />
             <MainTabs
               headerLabel={headerLabel}
               headerTitle={selectedFolder?.path}

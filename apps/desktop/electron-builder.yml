@@ -79,7 +79,13 @@ dmg:
       path: /Applications
 
 # electron-updater consumes latest-mac.yml from the GitHub Release
-# associated with this repo.
+# associated with this repo. Note: with `releaseType: draft`, the release
+# workflow uploads the .dmg + latest-mac.yml as a *draft* release. Drafts
+# are invisible to unauthenticated readers, so electron-updater (in the
+# in-the-wild app) cannot see the new version until you flip the release
+# from "Draft" to "Published" in the GitHub Releases UI. This is the QA
+# gate — change to `releaseType: release` if you'd rather every tag push
+# go live immediately with no manual promotion step.
 publish:
   provider: github
   owner: swarajbachu
