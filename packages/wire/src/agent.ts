@@ -186,9 +186,10 @@ export const AgentAvailability = Schema.Struct({
   statusMessage: Schema.optional(Schema.String),
   /**
    * Wall-clock time of the most recent probe. Renderer renders this as
-   * "Checked X ago" in the providers settings header.
+   * "Checked X ago" in the providers settings header. Encoded as an ISO
+   * string over the wire so it survives the RPC's JSON hop.
    */
-  lastCheckedAt: Schema.optional(Schema.DateFromSelf),
+  lastCheckedAt: Schema.optional(Schema.DateFromString),
 });
 export type AgentAvailability = typeof AgentAvailability.Type;
 

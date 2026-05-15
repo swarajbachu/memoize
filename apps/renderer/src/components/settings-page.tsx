@@ -390,6 +390,7 @@ function GeneralPane() {
 function ProvidersPane() {
   const availability = useProvidersStore((s) => s.availability);
   const loading = useProvidersStore((s) => s.loading);
+  const error = useProvidersStore((s) => s.error);
   const refresh = useProvidersStore((s) => s.refresh);
   const defaultProviderId = useSettingsStore((s) => s.defaultProviderId);
   const setDefaultProvider = useSettingsStore((s) => s.setDefaultProvider);
@@ -432,9 +433,13 @@ function ProvidersPane() {
           <span>
             {loading
               ? "Checking…"
-              : lastCheckedAt
-                ? `Checked ${formatRelativeTime(lastCheckedAt, now) ?? "just now"}`
-                : "Not checked yet"}
+              : error !== null
+                ? `Probe failed · ${error}`
+                : lastCheckedAt
+                  ? `Checked ${formatRelativeTime(lastCheckedAt, now) ?? "just now"}`
+                  : availability.length > 0
+                    ? "Checked"
+                    : "Not checked yet"}
           </span>
           <Button
             variant="ghost"

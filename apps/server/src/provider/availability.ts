@@ -209,63 +209,69 @@ const codexAccountLabel = (account: Account): string | undefined => {
   }
 };
 
+const ACCOUNT_PROBE_TIMEOUT_MS = 5_000;
+
 /**
- * Spawn the codex app-server, call `account/read`, extract email + plan
- * label. The app-server only takes ~200ms to spin up on a warm machine so
- * this is cheap enough to run on every probe. Wraps in `Effect.tryPromise`
- * so a spawn failure becomes a tagged AccountInfo rather than a crash.
+ * Spawn a short-lived `codex app-server`, call `account/read`, and pull
+ * email + plan label off the response. Always resolves to an `AccountInfo`
+ * — spawn failures, timeouts, and protocol errors all flow through to a
+ * tagged "unknown" result with the error message in `statusMessage` so the
+ * UI can show "Needs attention" without crashing the whole availability
+ * RPC.
  */
-const probeCodexAccount = (
-  codexPath: string,
-): Effect.Effect<AccountInfo, never> =>
-  Effect.tryPromise({
-    try: async () => {
-      const client = await CodexAppServerClient.start({
-        codexPath,
-        onNotification: () => {},
-        onServerRequest: (_req, respond) => respond(null),
-      });
-      try {
-        const response = await client.request<GetAccountResponse>(
-          "account/read",
-          {},
-        );
-        if (response.account === null) {
-          return {
-            authStatus: "unauthenticated",
-            ...(response.requiresOpenaiAuth
-              ? { statusMessage: "Sign in required" }
-              : {}),
-          } satisfies AccountInfo;
-        }
-        const account = response.account;
-        const label = codexAccountLabel(account);
+const probeCodexAccount = (codexPath: string): Effect.Effect<AccountInfo> =>
+  Effect.promise(async () => {
+    let client: CodexAppServerClient | null = null;
+    let timer: NodeJS.Timeout | null = null;
+    try {
+      const startWithTimeout = new Promise<CodexAppServerClient>(
+        (resolve, reject) => {
+          timer = setTimeout(() => {
+            reject(new Error("Codex auth probe timed out"));
+          }, ACCOUNT_PROBE_TIMEOUT_MS);
+          CodexAppServerClient.start({
+            codexPath,
+            onNotification: () => {},
+            onServerRequest: (_req, respond) => respond(null),
+          }).then(resolve, reject);
+        },
+      );
+      client = await startWithTimeout;
+      const response = await client.request<GetAccountResponse>(
+        "account/read",
+        {},
+      );
+      if (response.account === null) {
         return {
-          authStatus: "authenticated",
-          authType: account.type,
-          ...(label ? { authLabel: label } : {}),
-          ...(account.type === "chatgpt" && account.email.length > 0
-            ? { authEmail: account.email }
+          authStatus: "unauthenticated",
+          ...(response.requiresOpenaiAuth
+            ? { statusMessage: "Sign in required" }
             : {}),
         } satisfies AccountInfo;
-      } finally {
-        client.close();
       }
-    },
-    catch: (err) => err,
-  }).pipe(
-    Effect.timeoutFail({
-      duration: ACCOUNT_PROBE_TIMEOUT,
-      onTimeout: () => new Error("Codex auth probe timed out"),
-    }),
-    Effect.catchAll((err) =>
-      Effect.succeed({
+      const account = response.account;
+      const label = codexAccountLabel(account);
+      return {
+        authStatus: "authenticated",
+        authType: account.type,
+        ...(label ? { authLabel: label } : {}),
+        ...(account.type === "chatgpt" && account.email.length > 0
+          ? { authEmail: account.email }
+          : {}),
+      } satisfies AccountInfo;
+    } catch (err) {
+      return {
         authStatus: "unknown",
         statusMessage:
           err instanceof Error ? err.message : "Could not verify Codex auth",
-      } satisfies AccountInfo),
-    ),
-  );
+      } satisfies AccountInfo;
+    } finally {
+      if (timer !== null) clearTimeout(timer);
+      // Kill the child process — without this the `codex app-server`
+      // subprocess leaks for several minutes per probe.
+      client?.close();
+    }
+  });
 
 const CLAUDE_SUB_LABEL: Record<string, string> = {
   max: "Claude Max Subscription",
