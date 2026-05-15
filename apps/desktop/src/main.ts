@@ -29,7 +29,12 @@ if (process.platform === "darwin" && app.isPackaged) {
 }
 
 import { electronServerProtocolLayer } from "./ipc/electron-server-protocol.ts";
-import { installAppMenu } from "./menu.ts";
+import {
+  DEFAULT_MENU_ACCELERATORS,
+  installAppMenu,
+  type MenuAccelerators,
+  type MenuCommand,
+} from "./menu.ts";
 import { registerUpdaterDemo, startAutoUpdater } from "./updater.ts";
 
 /**
@@ -268,6 +273,38 @@ const registerMemoizeProtocol = (): void => {
     });
   });
 };
+
+/**
+ * Validate a renderer-supplied accelerator map before handing it to
+ * `installAppMenu`. Anything missing or non-string falls through to the
+ * default for that command so a bad payload can't blank out the menu.
+ */
+const sanitizeAccelerators = (raw: unknown): MenuAccelerators => {
+  if (raw === null || typeof raw !== "object") {
+    return DEFAULT_MENU_ACCELERATORS;
+  }
+  const obj = raw as Record<string, unknown>;
+  const out: Record<MenuCommand, string | null> = {
+    ...DEFAULT_MENU_ACCELERATORS,
+  };
+  for (const cmd of Object.keys(DEFAULT_MENU_ACCELERATORS) as MenuCommand[]) {
+    const v = obj[cmd];
+    if (v === null) {
+      out[cmd] = null;
+    } else if (typeof v === "string") {
+      out[cmd] = v;
+    }
+  }
+  return out;
+};
+
+// Renderer → main: "the user's keybindings just changed, please re-install
+// the menu with these accelerators." Renderer owns the defaults + override
+// resolution since its keybindings store is the live mirror of the JSON
+// config file.
+ipcMain.on("menu:setAccelerators", (_event, payload: unknown) => {
+  installAppMenu(() => mainWindow, sanitizeAccelerators(payload));
+});
 
 void app.whenReady().then(() => {
   registerMemoizeProtocol();

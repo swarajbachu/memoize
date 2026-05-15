@@ -8,31 +8,68 @@ import {
 
 /**
  * Action ids that travel from a menu click → renderer (via
- * `webContents.send("menu:action", ...)`) → the `useMenuShortcuts` hook.
- * Mirrored in `apps/renderer/src/lib/bridge.ts` as `MenuAction`.
+ * `webContents.send("menu:action", ...)`) → the keybinding-dispatcher
+ * `commands.ts` registry in the renderer. The set mirrors the menu-relevant
+ * subset of `Command` in `@memoize/wire/keybindings`.
  */
-type MenuAction =
+export type MenuCommand =
   | "new-chat"
   | "open-project"
   | "settings"
+  | "close-tab"
   | "toggle-left-sidebar"
   | "toggle-right-sidebar"
   | "toggle-terminal"
   | "focus-composer";
 
 /**
- * Install the native Application Menu. The `getWindow` closure is read on
- * every click so menu items always target the currently-active window
- * even after a close/re-open cycle (macOS dock-launch).
+ * Accelerator strings to attach to each menu item, keyed by command. A
+ * `null` value omits the accelerator (e.g. user has unbound the command).
+ * The shape is intentionally exhaustive over `MenuCommand` so a missing
+ * field at the call site is a compile error.
  */
-export function installAppMenu(getWindow: () => BrowserWindow | null): void {
+export type MenuAccelerators = Readonly<Record<MenuCommand, string | null>>;
+
+/**
+ * Fallback accelerators used before the config store has reported the
+ * user's overrides. Mirrors the hardcoded values that lived in this file
+ * pre-refactor. The renderer's `default-keybindings.ts` is the long-term
+ * source of truth; this map is just so the menu installs sanely on first
+ * paint before the Effect runtime is up.
+ */
+export const DEFAULT_MENU_ACCELERATORS: MenuAccelerators = {
+  "new-chat": "CmdOrCtrl+N",
+  "open-project": "CmdOrCtrl+O",
+  settings: "CmdOrCtrl+,",
+  "close-tab": "CmdOrCtrl+W",
+  "toggle-left-sidebar": "CmdOrCtrl+B",
+  "toggle-right-sidebar": "CmdOrCtrl+Alt+B",
+  "toggle-terminal": "CmdOrCtrl+J",
+  "focus-composer": "CmdOrCtrl+L",
+};
+
+/**
+ * Build + install the native Application Menu. Safe to call multiple times
+ * — Electron swaps the menu in place, which is how user keybinding edits
+ * become effective without an app restart.
+ *
+ * `getWindow` is read on every click so menu items always target the
+ * currently-active window even after a close/re-open cycle (macOS
+ * dock-launch).
+ */
+export function installAppMenu(
+  getWindow: () => BrowserWindow | null,
+  accelerators: MenuAccelerators = DEFAULT_MENU_ACCELERATORS,
+): void {
   const isMac = process.platform === "darwin";
 
-  const send = (action: MenuAction) => () => {
-    const win = getWindow();
-    if (win === null) return;
-    win.webContents.send("menu:action", action);
-  };
+  const sendAction =
+    (action: Exclude<MenuCommand, "close-tab">) =>
+    () => {
+      const win = getWindow();
+      if (win === null) return;
+      win.webContents.send("menu:action", action);
+    };
 
   const sendCloseTab = () => {
     const win = getWindow();
@@ -40,26 +77,30 @@ export function installAppMenu(getWindow: () => BrowserWindow | null): void {
     win.webContents.send("menu:close-tab");
   };
 
+  /** undefined when unbound, so Electron drops the accelerator entirely. */
+  const accelOrUndefined = (cmd: MenuCommand): string | undefined =>
+    accelerators[cmd] ?? undefined;
+
   const fileMenu: MenuItemConstructorOptions = {
     label: "File",
     submenu: [
       {
         label: "New Chat",
-        accelerator: "CmdOrCtrl+N",
-        click: send("new-chat"),
+        accelerator: accelOrUndefined("new-chat"),
+        click: sendAction("new-chat"),
       },
       {
         label: "Open Project…",
-        accelerator: "CmdOrCtrl+O",
-        click: send("open-project"),
+        accelerator: accelOrUndefined("open-project"),
+        click: sendAction("open-project"),
       },
       { type: "separator" },
       {
-        // Cmd+W → close the active CHAT tab, not the OS window. The
-        // renderer owns the close-tab logic (it knows which tab is
-        // active); we just hand the signal across IPC.
+        // Closes the active CHAT tab, not the OS window. The renderer owns
+        // the close-tab logic (it knows which tab is active); we just hand
+        // the signal across IPC.
         label: "Close Tab",
-        accelerator: "CmdOrCtrl+W",
+        accelerator: accelOrUndefined("close-tab"),
         click: sendCloseTab,
       },
       ...(isMac
@@ -68,8 +109,8 @@ export function installAppMenu(getWindow: () => BrowserWindow | null): void {
             { type: "separator" },
             {
               label: "Settings…",
-              accelerator: "CmdOrCtrl+,",
-              click: send("settings"),
+              accelerator: accelOrUndefined("settings"),
+              click: sendAction("settings"),
             },
             { type: "separator" },
             { role: "quit" },
@@ -105,23 +146,23 @@ export function installAppMenu(getWindow: () => BrowserWindow | null): void {
     submenu: [
       {
         label: "Toggle Sidebar",
-        accelerator: "CmdOrCtrl+B",
-        click: send("toggle-left-sidebar"),
+        accelerator: accelOrUndefined("toggle-left-sidebar"),
+        click: sendAction("toggle-left-sidebar"),
       },
       {
         label: "Toggle Files Pane",
-        accelerator: "CmdOrCtrl+Alt+B",
-        click: send("toggle-right-sidebar"),
+        accelerator: accelOrUndefined("toggle-right-sidebar"),
+        click: sendAction("toggle-right-sidebar"),
       },
       {
         label: "Toggle Terminal",
-        accelerator: "CmdOrCtrl+J",
-        click: send("toggle-terminal"),
+        accelerator: accelOrUndefined("toggle-terminal"),
+        click: sendAction("toggle-terminal"),
       },
       {
         label: "Focus Composer",
-        accelerator: "CmdOrCtrl+L",
-        click: send("focus-composer"),
+        accelerator: accelOrUndefined("focus-composer"),
+        click: sendAction("focus-composer"),
       },
       { type: "separator" },
       { role: "reload" },
@@ -170,8 +211,8 @@ export function installAppMenu(getWindow: () => BrowserWindow | null): void {
               { type: "separator" },
               {
                 label: "Settings…",
-                accelerator: "CmdOrCtrl+,",
-                click: send("settings"),
+                accelerator: accelOrUndefined("settings"),
+                click: sendAction("settings"),
               },
               { type: "separator" },
               { role: "services" },

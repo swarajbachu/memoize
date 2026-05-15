@@ -80,6 +80,14 @@ const bridge = {
         ipcRenderer.off("menu:close-tab", wrapped);
       };
     },
+    /**
+     * Push the current accelerator map up to the main process so the native
+     * menu re-installs with the user's overrides. Renderer calls this from
+     * its keybindings store whenever the merged rule set changes.
+     */
+    setAccelerators: (accelerators: Record<string, string | null>) => {
+      ipcRenderer.send("menu:setAccelerators", accelerators);
+    },
   },
 };
 
