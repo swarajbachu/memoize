@@ -8,6 +8,7 @@ import {
   type SessionId,
 } from "@memoize/wire";
 
+import { formatError } from "../lib/format-error.ts";
 import { getRpcClient } from "../lib/rpc-client.ts";
 import { usePrDetailsStore } from "./pr-details.ts";
 import { usePrStateStore } from "./pr-state.ts";
@@ -34,15 +35,6 @@ const AUTH_PATTERN =
 const NETWORK_PATTERN =
   /\b(network|fetch|econn|enotfound|etimedout|timeout|getaddrinfo)\b/i;
 
-const messageOf = (err: unknown): string => {
-  if (err instanceof Error) return err.message;
-  if (typeof err === "string") return err;
-  if (typeof err === "object" && err !== null && "_tag" in err) {
-    return String((err as { _tag: unknown })._tag);
-  }
-  return String(err);
-};
-
 const classifyMessage = (
   message: string,
   providerId?: ProviderId,
@@ -57,7 +49,7 @@ const classifyMessage = (
 };
 
 const classifyError = (err: unknown, providerId?: ProviderId): ChatError =>
-  classifyMessage(messageOf(err), providerId);
+  classifyMessage(formatError(err), providerId);
 
 const lookupSessionProvider = (sessionId: SessionId): ProviderId | undefined => {
   const buckets = useSessionsStore.getState().sessionsByProject;

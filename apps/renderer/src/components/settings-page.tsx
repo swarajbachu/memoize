@@ -47,6 +47,7 @@ const PROVIDER_LABEL: Record<ProviderId, string> = {
   claude: "Claude Code",
   codex: "Codex",
   grok: "Grok",
+  gemini: "Gemini",
 };
 
 type RailItemBase = {
@@ -416,7 +417,12 @@ function ProvidersPane() {
     return latest;
   }, [availability]);
 
-  const providers: ReadonlyArray<ProviderId> = ["claude", "codex", "grok"];
+  const providers: ReadonlyArray<ProviderId> = [
+    "claude",
+    "codex",
+    "grok",
+    "gemini",
+  ];
   const availabilityById = useMemo(() => {
     const map = new Map<ProviderId, (typeof availability)[number]>();
     for (const a of availability) map.set(a.providerId, a);

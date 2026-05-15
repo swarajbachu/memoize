@@ -30,18 +30,21 @@ const PROVIDER_LABEL: Record<ProviderId, string> = {
   claude: "Claude Code",
   codex: "Codex",
   grok: "Grok",
+  gemini: "Gemini",
 };
 
 const INSTALL_HINT: Record<ProviderId, string> = {
   claude: "npm i -g @anthropic-ai/claude-code",
   codex: "npm i -g @openai/codex",
   grok: "curl -fsSL https://x.ai/cli/install.sh | bash",
+  gemini: "npm i -g @google/gemini-cli",
 };
 
 const LOGIN_HINT: Record<ProviderId, string> = {
   claude: "claude /login",
   codex: "codex login",
   grok: "grok",
+  gemini: "gemini /auth",
 };
 
 export function ProviderCard({

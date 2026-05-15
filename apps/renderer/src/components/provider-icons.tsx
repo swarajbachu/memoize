@@ -1,4 +1,9 @@
-import { ChatGptIcon, ClaudeIcon, GrokIcon } from "@hugeicons/core-free-icons";
+import {
+  ChatGptIcon,
+  ClaudeIcon,
+  GoogleGeminiIcon,
+  GrokIcon,
+} from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { ComponentProps } from "react";
 
@@ -15,6 +20,7 @@ const ICON_BY_PROVIDER = {
   claude: ClaudeIcon,
   codex: ChatGptIcon,
   grok: GrokIcon,
+  gemini: GoogleGeminiIcon,
 } as const satisfies Record<ProviderId, HugeProps["icon"]>;
 
 /**

@@ -61,6 +61,16 @@ const PROBES: ReadonlyArray<ProviderProbe> = [
     minVersion: null,
     upgradeCommand: "curl -fsSL https://x.ai/cli/install.sh | bash",
   },
+  {
+    providerId: "gemini",
+    displayName: "Gemini",
+    cliBinary: "gemini",
+    // We speak ACP directly via `gemini --experimental-acp`, so there's no
+    // SDK pin to keep in lock-step with. Revisit if Google renames the
+    // flag or breaks the handshake.
+    minVersion: null,
+    upgradeCommand: "npm i -g @google/gemini-cli",
+  },
 ];
 
 const PROBE_TIMEOUT = Duration.seconds(4);
@@ -352,10 +362,32 @@ const probeClaudeAccount: Effect.Effect<
     : parseClaudeCredentials(raw);
 });
 
+// Grok writes browser-OAuth credentials + `config.toml` under `~/.grok/`
+// on first authenticated launch; directory presence is a cheap proxy for
+// "completed at least one login". If only `GROK_CODE_XAI_API_KEY` is set,
+// the dir may not exist — the renderer still flips to "ready" via
+// `hasApiKey` once a key lands in the keychain.
 const probeGrokAccount: Effect.Effect<AccountInfo, never, FileSystem.FileSystem> =
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = join(homedir(), ".grok");
+    const exists = yield* fs
+      .exists(path)
+      .pipe(Effect.catchAll(() => Effect.succeed(false)));
+    return exists
+      ? ({ authStatus: "authenticated", authType: "cli" } satisfies AccountInfo)
+      : ({ authStatus: "unauthenticated" } satisfies AccountInfo);
+  });
+
+// Gemini CLI writes OAuth tokens + settings under `~/.gemini/` after the
+// first interactive sign-in. Same file-existence heuristic as Grok — we
+// don't yet have a verified-auth call we can make to the gemini CLI to
+// extract email/plan, so the card stays at "Authenticated" without the
+// subscription label.
+const probeGeminiAccount: Effect.Effect<AccountInfo, never, FileSystem.FileSystem> =
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = join(homedir(), ".gemini");
     const exists = yield* fs
       .exists(path)
       .pipe(Effect.catchAll(() => Effect.succeed(false)));
@@ -379,21 +411,10 @@ const probeAccount = (
       return probeCodexAccount(cliPath);
     case "grok":
       return probeGrokAccount;
+    case "gemini":
+      return probeGeminiAccount;
   }
 };
-
-// Grok writes both browser-OAuth credentials and `config.toml` under
-// `~/.grok/` on first authenticated launch. The directory's presence is a
-// cheap proxy for "they've completed at least one login"; we don't read it.
-// If the user only sets `GROK_CODE_XAI_API_KEY` and never opens the TUI the
-// dir may not exist — that's fine, the renderer still flips to "ready" via
-// `hasApiKey` once a key is saved in the keychain.
-const probeGrokLogin: Effect.Effect<boolean, never, FileSystem.FileSystem> =
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const path = join(homedir(), ".grok");
-    return yield* fs.exists(path).pipe(Effect.catchAll(() => Effect.succeed(false)));
-  });
 
 /**
  * Roll the per-field signals (`cliInstalled`, `cliVersionStatus`, `authStatus`)

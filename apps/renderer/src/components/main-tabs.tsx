@@ -11,12 +11,14 @@ import {
 } from "@memoize/wire";
 
 import { useChatsStore } from "../store/chats.ts";
+import { useMessagesStore } from "../store/messages.ts";
 import { useProvidersStore } from "../store/providers.ts";
 import { useSessionsStore } from "../store/sessions.ts";
 import { useSettingsStore } from "../store/settings.ts";
 import { useUiStore } from "../store/ui.ts";
 import { FileIcon } from "./file-icon.tsx";
 import { ProviderIcon } from "./provider-icons.tsx";
+import { Beacon } from "./ui/loaders";
 
 type Props = {
   readonly projectId: FolderId | null;
@@ -28,6 +30,7 @@ const PROVIDER_LABEL: Record<ProviderId, string> = {
   claude: "Claude",
   codex: "Codex",
   grok: "Grok",
+  gemini: "Gemini",
 };
 
 const lookupModelLabel = (
@@ -66,6 +69,9 @@ export function MainTabs({ projectId, emptyLabel }: Props) {
       : EMPTY_SESSIONS,
   );
   const selectSession = useSessionsStore((s) => s.select);
+  // Per-session running flag — drives the provider-icon → Beacon swap on
+  // each tab so the user sees which session is streaming at a glance.
+  const runningBySession = useMessagesStore((s) => s.runningBySession);
 
   // The active chat = the chat owning the active session (if any), else
   // the sidebar's selected chat. We prefer the session-derived value
@@ -120,6 +126,7 @@ export function MainTabs({ projectId, emptyLabel }: Props) {
               label={session.title}
               title={tooltip}
               providerId={session.providerId}
+              running={runningBySession[session.id] === true}
               onClick={() => {
                 if (selectedSessionId !== session.id) {
                   selectSession(session.id);
@@ -269,6 +276,7 @@ function ChatTabButton({
   label,
   title,
   providerId,
+  running,
   onClick,
   onClose,
 }: {
@@ -276,6 +284,7 @@ function ChatTabButton({
   label: string;
   title?: string;
   providerId: ProviderId;
+  running: boolean;
   onClick: () => void;
   onClose: () => void;
 }) {
@@ -293,10 +302,16 @@ function ChatTabButton({
         title={title ?? label}
         className="flex min-w-0 flex-1 items-center gap-1.5 py-0"
       >
-        <ProviderIcon
-          providerId={providerId}
-          className="size-3.5 shrink-0 text-foreground"
-        />
+        {running ? (
+          <span className="inline-flex size-3.5 shrink-0 items-center justify-center text-foreground">
+            <Beacon dotSize={2} cellPadding={1} color="currentColor" />
+          </span>
+        ) : (
+          <ProviderIcon
+            providerId={providerId}
+            className="size-3.5 shrink-0 text-foreground"
+          />
+        )}
         <span className="truncate">{label}</span>
       </button>
       <button

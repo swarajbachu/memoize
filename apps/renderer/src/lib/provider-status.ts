@@ -27,6 +27,7 @@ const PROVIDER_DISPLAY: Record<ProviderId, string> = {
   claude: "Claude Code",
   codex: "Codex",
   grok: "Grok",
+  gemini: "Gemini",
 };
 
 /**
