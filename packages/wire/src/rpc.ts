@@ -31,9 +31,20 @@ import {
 } from "./permission.ts";
 import { PingRpc } from "./ping.ts";
 import {
+  KeybindingsGetRpc,
+  KeybindingsReplaceRpc,
+  KeybindingsStreamRpc,
+} from "./keybindings.ts";
+import {
   RepositorySettingsGetRpc,
   RepositorySettingsUpdateRpc,
 } from "./repository-settings.ts";
+import {
+  SettingsGetRpc,
+  SettingsMigrateLocalStorageRpc,
+  SettingsStreamRpc,
+  SettingsUpdateRpc,
+} from "./settings.ts";
 import {
   PtyCloseRpc,
   PtyOpenRpc,
@@ -170,6 +181,13 @@ export const MemoizeRpcs = RpcGroup.make(
   WorktreeRemoveRpc,
   RepositorySettingsGetRpc,
   RepositorySettingsUpdateRpc,
+  SettingsGetRpc,
+  SettingsUpdateRpc,
+  SettingsStreamRpc,
+  SettingsMigrateLocalStorageRpc,
+  KeybindingsGetRpc,
+  KeybindingsReplaceRpc,
+  KeybindingsStreamRpc,
   SessionSetWorktreeRpc,
 );
 export type MemoizeRpcs = typeof MemoizeRpcs;
