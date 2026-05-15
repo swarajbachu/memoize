@@ -302,7 +302,9 @@ function ChatTabButton({
         className="flex min-w-0 flex-1 items-center gap-1.5 py-0"
       >
         {running ? (
-          <Beacon className="size-3.5 shrink-0" />
+          <span className="inline-flex size-3.5 shrink-0 items-center justify-center text-foreground">
+            <Beacon dotSize={2} cellPadding={1} color="currentColor" />
+          </span>
         ) : (
           <ProviderIcon
             providerId={providerId}
