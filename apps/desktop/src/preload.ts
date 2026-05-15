@@ -59,6 +59,10 @@ const bridge = {
       ipcRenderer.invoke(UPDATE_DOWNLOAD_CHANNEL) as Promise<void>,
     installNow: () =>
       ipcRenderer.invoke(UPDATE_INSTALL_CHANNEL) as Promise<void>,
+    // Dev-only escape hatch: only handled in dev (see updater.ts
+    // `registerUpdaterDemo`). Calling in a packaged build rejects harmlessly.
+    __demoSet: (status: UpdateStatus) =>
+      ipcRenderer.invoke("memoize:update-demo-set", status) as Promise<void>,
   },
 };
 

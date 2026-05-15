@@ -99,3 +99,22 @@ export function startAutoUpdater(window: BrowserWindow): void {
   check();
   setInterval(check, UPDATE_POLL_MS);
 }
+
+/**
+ * Dev-only IPC bridge for previewing the update banner without cutting a real
+ * release. `window.__memoizeUpdateDemo.set(status)` in the renderer round-trips
+ * through `memoize:update-demo-set`, which re-broadcasts on the same channel
+ * the real updater uses — so the banner sees indistinguishable payloads.
+ *
+ * Call from `main.ts` only when `isDevelopment`. No-op in packaged builds.
+ */
+export function registerUpdaterDemo(window: BrowserWindow): void {
+  ipcMain.handle(
+    "memoize:update-demo-set",
+    (_event, status: UpdateStatus) => {
+      if (window.isDestroyed()) return;
+      lastStatus = status;
+      window.webContents.send(UPDATE_STATUS_CHANNEL, status);
+    },
+  );
+}

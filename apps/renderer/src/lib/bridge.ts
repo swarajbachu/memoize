@@ -27,6 +27,8 @@ export interface UpdatesBridge {
   readonly check: () => Promise<void>;
   readonly download: () => Promise<void>;
   readonly installNow: () => Promise<void>;
+  /** Dev-only: round-trips a synthetic status through the real IPC channel. */
+  readonly __demoSet?: (status: UpdateStatus) => Promise<void>;
 }
 
 export interface MemoizeBridge {

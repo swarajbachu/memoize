@@ -1,5 +1,6 @@
-import { ArrowUpCircle, CheckCircle2, Download, RotateCw } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ArrowUpCircle, CheckCircle2, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import type { UpdateStatus } from "@memoize/wire";
 
@@ -11,19 +12,27 @@ import {
 } from "~/components/ui/progress";
 
 /**
- * In-app surface for the electron-updater lifecycle. Subscribes to the
- * preload bridge's `updates.onStatus` channel and walks the user through
- * *available → downloading → ready → restart*. Errors and idle states render
- * nothing so a transient network blip on the 6-hour poll never shows a red
- * banner.
+ * Bottom-right toast for the electron-updater lifecycle. Subscribes to the
+ * preload bridge's `updates.onStatus` channel.
  *
- * Renders nothing in dev (where `startAutoUpdater` is gated off in
- * `apps/desktop/src/main.ts`) since `window.memoize.updates` is still wired
- * but no events ever fire.
+ * Lifecycle:
+ *  - `available` → shows "Update now / Install on quit / Later" — nothing
+ *     downloads until the user picks.
+ *  - `downloading` → progress bar; "Update now" auto-installs when ready,
+ *     "Install on quit" silently completes and stays out of the way.
+ *  - `ready` → if user picked "Update now", we call installNow immediately;
+ *     otherwise the toast hides (electron-updater installs on next quit
+ *     because `autoInstallOnAppQuit = true` in the main process).
+ *
+ * Idle / checking / not-available / error are no-ops.
  */
 export function UpdateBanner() {
   const [status, setStatus] = useState<UpdateStatus>({ kind: "idle" });
   const [dismissed, setDismissed] = useState(false);
+  // Tracks which option the user picked so we know what to do when the
+  // download completes. Ref because we don't want to trigger a re-render
+  // when it changes — only the IPC-driven `status` does.
+  const installModeRef = useRef<"now" | "quit" | null>(null);
 
   useEffect(() => {
     const updates = window.memoize?.updates;
@@ -31,10 +40,19 @@ export function UpdateBanner() {
     return updates.onStatus(setStatus);
   }, []);
 
-  // Reset the per-session dismissal whenever a fresh "available" arrives so
-  // a *new* update after the user dismissed the previous one re-surfaces.
+  // Re-surface a fresh "available" even if the user dismissed the previous one.
   useEffect(() => {
-    if (status.kind === "available") setDismissed(false);
+    if (status.kind === "available") {
+      installModeRef.current = null;
+      setDismissed(false);
+    }
+  }, [status.kind]);
+
+  // Auto-install on ready when the user explicitly chose "Update now".
+  useEffect(() => {
+    if (status.kind === "ready" && installModeRef.current === "now") {
+      void window.memoize?.updates?.installNow();
+    }
   }, [status.kind]);
 
   if (
@@ -47,36 +65,54 @@ export function UpdateBanner() {
     return null;
   }
 
-  const onDownload = () => {
+  // "Install on quit" mode disappears entirely once download finishes —
+  // electron-updater's autoInstallOnAppQuit handles the rest silently.
+  if (status.kind === "ready" && installModeRef.current === "quit") {
+    return null;
+  }
+
+  const onUpdateNow = () => {
+    installModeRef.current = "now";
     void window.memoize?.updates?.download();
   };
-  const onInstall = () => {
+  const onUpdateOnQuit = () => {
+    installModeRef.current = "quit";
+    void window.memoize?.updates?.download();
+  };
+  const onLater = () => {
+    setDismissed(true);
+  };
+  const onRestartNow = () => {
     void window.memoize?.updates?.installNow();
   };
 
-  return (
-    <div className="mx-3 mb-2 mt-2 flex flex-col gap-2 rounded-2xl bg-alert-warning-bg p-3">
-      <div className="flex items-start gap-2.5">
-        <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg text-warning">
+  // Portal to document.body so the toast escapes any ancestor that creates a
+  // containing block — `<main>` uses `backdrop-blur-3xl`, and any
+  // backdrop-filter (or transform/filter/perspective) traps `position: fixed`
+  // to that ancestor instead of the viewport. Without the portal the toast
+  // sticks to the bottom-right of the chat pane, not the window.
+  return createPortal(
+    <div
+      role="status"
+      className="fixed right-4 bottom-4 z-50 flex w-[320px] flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-lg"
+    >
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
           {status.kind === "ready" ? (
-            <CheckCircle2 className="size-3.5" />
-          ) : status.kind === "downloading" ? (
-            <Download className="size-3.5" />
+            <CheckCircle2 className="size-4" />
           ) : (
-            <ArrowUpCircle className="size-3.5" />
+            <ArrowUpCircle className="size-4" />
           )}
         </span>
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="text-[12.5px] font-medium text-foreground">
-            {status.kind === "available" &&
-              `memoize ${status.version} is available`}
+          <span className="text-[13px] font-medium text-foreground">
+            {status.kind === "available" && "Update available"}
             {status.kind === "downloading" && "Downloading update…"}
-            {status.kind === "ready" &&
-              `memoize ${status.version} is ready to install`}
+            {status.kind === "ready" && "Update ready"}
           </span>
-          <span className="text-[11.5px] leading-snug text-muted-foreground">
+          <span className="text-[12px] leading-snug text-muted-foreground">
             {status.kind === "available" &&
-              "Download in the background — you can keep working until it's ready."}
+              `memoize ${status.version} is ready to install.`}
             {status.kind === "downloading" &&
               `${Math.round(status.percent)}%${
                 status.bytesPerSecond > 0
@@ -84,16 +120,16 @@ export function UpdateBanner() {
                   : ""
               }`}
             {status.kind === "ready" &&
-              "Restart memoize to finish installing. We'll also install on next quit if you'd rather wait."}
+              `Restart to finish installing memoize ${status.version}.`}
           </span>
         </div>
         <button
           type="button"
           onClick={() => setDismissed(true)}
-          className="text-[10px] uppercase tracking-wide text-muted-foreground hover:text-foreground"
-          aria-label="Dismiss update banner"
+          className="text-muted-foreground hover:text-foreground"
+          aria-label="Dismiss update toast"
         >
-          Hide
+          <X className="size-3.5" />
         </button>
       </div>
 
@@ -105,42 +141,55 @@ export function UpdateBanner() {
         </Progress>
       )}
 
-      <div className="flex items-center justify-end gap-1.5">
-        {status.kind === "available" && (
+      {status.kind === "available" && (
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
           <Button
             size="xs"
             variant="ghost"
-            onClick={onDownload}
-            className="gap-1.5 rounded-full text-[11px]"
+            onClick={onLater}
+            className="rounded-full text-[11px]"
           >
-            <Download className="size-3" />
-            Download update
+            Later
           </Button>
-        )}
-        {status.kind === "downloading" && (
           <Button
             size="xs"
             variant="ghost"
-            disabled
-            className="gap-1.5 rounded-full text-[11px] text-muted-foreground"
+            onClick={onUpdateOnQuit}
+            className="rounded-full text-[11px]"
           >
-            <RotateCw className="size-3 animate-spin" />
-            Downloading
+            Install on quit
           </Button>
-        )}
-        {status.kind === "ready" && (
+          <Button
+            size="xs"
+            onClick={onUpdateNow}
+            className="rounded-full text-[11px]"
+          >
+            Update now
+          </Button>
+        </div>
+      )}
+
+      {status.kind === "ready" && (
+        <div className="flex items-center justify-end gap-1.5">
           <Button
             size="xs"
             variant="ghost"
-            onClick={onInstall}
-            className="gap-1.5 rounded-full text-[11px]"
+            onClick={onLater}
+            className="rounded-full text-[11px]"
           >
-            <RotateCw className="size-3" />
+            Later
+          </Button>
+          <Button
+            size="xs"
+            onClick={onRestartNow}
+            className="rounded-full text-[11px]"
+          >
             Restart now
           </Button>
-        )}
-      </div>
-    </div>
+        </div>
+      )}
+    </div>,
+    document.body,
   );
 }
 
