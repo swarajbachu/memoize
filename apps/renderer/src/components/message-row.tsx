@@ -1,6 +1,6 @@
 import { AlertCircleIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Copy } from "lucide-react";
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -21,6 +21,7 @@ import {
 } from "~/lib/icons/material-icons";
 import { cn } from "~/lib/utils";
 
+import { Button } from "./ui/button.tsx";
 import {
   ExitPlanModeRow,
   ThinkingRow,
@@ -351,6 +352,71 @@ const formatResetDetail = (info: RateLimitInfo): string => {
   return "Try again later";
 };
 
+const GEMINI_UPGRADE_COMMAND = "npm i -g @google/gemini-cli@latest";
+
+const isGeminiAcpUpgradeError = (text: string): boolean =>
+  /Gemini CLI.*(?:does not support ACP|--experimental-acp)|Unknown arguments?:.*(?:experimental-acp|experimentalAcp)/is.test(
+    text,
+  );
+
+function GeminiUpgradeCard({
+  onDismiss,
+}: {
+  onDismiss?: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const copyCommand = () => {
+    void navigator.clipboard.writeText(GEMINI_UPGRADE_COMMAND).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    });
+  };
+
+  return (
+    <div className="px-4 py-2">
+      <div className="max-w-[34rem] rounded-xl border border-warning/25 bg-alert-warning-bg px-4 py-3 text-xs text-foreground shadow-sm">
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-warning/12 text-warning">
+            <HugeiconsIcon
+              icon={AlertCircleIcon}
+              strokeWidth={2}
+              aria-hidden="true"
+              className="size-4"
+            />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium text-foreground">
+              Gemini CLI needs an upgrade
+            </div>
+            <p className="mt-1 leading-relaxed text-muted-foreground">
+              Your installed Gemini CLI does not support ACP mode yet, so
+              memoize cannot start Gemini sessions until the CLI is updated.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <code className="rounded-md border border-border/60 bg-background/60 px-2 py-1 font-mono text-[11px] text-foreground">
+                {GEMINI_UPGRADE_COMMAND}
+              </code>
+              <Button size="xs" variant="outline" onClick={copyCommand}>
+                {copied ? (
+                  <Check className="size-3.5" />
+                ) : (
+                  <Copy className="size-3.5" />
+                )}
+                {copied ? "Copied" : "Copy upgrade command"}
+              </Button>
+              {onDismiss !== undefined && (
+                <Button size="xs" variant="ghost" onClick={onDismiss}>
+                  Dismiss
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ErrorBubble({
   text,
   onDismiss,
@@ -358,6 +424,10 @@ export function ErrorBubble({
   text: string;
   onDismiss?: () => void;
 }) {
+  if (isGeminiAcpUpgradeError(text)) {
+    return <GeminiUpgradeCard onDismiss={onDismiss} />;
+  }
+
   const rateLimit = parseRateLimit(text);
   if (rateLimit !== null) {
     return (

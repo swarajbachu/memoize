@@ -207,6 +207,22 @@ type PendingResolver = {
 
 const GEMINI_RPC_TRACE = process.env.MEMOIZE_DEBUG_GEMINI === "1";
 
+const formatGeminiDiagnostics = (diagnostics: string): string => {
+  const trimmed = diagnostics.trim();
+  if (trimmed.length === 0) return trimmed;
+  if (
+    /Unknown arguments?:.*(?:experimental-acp|experimentalAcp|acp)/is.test(
+      trimmed,
+    )
+  ) {
+    return [
+      "Installed Gemini CLI does not support ACP mode (`gemini --experimental-acp`).",
+      "Upgrade Gemini CLI with `npm i -g @google/gemini-cli@latest`, then restart memoize.",
+    ].join("\n");
+  }
+  return trimmed;
+};
+
 const formatRpcError = (
   err: JsonRpcError,
   diagnosticTail: string,
@@ -244,12 +260,12 @@ const formatRpcError = (
     }
   }
   if (parts.length === 0) {
-    const trimmedDiagnostics = diagnosticTail.trim();
+    const trimmedDiagnostics = formatGeminiDiagnostics(diagnosticTail);
     if (trimmedDiagnostics.length > 0) parts.push(trimmedDiagnostics);
     else parts.push("Gemini ACP returned an error with no detail.");
   }
   if (typeof err.code === "number") parts.push(`(code ${err.code})`);
-  const trimmedDiagnostics = diagnosticTail.trim();
+  const trimmedDiagnostics = formatGeminiDiagnostics(diagnosticTail);
   if (trimmedDiagnostics.length > 0 && parts.every((p) => p !== trimmedDiagnostics)) {
     parts.push(`Diagnostics:\n${trimmedDiagnostics}`);
   }
@@ -352,7 +368,7 @@ export const startGeminiSession = (
       return new Promise<unknown>((resolve, reject) => {
         const timer = setTimeout(() => {
           pending.delete(id);
-          const diagnostics = diagnosticTail();
+          const diagnostics = formatGeminiDiagnostics(diagnosticTail());
           const detail = diagnostics.length > 0 ? ` — ${diagnostics}` : "";
           reject(
             new Error(
@@ -443,7 +459,7 @@ export const startGeminiSession = (
 
     child.on("close", (code, signal) => {
       rl.close();
-      const diagnostics = diagnosticTail();
+      const diagnostics = formatGeminiDiagnostics(diagnosticTail());
       const exitDetail = diagnostics.length > 0
         ? `Gemini ACP exited (code ${code ?? "null"}, signal ${signal ?? "null"}): ${diagnostics}`
         : `Gemini ACP exited unexpectedly (code ${code ?? "null"}, signal ${signal ?? "null"}).`;
