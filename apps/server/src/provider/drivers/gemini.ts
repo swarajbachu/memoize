@@ -60,17 +60,37 @@ const nextItemId = (): AgentItemId =>
 
 /**
  * Translate one ACP `session/update` payload into zero or more
- * `AgentEvent`s. Shape assumptions mirror the Grok translator — the ACP
- * spec leaves a lot underspecified, so the non-`agent_message_chunk`
- * branches are best-effort and may need tightening once we capture
- * real Gemini traces.
+ * `AgentEvent`s. The ACP v1 spec uses `"sessionUpdate"` as the
+ * discriminator but the ResponseItem shape (v2+) uses `"type"` — we
+ * check both so either format works with Gemini's evolving ACP impl.
+ *
+ * ACP v1 sessionUpdate values:
+ *   agent_message_chunk, agent_thought_chunk, thinking_chunk,
+ *   tool_call, tool_use, tool_result, tool_output,
+ *   function_call, function_call_output,
+ *   custom_tool_call, custom_tool_call_output,
+ *   tool_search_call, tool_search_output,
+ *   local_shell_call, web_search_call,
+ *   error, agent_error
+ *
+ * Gemini-specific (nonstandard) type values:
+ *   tool_call_update, available_commands_update
+ *
+ * ACP v2 ResponseItem type values (also accepted):
+ *   message, function_call, custom_tool_call, tool_search_call,
+ *   local_shell_call, web_search_call, image_generation_call,
+ *   function_call_output, custom_tool_call_output, tool_search_output,
+ *   compaction, context_compaction
  */
 const translateSessionUpdate = (update: unknown): ReadonlyArray<AgentEvent> => {
   if (update === null || typeof update !== "object") return [];
   const u = update as Record<string, unknown>;
-  const kind = typeof u["sessionUpdate"] === "string"
-    ? (u["sessionUpdate"] as string)
-    : null;
+  const kind =
+    typeof u["sessionUpdate"] === "string"
+      ? (u["sessionUpdate"] as string)
+      : typeof u["type"] === "string"
+        ? (u["type"] as string)
+        : null;
   if (kind === null) return [];
 
   const asText = (v: unknown): string | null => {
@@ -82,9 +102,135 @@ const translateSessionUpdate = (update: unknown): ReadonlyArray<AgentEvent> => {
     return null;
   };
 
+  const extractMessageText = (content: unknown): string | null => {
+    if (!Array.isArray(content)) return asText(content);
+    const parts: string[] = [];
+    for (const item of content) {
+      if (item !== null && typeof item === "object" && "text" in item) {
+        const t = (item as Record<string, unknown>)["text"];
+        if (typeof t === "string") parts.push(t);
+      }
+    }
+    return parts.length > 0 ? parts.join("") : null;
+  };
+
+  const extractCallId = (): AgentItemId => {
+    const raw =
+      typeof u["toolCallId"] === "string"
+        ? u["toolCallId"]
+        : typeof u["call_id"] === "string"
+          ? u["call_id"]
+          : typeof u["id"] === "string"
+            ? u["id"]
+            : typeof (u as Record<string, unknown>)["callId"] === "string"
+              ? (u as Record<string, unknown>)["callId"]
+              : null;
+    return raw !== null ? (raw as AgentItemId) : nextItemId();
+  };
+
+  const extractToolName = (): string => {
+    return typeof u["tool"] === "string"
+      ? (u["tool"] as string)
+      : typeof u["name"] === "string"
+        ? (u["name"] as string)
+        : typeof u["kind"] === "string"
+          ? (u["kind"] as string)
+          : typeof u["execution"] === "string"
+            ? (u["execution"] as string)
+            : typeof u["command"] === "string"
+              ? (u["command"] as string)
+              : "tool";
+  };
+
+  const extractInput = (): unknown => {
+    if (u["input"] !== undefined) return u["input"];
+    if (u["arguments"] !== undefined) {
+      const a = u["arguments"];
+      if (typeof a === "string") {
+        try {
+          return JSON.parse(a);
+        } catch {
+          return a;
+        }
+      }
+      return a;
+    }
+    if (u["command"] !== undefined) return { command: u["command"] };
+    if (u["cmd"] !== undefined) return { command: u["cmd"] };
+    if (Array.isArray(u["locations"]) && u["locations"].length > 0) {
+      const loc = (u["locations"] as Array<Record<string, unknown>>)[0];
+      if (loc !== undefined && typeof loc["path"] === "string") return { path: loc["path"] };
+    }
+    return null;
+  };
+
+  const extractOutput = (): unknown => {
+    if (u["output"] !== undefined) {
+      const o = u["output"];
+      if (o !== null && typeof o === "object" && "content" in o) {
+        return (o as Record<string, unknown>)["content"] ?? o;
+      }
+      return o;
+    }
+    if (u["content"] !== undefined) return u["content"];
+    if (u["result"] !== undefined) return u["result"];
+    return null;
+  };
+
+  const normalizeGeminiTool = (rawKind: string): string => {
+    switch (rawKind) {
+      case "read": return "Read";
+      case "bash": return "Bash";
+      case "edit": return "Edit";
+      case "write": return "Write";
+      case "grep": return "Grep";
+      case "glob": return "Glob";
+      case "search": return "WebSearch";
+      case "fetch": return "WebFetch";
+      default: return rawKind.charAt(0).toUpperCase() + rawKind.slice(1);
+    }
+  };
+
+  const buildGeminiInput = (u: Record<string, unknown>, geminiKind: string | null): unknown => {
+    const input: Record<string, unknown> = {};
+    if (typeof u["title"] === "string") {
+      input["description"] = u["title"];
+    }
+    switch (geminiKind) {
+      case "read":
+      case "edit":
+      case "write": {
+        const locations = u["locations"];
+        if (Array.isArray(locations) && locations.length > 0) {
+          const loc = locations[0];
+          if (loc !== null && typeof loc === "object" && typeof (loc as Record<string, unknown>)["path"] === "string") {
+            input["file_path"] = (loc as Record<string, unknown>)["path"];
+          }
+        }
+        break;
+      }
+      case "bash": {
+        if (typeof u["command"] === "string") input["command"] = u["command"];
+        else if (typeof u["cmd"] === "string") input["command"] = u["cmd"];
+        break;
+      }
+      case "grep":
+      case "glob": {
+        if (typeof u["pattern"] === "string") input["pattern"] = u["pattern"];
+        if (typeof u["path"] === "string") input["path"] = u["path"];
+        break;
+      }
+    }
+    return Object.keys(input).length > 0 ? input : null;
+  };
+
   switch (kind) {
-    case "agent_message_chunk": {
-      const text = asText(u["content"]);
+    case "agent_message_chunk":
+    case "message": {
+      const text =
+        kind === "message"
+          ? extractMessageText(u["content"])
+          : asText(u["content"]);
       if (text === null || text.length === 0) return [];
       return [
         {
@@ -96,7 +242,8 @@ const translateSessionUpdate = (update: unknown): ReadonlyArray<AgentEvent> => {
     }
     case "agent_thought_chunk":
     case "agent_reasoning_chunk":
-    case "thinking_chunk": {
+    case "thinking_chunk":
+    case "reasoning": {
       const text = asText(u["content"]);
       if (text === null || text.length === 0) return [];
       return [
@@ -109,47 +256,51 @@ const translateSessionUpdate = (update: unknown): ReadonlyArray<AgentEvent> => {
       ];
     }
     case "tool_call":
-    case "tool_use": {
-      const id =
-        typeof u["toolCallId"] === "string"
-          ? ((u["toolCallId"] as string) as AgentItemId)
-          : typeof u["id"] === "string"
-            ? ((u["id"] as string) as AgentItemId)
-            : nextItemId();
-      const tool =
-        typeof u["tool"] === "string"
-          ? (u["tool"] as string)
-          : typeof u["name"] === "string"
-            ? (u["name"] as string)
-            : "tool";
-      const input = u["input"] ?? u["arguments"] ?? null;
+    case "tool_use":
+    case "function_call":
+    case "custom_tool_call":
+    case "tool_search_call":
+    case "local_shell_call":
+    case "web_search_call":
+    case "image_generation_call": {
+      const geminiToolKind = typeof u["kind"] === "string" ? (u["kind"] as string) : null;
+      if (geminiToolKind === "think") return [];
+      const toolName = geminiToolKind !== null ? normalizeGeminiTool(geminiToolKind) : extractToolName();
+      const input = geminiToolKind !== null ? buildGeminiInput(u, geminiToolKind) : extractInput();
+      console.log(
+        `[gemini.translate.tool] initCallId=${extractCallId()} tool=${toolName} input=${JSON.stringify(input).slice(0, 2048)}`,
+      );
       return [
         {
-          _tag: "ToolUse",
-          itemId: id,
-          tool,
+          _tag: "ToolUse" as const,
+          itemId: extractCallId(),
+          tool: toolName,
           input,
         },
       ];
     }
+    case "tool_call_update":
+    case "available_commands_update":
+      return [];
     case "tool_result":
-    case "tool_output": {
-      const id =
-        typeof u["toolCallId"] === "string"
-          ? ((u["toolCallId"] as string) as AgentItemId)
-          : typeof u["id"] === "string"
-            ? ((u["id"] as string) as AgentItemId)
-            : nextItemId();
-      const output = u["output"] ?? u["content"] ?? u["result"] ?? null;
+    case "tool_output":
+    case "function_call_output":
+    case "custom_tool_call_output":
+    case "tool_search_output": {
+      console.log(
+        `[gemini.translate.result] kind=${kind} raw=${JSON.stringify(u).slice(0, 4096)}`,
+      );
       const isError = u["isError"] === true || u["is_error"] === true;
-      return [
-        {
-          _tag: "ToolResult",
-          itemId: id,
-          output,
-          isError,
-        },
-      ];
+      const toolResult = {
+        _tag: "ToolResult" as const,
+        itemId: extractCallId(),
+        output: extractOutput(),
+        isError,
+      };
+      console.log(
+        `[gemini.translate.result] → ToolResult itemId=${toolResult.itemId} output=${JSON.stringify(toolResult.output).slice(0, 2048)}`,
+      );
+      return [toolResult];
     }
     case "error":
     case "agent_error": {
@@ -178,8 +329,17 @@ const translateSessionUpdate = (update: unknown): ReadonlyArray<AgentEvent> => {
             })();
       return [{ _tag: "Error", message }];
     }
+    case "available_commands_update":
+      return [];
     default:
-      console.warn(`[gemini.translate] unknown sessionUpdate=${kind}`);
+      console.warn(
+        `[gemini.translate] unknown sessionUpdate/type=${kind} payload=${((): string => {
+          try {
+            const s = JSON.stringify(u).slice(0, 2048);
+            return s.length > 0 ? s : "(empty)";
+          } catch { return "(unserialisable)"; }
+        })()}`,
+      );
       return [];
   }
 };

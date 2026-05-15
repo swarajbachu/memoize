@@ -338,6 +338,7 @@ const SessionCursorEvent = Schema.TaggedStruct("SessionCursor", {
     "claude-session-id",
     "codex-thread-id",
     "grok-session-id",
+    "gemini-session-id",
   ),
 });
 

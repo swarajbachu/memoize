@@ -51,5 +51,8 @@
     "@effect/platform-node": "^0.106.0",
     "@effect/rpc": "^0.75.0",
     "effect": "^3.21.0"
+  },
+  "dependencies": {
+    "electron": "^42.1.0"
   }
 }
