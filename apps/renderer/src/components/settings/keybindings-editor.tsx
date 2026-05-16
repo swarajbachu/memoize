@@ -2,6 +2,7 @@ import {
   ChevronDown,
   Ellipsis,
   FileJson,
+  Pencil,
   Plus,
   Search,
   TriangleAlert,
@@ -286,6 +287,103 @@ export function KeybindingsEditor() {
   );
 }
 
+/* ─────────────────── Recording surface ──────────────────────────────────── */
+
+/**
+ * Focusable surface that live-renders the currently-held modifiers as the
+ * user reaches for the base key. Captures the full chord on the first
+ * non-modifier press and fires `onCapture`; Escape and blur both call
+ * `onExit` so the parent can drop back to its default display.
+ *
+ * Why a `<div>` instead of an `<input>`: an input would absorb any
+ * accidentally-typed characters (e.g. macOS may forward `option+letter`
+ * as a typed glyph), and would render the literal `mod+v` text — which
+ * is exactly what users found confusing in the first cut.
+ */
+function RecordingSurface({
+  ariaLabel,
+  onCapture,
+  onExit,
+}: {
+  readonly ariaLabel: string;
+  readonly onCapture: (key: string) => void;
+  readonly onExit: () => void;
+}) {
+  const [pending, setPending] = useState<string | null>(null);
+
+  const updatePendingFromEvent = (event: ReactKeyboardEvent<HTMLElement>) => {
+    const mods: string[] = [];
+    if (IS_MAC) {
+      if (event.metaKey) mods.push("mod");
+      if (event.ctrlKey) mods.push("ctrl");
+    } else {
+      if (event.ctrlKey) mods.push("mod");
+      if (event.metaKey) mods.push("meta");
+    }
+    if (event.altKey) mods.push("alt");
+    if (event.shiftKey) mods.push("shift");
+    setPending(mods.length > 0 ? mods.join("+") : null);
+  };
+
+  const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Tab") return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.key === "Escape") {
+      setPending(null);
+      onExit();
+      return;
+    }
+    const captured = keyStringFromEvent(event.nativeEvent, IS_MAC);
+    if (captured === null) {
+      // Modifier-only — update the live preview and keep waiting.
+      updatePendingFromEvent(event);
+      return;
+    }
+    setPending(null);
+    onCapture(captured);
+  };
+
+  const onKeyUp = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    // If every modifier was released without us capturing a chord, clear
+    // the preview so the surface is ready for the next attempt.
+    if (
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      !event.shiftKey
+    ) {
+      setPending(null);
+    }
+  };
+
+  return (
+    <div
+      tabIndex={0}
+      autoFocus
+      ref={(node) => node?.focus()}
+      role="textbox"
+      aria-label={ariaLabel}
+      onBlur={() => {
+        setPending(null);
+        onExit();
+      }}
+      onKeyDown={onKeyDown}
+      onKeyUp={onKeyUp}
+      className="flex h-7 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md border border-primary/70 bg-primary/5 px-2 text-[11px] font-medium text-primary outline-none ring-2 ring-primary/20"
+    >
+      {pending ? (
+        <>
+          <KeybindingPill value={pending} />
+          <span className="text-primary/60">…</span>
+        </>
+      ) : (
+        <span>Press shortcut…</span>
+      )}
+    </div>
+  );
+}
+
 /* ─────────────────── Existing-row editor ────────────────────────────────── */
 
 function RowEditor({
@@ -340,19 +438,6 @@ function RowEditor({
     }
   };
 
-  const onKey = (event: ReactKeyboardEvent<HTMLElement>) => {
-    if (event.key === "Tab") return;
-    event.preventDefault();
-    event.stopPropagation();
-    if (event.key === "Escape") {
-      dispatch({ type: "patch", patch: { keyDraft: row.key, isRecording: false } });
-      return;
-    }
-    const next = keyStringFromEvent(event.nativeEvent, IS_MAC);
-    if (next === null) return;
-    dispatch({ type: "patch", patch: { keyDraft: next, isRecording: false } });
-  };
-
   return (
     <div className="grid grid-cols-[minmax(120px,1.3fr)_minmax(130px,0.9fr)_minmax(100px,0.9fr)_44px] items-center px-3 py-1.5 text-sm even:bg-muted/15 hover:bg-accent/40">
       <div className="min-w-0 pr-4">
@@ -366,53 +451,66 @@ function RowEditor({
 
       <div className="flex min-w-0 items-center gap-2 pr-4">
         {showPill ? (
-          <button
-            type="button"
-            onClick={() =>
-              dispatch({ type: "patch", patch: { isRecording: true } })
-            }
-            aria-label={`Edit shortcut for ${meta.label}`}
-            className={cn(
-              "group inline-flex h-7 min-w-0 items-center gap-1.5 rounded-md border px-1.5 outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/24",
-              isDirty
-                ? "border-primary/40 bg-primary/5"
-                : "border-transparent hover:border-border/70 hover:bg-background",
+          <>
+            <div
+              className={cn(
+                "inline-flex h-7 min-w-0 items-center gap-1.5 rounded-md border px-1.5",
+                isDirty
+                  ? "border-primary/40 bg-primary/5"
+                  : "border-transparent",
+              )}
+            >
+              <KeybindingPill value={draft.keyDraft} />
+            </div>
+            {isDirty ? (
+              <Button
+                size="xs"
+                className="h-7 shrink-0"
+                disabled={
+                  draft.keyDraft.trim().length === 0 || !draft.isWhenValid
+                }
+                onClick={() => void save()}
+              >
+                Save
+              </Button>
+            ) : (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      type="button"
+                      size="icon-xs"
+                      variant="ghost"
+                      className="text-muted-foreground hover:text-foreground"
+                      onClick={() =>
+                        dispatch({
+                          type: "patch",
+                          patch: { isRecording: true },
+                        })
+                      }
+                      aria-label={`Edit shortcut for ${meta.label}`}
+                    >
+                      <Pencil className="size-3.5" />
+                    </Button>
+                  }
+                />
+                <TooltipPopup side="top">Record new chord</TooltipPopup>
+              </Tooltip>
             )}
-          >
-            <KeybindingPill value={draft.keyDraft} />
-            <span className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/0 transition-opacity group-hover:text-muted-foreground/70 group-focus-visible:text-muted-foreground/70">
-              Edit
-            </span>
-          </button>
+          </>
         ) : (
-          <div
-            className={cn(
-              "flex h-7 min-w-0 flex-1 items-center justify-center rounded-md border border-primary/70 bg-primary/5 px-2 text-[11px] font-medium text-primary",
-            )}
-            // Keep this focusable so the keydown handler runs while the
-            // user records a chord; tabIndex={0} mirrors a real input.
-            tabIndex={0}
-            autoFocus
-            ref={(node) => node?.focus()}
-            onBlur={() =>
+          <RecordingSurface
+            ariaLabel={`Recording shortcut for ${meta.label}`}
+            onCapture={(key) =>
+              dispatch({
+                type: "patch",
+                patch: { keyDraft: key, isRecording: false },
+              })
+            }
+            onExit={() =>
               dispatch({ type: "patch", patch: { isRecording: false } })
             }
-            onKeyDown={onKey}
-            role="textbox"
-            aria-label={`Recording shortcut for ${meta.label}`}
-          >
-            Press shortcut…
-          </div>
-        )}
-        {isDirty && (
-          <Button
-            size="xs"
-            className="h-7 shrink-0"
-            disabled={draft.keyDraft.trim().length === 0 || !draft.isWhenValid}
-            onClick={() => void save()}
-          >
-            Save
-          </Button>
+          />
         )}
       </div>
 
@@ -528,19 +626,6 @@ function NewRow({
     onSaved();
   };
 
-  const onKey = (event: ReactKeyboardEvent<HTMLElement>) => {
-    if (event.key === "Tab") return;
-    event.preventDefault();
-    event.stopPropagation();
-    if (event.key === "Escape") {
-      onCancel();
-      return;
-    }
-    const next = keyStringFromEvent(event.nativeEvent, IS_MAC);
-    if (next === null) return;
-    dispatch({ type: "patch", patch: { keyDraft: next, isRecording: false } });
-  };
-
   return (
     <div className="grid grid-cols-[minmax(120px,1.3fr)_minmax(130px,0.9fr)_minmax(100px,0.9fr)_44px] items-center bg-accent/20 px-3 py-2 text-sm">
       <div className="min-w-0 pr-4">
@@ -565,39 +650,57 @@ function NewRow({
 
       <div className="flex min-w-0 items-center gap-2 pr-4">
         {draft.isRecording ? (
-          <div
-            tabIndex={0}
-            autoFocus
-            ref={(node) => node?.focus()}
-            role="textbox"
-            aria-label="Recording shortcut for new binding"
-            onBlur={() =>
+          <RecordingSurface
+            ariaLabel="Recording shortcut for new binding"
+            onCapture={(key) =>
+              dispatch({
+                type: "patch",
+                patch: { keyDraft: key, isRecording: false },
+              })
+            }
+            onExit={() =>
               dispatch({ type: "patch", patch: { isRecording: false } })
             }
-            onKeyDown={onKey}
-            className="flex h-7 min-w-0 flex-1 items-center justify-center rounded-md border border-primary/70 bg-primary/5 px-2 text-[11px] font-medium text-primary"
-          >
-            Press shortcut…
-          </div>
+          />
+        ) : draft.keyDraft.length > 0 ? (
+          <>
+            <div className="inline-flex h-7 min-w-0 items-center gap-1.5 rounded-md border border-primary/40 bg-primary/5 px-1.5">
+              <KeybindingPill value={draft.keyDraft} />
+            </div>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    size="icon-xs"
+                    variant="ghost"
+                    className="text-muted-foreground hover:text-foreground"
+                    onClick={() =>
+                      dispatch({
+                        type: "patch",
+                        patch: { isRecording: true },
+                      })
+                    }
+                    aria-label="Re-record shortcut for new binding"
+                  >
+                    <Pencil className="size-3.5" />
+                  </Button>
+                }
+              />
+              <TooltipPopup side="top">Record again</TooltipPopup>
+            </Tooltip>
+          </>
         ) : (
           <button
             type="button"
             onClick={() =>
               dispatch({ type: "patch", patch: { isRecording: true } })
             }
-            aria-label="Edit shortcut for new binding"
-            className={cn(
-              "group inline-flex h-7 min-w-0 items-center gap-1.5 rounded-md border px-1.5 outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/24",
-              draft.keyDraft.length > 0
-                ? "border-primary/40 bg-primary/5"
-                : "border-border/70 bg-background text-muted-foreground hover:bg-muted/40",
-            )}
+            aria-label="Record shortcut for new binding"
+            className="inline-flex h-7 min-w-0 items-center gap-1.5 rounded-md border border-border/70 bg-background px-2 text-[11px] text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
           >
-            {draft.keyDraft.length > 0 ? (
-              <KeybindingPill value={draft.keyDraft} />
-            ) : (
-              <span className="text-[11px]">Click to record</span>
-            )}
+            <Pencil className="size-3" />
+            Click to record
           </button>
         )}
       </div>
