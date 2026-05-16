@@ -116,14 +116,14 @@ export function ProviderCard({
   return (
     <div
       className={cn(
-        "flex flex-col overflow-hidden rounded-lg border border-border/50 bg-card transition-colors",
+        "group flex flex-col bg-card transition-colors first:rounded-t-xl last:rounded-b-xl",
         !enabled && !unmetSubscriptionRequirement && "opacity-70",
       )}
     >
       <button
         type="button"
         onClick={() => setExpanded((e) => !e)}
-        className="flex w-full items-center gap-3 px-3.5 py-3 text-left transition-colors hover:bg-muted/40"
+        className="flex w-full items-center gap-3 px-3.5 py-3 text-left group-first:rounded-t-xl group-last:rounded-b-xl transition-colors hover:bg-muted/40"
       >
         <span className="flex size-7 shrink-0 items-center justify-center">
           <ProviderIcon providerId={providerId} className="size-5" />

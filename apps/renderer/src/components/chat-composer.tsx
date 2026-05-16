@@ -30,6 +30,7 @@ import {
 
 import { Card, CardPanel } from "~/components/ui/card";
 import { Frame, FrameFooter } from "~/components/ui/frame";
+import { Button } from "~/components/ui/button";
 import {
   composerDoc,
   createComposerView,
@@ -686,14 +687,14 @@ export function ChatComposer({ session }: { session: Session }) {
                   <Tooltip>
                     <TooltipTrigger
                       render={
-                        <button
-                          type="button"
+                        <Button
+                          variant="outline"
+                          size="icon-sm"
                           onClick={() => void interrupt(sessionId)}
                           aria-label="Interrupt"
-                          className="flex size-7 items-center justify-center rounded-md border border-border/60 bg-background text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
                         >
                           <Square className="size-3.5" />
-                        </button>
+                        </Button>
                       }
                     />
                     <TooltipPopup>Interrupt the running turn</TooltipPopup>
@@ -702,15 +703,15 @@ export function ChatComposer({ session }: { session: Session }) {
                   <Tooltip>
                     <TooltipTrigger
                       render={
-                        <button
-                          type="button"
+                        <Button
+                          variant="default"
+                          size="icon-sm"
                           onClick={() => void submit()}
                           disabled={!canSend}
                           aria-label="Send"
-                          className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           <Send className="size-3.5" />
-                        </button>
+                        </Button>
                       }
                     />
                     <TooltipPopup>Send (Enter)</TooltipPopup>

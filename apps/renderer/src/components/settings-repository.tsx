@@ -14,14 +14,14 @@ import { EMPTY_WORKTREES, useWorktreesStore } from "../store/worktrees.ts";
 import { ProviderIcon } from "./provider-icons.tsx";
 import { MODES_ORDER, MODE_META } from "./runtime-mode-meta.ts";
 import {
-  CheckboxField,
-  ModelSelect,
-  OptionCard,
-  OptionGroup,
-  OverrideField,
   PROVIDER_LABEL,
-  Section,
+  RadioCheck,
+  SettingsFrame,
 } from "./settings-page.tsx";
+import { Button } from "./ui/button.tsx";
+import { Card } from "./ui/card.tsx";
+import { Frame, FrameFooter, FrameHeader } from "./ui/frame.tsx";
+import { Switch } from "./ui/switch.tsx";
 
 /**
  * Per-repository settings: provider/model/permission overrides plus
@@ -61,11 +61,11 @@ export function RepositorySettings({ projectId }: { projectId: FolderId }) {
       <ProviderOverrideSection
         defaultProviderId={settings.defaultProviderId}
         defaultModel={settings.defaultModel}
-        onProviderChange={(value) =>
-          void update(projectId, { defaultProviderId: value })
-        }
-        onModelChange={(value) =>
-          void update(projectId, { defaultModel: value })
+        onProviderAndModelChange={(provider, model) =>
+          void update(projectId, {
+            defaultProviderId: provider,
+            defaultModel: model,
+          })
         }
       />
 
@@ -90,57 +90,150 @@ export function RepositorySettings({ projectId }: { projectId: FolderId }) {
 function ProviderOverrideSection({
   defaultProviderId,
   defaultModel,
-  onProviderChange,
-  onModelChange,
+  onProviderAndModelChange,
 }: {
   defaultProviderId: ProviderId | null;
   defaultModel: string | null;
-  onProviderChange: (v: ProviderId | null) => void;
-  onModelChange: (v: string | null) => void;
+  /**
+   * Update provider + model in a single patch. We deliberately don't expose
+   * separate setters: changing only the provider would leave a stale model
+   * id behind, and firing two patches in a row races against the server's
+   * read-then-write so the later response can clobber the earlier one.
+   */
+  onProviderAndModelChange: (
+    provider: ProviderId | null,
+    model: string | null,
+  ) => void;
 }) {
   const globalProviderId = useSettingsStore((s) => s.defaultProviderId);
   const globalModelByProvider = useSettingsStore(
     (s) => s.defaultModelByProvider,
   );
+  const providerEnabled = useSettingsStore((s) => s.providerEnabled);
   const effectiveProvider: ProviderId = defaultProviderId ?? globalProviderId;
   const globalModel = globalModelByProvider[globalProviderId];
   const globalModelLabel =
     MODELS_BY_PROVIDER[globalProviderId].find((m) => m.id === globalModel)
-      ?.label ?? globalModel ?? "—";
+      ?.label ??
+    globalModel ??
+    "—";
   const isOverridden = defaultProviderId !== null || defaultModel !== null;
+
+  // Mirror the global "Default agent" filter: skip providers the user
+  // toggled off, and skip the subscription-gated ones (Grok → SuperGrok
+  // Heavy, Cursor → Cursor Pro) so we don't let the user pick something
+  // that can't actually launch a session.
+  const availableProviders = (
+    ["claude", "codex", "grok", "gemini", "cursor"] as const
+  ).filter((pid) => {
+    if (providerEnabled[pid] === false) return false;
+    if (pid === "grok" || pid === "cursor") return false;
+    return true;
+  });
+
+  const firstModelFor = (pid: ProviderId): string | null =>
+    MODELS_BY_PROVIDER[pid]?.[0]?.id ?? null;
+
+  const onToggle = (next: boolean) => {
+    if (next) {
+      // Turning on: seed override with the currently-effective values so the
+      // user sees the same state, but it's now persisted as a repo override.
+      onProviderAndModelChange(
+        effectiveProvider,
+        globalModelByProvider[effectiveProvider] ??
+          firstModelFor(effectiveProvider),
+      );
+    } else {
+      onProviderAndModelChange(null, null);
+    }
+  };
+
+  const onPickProvider = (pid: ProviderId) => {
+    onProviderAndModelChange(
+      pid,
+      globalModelByProvider[pid] ?? firstModelFor(pid),
+    );
+  };
+
+  const onPickModel = (model: string) => {
+    onProviderAndModelChange(effectiveProvider, model);
+  };
+
   return (
-    <Section
+    <SettingsFrame
       title="Default agent"
+      trailing={<Switch checked={isOverridden} onCheckedChange={onToggle} />}
       description="Override the global default provider and model for new chats in this repo."
+      flush
     >
-      <OverrideField
-        isOverridden={isOverridden}
-        globalLabel={`${PROVIDER_LABEL[globalProviderId]} · ${globalModelLabel}`}
-        onClear={() => {
-          onProviderChange(null);
-          onModelChange(null);
-        }}
-      >
-        <div className="flex flex-col gap-3">
-          <OptionGroup columns={2}>
-            {(["claude", "codex"] as ReadonlyArray<ProviderId>).map((pid) => (
-              <OptionCard
-                key={pid}
-                iconNode={<ProviderIcon providerId={pid} className="size-4" />}
-                title={PROVIDER_LABEL[pid]}
-                active={effectiveProvider === pid}
-                onClick={() => onProviderChange(pid)}
-              />
-            ))}
-          </OptionGroup>
-          <ModelSelect
-            providerId={effectiveProvider}
-            value={defaultModel}
-            onChange={(model) => onModelChange(model)}
-          />
+      {isOverridden ? (
+        <div
+          role="radiogroup"
+          aria-label="Repository default provider"
+          className="flex flex-col divide-y divide-border/40"
+        >
+          {availableProviders.map((pid) => {
+            const selected = effectiveProvider === pid;
+            const models = MODELS_BY_PROVIDER[pid] ?? [];
+            return (
+              <div key={pid} className="flex flex-col">
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  onClick={() => onPickProvider(pid)}
+                  className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40"
+                >
+                  <ProviderIcon providerId={pid} className="size-4 shrink-0" />
+                  <span className="flex-1 truncate text-sm font-medium text-foreground">
+                    {PROVIDER_LABEL[pid]}
+                  </span>
+                  <RadioCheck active={selected} />
+                </button>
+                {selected && models.length > 0 && (
+                  <div className="flex flex-col gap-1.5 px-4 pb-3 pl-11">
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">
+                      Model
+                    </span>
+                    <div
+                      role="radiogroup"
+                      aria-label={`Model for ${PROVIDER_LABEL[pid]}`}
+                      className="flex flex-col"
+                    >
+                      {models.map((m) => {
+                        const isCurrentModel = defaultModel === m.id;
+                        return (
+                          <button
+                            key={m.id}
+                            type="button"
+                            role="radio"
+                            aria-checked={isCurrentModel}
+                            onClick={() => onPickModel(m.id)}
+                            className="group flex items-center gap-3 py-1.5 text-left"
+                          >
+                            <RadioCheck active={isCurrentModel} />
+                            <span className="text-sm text-foreground">
+                              {m.label}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
-      </OverrideField>
-    </Section>
+      ) : (
+        <p className="px-4 py-3 text-sm text-muted-foreground">
+          Inheriting{" "}
+          <span className="text-foreground">
+            {PROVIDER_LABEL[globalProviderId]} · {globalModelLabel}
+          </span>
+        </p>
+      )}
+    </SettingsFrame>
   );
 }
 
@@ -153,33 +246,57 @@ function RuntimeModeOverrideSection({
 }) {
   const globalMode = useSettingsStore((s) => s.defaultRuntimeMode);
   const effective = currentValue ?? globalMode;
+  const isOverridden = currentValue !== null;
+  const onToggle = (next: boolean) => {
+    if (next) onChange(globalMode);
+    else onChange(null);
+  };
   return (
-    <Section
+    <SettingsFrame
       title="Default permission mode"
+      trailing={<Switch checked={isOverridden} onCheckedChange={onToggle} />}
       description="Override the global permission posture for new chats in this repo."
+      flush
     >
-      <OverrideField
-        isOverridden={currentValue !== null}
-        globalLabel={MODE_META[globalMode].label}
-        onClear={() => onChange(null)}
-      >
-        <OptionGroup>
+      {isOverridden ? (
+        <div
+          role="radiogroup"
+          aria-label="Repository default permission mode"
+          className="flex flex-col divide-y divide-border/40"
+        >
           {MODES_ORDER.map((mode) => {
             const m = MODE_META[mode];
+            const selected = effective === mode;
             return (
-              <OptionCard
+              <button
                 key={mode}
-                icon={m.Icon}
-                title={m.label}
-                description={m.description}
-                active={effective === mode}
+                type="button"
+                role="radio"
+                aria-checked={selected}
                 onClick={() => onChange(mode)}
-              />
+                className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40"
+              >
+                <m.Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span className="text-sm font-medium text-foreground">
+                    {m.label}
+                  </span>
+                  <span className="text-xs leading-snug text-muted-foreground">
+                    {m.description}
+                  </span>
+                </span>
+                <RadioCheck active={selected} className="mt-0.5" />
+              </button>
             );
           })}
-        </OptionGroup>
-      </OverrideField>
-    </Section>
+        </div>
+      ) : (
+        <p className="px-4 py-3 text-sm text-muted-foreground">
+          Inheriting{" "}
+          <span className="text-foreground">{MODE_META[globalMode].label}</span>
+        </p>
+      )}
+    </SettingsFrame>
   );
 }
 
@@ -235,89 +352,107 @@ function WorktreeSection({
   };
 
   return (
-    <Section
-      title="Worktrees"
-      description="Git worktrees for this repo. Each lives under .memoize/repo-worktree/ on disk."
-    >
-      <div className="flex flex-col gap-3">
-        <CheckboxField
-          checked={autoCreate}
-          onChange={onAutoCreateChange}
-          label="Auto-create a worktree for new chats"
-          description='When on, the composer&apos;s workspace picker pre-selects a fresh worktree. You can still flip back to "Current checkout" before sending the first message.'
-        />
+    <>
+      <SettingsFrame
+        title="Auto-create a worktree for new chats"
+        trailing={
+          <Switch
+            checked={autoCreate}
+            onCheckedChange={onAutoCreateChange}
+          />
+        }
+        description={`When on, the composer's workspace picker pre-selects a fresh worktree. You can still flip back to "Current checkout" before sending the first message.`}
+      />
 
-        {sorted.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-border/50 px-3 py-6 text-center text-xs text-muted-foreground">
-            No worktrees yet. Memoize creates one for you when you start a new
-            chat.
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-0.5 rounded-lg border border-border/50 p-1.5">
-            {sorted.map((wt) => (
-              <li
-                key={wt.id}
-                className="grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-md px-2.5 py-2 transition-colors hover:bg-muted/40"
-              >
-                <GitBranch className="size-4 shrink-0 text-muted-foreground" />
-                <div
-                  className="flex min-w-0 flex-col gap-0.5"
-                  title={wt.path}
+      <Frame>
+        <FrameHeader className="flex flex-row items-center justify-between px-2 py-2 w-full">
+          <p className="text-sm font-semibold text-foreground">Worktrees</p>
+          <span className="text-[11px] text-muted-foreground/80">
+            {sorted.length} {sorted.length === 1 ? "worktree" : "worktrees"}
+          </span>
+        </FrameHeader>
+
+        <Card>
+          {sorted.length === 0 ? (
+            <p className="px-4 py-8 text-center text-xs text-muted-foreground">
+              No worktrees yet. Nuuk creates one for you when you start a new
+              chat.
+            </p>
+          ) : (
+            <ul className="flex flex-col divide-y divide-border/40">
+              {sorted.map((wt) => (
+                <li
+                  key={wt.id}
+                  className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/20"
                 >
-                  <span className="truncate text-sm font-medium text-foreground">
-                    {wt.name}
-                  </span>
-                  <span className="truncate font-mono text-[11px] text-muted-foreground">
-                    {wt.branch}
-                    <span className="text-muted-foreground/60">
-                      {" "}
-                      · off {wt.baseBranch}
-                    </span>
-                  </span>
-                </div>
-                {pendingDirty === wt.name ? (
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => void onRemove(wt.id, wt.name, true)}
-                      className="rounded-md border border-red-500/40 bg-red-500/10 px-2 py-1 text-[11px] text-red-400 transition-colors hover:bg-red-500/20"
-                    >
-                      Force remove
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPendingDirty(null)}
-                      className="rounded-md border border-border/50 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted/40"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => void onRemove(wt.id, wt.name, false)}
-                    className="flex items-center gap-1 rounded-md border border-border/50 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
-                    title="Remove this worktree from disk (branch stays)"
+                  <GitBranch className="size-4 shrink-0 text-muted-foreground" />
+                  <div
+                    className="flex min-w-0 flex-col gap-0.5"
+                    title={wt.path}
                   >
-                    <Trash2 className="size-3" />
-                    Remove
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
+                    <span className="truncate text-sm font-medium text-foreground">
+                      {wt.name}
+                    </span>
+                    <span className="truncate font-mono text-[11px] text-muted-foreground">
+                      {wt.branch}
+                      <span className="text-muted-foreground/60">
+                        {" "}
+                        · off {wt.baseBranch}
+                      </span>
+                    </span>
+                  </div>
+                  {pendingDirty === wt.name ? (
+                    <div className="flex items-center gap-1.5">
+                      <Button
+                        variant="destructive-outline"
+                        size="sm"
+                        onClick={() => void onRemove(wt.id, wt.name, true)}
+                      >
+                        Force remove
+                      </Button>
+                      <Button
+                        variant="settings"
+                        size="sm"
+                        onClick={() => setPendingDirty(null)}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      variant="settings"
+                      size="sm"
+                      onClick={() => void onRemove(wt.id, wt.name, false)}
+                      title="Remove this worktree from disk (branch stays)"
+                    >
+                      <Trash2 className="size-3" />
+                      Remove
+                    </Button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
 
-        {pendingDirty !== null && (
-          <p className="text-xs text-amber-400">
-            {pendingDirty} has uncommitted changes. Force-remove to discard
-            them.
-          </p>
-        )}
-        {pendingError !== null && (
-          <p className="text-xs text-red-400">{pendingError}</p>
-        )}
-      </div>
-    </Section>
+        <FrameFooter className="px-2 py-1 w-full">
+          {pendingDirty !== null ? (
+            <p className="text-xs leading-relaxed text-amber-400">
+              {pendingDirty} has uncommitted changes. Force-remove to discard
+              them.
+            </p>
+          ) : pendingError !== null ? (
+            <p className="text-xs leading-relaxed text-red-400">
+              {pendingError}
+            </p>
+          ) : (
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Git worktrees for this repo. Each lives under
+              .nuuk/repo-worktree/ on disk.
+            </p>
+          )}
+        </FrameFooter>
+      </Frame>
+    </>
   );
 }

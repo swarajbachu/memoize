@@ -29,6 +29,8 @@ import {
 } from "../../lib/default-keybindings";
 import { useKeybindingsStore } from "../../store/keybindings";
 import { Button } from "../ui/button";
+import { Card } from "../ui/card";
+import { Frame, FrameFooter, FrameHeader } from "../ui/frame";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import {
   Select,
@@ -242,89 +244,91 @@ export function KeybindingsEditor() {
   }, [rows, query]);
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-col gap-1">
-          <h2 className="text-sm font-medium text-foreground">
-            Keyboard shortcuts
-          </h2>
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            Click the pencil on any row to record a new chord. Bindings
-            persist to{" "}
-            <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
-              keybindings.json
-            </code>{" "}
-            in your app data folder; hand-edit there for advanced
-            scoping.
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <ExpandableSearch
-            query={query}
-            onQueryChange={setQuery}
-            isOpen={searchOpen}
-            onOpenChange={setSearchOpen}
-            inputRef={searchRef}
-            countLabel={`${rows.length} bindings`}
-          />
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  size="icon-xs"
-                  variant="ghost"
-                  className="text-muted-foreground hover:text-foreground"
-                  onClick={() => setIsAdding(true)}
-                  disabled={isAdding}
-                  aria-label="Add keybinding"
-                >
-                  <Plus className="size-3.5" />
-                </Button>
-              }
-            />
-            <TooltipPopup side="top">Add keybinding</TooltipPopup>
-          </Tooltip>
-        </div>
-      </div>
-
+    <div className="flex flex-col gap-4">
       {error !== null && (
         <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
           Failed to load keybindings: {error}
         </div>
       )}
 
-      <div className="overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm/4">
-        <div className="grid grid-cols-[minmax(140px,1fr)_minmax(200px,1.2fr)_44px] border-b border-border/70 bg-muted/25 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">
-          <div>Command</div>
-          <div>Keybinding</div>
-          <div className="text-right">Status</div>
-        </div>
-        <div className="divide-y divide-border/60">
-          {!loaded && (
-            <div className="px-4 py-12 text-center text-sm text-muted-foreground">
-              Loading…
-            </div>
-          )}
-          {loaded && filtered.length === 0 && !isAdding && (
-            <div className="px-4 py-12 text-center text-sm text-muted-foreground">
-              {query.trim().length > 0
-                ? "No keybindings match your search."
-                : "No keybindings."}
-            </div>
-          )}
-          {filtered.map((row) => (
-            <RowEditor key={row.id} row={row} allRows={rows} />
-          ))}
-          {isAdding && (
-            <NewRow
-              allRows={rows}
-              onCancel={() => setIsAdding(false)}
-              onSaved={() => setIsAdding(false)}
+      <Frame>
+        <FrameHeader className="flex flex-row items-center justify-between px-2 py-2 w-full">
+          <p className="text-sm font-semibold text-foreground">
+            Keyboard shortcuts
+          </p>
+          <div className="flex items-center gap-1.5">
+            <ExpandableSearch
+              query={query}
+              onQueryChange={setQuery}
+              isOpen={searchOpen}
+              onOpenChange={setSearchOpen}
+              inputRef={searchRef}
+              countLabel={`${rows.length} bindings`}
             />
-          )}
-        </div>
-      </div>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    size="icon-xs"
+                    variant="ghost"
+                    className="text-muted-foreground hover:text-foreground"
+                    onClick={() => setIsAdding(true)}
+                    disabled={isAdding}
+                    aria-label="Add keybinding"
+                  >
+                    <Plus className="size-3.5" />
+                  </Button>
+                }
+              />
+              <TooltipPopup side="top">Add keybinding</TooltipPopup>
+            </Tooltip>
+          </div>
+        </FrameHeader>
+
+        <Card>
+          <div className="grid grid-cols-[minmax(140px,1fr)_minmax(200px,1.2fr)_44px] border-b border-border/40 bg-muted/25 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">
+            <div>Command</div>
+            <div>Keybinding</div>
+            <div className="text-right">Status</div>
+          </div>
+          <div className="divide-y divide-border/40">
+            {!loaded && (
+              <div className="px-4 py-12 text-center text-sm text-muted-foreground">
+                Loading…
+              </div>
+            )}
+            {loaded && filtered.length === 0 && !isAdding && (
+              <div className="px-4 py-12 text-center text-sm text-muted-foreground">
+                {query.trim().length > 0
+                  ? "No keybindings match your search."
+                  : "No keybindings."}
+              </div>
+            )}
+            {filtered.map((row) => (
+              <RowEditor key={row.id} row={row} allRows={rows} />
+            ))}
+            {isAdding && (
+              <NewRow
+                allRows={rows}
+                onCancel={() => setIsAdding(false)}
+                onSaved={() => setIsAdding(false)}
+              />
+            )}
+          </div>
+        </Card>
+
+        <FrameFooter className="px-2 py-1 w-full">
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Click the pencil on any row to record a new chord. Bindings persist
+            to{" "}
+            <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
+              keybindings.json
+            </code>{" "}
+            in your app data folder; hand-edit there for advanced scoping.
+          </p>
+        </FrameFooter>
+      </Frame>
 
       <ResetAllFooter />
     </div>
@@ -779,7 +783,7 @@ function ResetAllFooter() {
       <span className="text-muted-foreground">
         {userRulesCount} custom rule{userRulesCount === 1 ? "" : "s"} active.
       </span>
-      <Button variant="outline" size="sm" onClick={() => void resetAll()}>
+      <Button variant="settings" size="sm" onClick={() => void resetAll()}>
         Reset all to defaults
       </Button>
     </div>
