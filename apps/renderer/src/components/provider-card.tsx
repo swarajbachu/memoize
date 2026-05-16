@@ -60,6 +60,7 @@ const SUBSCRIPTION_INFO: Partial<
   Record<ProviderId, { readonly plan: string; readonly url: string }>
 > = {
   grok: { plan: "SuperGrok Heavy", url: "https://grok.com/#subscribe" },
+  cursor: { plan: "Cursor Pro", url: "https://cursor.com/pricing" },
 };
 
 export function ProviderCard({
