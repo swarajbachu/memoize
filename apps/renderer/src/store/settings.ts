@@ -25,11 +25,27 @@ import { getRpcClient } from "../lib/rpc-client";
 const DEFAULT_PROVIDER: ProviderId = "claude";
 const DEFAULT_RUNTIME_MODE: RuntimeMode = "approval-required";
 
+const PROVIDER_IDS: ReadonlyArray<ProviderId> = [
+  "claude",
+  "codex",
+  "grok",
+  "cursor",
+  "gemini",
+];
+
 const seedModels = (): Record<ProviderId, string> => ({
   claude: defaultModelFor("claude"),
   codex: defaultModelFor("codex"),
   grok: defaultModelFor("grok"),
+  cursor: defaultModelFor("cursor"),
+  gemini: defaultModelFor("gemini"),
 });
+
+const seedProviderEnabled = (): Record<ProviderId, boolean> => {
+  const out = {} as Record<ProviderId, boolean>;
+  for (const id of PROVIDER_IDS) out[id] = true;
+  return out;
+};
 
 const OLD_SETTINGS_KEY = "memoize.settings.v1";
 const OLD_SUBAGENTS_KEY = "memoize.subagents";
@@ -40,6 +56,7 @@ const fallbackSnapshot = (): SettingsSlice => ({
   defaultRuntimeMode: DEFAULT_RUNTIME_MODE,
   defaultAutoCreateWorktree: false,
   onboardingCompleted: false,
+  providerEnabled: seedProviderEnabled(),
 });
 
 const sliceFromFile = (file: SettingsFile): SettingsSlice => {
@@ -58,6 +75,10 @@ const sliceFromFile = (file: SettingsFile): SettingsSlice => {
     defaultRuntimeMode: file.defaultRuntimeMode,
     defaultAutoCreateWorktree: file.defaultAutoCreateWorktree,
     onboardingCompleted: file.onboardingCompleted,
+    providerEnabled: {
+      ...seedProviderEnabled(),
+      ...file.providerEnabled,
+    },
   };
 };
 
@@ -67,6 +88,7 @@ interface SettingsSlice {
   readonly defaultRuntimeMode: RuntimeMode;
   readonly defaultAutoCreateWorktree: boolean;
   readonly onboardingCompleted: boolean;
+  readonly providerEnabled: Record<ProviderId, boolean>;
 }
 
 type SettingsState = SettingsSlice & {
@@ -79,6 +101,7 @@ type SettingsState = SettingsSlice & {
   readonly setDefaultRuntimeMode: (mode: RuntimeMode) => void;
   readonly setDefaultAutoCreateWorktree: (value: boolean) => void;
   readonly setOnboardingCompleted: (value: boolean) => void;
+  readonly setProviderEnabled: (providerId: ProviderId, value: boolean) => void;
 };
 
 let streamFiber: Fiber.RuntimeFiber<unknown, unknown> | null = null;
@@ -191,6 +214,16 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const client = await getRpcClient();
       await Effect.runPromise(
         client.settings.update({ patch: { onboardingCompleted: value } }),
+      );
+    })();
+  },
+  setProviderEnabled: (providerId, value) => {
+    const next = { ...get().providerEnabled, [providerId]: value };
+    set({ providerEnabled: next });
+    void (async () => {
+      const client = await getRpcClient();
+      await Effect.runPromise(
+        client.settings.update({ patch: { providerEnabled: next } }),
       );
     })();
   },

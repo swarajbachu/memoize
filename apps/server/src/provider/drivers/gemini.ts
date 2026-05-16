@@ -16,18 +16,20 @@ import {
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
 
 /**
- * Live-only handle for one Grok conversation. Mirrors Codex/Claude handle
- * shape so `ProviderService` routes RPCs without caring which provider
+ * Live-only handle for one Gemini conversation. Mirrors the Grok/Codex/Claude
+ * handle shape so `ProviderService` routes RPCs without caring which provider
  * backs the session.
  *
- * Grok has no embeddable JS SDK; instead we drive it via ACP — the agent
- * runs as `grok agent stdio`, a JSON-RPC server on stdin/stdout. One
- * persistent child per session (Claude-style), not one spawn per turn
- * (Codex-style). The conversation is identified by an ACP-minted
- * `sessionId` returned from `session/new`; we surface that as a
- * `SessionCursor { strategy: "grok-session-id" }` so it persists.
+ * Google's `@google/gemini-cli` exposes an ACP server via
+ * `gemini --experimental-acp` — the exact same JSON-RPC protocol Grok uses.
+ * One persistent child per session (Claude-style), not one spawn per turn
+ * (Codex-style). The conversation is identified by an ACP-minted `sessionId`
+ * returned from `session/new`; we surface that as a
+ * `SessionCursor { strategy: "grok-session-id" }` (intentional shared label —
+ * the persistence shape is identical to Grok's; renaming the literal would
+ * be a migration of its own).
  */
-export interface GrokSessionHandle {
+export interface GeminiSessionHandle {
   readonly events: Stream.Stream<AgentEvent>;
   readonly send: (
     text: string,
@@ -43,8 +45,8 @@ export interface GrokSessionHandle {
    */
   readonly setPermissionMode: (mode: PermissionMode) => Effect.Effect<void>;
   /**
-   * No ACP `UserQuestion` primitive yet — match Codex/Grok-headless and
-   * stay a no-op so RPC routing remains uniform.
+   * No ACP `UserQuestion` primitive yet — match Grok and stay a no-op so
+   * RPC routing remains uniform.
    */
   readonly answerQuestion: (
     itemId: AgentItemId,
@@ -60,7 +62,7 @@ const nextItemId = (): AgentItemId =>
  * Translate one ACP `session/update` payload into zero or more
  * `AgentEvent`s. The ACP v1 spec uses `"sessionUpdate"` as the
  * discriminator but the ResponseItem shape (v2+) uses `"type"` — we
- * check both so either format works.
+ * check both so either format works with Gemini's evolving ACP impl.
  *
  * ACP v1 sessionUpdate values:
  *   agent_message_chunk, agent_thought_chunk, thinking_chunk,
@@ -131,11 +133,13 @@ const translateSessionUpdate = (update: unknown): ReadonlyArray<AgentEvent> => {
       ? (u["tool"] as string)
       : typeof u["name"] === "string"
         ? (u["name"] as string)
-        : typeof u["execution"] === "string"
-          ? (u["execution"] as string)
-          : typeof u["command"] === "string"
-            ? (u["command"] as string)
-            : "tool";
+        : typeof u["kind"] === "string"
+          ? (u["kind"] as string)
+          : typeof u["execution"] === "string"
+            ? (u["execution"] as string)
+            : typeof u["command"] === "string"
+              ? (u["command"] as string)
+              : "tool";
   };
 
   const extractInput = (): unknown => {
@@ -152,6 +156,11 @@ const translateSessionUpdate = (update: unknown): ReadonlyArray<AgentEvent> => {
       return a;
     }
     if (u["command"] !== undefined) return { command: u["command"] };
+    if (u["cmd"] !== undefined) return { command: u["cmd"] };
+    if (Array.isArray(u["locations"]) && u["locations"].length > 0) {
+      const loc = (u["locations"] as Array<Record<string, unknown>>)[0];
+      if (loc !== undefined && typeof loc["path"] === "string") return { path: loc["path"] };
+    }
     return null;
   };
 
@@ -166,6 +175,53 @@ const translateSessionUpdate = (update: unknown): ReadonlyArray<AgentEvent> => {
     if (u["content"] !== undefined) return u["content"];
     if (u["result"] !== undefined) return u["result"];
     return null;
+  };
+
+  const normalizeGeminiTool = (rawKind: string): string => {
+    switch (rawKind) {
+      case "read": return "Read";
+      case "bash": return "Bash";
+      case "edit": return "Edit";
+      case "write": return "Write";
+      case "grep": return "Grep";
+      case "glob": return "Glob";
+      case "search": return "WebSearch";
+      case "fetch": return "WebFetch";
+      default: return rawKind.charAt(0).toUpperCase() + rawKind.slice(1);
+    }
+  };
+
+  const buildGeminiInput = (u: Record<string, unknown>, geminiKind: string | null): unknown => {
+    const input: Record<string, unknown> = {};
+    if (typeof u["title"] === "string") {
+      input["description"] = u["title"];
+    }
+    switch (geminiKind) {
+      case "read":
+      case "edit":
+      case "write": {
+        const locations = u["locations"];
+        if (Array.isArray(locations) && locations.length > 0) {
+          const loc = locations[0];
+          if (loc !== null && typeof loc === "object" && typeof (loc as Record<string, unknown>)["path"] === "string") {
+            input["file_path"] = (loc as Record<string, unknown>)["path"];
+          }
+        }
+        break;
+      }
+      case "bash": {
+        if (typeof u["command"] === "string") input["command"] = u["command"];
+        else if (typeof u["cmd"] === "string") input["command"] = u["cmd"];
+        break;
+      }
+      case "grep":
+      case "glob": {
+        if (typeof u["pattern"] === "string") input["pattern"] = u["pattern"];
+        if (typeof u["path"] === "string") input["path"] = u["path"];
+        break;
+      }
+    }
+    return Object.keys(input).length > 0 ? input : null;
   };
 
   switch (kind) {
@@ -201,41 +257,39 @@ const translateSessionUpdate = (update: unknown): ReadonlyArray<AgentEvent> => {
     }
     case "tool_call":
     case "tool_use":
-    case "tool_call_update":
     case "function_call":
     case "custom_tool_call":
     case "tool_search_call":
     case "local_shell_call":
     case "web_search_call":
     case "image_generation_call": {
-      if (GROK_RPC_TRACE) {
-        process.stderr.write(
-          `[grok.translate.tool] kind=${kind} payload=${JSON.stringify(u).slice(0, 4096)}\n`,
-        );
-      }
-      const toolUse = {
-        _tag: "ToolUse" as const,
-        itemId: extractCallId(),
-        tool: extractToolName(),
-        input: extractInput(),
-      };
-      if (GROK_RPC_TRACE) {
-        process.stderr.write(
-          `[grok.translate.tool] → ToolUse itemId=${toolUse.itemId} tool=${toolUse.tool} input=${JSON.stringify(toolUse.input).slice(0, 2048)}\n`,
-        );
-      }
-      return [toolUse];
+      const geminiToolKind = typeof u["kind"] === "string" ? (u["kind"] as string) : null;
+      if (geminiToolKind === "think") return [];
+      const toolName = geminiToolKind !== null ? normalizeGeminiTool(geminiToolKind) : extractToolName();
+      const input = geminiToolKind !== null ? buildGeminiInput(u, geminiToolKind) : extractInput();
+      console.log(
+        `[gemini.translate.tool] initCallId=${extractCallId()} tool=${toolName} input=${JSON.stringify(input).slice(0, 2048)}`,
+      );
+      return [
+        {
+          _tag: "ToolUse" as const,
+          itemId: extractCallId(),
+          tool: toolName,
+          input,
+        },
+      ];
     }
+    case "tool_call_update":
+    case "available_commands_update":
+      return [];
     case "tool_result":
     case "tool_output":
     case "function_call_output":
     case "custom_tool_call_output":
     case "tool_search_output": {
-      if (GROK_RPC_TRACE) {
-        process.stderr.write(
-          `[grok.translate.result] kind=${kind} payload=${JSON.stringify(u).slice(0, 4096)}\n`,
-        );
-      }
+      console.log(
+        `[gemini.translate.result] kind=${kind} raw=${JSON.stringify(u).slice(0, 4096)}`,
+      );
       const isError = u["isError"] === true || u["is_error"] === true;
       const toolResult = {
         _tag: "ToolResult" as const,
@@ -243,18 +297,13 @@ const translateSessionUpdate = (update: unknown): ReadonlyArray<AgentEvent> => {
         output: extractOutput(),
         isError,
       };
-      if (GROK_RPC_TRACE) {
-        process.stderr.write(
-          `[grok.translate.result] → ToolResult itemId=${toolResult.itemId} output=${JSON.stringify(toolResult.output).slice(0, 2048)}\n`,
-        );
-      }
+      console.log(
+        `[gemini.translate.result] → ToolResult itemId=${toolResult.itemId} output=${JSON.stringify(toolResult.output).slice(0, 2048)}`,
+      );
       return [toolResult];
     }
     case "error":
     case "agent_error": {
-      // Pull useful detail from multiple possible fields. ACP doesn't
-      // pin the error payload shape, and grok itself sometimes nests the
-      // real reason under `data`/`details`/`error`.
       const detail =
         typeof u["message"] === "string" && (u["message"] as string).length > 0
           ? (u["message"] as string)
@@ -272,10 +321,10 @@ const translateSessionUpdate = (update: unknown): ReadonlyArray<AgentEvent> => {
               try {
                 const serialized = JSON.stringify(u);
                 return serialized === "{}"
-                  ? "Grok agent reported an error with no detail."
-                  : `Grok agent error: ${serialized}`;
+                  ? "Gemini agent reported an error with no detail."
+                  : `Gemini agent error: ${serialized}`;
               } catch {
-                return "Grok agent reported an error.";
+                return "Gemini agent reported an error.";
               }
             })();
       return [{ _tag: "Error", message }];
@@ -284,7 +333,7 @@ const translateSessionUpdate = (update: unknown): ReadonlyArray<AgentEvent> => {
       return [];
     default:
       console.warn(
-        `[grok.translate] unknown sessionUpdate/type=${kind} payload=${((): string => {
+        `[gemini.translate] unknown sessionUpdate/type=${kind} payload=${((): string => {
           try {
             const s = JSON.stringify(u).slice(0, 2048);
             return s.length > 0 ? s : "(empty)";
@@ -316,23 +365,28 @@ type PendingResolver = {
   timer: NodeJS.Timeout;
 };
 
-const GROK_RPC_TRACE = process.env.MEMOIZE_DEBUG_GROK === "1";
+const GEMINI_RPC_TRACE = process.env.MEMOIZE_DEBUG_GEMINI === "1";
 
-/**
- * Build a human-readable error from a JSON-RPC error envelope. ACP servers
- * commonly stash the real failure in `error.data` and leave `error.message`
- * as a generic "Internal error" — surfacing only `error.message` would
- * leave the user staring at "Internal error" with no clue what broke
- * (auth failure, missing model entitlement, network, etc.).
- *
- * `stderrTail` is the trailing chunk of grok's stderr captured during this
- * session; when the JSON-RPC envelope is empty (literally no message/data),
- * stderr is often the only signal we have about what actually went wrong
- * — e.g. xAI auth errors print to stderr before the server replies.
- */
+const formatGeminiDiagnostics = (diagnostics: string): string => {
+  const trimmed = diagnostics.trim();
+  if (trimmed.length === 0) return trimmed;
+  if (
+    /Unknown arguments?:.*(?:experimental-acp|experimentalAcp|acp)/is.test(
+      trimmed,
+    )
+  ) {
+    return [
+      "Installed Gemini CLI does not support ACP mode (`gemini --experimental-acp`).",
+      "Upgrade Gemini CLI with `npm i -g @google/gemini-cli@latest`, then restart memoize.",
+    ].join("\n");
+  }
+  return trimmed;
+};
+
 const formatRpcError = (
   err: JsonRpcError,
-  stderrTail: string,
+  diagnosticTail: string,
+  rawEnvelope?: string,
 ): string => {
   const parts: string[] = [];
   if (typeof err.message === "string" && err.message.length > 0) {
@@ -366,33 +420,40 @@ const formatRpcError = (
     }
   }
   if (parts.length === 0) {
-    const trimmedStderr = stderrTail.trim();
-    if (trimmedStderr.length > 0) parts.push(trimmedStderr);
-    else parts.push("Grok ACP returned an error with no detail.");
+    const trimmedDiagnostics = formatGeminiDiagnostics(diagnosticTail);
+    if (trimmedDiagnostics.length > 0) parts.push(trimmedDiagnostics);
+    else parts.push("Gemini ACP returned an error with no detail.");
   }
   if (typeof err.code === "number") parts.push(`(code ${err.code})`);
+  const trimmedDiagnostics = formatGeminiDiagnostics(diagnosticTail);
+  if (trimmedDiagnostics.length > 0 && parts.every((p) => p !== trimmedDiagnostics)) {
+    parts.push(`Diagnostics:\n${trimmedDiagnostics}`);
+  }
+  if (rawEnvelope !== undefined && rawEnvelope.length > 0) {
+    parts.push(`Raw JSON-RPC error:\n${rawEnvelope}`);
+  }
   return parts.join(" — ");
 };
 
 /**
- * Spin up a Grok conversation backed by a persistent ACP child process.
+ * Spin up a Gemini conversation backed by a persistent ACP child process.
  * The handshake (`initialize` → `authenticate` → `session/new`) runs once
  * synchronously inside `start()`; auth or transport failures surface there
  * so the orchestrator can fail the session-create RPC cleanly.
  *
- * `apiKey` is forwarded as `GROK_CODE_XAI_API_KEY` on the child env. When
- * null the child reads cached credentials from `~/.grok/` (browser-OAuth
- * `grok login` flow). `xai.api_key` auth method is preferred when a key
- * is set; otherwise `cached_token`.
+ * `apiKey` is forwarded as `GEMINI_API_KEY` on the child env. When null,
+ * the CLI falls back to cached OAuth credentials under `~/.gemini/` (run
+ * `gemini` interactively to sign in). We prefer the API-key auth method
+ * when a key is set; otherwise `oauth-personal` / `cached_token`.
  */
-export const startGrokSession = (
+export const startGeminiSession = (
   input: StartSessionInput,
   cwd: string,
   apiKey: string | null,
-  grokPath: string,
+  geminiPath: string,
   sessionId: AgentSessionId,
   resumeCursor: string | null = null,
-): Effect.Effect<GrokSessionHandle, AgentSessionStartError, AttachmentService> =>
+): Effect.Effect<GeminiSessionHandle, AgentSessionStartError, AttachmentService> =>
   Effect.gen(function* () {
     // Keep AttachmentService in the requirement set so layer wiring stays
     // uniform with the other drivers; attachments themselves are not yet
@@ -406,24 +467,34 @@ export const startGrokSession = (
     let closed = false;
     let inflight: Promise<void> = Promise.resolve();
     const pending = new Map<number, PendingResolver>();
-    // Trailing window of grok's stderr — used to enrich error reports when
-    // the JSON-RPC envelope itself is opaque ("Internal error" with no data).
     let stderrTail = "";
+    let stdoutNoiseTail = "";
+
+    const diagnosticTail = (): string => {
+      const parts: string[] = [];
+      const trimmedStderr = stderrTail.trim();
+      const trimmedStdout = stdoutNoiseTail.trim();
+      if (trimmedStderr.length > 0) parts.push(`stderr:\n${trimmedStderr}`);
+      if (trimmedStdout.length > 0) {
+        parts.push(`non-JSON stdout:\n${trimmedStdout}`);
+      }
+      return parts.join("\n\n");
+    };
 
     events.unsafeOffer({
       _tag: "Started",
       sessionId,
-      providerId: "grok",
+      providerId: "gemini",
       mode: "sdk",
     });
 
     let child: ChildProcessWithoutNullStreams;
     try {
-      child = spawn(grokPath, ["agent", "stdio"], {
+      child = spawn(geminiPath, ["--experimental-acp"], {
         cwd,
         env: {
           ...process.env,
-          ...(apiKey !== null ? { GROK_CODE_XAI_API_KEY: apiKey } : {}),
+          ...(apiKey !== null ? { GEMINI_API_KEY: apiKey } : {}),
         },
         stdio: ["pipe", "pipe", "pipe"],
       });
@@ -431,7 +502,7 @@ export const startGrokSession = (
       yield* events.end;
       return yield* Effect.fail(
         new AgentSessionStartError({
-          providerId: "grok",
+          providerId: "gemini",
           reason: cause instanceof Error ? cause.message : String(cause),
         }),
       );
@@ -444,7 +515,7 @@ export const startGrokSession = (
     const writeMessage = (msg: Record<string, unknown>): void => {
       if (!child.stdin.writable) return;
       const line = JSON.stringify(msg);
-      if (GROK_RPC_TRACE) process.stderr.write(`[grok.rpc.send] ${line}\n`);
+      if (GEMINI_RPC_TRACE) process.stderr.write(`[gemini.rpc.send] ${line}\n`);
       child.stdin.write(`${line}\n`);
     };
 
@@ -457,12 +528,11 @@ export const startGrokSession = (
       return new Promise<unknown>((resolve, reject) => {
         const timer = setTimeout(() => {
           pending.delete(id);
-          const trimmedStderr = stderrTail.trim();
-          const detail =
-            trimmedStderr.length > 0 ? ` — stderr: ${trimmedStderr}` : "";
+          const diagnostics = formatGeminiDiagnostics(diagnosticTail());
+          const detail = diagnostics.length > 0 ? ` — ${diagnostics}` : "";
           reject(
             new Error(
-              `Grok ACP ${method} timed out after ${timeoutMs}ms${detail}`,
+              `Gemini ACP ${method} timed out after ${timeoutMs}ms${detail}`,
             ),
           );
         }, timeoutMs);
@@ -477,19 +547,22 @@ export const startGrokSession = (
 
     rl.on("line", (line: string) => {
       if (line.trim().length === 0) return;
-      if (GROK_RPC_TRACE) process.stderr.write(`[grok.rpc.recv] ${line}\n`);
+      if (GEMINI_RPC_TRACE) process.stderr.write(`[gemini.rpc.recv] ${line}\n`);
       let parsed: unknown;
       try {
         parsed = JSON.parse(line);
       } catch {
-        // Non-JSON line on stdout (e.g. a tracing log leak). Drop silently
-        // — assistant text rides typed `session/update` notifications.
+        // Known issue: Gemini CLI sometimes emits plain text to stdout
+        // alongside the JSON-RPC stream (google-gemini/gemini-cli#22647).
+        // Log to stderr so the leak is visible during debugging, but don't
+        // abort — assistant content rides typed `session/update` frames.
+        stdoutNoiseTail = (stdoutNoiseTail + `${line}\n`).slice(-4096);
+        process.stderr.write(`[gemini.stdout.nonjson] ${line}\n`);
         return;
       }
       if (parsed === null || typeof parsed !== "object") return;
       const msg = parsed as JsonRpcMessage;
 
-      // Notifications and server→client requests both carry `method`.
       if (typeof msg.method === "string") {
         if (msg.method === "session/update") {
           const update = msg.params?.update;
@@ -501,20 +574,14 @@ export const startGrokSession = (
           return;
         }
         if (msg.id !== undefined) {
-          // Server→client request. Permission prompts likely land here once
-          // ACP spec is verified; for now log and ignore so the turn either
-          // proceeds or times out grok-side. Wiring to PermissionService is
-          // an open follow-up.
           console.warn(
-            `[grok.rpc] unhandled server→client request method=${msg.method} id=${msg.id}`,
+            `[gemini.rpc] unhandled server→client request method=${msg.method} id=${msg.id}`,
           );
           return;
         }
-        // Unknown notification — drop.
         return;
       }
 
-      // Response to one of our outbound requests.
       const id = typeof msg.id === "number" ? msg.id : null;
       if (id === null) return;
       const resolver = pending.get(id);
@@ -522,32 +589,27 @@ export const startGrokSession = (
       pending.delete(id);
       clearTimeout(resolver.timer);
       if (msg.error !== undefined) {
-        // Always log the raw error envelope on stderr so the developer can
-        // see what grok actually said (the formatted user-facing message
-        // strips structure for readability). Cheap insurance against
-        // shape-mismatch surprises in the undocumented ACP error format.
+        let rawEnvelope = "";
         try {
+          rawEnvelope = JSON.stringify(msg.error, null, 2);
           process.stderr.write(
-            `[grok.rpc.error] method=${resolver.method} id=${id} ${JSON.stringify(msg.error)}\n`,
+            `[gemini.rpc.error] method=${resolver.method} id=${id} ${rawEnvelope}\n`,
           );
         } catch {
           process.stderr.write(
-            `[grok.rpc.error] method=${resolver.method} id=${id} (unserialisable)\n`,
+            `[gemini.rpc.error] method=${resolver.method} id=${id} (unserialisable)\n`,
           );
         }
-        const detail = formatRpcError(msg.error, stderrTail);
-        resolver.reject(new Error(`Grok ${resolver.method} failed: ${detail}`));
+        const detail = formatRpcError(msg.error, diagnosticTail(), rawEnvelope);
+        resolver.reject(new Error(`Gemini ${resolver.method} failed: ${detail}`));
       } else {
         resolver.resolve(msg.result ?? {});
       }
     });
 
     child.stderr.on("data", (chunk: string) => {
-      // Keep a rolling tail so errors can include the actual stderr
-      // context (auth failures, version mismatch, etc.) instead of just
-      // grok's generic JSON-RPC "Internal error".
       stderrTail = (stderrTail + chunk).slice(-4096);
-      process.stderr.write(`[grok.stderr] ${chunk}`);
+      process.stderr.write(`[gemini.stderr] ${chunk}`);
     });
 
     child.on("error", (err) => {
@@ -557,10 +619,10 @@ export const startGrokSession = (
 
     child.on("close", (code, signal) => {
       rl.close();
-      const trimmedStderr = stderrTail.trim();
-      const exitDetail = trimmedStderr.length > 0
-        ? `Grok ACP exited (code ${code ?? "null"}, signal ${signal ?? "null"}): ${trimmedStderr}`
-        : `Grok ACP exited unexpectedly (code ${code ?? "null"}, signal ${signal ?? "null"}).`;
+      const diagnostics = formatGeminiDiagnostics(diagnosticTail());
+      const exitDetail = diagnostics.length > 0
+        ? `Gemini ACP exited (code ${code ?? "null"}, signal ${signal ?? "null"}): ${diagnostics}`
+        : `Gemini ACP exited unexpectedly (code ${code ?? "null"}, signal ${signal ?? "null"}).`;
       for (const { reject, timer } of pending.values()) {
         clearTimeout(timer);
         reject(new Error(exitDetail));
@@ -589,19 +651,24 @@ export const startGrokSession = (
             .filter((id): id is string => id !== null),
         );
         const methodId =
-          apiKey !== null && authIds.has("xai.api_key")
-            ? "xai.api_key"
-            : authIds.has("cached_token")
-              ? "cached_token"
-              : null;
+          apiKey !== null && authIds.has("gemini-api-key")
+            ? "gemini-api-key"
+            : authIds.has("oauth-personal")
+              ? "oauth-personal"
+              : authIds.has("cached_token")
+                ? "cached_token"
+                : null;
         if (methodId === null) {
           throw new Error(
-            "Grok ACP offered no usable auth method. Run `grok login`, or set GROK_CODE_XAI_API_KEY.",
+            "Gemini ACP offered no usable auth method. Run `gemini` to sign in, or save a Gemini API key.",
           );
         }
         await request("authenticate", {
           methodId,
-          _meta: { headless: true },
+          _meta:
+            methodId === "gemini-api-key" && apiKey !== null
+              ? { "api-key": apiKey, headless: true }
+              : { headless: true },
         });
 
         const sessionResult = (await request("session/new", {
@@ -610,13 +677,13 @@ export const startGrokSession = (
         })) as { sessionId?: unknown };
 
         if (typeof sessionResult.sessionId !== "string") {
-          throw new Error("Grok ACP session/new returned no sessionId.");
+          throw new Error("Gemini ACP session/new returned no sessionId.");
         }
         return sessionResult.sessionId;
       },
       catch: (cause) =>
         new AgentSessionStartError({
-          providerId: "grok",
+          providerId: "gemini",
           reason: cause instanceof Error ? cause.message : String(cause),
         }),
     });
@@ -635,13 +702,9 @@ export const startGrokSession = (
       strategy: "grok-session-id",
     });
 
-    // ACP doesn't (yet) expose `session/load` in the published surface, so a
-    // resumeCursor from a prior process can't actually rejoin the prior
-    // server-side conversation. We persist the new id and move on; the user
-    // sees a fresh agent context. Wire `session/load` once it's documented.
     if (resumeCursor !== null && resumeCursor !== acpSessionId) {
       console.warn(
-        `[grok] previous cursor ${resumeCursor} discarded — ACP session/load not wired; using new session ${acpSessionId}`,
+        `[gemini] previous cursor ${resumeCursor} discarded — ACP session/load not wired; using new session ${acpSessionId}`,
       );
     }
 
@@ -657,9 +720,6 @@ export const startGrokSession = (
               {
                 sessionId: sid,
                 prompt: [{ type: "text", text }],
-                // Server may ignore unknown keys; pass mode + model as
-                // metadata so a future ACP rev can honour them without a
-                // driver change.
                 _meta: {
                   permissionMode: currentMode,
                   ...(input.model !== undefined ? { model: input.model } : {}),
@@ -687,15 +747,13 @@ export const startGrokSession = (
       enqueuePrompt(input.initialPrompt);
     }
 
-    const handle: GrokSessionHandle = {
+    const handle: GeminiSessionHandle = {
       events: Mailbox.toStream(events),
       send: (text, attachmentRefs) =>
         Effect.sync(() => {
           if (attachmentRefs !== undefined && attachmentRefs.length > 0) {
-            // ACP `prompt: [{ type: "image", ... }]` shape isn't wired yet;
-            // drop with a warn so the text turn still goes through.
             console.warn(
-              `[grok.attach] dropping ${attachmentRefs.length} attachment(s) — ACP image content shape not wired`,
+              `[gemini.attach] dropping ${attachmentRefs.length} attachment(s) — ACP image content shape not wired`,
             );
           }
           enqueuePrompt(text);
@@ -704,10 +762,8 @@ export const startGrokSession = (
         Effect.sync(() => {
           const sid = acpSessionId;
           if (sid === null) return;
-          // Best-effort cancel. We deliberately do NOT SIGINT the child —
-          // that would kill the persistent agent and end every future send
-          // for this session. If `session/cancel` isn't recognised the
-          // server replies with an error we ignore.
+          // Best-effort cancel; do NOT SIGINT the child or the persistent
+          // session dies for every subsequent send.
           notify("session/cancel", { sessionId: sid });
         }),
       close: () =>
@@ -715,7 +771,7 @@ export const startGrokSession = (
           closed = true;
           for (const { reject, timer } of pending.values()) {
             clearTimeout(timer);
-            reject(new Error("Grok session closed"));
+            reject(new Error("Gemini session closed"));
           }
           pending.clear();
           try {

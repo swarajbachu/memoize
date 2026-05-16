@@ -34,6 +34,15 @@ export class SettingsFile extends Schema.Class<SettingsFile>("SettingsFile")({
   defaultRuntimeMode: RuntimeMode,
   defaultAutoCreateWorktree: Schema.Boolean,
   onboardingCompleted: Schema.Boolean,
+  /**
+   * Per-provider on/off toggle from the Providers settings card. Defaults
+   * to `true` for every provider; flipping it to `false` filters the
+   * provider from the new-session picker without uninstalling its CLI.
+   */
+  providerEnabled: Schema.Record({
+    key: ProviderId,
+    value: Schema.Boolean,
+  }),
   subagents: Schema.Struct({
     enableForNewSessions: Schema.Boolean,
     presets: Schema.Record({
@@ -57,6 +66,9 @@ export const SettingsPatch = Schema.Struct({
   defaultRuntimeMode: Schema.optional(RuntimeMode),
   defaultAutoCreateWorktree: Schema.optional(Schema.Boolean),
   onboardingCompleted: Schema.optional(Schema.Boolean),
+  providerEnabled: Schema.optional(
+    Schema.Record({ key: ProviderId, value: Schema.Boolean }),
+  ),
   subagents: Schema.optional(
     Schema.Struct({
       enableForNewSessions: Schema.Boolean,

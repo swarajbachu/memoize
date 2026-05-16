@@ -16,18 +16,17 @@ import {
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
 
 /**
- * Live-only handle for one Grok conversation. Mirrors Codex/Claude handle
- * shape so `ProviderService` routes RPCs without caring which provider
- * backs the session.
+ * Live-only handle for one Cursor Agent conversation. Mirrors Grok's
+ * `GrokSessionHandle` shape so `ProviderService` routes RPCs without caring
+ * which provider backs the session.
  *
- * Grok has no embeddable JS SDK; instead we drive it via ACP — the agent
- * runs as `grok agent stdio`, a JSON-RPC server on stdin/stdout. One
- * persistent child per session (Claude-style), not one spawn per turn
- * (Codex-style). The conversation is identified by an ACP-minted
- * `sessionId` returned from `session/new`; we surface that as a
- * `SessionCursor { strategy: "grok-session-id" }` so it persists.
+ * Cursor exposes itself as an ACP server via `cursor-agent acp` over
+ * stdin/stdout JSON-RPC. One persistent child per session. The conversation
+ * is identified by an ACP-minted `sessionId` returned from `session/new`;
+ * we surface that as a `SessionCursor { strategy: "cursor-session-id" }`
+ * so it round-trips through `MessageStore` for future resume support.
  */
-export interface GrokSessionHandle {
+export interface CursorSessionHandle {
   readonly events: Stream.Stream<AgentEvent>;
   readonly send: (
     text: string,
@@ -43,8 +42,8 @@ export interface GrokSessionHandle {
    */
   readonly setPermissionMode: (mode: PermissionMode) => Effect.Effect<void>;
   /**
-   * No ACP `UserQuestion` primitive yet — match Codex/Grok-headless and
-   * stay a no-op so RPC routing remains uniform.
+   * Cursor's `cursor/ask_question` extension method isn't wired yet — match
+   * Grok and stay a no-op so RPC routing remains uniform.
    */
   readonly answerQuestion: (
     itemId: AgentItemId,
@@ -58,37 +57,15 @@ const nextItemId = (): AgentItemId =>
 
 /**
  * Translate one ACP `session/update` payload into zero or more
- * `AgentEvent`s. The ACP v1 spec uses `"sessionUpdate"` as the
- * discriminator but the ResponseItem shape (v2+) uses `"type"` — we
- * check both so either format works.
- *
- * ACP v1 sessionUpdate values:
- *   agent_message_chunk, agent_thought_chunk, thinking_chunk,
- *   tool_call, tool_use, tool_result, tool_output,
- *   function_call, function_call_output,
- *   custom_tool_call, custom_tool_call_output,
- *   tool_search_call, tool_search_output,
- *   local_shell_call, web_search_call,
- *   error, agent_error
- *
- * Gemini-specific (nonstandard) type values:
- *   tool_call_update, available_commands_update
- *
- * ACP v2 ResponseItem type values (also accepted):
- *   message, function_call, custom_tool_call, tool_search_call,
- *   local_shell_call, web_search_call, image_generation_call,
- *   function_call_output, custom_tool_call_output, tool_search_output,
- *   compaction, context_compaction
+ * `AgentEvent`s. Cursor's ACP server emits the same shapes as Grok per the
+ * ACP spec; the handler is a direct copy of grok.ts's translator.
  */
 const translateSessionUpdate = (update: unknown): ReadonlyArray<AgentEvent> => {
   if (update === null || typeof update !== "object") return [];
   const u = update as Record<string, unknown>;
-  const kind =
-    typeof u["sessionUpdate"] === "string"
-      ? (u["sessionUpdate"] as string)
-      : typeof u["type"] === "string"
-        ? (u["type"] as string)
-        : null;
+  const kind = typeof u["sessionUpdate"] === "string"
+    ? (u["sessionUpdate"] as string)
+    : null;
   if (kind === null) return [];
 
   const asText = (v: unknown): string | null => {
@@ -100,81 +77,9 @@ const translateSessionUpdate = (update: unknown): ReadonlyArray<AgentEvent> => {
     return null;
   };
 
-  const extractMessageText = (content: unknown): string | null => {
-    if (!Array.isArray(content)) return asText(content);
-    const parts: string[] = [];
-    for (const item of content) {
-      if (item !== null && typeof item === "object" && "text" in item) {
-        const t = (item as Record<string, unknown>)["text"];
-        if (typeof t === "string") parts.push(t);
-      }
-    }
-    return parts.length > 0 ? parts.join("") : null;
-  };
-
-  const extractCallId = (): AgentItemId => {
-    const raw =
-      typeof u["toolCallId"] === "string"
-        ? u["toolCallId"]
-        : typeof u["call_id"] === "string"
-          ? u["call_id"]
-          : typeof u["id"] === "string"
-            ? u["id"]
-            : typeof (u as Record<string, unknown>)["callId"] === "string"
-              ? (u as Record<string, unknown>)["callId"]
-              : null;
-    return raw !== null ? (raw as AgentItemId) : nextItemId();
-  };
-
-  const extractToolName = (): string => {
-    return typeof u["tool"] === "string"
-      ? (u["tool"] as string)
-      : typeof u["name"] === "string"
-        ? (u["name"] as string)
-        : typeof u["execution"] === "string"
-          ? (u["execution"] as string)
-          : typeof u["command"] === "string"
-            ? (u["command"] as string)
-            : "tool";
-  };
-
-  const extractInput = (): unknown => {
-    if (u["input"] !== undefined) return u["input"];
-    if (u["arguments"] !== undefined) {
-      const a = u["arguments"];
-      if (typeof a === "string") {
-        try {
-          return JSON.parse(a);
-        } catch {
-          return a;
-        }
-      }
-      return a;
-    }
-    if (u["command"] !== undefined) return { command: u["command"] };
-    return null;
-  };
-
-  const extractOutput = (): unknown => {
-    if (u["output"] !== undefined) {
-      const o = u["output"];
-      if (o !== null && typeof o === "object" && "content" in o) {
-        return (o as Record<string, unknown>)["content"] ?? o;
-      }
-      return o;
-    }
-    if (u["content"] !== undefined) return u["content"];
-    if (u["result"] !== undefined) return u["result"];
-    return null;
-  };
-
   switch (kind) {
-    case "agent_message_chunk":
-    case "message": {
-      const text =
-        kind === "message"
-          ? extractMessageText(u["content"])
-          : asText(u["content"]);
+    case "agent_message_chunk": {
+      const text = asText(u["content"]);
       if (text === null || text.length === 0) return [];
       return [
         {
@@ -186,8 +91,7 @@ const translateSessionUpdate = (update: unknown): ReadonlyArray<AgentEvent> => {
     }
     case "agent_thought_chunk":
     case "agent_reasoning_chunk":
-    case "thinking_chunk":
-    case "reasoning": {
+    case "thinking_chunk": {
       const text = asText(u["content"]);
       if (text === null || text.length === 0) return [];
       return [
@@ -200,61 +104,50 @@ const translateSessionUpdate = (update: unknown): ReadonlyArray<AgentEvent> => {
       ];
     }
     case "tool_call":
-    case "tool_use":
-    case "tool_call_update":
-    case "function_call":
-    case "custom_tool_call":
-    case "tool_search_call":
-    case "local_shell_call":
-    case "web_search_call":
-    case "image_generation_call": {
-      if (GROK_RPC_TRACE) {
-        process.stderr.write(
-          `[grok.translate.tool] kind=${kind} payload=${JSON.stringify(u).slice(0, 4096)}\n`,
-        );
-      }
-      const toolUse = {
-        _tag: "ToolUse" as const,
-        itemId: extractCallId(),
-        tool: extractToolName(),
-        input: extractInput(),
-      };
-      if (GROK_RPC_TRACE) {
-        process.stderr.write(
-          `[grok.translate.tool] → ToolUse itemId=${toolUse.itemId} tool=${toolUse.tool} input=${JSON.stringify(toolUse.input).slice(0, 2048)}\n`,
-        );
-      }
-      return [toolUse];
+    case "tool_use": {
+      const id =
+        typeof u["toolCallId"] === "string"
+          ? ((u["toolCallId"] as string) as AgentItemId)
+          : typeof u["id"] === "string"
+            ? ((u["id"] as string) as AgentItemId)
+            : nextItemId();
+      const tool =
+        typeof u["tool"] === "string"
+          ? (u["tool"] as string)
+          : typeof u["name"] === "string"
+            ? (u["name"] as string)
+            : "tool";
+      const input = u["input"] ?? u["arguments"] ?? null;
+      return [
+        {
+          _tag: "ToolUse",
+          itemId: id,
+          tool,
+          input,
+        },
+      ];
     }
     case "tool_result":
-    case "tool_output":
-    case "function_call_output":
-    case "custom_tool_call_output":
-    case "tool_search_output": {
-      if (GROK_RPC_TRACE) {
-        process.stderr.write(
-          `[grok.translate.result] kind=${kind} payload=${JSON.stringify(u).slice(0, 4096)}\n`,
-        );
-      }
+    case "tool_output": {
+      const id =
+        typeof u["toolCallId"] === "string"
+          ? ((u["toolCallId"] as string) as AgentItemId)
+          : typeof u["id"] === "string"
+            ? ((u["id"] as string) as AgentItemId)
+            : nextItemId();
+      const output = u["output"] ?? u["content"] ?? u["result"] ?? null;
       const isError = u["isError"] === true || u["is_error"] === true;
-      const toolResult = {
-        _tag: "ToolResult" as const,
-        itemId: extractCallId(),
-        output: extractOutput(),
-        isError,
-      };
-      if (GROK_RPC_TRACE) {
-        process.stderr.write(
-          `[grok.translate.result] → ToolResult itemId=${toolResult.itemId} output=${JSON.stringify(toolResult.output).slice(0, 2048)}\n`,
-        );
-      }
-      return [toolResult];
+      return [
+        {
+          _tag: "ToolResult",
+          itemId: id,
+          output,
+          isError,
+        },
+      ];
     }
     case "error":
     case "agent_error": {
-      // Pull useful detail from multiple possible fields. ACP doesn't
-      // pin the error payload shape, and grok itself sometimes nests the
-      // real reason under `data`/`details`/`error`.
       const detail =
         typeof u["message"] === "string" && (u["message"] as string).length > 0
           ? (u["message"] as string)
@@ -272,25 +165,16 @@ const translateSessionUpdate = (update: unknown): ReadonlyArray<AgentEvent> => {
               try {
                 const serialized = JSON.stringify(u);
                 return serialized === "{}"
-                  ? "Grok agent reported an error with no detail."
-                  : `Grok agent error: ${serialized}`;
+                  ? "Cursor agent reported an error with no detail."
+                  : `Cursor agent error: ${serialized}`;
               } catch {
-                return "Grok agent reported an error.";
+                return "Cursor agent reported an error.";
               }
             })();
       return [{ _tag: "Error", message }];
     }
-    case "available_commands_update":
-      return [];
     default:
-      console.warn(
-        `[grok.translate] unknown sessionUpdate/type=${kind} payload=${((): string => {
-          try {
-            const s = JSON.stringify(u).slice(0, 2048);
-            return s.length > 0 ? s : "(empty)";
-          } catch { return "(unserialisable)"; }
-        })()}`,
-      );
+      console.warn(`[cursor.translate] unknown sessionUpdate=${kind}`);
       return [];
   }
 };
@@ -316,19 +200,13 @@ type PendingResolver = {
   timer: NodeJS.Timeout;
 };
 
-const GROK_RPC_TRACE = process.env.MEMOIZE_DEBUG_GROK === "1";
+const CURSOR_RPC_TRACE = process.env.MEMOIZE_DEBUG_CURSOR === "1";
 
 /**
  * Build a human-readable error from a JSON-RPC error envelope. ACP servers
- * commonly stash the real failure in `error.data` and leave `error.message`
- * as a generic "Internal error" — surfacing only `error.message` would
- * leave the user staring at "Internal error" with no clue what broke
- * (auth failure, missing model entitlement, network, etc.).
- *
- * `stderrTail` is the trailing chunk of grok's stderr captured during this
- * session; when the JSON-RPC envelope is empty (literally no message/data),
- * stderr is often the only signal we have about what actually went wrong
- * — e.g. xAI auth errors print to stderr before the server replies.
+ * commonly stash the real failure in `error.data`; `stderrTail` is the
+ * trailing chunk of cursor-agent's stderr captured during this session, used
+ * when the JSON-RPC envelope itself is empty.
  */
 const formatRpcError = (
   err: JsonRpcError,
@@ -368,35 +246,33 @@ const formatRpcError = (
   if (parts.length === 0) {
     const trimmedStderr = stderrTail.trim();
     if (trimmedStderr.length > 0) parts.push(trimmedStderr);
-    else parts.push("Grok ACP returned an error with no detail.");
+    else parts.push("Cursor ACP returned an error with no detail.");
   }
   if (typeof err.code === "number") parts.push(`(code ${err.code})`);
   return parts.join(" — ");
 };
 
 /**
- * Spin up a Grok conversation backed by a persistent ACP child process.
- * The handshake (`initialize` → `authenticate` → `session/new`) runs once
- * synchronously inside `start()`; auth or transport failures surface there
- * so the orchestrator can fail the session-create RPC cleanly.
+ * Spin up a Cursor Agent conversation backed by a persistent ACP child
+ * process. The handshake (`initialize` → `authenticate` → `session/new`)
+ * runs once synchronously inside `start()`; auth or transport failures
+ * surface there so the orchestrator can fail the session-create RPC
+ * cleanly.
  *
- * `apiKey` is forwarded as `GROK_CODE_XAI_API_KEY` on the child env. When
- * null the child reads cached credentials from `~/.grok/` (browser-OAuth
- * `grok login` flow). `xai.api_key` auth method is preferred when a key
- * is set; otherwise `cached_token`.
+ * `apiKey` is forwarded as `CURSOR_API_KEY` on the child env. When null the
+ * child reads cached credentials from `cursor-agent login` (browser-OAuth
+ * flow). `cursor_login` auth method is preferred when a key is set;
+ * otherwise `cached_token`.
  */
-export const startGrokSession = (
+export const startCursorSession = (
   input: StartSessionInput,
   cwd: string,
   apiKey: string | null,
-  grokPath: string,
+  cursorPath: string,
   sessionId: AgentSessionId,
   resumeCursor: string | null = null,
-): Effect.Effect<GrokSessionHandle, AgentSessionStartError, AttachmentService> =>
+): Effect.Effect<CursorSessionHandle, AgentSessionStartError, AttachmentService> =>
   Effect.gen(function* () {
-    // Keep AttachmentService in the requirement set so layer wiring stays
-    // uniform with the other drivers; attachments themselves are not yet
-    // wired through ACP's `prompt: [{ type: "image", ... }]` shape.
     yield* AttachmentService;
     const events = yield* Mailbox.make<AgentEvent>();
 
@@ -406,24 +282,22 @@ export const startGrokSession = (
     let closed = false;
     let inflight: Promise<void> = Promise.resolve();
     const pending = new Map<number, PendingResolver>();
-    // Trailing window of grok's stderr — used to enrich error reports when
-    // the JSON-RPC envelope itself is opaque ("Internal error" with no data).
     let stderrTail = "";
 
     events.unsafeOffer({
       _tag: "Started",
       sessionId,
-      providerId: "grok",
+      providerId: "cursor",
       mode: "sdk",
     });
 
     let child: ChildProcessWithoutNullStreams;
     try {
-      child = spawn(grokPath, ["agent", "stdio"], {
+      child = spawn(cursorPath, ["acp"], {
         cwd,
         env: {
           ...process.env,
-          ...(apiKey !== null ? { GROK_CODE_XAI_API_KEY: apiKey } : {}),
+          ...(apiKey !== null ? { CURSOR_API_KEY: apiKey } : {}),
         },
         stdio: ["pipe", "pipe", "pipe"],
       });
@@ -431,7 +305,7 @@ export const startGrokSession = (
       yield* events.end;
       return yield* Effect.fail(
         new AgentSessionStartError({
-          providerId: "grok",
+          providerId: "cursor",
           reason: cause instanceof Error ? cause.message : String(cause),
         }),
       );
@@ -444,7 +318,7 @@ export const startGrokSession = (
     const writeMessage = (msg: Record<string, unknown>): void => {
       if (!child.stdin.writable) return;
       const line = JSON.stringify(msg);
-      if (GROK_RPC_TRACE) process.stderr.write(`[grok.rpc.send] ${line}\n`);
+      if (CURSOR_RPC_TRACE) process.stderr.write(`[cursor.rpc.send] ${line}\n`);
       child.stdin.write(`${line}\n`);
     };
 
@@ -462,7 +336,7 @@ export const startGrokSession = (
             trimmedStderr.length > 0 ? ` — stderr: ${trimmedStderr}` : "";
           reject(
             new Error(
-              `Grok ACP ${method} timed out after ${timeoutMs}ms${detail}`,
+              `Cursor ACP ${method} timed out after ${timeoutMs}ms${detail}`,
             ),
           );
         }, timeoutMs);
@@ -477,19 +351,16 @@ export const startGrokSession = (
 
     rl.on("line", (line: string) => {
       if (line.trim().length === 0) return;
-      if (GROK_RPC_TRACE) process.stderr.write(`[grok.rpc.recv] ${line}\n`);
+      if (CURSOR_RPC_TRACE) process.stderr.write(`[cursor.rpc.recv] ${line}\n`);
       let parsed: unknown;
       try {
         parsed = JSON.parse(line);
       } catch {
-        // Non-JSON line on stdout (e.g. a tracing log leak). Drop silently
-        // — assistant text rides typed `session/update` notifications.
         return;
       }
       if (parsed === null || typeof parsed !== "object") return;
       const msg = parsed as JsonRpcMessage;
 
-      // Notifications and server→client requests both carry `method`.
       if (typeof msg.method === "string") {
         if (msg.method === "session/update") {
           const update = msg.params?.update;
@@ -501,20 +372,14 @@ export const startGrokSession = (
           return;
         }
         if (msg.id !== undefined) {
-          // Server→client request. Permission prompts likely land here once
-          // ACP spec is verified; for now log and ignore so the turn either
-          // proceeds or times out grok-side. Wiring to PermissionService is
-          // an open follow-up.
           console.warn(
-            `[grok.rpc] unhandled server→client request method=${msg.method} id=${msg.id}`,
+            `[cursor.rpc] unhandled server→client request method=${msg.method} id=${msg.id}`,
           );
           return;
         }
-        // Unknown notification — drop.
         return;
       }
 
-      // Response to one of our outbound requests.
       const id = typeof msg.id === "number" ? msg.id : null;
       if (id === null) return;
       const resolver = pending.get(id);
@@ -522,32 +387,25 @@ export const startGrokSession = (
       pending.delete(id);
       clearTimeout(resolver.timer);
       if (msg.error !== undefined) {
-        // Always log the raw error envelope on stderr so the developer can
-        // see what grok actually said (the formatted user-facing message
-        // strips structure for readability). Cheap insurance against
-        // shape-mismatch surprises in the undocumented ACP error format.
         try {
           process.stderr.write(
-            `[grok.rpc.error] method=${resolver.method} id=${id} ${JSON.stringify(msg.error)}\n`,
+            `[cursor.rpc.error] method=${resolver.method} id=${id} ${JSON.stringify(msg.error)}\n`,
           );
         } catch {
           process.stderr.write(
-            `[grok.rpc.error] method=${resolver.method} id=${id} (unserialisable)\n`,
+            `[cursor.rpc.error] method=${resolver.method} id=${id} (unserialisable)\n`,
           );
         }
         const detail = formatRpcError(msg.error, stderrTail);
-        resolver.reject(new Error(`Grok ${resolver.method} failed: ${detail}`));
+        resolver.reject(new Error(`Cursor ${resolver.method} failed: ${detail}`));
       } else {
         resolver.resolve(msg.result ?? {});
       }
     });
 
     child.stderr.on("data", (chunk: string) => {
-      // Keep a rolling tail so errors can include the actual stderr
-      // context (auth failures, version mismatch, etc.) instead of just
-      // grok's generic JSON-RPC "Internal error".
       stderrTail = (stderrTail + chunk).slice(-4096);
-      process.stderr.write(`[grok.stderr] ${chunk}`);
+      process.stderr.write(`[cursor.stderr] ${chunk}`);
     });
 
     child.on("error", (err) => {
@@ -559,8 +417,8 @@ export const startGrokSession = (
       rl.close();
       const trimmedStderr = stderrTail.trim();
       const exitDetail = trimmedStderr.length > 0
-        ? `Grok ACP exited (code ${code ?? "null"}, signal ${signal ?? "null"}): ${trimmedStderr}`
-        : `Grok ACP exited unexpectedly (code ${code ?? "null"}, signal ${signal ?? "null"}).`;
+        ? `Cursor ACP exited (code ${code ?? "null"}, signal ${signal ?? "null"}): ${trimmedStderr}`
+        : `Cursor ACP exited unexpectedly (code ${code ?? "null"}, signal ${signal ?? "null"}).`;
       for (const { reject, timer } of pending.values()) {
         clearTimeout(timer);
         reject(new Error(exitDetail));
@@ -588,15 +446,23 @@ export const startGrokSession = (
             .map((m) => (typeof m?.id === "string" ? m.id : null))
             .filter((id): id is string => id !== null),
         );
+        // Cursor advertises `cursor_login` for OAuth-style credentials and
+        // `cached_token` once a prior `cursor-agent login` has stored one.
+        // When an API key is set we prefer `cursor_login` (the CLI handles
+        // the key/token translation server-side); otherwise fall back to
+        // the cached token. If neither is available, fail with a clear
+        // message so the user knows what to run.
         const methodId =
-          apiKey !== null && authIds.has("xai.api_key")
-            ? "xai.api_key"
+          apiKey !== null && authIds.has("cursor_login")
+            ? "cursor_login"
             : authIds.has("cached_token")
               ? "cached_token"
-              : null;
+              : authIds.has("cursor_login")
+                ? "cursor_login"
+                : null;
         if (methodId === null) {
           throw new Error(
-            "Grok ACP offered no usable auth method. Run `grok login`, or set GROK_CODE_XAI_API_KEY.",
+            "Cursor ACP offered no usable auth method. Run `cursor-agent login`, or set CURSOR_API_KEY.",
           );
         }
         await request("authenticate", {
@@ -610,13 +476,13 @@ export const startGrokSession = (
         })) as { sessionId?: unknown };
 
         if (typeof sessionResult.sessionId !== "string") {
-          throw new Error("Grok ACP session/new returned no sessionId.");
+          throw new Error("Cursor ACP session/new returned no sessionId.");
         }
         return sessionResult.sessionId;
       },
       catch: (cause) =>
         new AgentSessionStartError({
-          providerId: "grok",
+          providerId: "cursor",
           reason: cause instanceof Error ? cause.message : String(cause),
         }),
     });
@@ -632,16 +498,12 @@ export const startGrokSession = (
     events.unsafeOffer({
       _tag: "SessionCursor",
       cursor: acpSessionId,
-      strategy: "grok-session-id",
+      strategy: "cursor-session-id",
     });
 
-    // ACP doesn't (yet) expose `session/load` in the published surface, so a
-    // resumeCursor from a prior process can't actually rejoin the prior
-    // server-side conversation. We persist the new id and move on; the user
-    // sees a fresh agent context. Wire `session/load` once it's documented.
     if (resumeCursor !== null && resumeCursor !== acpSessionId) {
       console.warn(
-        `[grok] previous cursor ${resumeCursor} discarded — ACP session/load not wired; using new session ${acpSessionId}`,
+        `[cursor] previous cursor ${resumeCursor} discarded — ACP session/load not wired; using new session ${acpSessionId}`,
       );
     }
 
@@ -657,9 +519,6 @@ export const startGrokSession = (
               {
                 sessionId: sid,
                 prompt: [{ type: "text", text }],
-                // Server may ignore unknown keys; pass mode + model as
-                // metadata so a future ACP rev can honour them without a
-                // driver change.
                 _meta: {
                   permissionMode: currentMode,
                   ...(input.model !== undefined ? { model: input.model } : {}),
@@ -687,15 +546,13 @@ export const startGrokSession = (
       enqueuePrompt(input.initialPrompt);
     }
 
-    const handle: GrokSessionHandle = {
+    const handle: CursorSessionHandle = {
       events: Mailbox.toStream(events),
       send: (text, attachmentRefs) =>
         Effect.sync(() => {
           if (attachmentRefs !== undefined && attachmentRefs.length > 0) {
-            // ACP `prompt: [{ type: "image", ... }]` shape isn't wired yet;
-            // drop with a warn so the text turn still goes through.
             console.warn(
-              `[grok.attach] dropping ${attachmentRefs.length} attachment(s) — ACP image content shape not wired`,
+              `[cursor.attach] dropping ${attachmentRefs.length} attachment(s) — ACP image content shape not wired`,
             );
           }
           enqueuePrompt(text);
@@ -704,10 +561,6 @@ export const startGrokSession = (
         Effect.sync(() => {
           const sid = acpSessionId;
           if (sid === null) return;
-          // Best-effort cancel. We deliberately do NOT SIGINT the child —
-          // that would kill the persistent agent and end every future send
-          // for this session. If `session/cancel` isn't recognised the
-          // server replies with an error we ignore.
           notify("session/cancel", { sessionId: sid });
         }),
       close: () =>
@@ -715,7 +568,7 @@ export const startGrokSession = (
           closed = true;
           for (const { reject, timer } of pending.values()) {
             clearTimeout(timer);
-            reject(new Error("Grok session closed"));
+            reject(new Error("Cursor session closed"));
           }
           pending.clear();
           try {

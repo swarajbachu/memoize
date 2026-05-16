@@ -31,13 +31,27 @@ const WATCH_DEBOUNCE_MS = 100;
 const SETTINGS_FILENAME = "settings.json";
 const KEYBINDINGS_FILENAME = "keybindings.json";
 
-const PROVIDER_IDS: ProviderId[] = ["claude", "codex", "grok"];
+const PROVIDER_IDS: ProviderId[] = [
+  "claude",
+  "codex",
+  "grok",
+  "cursor",
+  "gemini",
+];
 
 const seedModels = (): Record<ProviderId, string> => ({
   claude: defaultModelFor("claude"),
   codex: defaultModelFor("codex"),
   grok: defaultModelFor("grok"),
+  cursor: defaultModelFor("cursor"),
+  gemini: defaultModelFor("gemini"),
 });
+
+const seedProviderEnabled = (): Record<ProviderId, boolean> => {
+  const out = {} as Record<ProviderId, boolean>;
+  for (const id of PROVIDER_IDS) out[id] = true;
+  return out;
+};
 
 const freshSettings = (): SettingsFile =>
   SettingsFile.make({
@@ -47,6 +61,7 @@ const freshSettings = (): SettingsFile =>
     defaultRuntimeMode: "approval-required",
     defaultAutoCreateWorktree: false,
     onboardingCompleted: false,
+    providerEnabled: seedProviderEnabled(),
     subagents: { enableForNewSessions: true, presets: {} },
   });
 
@@ -59,7 +74,11 @@ const serialize = (value: unknown): string =>
 /* ───────────── parse helpers — tolerant of legacy / missing fields ───────────── */
 
 const isProviderId = (v: unknown): v is ProviderId =>
-  v === "claude" || v === "codex" || v === "grok";
+  v === "claude" ||
+  v === "codex" ||
+  v === "grok" ||
+  v === "cursor" ||
+  v === "gemini";
 
 const isRuntimeMode = (v: unknown): v is SettingsFile["defaultRuntimeMode"] =>
   v === "approval-required" ||
@@ -107,6 +126,20 @@ const coerceSettings = (raw: unknown): SettingsFile => {
       ? obj.onboardingCompleted
       : base.onboardingCompleted;
 
+  const providerEnabled: Record<ProviderId, boolean> = {
+    ...base.providerEnabled,
+  };
+  if (
+    typeof obj.providerEnabled === "object" &&
+    obj.providerEnabled !== null
+  ) {
+    const flags = obj.providerEnabled as Record<string, unknown>;
+    for (const id of PROVIDER_IDS) {
+      const v = flags[id];
+      if (typeof v === "boolean") providerEnabled[id] = v;
+    }
+  }
+
   let subagents = base.subagents;
   if (typeof obj.subagents === "object" && obj.subagents !== null) {
     const sub = obj.subagents as Record<string, unknown>;
@@ -140,6 +173,7 @@ const coerceSettings = (raw: unknown): SettingsFile => {
     defaultRuntimeMode: runtime,
     defaultAutoCreateWorktree: autoWorktree,
     onboardingCompleted: onboarding,
+    providerEnabled,
     subagents,
   });
 };
@@ -359,6 +393,7 @@ export const ConfigStoreServiceLive = Layer.scoped(
             patch.defaultAutoCreateWorktree ?? cur.defaultAutoCreateWorktree,
           onboardingCompleted:
             patch.onboardingCompleted ?? cur.onboardingCompleted,
+          providerEnabled: patch.providerEnabled ?? cur.providerEnabled,
           subagents: patch.subagents ?? cur.subagents,
         });
         const serialized = serialize(next);
@@ -408,6 +443,8 @@ export const ConfigStoreServiceLive = Layer.scoped(
             cur.defaultRuntimeMode;
           let autoWorktree: boolean = cur.defaultAutoCreateWorktree;
           let onboarding: boolean = cur.onboardingCompleted;
+          let providerEnabled: SettingsFile["providerEnabled"] =
+            cur.providerEnabled;
           let subagents: SettingsFile["subagents"] = cur.subagents;
 
           if (
@@ -425,6 +462,7 @@ export const ConfigStoreServiceLive = Layer.scoped(
               runtime = fromLs.defaultRuntimeMode;
               autoWorktree = fromLs.defaultAutoCreateWorktree;
               onboarding = fromLs.onboardingCompleted;
+              providerEnabled = fromLs.providerEnabled;
             } catch {
               /* swallow — keep current values */
             }
@@ -454,6 +492,7 @@ export const ConfigStoreServiceLive = Layer.scoped(
             defaultRuntimeMode: runtime,
             defaultAutoCreateWorktree: autoWorktree,
             onboardingCompleted: onboarding,
+            providerEnabled,
             subagents,
           });
 

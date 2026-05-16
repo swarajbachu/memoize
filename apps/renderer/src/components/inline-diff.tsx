@@ -1,4 +1,5 @@
-import { structuredPatch } from "diff";
+import { PatchDiff } from "@pierre/diffs/react";
+import { createPatch, structuredPatch } from "diff";
 import { useMemo } from "react";
 
 export interface FileEdit {
@@ -135,7 +136,53 @@ const buildDiff = (edit: FileEdit): ReadonlyArray<DiffLine> => {
   return lines;
 };
 
+/**
+ * Render a `FileEdit` as a unified diff using `@pierre/diffs` — gets us
+ * line numbers, hunk separators, syntax-aware tinting, and a polished
+ * scrolling layout for free. We feed it a unified-diff text string built
+ * from the Edit/Write/MultiEdit tool input.
+ */
 export function DiffBody({
+  edit,
+  showHeader,
+}: {
+  edit: FileEdit;
+  showHeader: boolean;
+}) {
+  const patchText = useMemo(() => {
+    if (edit.mode === "create" && edit.oldText === "") {
+      // `createPatch("", file, "", text)` produces an empty header diff —
+      // fake an old-file/new-file pair so the line numbers + adds appear.
+      return createPatch(edit.path, "", edit.newText, "", "") ?? "";
+    }
+    return createPatch(edit.path, edit.oldText, edit.newText, "", "") ?? "";
+  }, [edit]);
+  if (patchText.trim().length === 0 || edit.oldText === edit.newText) {
+    return (
+      <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
+        (no textual change)
+      </div>
+    );
+  }
+  return (
+    <div className="overflow-x-auto text-[11px]">
+      {showHeader ? (
+        <div className="border-b border-border/40 bg-muted/40 px-2 py-1 font-mono text-muted-foreground">
+          {edit.mode === "create" ? "create" : "edit"} · {edit.path}
+        </div>
+      ) : null}
+      <PatchDiff patch={patchText} disableWorkerPool />
+    </div>
+  );
+}
+
+/**
+ * Fallback renderer kept for any caller that wants the bare row-by-row
+ * markup without the @pierre/diffs runtime (e.g. unit tests / minimal
+ * snapshots). Currently unused at runtime but exported so future surfaces
+ * can opt in.
+ */
+export function DiffBodyPlain({
   edit,
   showHeader,
 }: {

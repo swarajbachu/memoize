@@ -13,7 +13,7 @@ import {
  * the literal union is the contract — adding a new provider is an additive
  * change here plus a new driver in `apps/server/src/provider/drivers/`.
  */
-export const ProviderId = Schema.Literal("claude", "codex", "grok");
+export const ProviderId = Schema.Literal("claude", "codex", "grok", "gemini", "cursor");
 export type ProviderId = typeof ProviderId.Type;
 
 /**
@@ -93,6 +93,42 @@ export const CliVersionStatus = Schema.Literal("ok", "outdated", "unknown");
 export type CliVersionStatus = typeof CliVersionStatus.Type;
 
 /**
+ * Server-side verdict on whether a provider is usable right now. Distinct
+ * from `cliVersionStatus` (which only describes the CLI version) and from
+ * `authStatus` (which only describes credentials): this is the rolled-up
+ * dot color the UI shows.
+ *
+ *   - `ready`    — installed, authenticated, version ok
+ *   - `warning`  — usable but something needs attention (e.g. update
+ *                   available, auth verification failed but credentials look
+ *                   present)
+ *   - `error`    — unusable (e.g. CLI installed but auth probe returned 401,
+ *                   account/read RPC failed, etc.)
+ *   - `disabled` — user toggled the provider off in settings; renderer-only
+ */
+export const ProviderHealthStatus = Schema.Literal(
+  "ready",
+  "warning",
+  "error",
+  "disabled",
+);
+export type ProviderHealthStatus = typeof ProviderHealthStatus.Type;
+
+/**
+ * Whether the credential check actually verified the user is signed in
+ * (e.g. Codex `account/read` returned a chatgpt account). `unknown` means
+ * the probe couldn't reach a verification endpoint (offline, app-server
+ * spawn failed) — distinct from `unauthenticated` which is a confirmed
+ * "no credentials".
+ */
+export const ProviderAuthStatus = Schema.Literal(
+  "authenticated",
+  "unauthenticated",
+  "unknown",
+);
+export type ProviderAuthStatus = typeof ProviderAuthStatus.Type;
+
+/**
  * Static availability report for a provider — does the user have the CLI on
  * PATH, is the CLI logged in (so the SDK can ride the local OAuth subprocess),
  * is an API key stored in the keychain. Either `cliLoggedIn` or `hasApiKey`
@@ -124,8 +160,47 @@ export const AgentAvailability = Schema.Struct({
    * own per-provider install lookup.
    */
   cliUpgradeCommand: Schema.optional(Schema.String),
+  /**
+   * Verified auth state. Distinct from `cliLoggedIn` (which only checks for
+   * a credential file): set when an out-of-process probe (Codex
+   * `account/read`, Claude credentials.json parse, etc.) confirmed the
+   * credential is live.
+   */
+  authStatus: Schema.optional(ProviderAuthStatus),
+  /** Account email pulled from the verified credential, when available. */
+  authEmail: Schema.optional(Schema.String),
+  /** Human-readable subscription label, e.g. "ChatGPT Plus Subscription". */
+  authLabel: Schema.optional(Schema.String),
+  /** Kind of credential, e.g. "chatgpt", "apiKey", "amazonBedrock". */
+  authType: Schema.optional(Schema.String),
+  /**
+   * Rolled-up health verdict for the dot color in settings. Optional so
+   * older clients without server-side classification just see a neutral
+   * card — the renderer falls back to deriving from cliInstalled / login.
+   */
+  status: Schema.optional(ProviderHealthStatus),
+  /**
+   * One-line user-facing detail to render under the headline when status
+   * is `warning` or `error` — typically the underlying probe error.
+   */
+  statusMessage: Schema.optional(Schema.String),
+  /**
+   * Wall-clock time of the most recent probe. Renderer renders this as
+   * "Checked X ago" in the providers settings header. Encoded as an ISO
+   * string over the wire so it survives the RPC's JSON hop.
+   */
+  lastCheckedAt: Schema.optional(Schema.DateFromString),
 });
 export type AgentAvailability = typeof AgentAvailability.Type;
+
+/**
+ * Coarse classifier for stream-side errors so the renderer can render
+ * the right CTA (Retry vs "Sign in to Codex" vs "Connection lost"). The
+ * default is `generic` — drivers only set this when they have positive
+ * evidence (e.g. parsed a 401 from the SDK).
+ */
+export const AgentErrorKind = Schema.Literal("auth", "network", "generic");
+export type AgentErrorKind = typeof AgentErrorKind.Type;
 
 // ---------------------------------------------------------------------------
 // Event union — emitted on agent.events stream, one row per event. The split
@@ -238,6 +313,15 @@ const CompletedEvent = Schema.TaggedStruct("Completed", {
 
 const ErrorEvent = Schema.TaggedStruct("Error", {
   message: Schema.String,
+  /**
+   * Optional classifier so the renderer can pick the right CTA without
+   * regexing the message. Drivers set this when they have positive evidence
+   * (e.g. Codex SDK reported a 401, or fetch threw ECONN). Absent → the
+   * renderer falls back to its own heuristic classification.
+   */
+  kind: Schema.optional(AgentErrorKind),
+  /** Provider that produced the error, when known. */
+  providerId: Schema.optional(ProviderId),
 });
 
 /**
@@ -254,6 +338,8 @@ const SessionCursorEvent = Schema.TaggedStruct("SessionCursor", {
     "claude-session-id",
     "codex-thread-id",
     "grok-session-id",
+    "cursor-session-id",
+    "gemini-session-id",
   ),
 });
 
@@ -421,6 +507,24 @@ export const MODELS_BY_PROVIDER: Record<ProviderId, ReadonlyArray<ModelOption>> 
     { id: "grok-4-fast", label: "Grok 4 Fast" },
     { id: "grok-code-fast-1", label: "Grok Code Fast" },
   ],
+  // Gemini CLI accepts any model slug it knows via the ACP `_meta.model`
+  // hint; this list is just what the picker offers by default.
+  gemini: [
+    { id: "gemini-3-pro-preview", label: "Gemini 3 Pro" },
+    { id: "gemini-3-flash-preview", label: "Gemini 3 Flash" },
+    { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+    { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+  ],
+  // Cursor's CLI exposes models via the ACP session config-option picker;
+  // these are the slugs `cursor-agent --model` advertises today. Like grok,
+  // the picker accepts any model the agent knows, so a custom slug typed by
+  // the user still works — this list is the default shown in the picker.
+  cursor: [
+    { id: "gpt-5", label: "GPT-5" },
+    { id: "sonnet-4", label: "Claude Sonnet 4" },
+    { id: "sonnet-4-thinking", label: "Claude Sonnet 4 (Thinking)" },
+    { id: "opus-4.1", label: "Claude Opus 4.1" },
+  ],
 };
 
 export const defaultModelFor = (providerId: ProviderId): string =>
@@ -439,6 +543,11 @@ export const MODEL_ALIASES_BY_PROVIDER: Record<ProviderId, Record<string, string
     "gpt-5": "gpt-5.4",
   },
   grok: {},
+  gemini: {
+    "gemini-3-pro": "gemini-3-pro-preview",
+    "gemini-3.1-pro-preview": "gemini-3-pro-preview",
+  },
+  cursor: {},
 };
 
 export const resolveModelSlug = (providerId: ProviderId, slug: string): string =>

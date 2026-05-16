@@ -1,6 +1,13 @@
 import { AlertCircleIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  RotateCw,
+  Settings,
+} from "lucide-react";
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -10,6 +17,7 @@ import type {
   AttachmentRef,
   FileRef,
   Message,
+  ProviderId,
   SessionId,
   SkillRef,
   UserQuestionAnswer,
@@ -20,6 +28,8 @@ import {
   getFolderIconUrl,
 } from "~/lib/icons/material-icons";
 import { cn } from "~/lib/utils";
+import { useMessagesStore, type ChatError } from "~/store/messages";
+import { useUiStore } from "~/store/ui";
 
 import {
   ExitPlanModeRow,
@@ -27,6 +37,7 @@ import {
   ToolRow,
   UserInputRow,
 } from "./tool-row.tsx";
+import { Button } from "./ui/button.tsx";
 
 export interface ToolResultRecord {
   readonly output: unknown;
@@ -130,7 +141,11 @@ export function MessageRow({
       // the standalone answer row is suppressed.
       return null;
     case "error":
-      return <ErrorBubble text={message.content.message} />;
+      return (
+        <ErrorBubble
+          error={{ kind: "generic", message: message.content.message }}
+        />
+      );
   }
 }
 
@@ -351,14 +366,105 @@ const formatResetDetail = (info: RateLimitInfo): string => {
   return "Try again later";
 };
 
-export function ErrorBubble({
-  text,
+const PROVIDER_LABEL_FOR_ERROR: Record<ProviderId, string> = {
+  claude: "Claude Code",
+  codex: "Codex",
+  grok: "Grok",
+  gemini: "Gemini",
+  cursor: "Cursor",
+};
+
+const GEMINI_UPGRADE_COMMAND = "npm i -g @google/gemini-cli@latest";
+
+const isGeminiAcpUpgradeError = (text: string): boolean =>
+  /Gemini CLI.*(?:does not support ACP|--experimental-acp)|Unknown arguments?:.*(?:experimental-acp|experimentalAcp)/is.test(
+    text,
+  );
+
+function GeminiUpgradeCard({
   onDismiss,
 }: {
-  text: string;
   onDismiss?: () => void;
 }) {
-  const rateLimit = parseRateLimit(text);
+  const [copied, setCopied] = useState(false);
+  const copyCommand = () => {
+    void navigator.clipboard.writeText(GEMINI_UPGRADE_COMMAND).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    });
+  };
+
+  return (
+    <div className="px-4 py-2">
+      <div className="max-w-[34rem] rounded-xl border border-warning/25 bg-alert-warning-bg px-4 py-3 text-xs text-foreground shadow-sm">
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-warning/12 text-warning">
+            <HugeiconsIcon
+              icon={AlertCircleIcon}
+              strokeWidth={2}
+              aria-hidden="true"
+              className="size-4"
+            />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium text-foreground">
+              Gemini CLI needs an upgrade
+            </div>
+            <p className="mt-1 leading-relaxed text-muted-foreground">
+              Your installed Gemini CLI does not support ACP mode yet, so
+              memoize cannot start Gemini sessions until the CLI is updated.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <code className="rounded-md border border-border/60 bg-background/60 px-2 py-1 font-mono text-[11px] text-foreground">
+                {GEMINI_UPGRADE_COMMAND}
+              </code>
+              <Button size="xs" variant="outline" onClick={copyCommand}>
+                {copied ? (
+                  <Check className="size-3.5" />
+                ) : (
+                  <Copy className="size-3.5" />
+                )}
+                {copied ? "Copied" : "Copy upgrade command"}
+              </Button>
+              {onDismiss !== undefined && (
+                <Button size="xs" variant="ghost" onClick={onDismiss}>
+                  Dismiss
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function ErrorBubble({
+  error,
+  sessionId,
+  onDismiss,
+}: {
+  error: ChatError;
+  sessionId?: SessionId;
+  onDismiss?: () => void;
+}) {
+  const retry = useMessagesStore((s) => s.retry);
+  const setView = useUiStore((s) => s.setView);
+  const setSettingsSection = useUiStore((s) => s.setSettingsSection);
+
+  const onRetry = () => {
+    if (sessionId !== undefined) void retry(sessionId);
+  };
+  const onOpenSettings = () => {
+    setView("settings");
+    setSettingsSection({ kind: "providers" });
+  };
+
+  if (isGeminiAcpUpgradeError(error.message)) {
+    return <GeminiUpgradeCard onDismiss={onDismiss} />;
+  }
+
+  const rateLimit = parseRateLimit(error.message);
   if (rateLimit !== null) {
     return (
       <div className="px-4 py-2">
@@ -387,27 +493,88 @@ export function ErrorBubble({
               </button>
             )}
           </div>
-          <div className="mt-1 break-words text-muted-foreground">{text}</div>
+          <div className="mt-1 break-words text-muted-foreground">
+            {error.message}
+          </div>
         </div>
       </div>
     );
   }
+
+  const headline =
+    error.kind === "auth"
+      ? `Sign in to ${
+          error.providerId ? PROVIDER_LABEL_FOR_ERROR[error.providerId] : "your provider"
+        }`
+      : error.kind === "network"
+        ? "Connection lost"
+        : null;
+
+  const iconTone =
+    error.kind === "auth"
+      ? "text-destructive"
+      : error.kind === "network"
+        ? "text-warning"
+        : "text-destructive";
+  const bg =
+    error.kind === "network" ? "bg-alert-warning-bg" : "bg-alert-error-bg";
+
   return (
     <div className="px-4 py-2">
-      <div className="max-w-[88%] rounded-xl bg-alert-error-bg px-3 py-2 text-xs text-foreground">
+      <div
+        className={cn(
+          "max-w-[88%] rounded-xl px-3 py-2 text-xs text-foreground",
+          bg,
+        )}
+      >
         <div className="flex items-start gap-2">
           <HugeiconsIcon
             icon={AlertCircleIcon}
             strokeWidth={2}
             aria-hidden="true"
-            className="mt-px size-3.5 shrink-0 text-destructive"
+            className={cn("mt-px size-3.5 shrink-0", iconTone)}
           />
-          <span className="break-words text-muted-foreground">{text}</span>
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            {headline !== null ? (
+              <span className="font-medium text-foreground">{headline}</span>
+            ) : (
+              <span className="font-medium text-foreground">Provider error</span>
+            )}
+            <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-muted-foreground">
+              {error.message || "(empty)"}
+            </pre>
+            {sessionId !== undefined && (
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  onClick={onRetry}
+                  className="gap-1"
+                >
+                  <RotateCw className="size-3" aria-hidden />
+                  Retry
+                </Button>
+                {error.kind === "auth" && (
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant="ghost"
+                    onClick={onOpenSettings}
+                    className="gap-1"
+                  >
+                    <Settings className="size-3" aria-hidden />
+                    Open Provider Settings
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
           {onDismiss !== undefined && (
             <button
               type="button"
               onClick={onDismiss}
-              className="ml-auto rounded px-1.5 py-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+              className="rounded px-1.5 py-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
             >
               Dismiss
             </button>

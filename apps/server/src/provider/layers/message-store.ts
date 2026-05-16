@@ -331,6 +331,35 @@ const titleFromInitial = (prompt: string | undefined): string => {
   return truncated.length > 0 ? truncated : "New chat";
 };
 
+const formatProviderFailure = (cause: unknown): string => {
+  if (cause instanceof Error) return cause.message;
+  if (cause !== null && typeof cause === "object") {
+    const record = cause as Record<string, unknown>;
+    const tag = typeof record["_tag"] === "string" ? record["_tag"] : null;
+    const reason =
+      typeof record["reason"] === "string" ? record["reason"] : null;
+    const providerId =
+      typeof record["providerId"] === "string" ? record["providerId"] : null;
+    const sessionId =
+      typeof record["sessionId"] === "string" ? record["sessionId"] : null;
+    if (reason !== null && reason.length > 0) {
+      const provider = providerId !== null ? `${providerId}: ` : "";
+      return tag !== null ? `${tag}: ${provider}${reason}` : `${provider}${reason}`;
+    }
+    if (sessionId !== null) {
+      return tag !== null
+        ? `${tag}: ${sessionId}`
+        : `No active provider process for session ${sessionId}.`;
+    }
+    try {
+      return JSON.stringify(cause, null, 2);
+    } catch {
+      return String(cause);
+    }
+  }
+  return String(cause);
+};
+
 export const MessageStoreLive = Layer.scoped(
   MessageStore,
   Effect.gen(function* () {
@@ -696,7 +725,25 @@ export const MessageStoreLive = Layer.scoped(
               WHERE project_id = ${projectId} AND archived_at IS NULL
               ORDER BY updated_at DESC
             `.pipe(Effect.orDie);
-        return rows.map(sessionFromRow);
+        // Defensive filter — `chat_id` is NOT NULL since migration 0012, but
+        // any row that somehow slips through with NULL would crash the
+        // Session schema decode and take the entire sidebar / fs / terminal
+        // down with it. Drop and log instead.
+        const usable: SessionRow[] = [];
+        let dropped = 0;
+        for (const row of rows) {
+          if (row.chat_id === null) {
+            dropped += 1;
+            continue;
+          }
+          usable.push(row);
+        }
+        if (dropped > 0) {
+          yield* Effect.logWarning(
+            `[MessageStore] listSessions: dropped ${dropped} row(s) with NULL chat_id (project ${projectId})`,
+          );
+        }
+        return usable.map(sessionFromRow);
       });
 
     /**
@@ -1361,7 +1408,7 @@ export const MessageStoreLive = Layer.scoped(
       session: Session,
       text: string,
       attachments: ReadonlyArray<AttachmentRef>,
-    ): Effect.Effect<void, SessionNotFoundError> => {
+    ): Effect.Effect<void, SessionStartError> => {
       runtimeModeBySession.set(session.id, session.runtimeMode);
       permissionModeBySession.set(session.id, session.permissionMode);
       const subagents = agentsFor(session.id);
@@ -1392,8 +1439,21 @@ export const MessageStoreLive = Layer.scoped(
               Effect.flatMap(() =>
                 provider.send(session.id, text, attachments),
               ),
-              Effect.mapError(
-                () => new SessionNotFoundError({ sessionId: session.id }),
+              Effect.mapError((err) =>
+                err._tag === "ProviderNotAvailableError"
+                  ? new SessionStartError({
+                      providerId: session.providerId,
+                      reason: err.reason,
+                    })
+                  : err._tag === "AgentSessionStartError"
+                    ? new SessionStartError({
+                        providerId: err.providerId,
+                        reason: err.reason,
+                      })
+                    : new SessionStartError({
+                        providerId: session.providerId,
+                        reason: formatProviderFailure(err),
+                      }),
               ),
             ),
         ),
@@ -1520,15 +1580,46 @@ export const MessageStoreLive = Layer.scoped(
           .send(sessionId, text, cleanAttachments, fileRefs, skillRefs)
           .pipe(
             Effect.matchEffect({
-              onFailure: () => Effect.succeed("retry" as const),
+              onFailure: (err) =>
+                Effect.succeed({
+                  _tag: "retry" as const,
+                  reason: formatProviderFailure(err),
+                }),
               onSuccess: () => Effect.succeed("ok" as const),
             }),
           );
-        if (sendResult === "retry") {
+        if (sendResult !== "ok") {
           console.log(
             `[message-store.sendMessage] provider.send failed; restarting provider session for ${sessionId}`,
           );
-          yield* restartProviderSession(session, text, cleanAttachments);
+          const restartResult = yield* restartProviderSession(
+            session,
+            text,
+            cleanAttachments,
+          ).pipe(
+            Effect.matchEffect({
+              onFailure: (err) =>
+                Effect.succeed({
+                  _tag: "failed" as const,
+                  reason: formatProviderFailure(err),
+                }),
+              onSuccess: () => Effect.succeed({ _tag: "ok" as const }),
+            }),
+          );
+          if (restartResult._tag === "failed") {
+            const message =
+              `Provider restart failed after send could not find an active session.\n\n` +
+              `Initial send failure:\n${sendResult.reason}\n\n` +
+              `Restart failure:\n${restartResult.reason}`;
+            const persistedError = yield* persistMessage(sessionId, {
+              _tag: "error",
+              message,
+            });
+            yield* broadcastMessage(sessionId, persistedError);
+            yield* ndjsonAppend(sessionId, persistedError);
+            yield* setStatus(sessionId, "idle");
+            return;
+          }
         }
         yield* setStatus(sessionId, "running");
       });

@@ -27,6 +27,14 @@ import {
   startGrokSession,
   type GrokSessionHandle,
 } from "../drivers/grok.ts";
+import {
+  startGeminiSession,
+  type GeminiSessionHandle,
+} from "../drivers/gemini.ts";
+import {
+  startCursorSession,
+  type CursorSessionHandle,
+} from "../drivers/cursor.ts";
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
 import { CredentialsService } from "../services/credentials-service.ts";
 import { PermissionService } from "../services/permission-service.ts";
@@ -42,7 +50,12 @@ import { WorkspaceService } from "../../workspace/services/workspace-service.ts"
  * own their own scope so `close()` is the canonical teardown — there is no
  * autocleanup tied to the renderer subscription.
  */
-type SessionHandle = ClaudeSessionHandle | CodexSessionHandle | GrokSessionHandle;
+type SessionHandle =
+  | ClaudeSessionHandle
+  | CodexSessionHandle
+  | GrokSessionHandle
+  | GeminiSessionHandle
+  | CursorSessionHandle;
 type SessionEntry = {
   readonly providerId: ProviderId;
   readonly handle: SessionHandle;
@@ -138,7 +151,31 @@ export const ProviderServiceLive = Layer.effect(
           );
           const sessionId = input.sessionId ?? nextSessionId();
           let handle: SessionHandle;
-          if (input.providerId === "grok") {
+          if (input.providerId === "gemini") {
+            // Same story as Grok: hand the driver the user's installed
+            // `gemini` binary. Surface a clean install message rather than
+            // letting spawn fail with ENOENT inside the driver.
+            const geminiPath = yield* resolveCliPath("gemini").pipe(
+              Effect.provideService(CommandExecutor.CommandExecutor, executor),
+            );
+            if (geminiPath === null) {
+              return yield* Effect.fail(
+                new AgentSessionStartError({
+                  providerId: "gemini",
+                  reason:
+                    "Gemini CLI not found on PATH. Install via `npm i -g @google/gemini-cli` and try again.",
+                }),
+              );
+            }
+            handle = yield* startGeminiSession(
+              input,
+              cwd,
+              apiKey,
+              geminiPath,
+              sessionId,
+              resumeCursor,
+            ).pipe(Effect.provideService(AttachmentService, attachmentService));
+          } else if (input.providerId === "grok") {
             // Same story as Claude/Codex: hand the driver the user's
             // installed `grok` binary (no bundled CLI in our package).
             // Surface a clean install message rather than letting spawn
@@ -160,6 +197,34 @@ export const ProviderServiceLive = Layer.effect(
               cwd,
               apiKey,
               grokPath,
+              sessionId,
+              resumeCursor,
+            ).pipe(Effect.provideService(AttachmentService, attachmentService));
+          } else if (input.providerId === "cursor") {
+            // Cursor exposes an ACP server via `cursor-agent acp`. The
+            // documented installed binary is `cursor-agent` (not `cursor`);
+            // surface a clean install message rather than letting spawn
+            // fail with ENOENT inside the driver. Older `cursor-agent`
+            // builds (pre-ACP) will instead drop into a TUI and the
+            // handshake will time out — that's a separate, also-clean
+            // error path from the driver.
+            const cursorPath = yield* resolveCliPath("cursor-agent").pipe(
+              Effect.provideService(CommandExecutor.CommandExecutor, executor),
+            );
+            if (cursorPath === null) {
+              return yield* Effect.fail(
+                new AgentSessionStartError({
+                  providerId: "cursor",
+                  reason:
+                    "Cursor CLI not found on PATH. Install Cursor Agent from https://cursor.com/install and try again.",
+                }),
+              );
+            }
+            handle = yield* startCursorSession(
+              input,
+              cwd,
+              apiKey,
+              cursorPath,
               sessionId,
               resumeCursor,
             ).pipe(Effect.provideService(AttachmentService, attachmentService));
