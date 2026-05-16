@@ -12,6 +12,7 @@ const UPGRADE_DOCS_URL: Record<ProviderId, string> = {
   claude: "https://docs.claude.com/en/docs/claude-code/setup",
   codex: "https://github.com/openai/codex#installation",
   grok: "https://docs.x.ai/build/overview",
+  cursor: "https://cursor.com/cli",
   gemini: "https://github.com/google-gemini/gemini-cli#installation",
 };
 

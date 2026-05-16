@@ -13,7 +13,7 @@ import {
  * the literal union is the contract — adding a new provider is an additive
  * change here plus a new driver in `apps/server/src/provider/drivers/`.
  */
-export const ProviderId = Schema.Literal("claude", "codex", "grok", "gemini");
+export const ProviderId = Schema.Literal("claude", "codex", "grok", "gemini", "cursor");
 export type ProviderId = typeof ProviderId.Type;
 
 /**
@@ -338,6 +338,7 @@ const SessionCursorEvent = Schema.TaggedStruct("SessionCursor", {
     "claude-session-id",
     "codex-thread-id",
     "grok-session-id",
+    "cursor-session-id",
   ),
 });
 
@@ -513,6 +514,16 @@ export const MODELS_BY_PROVIDER: Record<ProviderId, ReadonlyArray<ModelOption>> 
     { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
     { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
   ],
+  // Cursor's CLI exposes models via the ACP session config-option picker;
+  // these are the slugs `cursor-agent --model` advertises today. Like grok,
+  // the picker accepts any model the agent knows, so a custom slug typed by
+  // the user still works — this list is the default shown in the picker.
+  cursor: [
+    { id: "gpt-5", label: "GPT-5" },
+    { id: "sonnet-4", label: "Claude Sonnet 4" },
+    { id: "sonnet-4-thinking", label: "Claude Sonnet 4 (Thinking)" },
+    { id: "opus-4.1", label: "Claude Opus 4.1" },
+  ],
 };
 
 export const defaultModelFor = (providerId: ProviderId): string =>
@@ -535,6 +546,7 @@ export const MODEL_ALIASES_BY_PROVIDER: Record<ProviderId, Record<string, string
     "gemini-3-pro": "gemini-3-pro-preview",
     "gemini-3.1-pro-preview": "gemini-3-pro-preview",
   },
+  cursor: {},
 };
 
 export const resolveModelSlug = (providerId: ProviderId, slug: string): string =>

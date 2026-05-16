@@ -371,6 +371,7 @@ const PROVIDER_LABEL_FOR_ERROR: Record<ProviderId, string> = {
   codex: "Codex",
   grok: "Grok",
   gemini: "Gemini",
+  cursor: "Cursor",
 };
 
 const GEMINI_UPGRADE_COMMAND = "npm i -g @google/gemini-cli@latest";

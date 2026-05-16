@@ -21,6 +21,7 @@ const KNOWN_PROVIDERS: ReadonlyArray<ProviderId> = [
   "codex",
   "grok",
   "gemini",
+  "cursor",
 ];
 
 const isKnownProvider = (id: string): id is ProviderId =>

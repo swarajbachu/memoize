@@ -30,6 +30,7 @@ const PROVIDER_LABEL: Record<ProviderId, string> = {
   claude: "Claude",
   codex: "Codex",
   grok: "Grok",
+  cursor: "Cursor",
   gemini: "Gemini",
 };
 
