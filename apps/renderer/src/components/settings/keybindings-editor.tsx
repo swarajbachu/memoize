@@ -31,7 +31,6 @@ import {
 } from "../../lib/default-keybindings";
 import { useKeybindingsStore } from "../../store/keybindings";
 import { Button } from "../ui/button";
-import { Input } from "../ui/input";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import {
@@ -310,11 +309,12 @@ function RowEditor({
 
   const whenText = whenAstToString(draft.whenDraft);
   const isDirty = draft.keyDraft !== row.key || whenText !== row.when;
-  const showPill =
-    !draft.isRecording &&
-    draft.keyDraft === row.key &&
-    row.key.length > 0 &&
-    !isDirty;
+  // Show the pill whenever we're not actively recording — even when the row
+  // is dirty (the pill renders the freshly-captured chord; the Save button
+  // next to it commits the change). Only the brief recording window shows
+  // the raw Input, so users never see the literal `mod+v` text wondering
+  // why the cell looks broken.
+  const showPill = !draft.isRecording && draft.keyDraft.length > 0;
 
   const conflictLabels = conflictsFor(allRows, {
     id: row.id,
@@ -340,9 +340,10 @@ function RowEditor({
     }
   };
 
-  const onKey = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+  const onKey = (event: ReactKeyboardEvent<HTMLElement>) => {
     if (event.key === "Tab") return;
     event.preventDefault();
+    event.stopPropagation();
     if (event.key === "Escape") {
       dispatch({ type: "patch", patch: { keyDraft: row.key, isRecording: false } });
       return;
@@ -371,42 +372,42 @@ function RowEditor({
               dispatch({ type: "patch", patch: { isRecording: true } })
             }
             aria-label={`Edit shortcut for ${meta.label}`}
-            className="group inline-flex h-7 items-center gap-1.5 rounded-md border border-transparent px-1.5 outline-none transition-colors hover:border-border/70 hover:bg-background focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/24"
+            className={cn(
+              "group inline-flex h-7 min-w-0 items-center gap-1.5 rounded-md border px-1.5 outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/24",
+              isDirty
+                ? "border-primary/40 bg-primary/5"
+                : "border-transparent hover:border-border/70 hover:bg-background",
+            )}
           >
-            <KeybindingPill value={row.key} />
+            <KeybindingPill value={draft.keyDraft} />
             <span className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/0 transition-opacity group-hover:text-muted-foreground/70 group-focus-visible:text-muted-foreground/70">
               Edit
             </span>
           </button>
         ) : (
-          <Input
-            autoFocus={draft.isRecording}
-            aria-label={`Keybinding for ${meta.label}`}
-            value={draft.isRecording ? "" : draft.keyDraft}
-            placeholder={draft.isRecording ? "Press shortcut" : "Unassigned"}
+          <div
             className={cn(
-              "h-7 w-full min-w-0 rounded-md font-mono text-[12px]",
-              draft.isRecording && "border-primary/70 bg-primary/5",
+              "flex h-7 min-w-0 flex-1 items-center justify-center rounded-md border border-primary/70 bg-primary/5 px-2 text-[11px] font-medium text-primary",
             )}
-            onFocus={() =>
-              dispatch({ type: "patch", patch: { isRecording: true } })
-            }
+            // Keep this focusable so the keydown handler runs while the
+            // user records a chord; tabIndex={0} mirrors a real input.
+            tabIndex={0}
+            autoFocus
+            ref={(node) => node?.focus()}
             onBlur={() =>
               dispatch({ type: "patch", patch: { isRecording: false } })
             }
-            onChange={(e) =>
-              dispatch({
-                type: "patch",
-                patch: { keyDraft: e.currentTarget.value },
-              })
-            }
             onKeyDown={onKey}
-          />
+            role="textbox"
+            aria-label={`Recording shortcut for ${meta.label}`}
+          >
+            Press shortcut…
+          </div>
         )}
         {isDirty && (
           <Button
             size="xs"
-            className="h-7"
+            className="h-7 shrink-0"
             disabled={draft.keyDraft.trim().length === 0 || !draft.isWhenValid}
             onClick={() => void save()}
           >
@@ -527,9 +528,10 @@ function NewRow({
     onSaved();
   };
 
-  const onKey = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+  const onKey = (event: ReactKeyboardEvent<HTMLElement>) => {
     if (event.key === "Tab") return;
     event.preventDefault();
+    event.stopPropagation();
     if (event.key === "Escape") {
       onCancel();
       return;
@@ -562,29 +564,42 @@ function NewRow({
       </div>
 
       <div className="flex min-w-0 items-center gap-2 pr-4">
-        <Input
-          autoFocus
-          aria-label="Keybinding for new rule"
-          value={draft.isRecording ? "" : draft.keyDraft}
-          placeholder={draft.isRecording ? "Press shortcut" : "Unassigned"}
-          className={cn(
-            "h-7 w-44 rounded-md font-mono text-[12px]",
-            draft.isRecording && "border-primary/70 bg-primary/5",
-          )}
-          onFocus={() =>
-            dispatch({ type: "patch", patch: { isRecording: true } })
-          }
-          onBlur={() =>
-            dispatch({ type: "patch", patch: { isRecording: false } })
-          }
-          onChange={(e) =>
-            dispatch({
-              type: "patch",
-              patch: { keyDraft: e.currentTarget.value },
-            })
-          }
-          onKeyDown={onKey}
-        />
+        {draft.isRecording ? (
+          <div
+            tabIndex={0}
+            autoFocus
+            ref={(node) => node?.focus()}
+            role="textbox"
+            aria-label="Recording shortcut for new binding"
+            onBlur={() =>
+              dispatch({ type: "patch", patch: { isRecording: false } })
+            }
+            onKeyDown={onKey}
+            className="flex h-7 min-w-0 flex-1 items-center justify-center rounded-md border border-primary/70 bg-primary/5 px-2 text-[11px] font-medium text-primary"
+          >
+            Press shortcut…
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() =>
+              dispatch({ type: "patch", patch: { isRecording: true } })
+            }
+            aria-label="Edit shortcut for new binding"
+            className={cn(
+              "group inline-flex h-7 min-w-0 items-center gap-1.5 rounded-md border px-1.5 outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/24",
+              draft.keyDraft.length > 0
+                ? "border-primary/40 bg-primary/5"
+                : "border-border/70 bg-background text-muted-foreground hover:bg-muted/40",
+            )}
+          >
+            {draft.keyDraft.length > 0 ? (
+              <KeybindingPill value={draft.keyDraft} />
+            ) : (
+              <span className="text-[11px]">Click to record</span>
+            )}
+          </button>
+        )}
       </div>
 
       <div className="pr-4">

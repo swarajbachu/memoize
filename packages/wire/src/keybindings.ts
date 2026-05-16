@@ -42,14 +42,18 @@ export type Command = typeof Command.Type;
  *
  * Rules are stored in order; later rules win over earlier ones on the same
  * key+context — matching the precedence VS Code & t3code use.
+ *
+ * Declared as a `Schema.Struct` (not `Schema.Class`) on purpose: rules are
+ * pure data with no methods, and the renderer constructs plain objects when
+ * sending edits over RPC — `Schema.Class` would reject those for not being
+ * actual class instances. Matches the `RepositorySettingsPatch` convention.
  */
-export class KeybindingRule extends Schema.Class<KeybindingRule>(
-  "KeybindingRule",
-)({
+export const KeybindingRule = Schema.Struct({
   key: Schema.String,
   command: Command,
   when: Schema.optional(Schema.String),
-}) {}
+});
+export type KeybindingRule = typeof KeybindingRule.Type;
 
 /**
  * Wire-shape of `keybindings.json`. v1 stores only user overrides — the
