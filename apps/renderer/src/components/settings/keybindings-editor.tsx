@@ -4,6 +4,7 @@ import {
   FileJson,
   Pencil,
   Plus,
+  RotateCcw,
   Search,
   TriangleAlert,
 } from "lucide-react";
@@ -449,7 +450,7 @@ function RowEditor({
         </div>
       </div>
 
-      <div className="flex min-w-0 items-center gap-2 pr-4">
+      <div className="flex min-w-0 items-center gap-1 pr-3">
         {showPill ? (
           <>
             <div
@@ -462,40 +463,58 @@ function RowEditor({
             >
               <KeybindingPill value={draft.keyDraft} />
             </div>
-            {isDirty ? (
-              <Button
-                size="xs"
-                className="h-7 shrink-0"
-                disabled={
-                  draft.keyDraft.trim().length === 0 || !draft.isWhenValid
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    size="icon-xs"
+                    variant="ghost"
+                    className="text-muted-foreground hover:text-foreground"
+                    onClick={() =>
+                      dispatch({
+                        type: "patch",
+                        patch: { isRecording: true },
+                      })
+                    }
+                    aria-label={`Edit shortcut for ${meta.label}`}
+                  >
+                    <Pencil className="size-3.5" />
+                  </Button>
                 }
-                onClick={() => void save()}
-              >
-                Save
-              </Button>
-            ) : (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      type="button"
-                      size="icon-xs"
-                      variant="ghost"
-                      className="text-muted-foreground hover:text-foreground"
-                      onClick={() =>
-                        dispatch({
-                          type: "patch",
-                          patch: { isRecording: true },
-                        })
-                      }
-                      aria-label={`Edit shortcut for ${meta.label}`}
-                    >
-                      <Pencil className="size-3.5" />
-                    </Button>
+              />
+              <TooltipPopup side="top">Record new chord</TooltipPopup>
+            </Tooltip>
+            {isDirty && (
+              <>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        type="button"
+                        size="icon-xs"
+                        variant="ghost"
+                        className="text-muted-foreground hover:text-foreground"
+                        onClick={() => dispatch({ type: "reset", row })}
+                        aria-label="Discard pending changes"
+                      >
+                        <RotateCcw className="size-3.5" />
+                      </Button>
+                    }
+                  />
+                  <TooltipPopup side="top">Discard changes</TooltipPopup>
+                </Tooltip>
+                <Button
+                  size="xs"
+                  className="h-7 shrink-0"
+                  disabled={
+                    draft.keyDraft.trim().length === 0 || !draft.isWhenValid
                   }
-                />
-                <TooltipPopup side="top">Record new chord</TooltipPopup>
-              </Tooltip>
+                  onClick={() => void save()}
+                >
+                  Save
+                </Button>
+              </>
             )}
           </>
         ) : (
