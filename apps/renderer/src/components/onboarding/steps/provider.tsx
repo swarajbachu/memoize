@@ -65,6 +65,7 @@ type ProviderState =
   | { readonly kind: "missing" } // CLI not installed
   | { readonly kind: "outdated"; readonly current: string; readonly required: string; readonly command: string | null } // installed but below SDK floor
   | { readonly kind: "signed-out" } // CLI installed, not logged in, no API key
+  | { readonly kind: "subscription"; readonly plan: string } // logged in but missing required paid plan (e.g. SuperGrok Heavy)
   | { readonly kind: "ready"; readonly via: "cli" | "key" };
 
 function deriveState(
@@ -88,7 +89,23 @@ function deriveState(
       command: a.cliUpgradeCommand ?? null,
     };
   }
-  if (a.cliLoggedIn) return { kind: "ready", via: "cli" };
+
+  // For subscription-gated providers (grok, cursor), the server-side probe
+  // (parseGrokAuthJson etc.) sets authLabel to "Requires SuperGrok Heavy"
+  // (or equivalent) when the JWT tier is insufficient, even if cliLoggedIn
+  // is true. We surface this as a distinct state so onboarding no longer
+  // lies to paying users who already have the plan.
+  if (a.cliLoggedIn) {
+    const subInfo = SUBSCRIPTION_INFO[providerId];
+    const unmet =
+      subInfo !== undefined &&
+      (a.authLabel ?? "").toLowerCase().includes("require");
+    if (unmet) {
+      return { kind: "subscription", plan: subInfo.plan };
+    }
+    return { kind: "ready", via: "cli" };
+  }
+
   if (a.hasApiKey) return { kind: "ready", via: "key" };
   return { kind: "signed-out" };
 }
@@ -179,7 +196,11 @@ function ProviderCard({
       </span>
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         <StateLine state={state} />
-        {SUBSCRIPTION_INFO[providerId] !== undefined && (
+        {/* Only show the "Subscription" badge when the probe actually
+            detected an unmet plan requirement. Users with a valid tier
+            (authLabel = "SuperGrok Heavy") see a normal "CLI logged in"
+            card without the badge. */}
+        {state.kind === "subscription" && (
           <span className="rounded-full bg-violet-500/[0.12] px-1.5 py-px text-[9px] font-medium uppercase tracking-wide text-violet-300">
             Subscription
           </span>
@@ -195,6 +216,7 @@ function StateDot({ state }: { state: ProviderState }) {
     missing: "bg-rose-400/80",
     outdated: "bg-amber-400",
     "signed-out": "bg-amber-400",
+    subscription: "bg-amber-400",
     ready: "bg-emerald-400",
   };
   return (
@@ -218,13 +240,17 @@ function StateLine({ state }: { state: ProviderState }) {
           ? "Update required"
           : state.kind === "signed-out"
             ? "Sign in required"
-            : state.via === "cli"
-              ? "CLI logged in"
-              : "API key set";
+            : state.kind === "subscription"
+              ? "Subscription required"
+              : state.via === "cli"
+                ? "CLI logged in"
+                : "API key set";
   const tone =
     state.kind === "ready"
       ? "text-emerald-300/90"
-      : state.kind === "signed-out" || state.kind === "outdated"
+      : state.kind === "signed-out" ||
+          state.kind === "outdated" ||
+          state.kind === "subscription"
         ? "text-amber-300/90"
         : state.kind === "missing"
           ? "text-rose-300/90"
@@ -254,9 +280,11 @@ function ProviderStatus({
           : "Ready — using API key"
         : state.kind === "signed-out"
           ? "Sign in to the CLI"
-          : state.kind === "outdated"
-            ? "Update the CLI"
-            : "Install the CLI";
+          : state.kind === "subscription"
+            ? "Subscription required"
+            : state.kind === "outdated"
+              ? "Update the CLI"
+              : "Install the CLI";
 
   const subline =
     state.kind === "loading"
@@ -267,15 +295,23 @@ function ProviderStatus({
           : "Stored in your OS keychain."
         : state.kind === "signed-out"
           ? "Already installed — just run the login command below."
-          : state.kind === "outdated"
-            ? `${PROVIDER_LABEL[providerId]} ${state.current} is too old; memoize needs ${state.required}.`
-            : `${PROVIDER_LABEL[providerId]}'s CLI isn't on your PATH yet.`;
+          : state.kind === "subscription"
+            ? "Your CLI login was detected, but the required paid plan was not confirmed."
+            : state.kind === "outdated"
+              ? `${PROVIDER_LABEL[providerId]} ${state.current} is too old; memoize needs ${state.required}.`
+              : `${PROVIDER_LABEL[providerId]}'s CLI isn't on your PATH yet.`;
 
   const showLoginBlock = state.kind === "signed-out";
   const showInstallBlock = state.kind === "missing";
   const showUpgradeBlock = state.kind === "outdated";
   const apiSummary = state.kind === "ready" && state.via === "key";
-  const subscription = SUBSCRIPTION_INFO[providerId];
+
+  // Only show the violet subscription nag when the probe explicitly told us
+  // the plan requirement is unmet (authLabel contains "Requires"). If the
+  // user has a valid SuperGrok Heavy JWT (tier >= 5), authLabel will be
+  // "SuperGrok Heavy" and we treat them as ready (no nag).
+  const subscriptionInfo = SUBSCRIPTION_INFO[providerId];
+  const showSubscriptionNotice = state.kind === "subscription";
 
   return (
     <div className="flex flex-col gap-3 rounded-2xl bg-white/[0.025] p-4">
@@ -291,11 +327,11 @@ function ProviderStatus({
         <StatusPill state={state} />
       </div>
 
-      {subscription !== undefined && (
+      {showSubscriptionNotice && subscriptionInfo !== undefined && (
         <SubscriptionNotice
           providerId={providerId}
-          plan={subscription.plan}
-          url={subscription.url}
+          plan={subscriptionInfo.plan}
+          url={subscriptionInfo.url}
         />
       )}
 
@@ -412,6 +448,12 @@ function StatusPill({ state }: { state: ProviderState }) {
     },
     "signed-out": {
       label: "Sign in",
+      dot: "bg-amber-400",
+      bg: "bg-amber-400/12",
+      text: "text-amber-300",
+    },
+    subscription: {
+      label: "Subscribe",
       dot: "bg-amber-400",
       bg: "bg-amber-400/12",
       text: "text-amber-300",

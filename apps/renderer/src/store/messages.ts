@@ -31,9 +31,27 @@ export type ChatError =
   | { readonly kind: "generic"; readonly message: string };
 
 const AUTH_PATTERN =
-  /\b401\b|\bunauthorized\b|expired token|invalid_grant|signed?\s?out|sign\s?in required|please log in/i;
+  /\b401\b|\bunauthorized\b|expired token|invalid_grant|signed?\s?out|sign\s?in required|please log in|authorizationrequired|auth\(authorizationrequired\)|authentication failed/i;
 const NETWORK_PATTERN =
   /\b(network|fetch|econn|enotfound|etimedout|timeout|getaddrinfo)\b/i;
+
+/**
+ * Read the per-session model-option bag the composer's ReasoningPicker
+ * persists to sessionStorage. Returns `null` when nothing has been set so
+ * the RPC payload stays clean (drivers default to model presets).
+ */
+const readSessionModelOptions = (
+  sessionId: SessionId,
+): Record<string, string> | null => {
+  if (typeof window === "undefined") return null;
+  const reasoning = window.sessionStorage.getItem(
+    `memoize.reasoning.${sessionId}`,
+  );
+  if (reasoning === "low" || reasoning === "medium" || reasoning === "high") {
+    return { reasoning };
+  }
+  return null;
+};
 
 const classifyMessage = (
   message: string,
@@ -361,10 +379,15 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
     }));
     try {
       const client = await getRpcClient();
+      // Pick up the per-session reasoning selection the composer's
+      // ReasoningPicker persists to sessionStorage. Drivers that don't
+      // implement reasoning silently ignore it; only models whose
+      // descriptor advertises a `reasoning` option even show the picker.
+      const modelOptions = readSessionModelOptions(sessionId);
       const payload =
         typeof input === "string"
-          ? { sessionId, text: input }
-          : { sessionId, input };
+          ? { sessionId, text: input, ...(modelOptions !== null ? { modelOptions } : {}) }
+          : { sessionId, input, ...(modelOptions !== null ? { modelOptions } : {}) };
       await Effect.runPromise(client.messages.send(payload));
       void useSessionsStore.getState().refreshOne(sessionId);
     } catch (err) {

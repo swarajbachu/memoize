@@ -373,26 +373,111 @@ const probeClaudeAccount: Effect.Effect<
     : parseClaudeCredentials(raw);
 });
 
-// Grok writes browser-OAuth credentials + `config.toml` under `~/.grok/`
-// on first authenticated launch; directory presence is a cheap proxy for
-// "completed at least one login". If only `GROK_CODE_XAI_API_KEY` is set,
-// the dir may not exist — the renderer still flips to "ready" via
-// `hasApiKey` once a key lands in the keychain.
+interface GrokAuthEntry {
+  readonly key?: string; // JWT access token (contains "tier" claim)
+  readonly email?: string;
+  readonly first_name?: string;
+}
+
+/**
+ * Minimum `tier` value from the xAI OIDC JWT that includes SuperGrok Heavy
+ * (the plan required for full Grok coding agent / `grok agent stdio` access).
+ * Lower tiers will be treated as "requires subscription" (disabled + nag).
+ */
+const MIN_SUPERGROK_HEAVY_TIER = 5;
+
+/** Base64url decode + parse a JWT payload (no signature verification). */
+const decodeJwtPayload = (jwt: string): Record<string, unknown> | null => {
+  try {
+    const parts = jwt.split(".");
+    if (parts.length !== 3) return null;
+    const payloadPart = parts[1];
+    if (!payloadPart) return null;
+    let b64 = payloadPart.replace(/-/g, "+").replace(/_/g, "/");
+    // Pad to multiple of 4
+    b64 += "===".slice((b64.length + 3) % 4);
+    const json = Buffer.from(b64, "base64").toString("utf8");
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+};
+
+const parseGrokAuthJson = (raw: string): AccountInfo => {
+  try {
+    const data = JSON.parse(raw) as Record<string, GrokAuthEntry>;
+    const entry = Object.values(data)[0];
+    if (!entry) {
+      return {
+        authStatus: "authenticated",
+        authType: "cli",
+        authLabel: "Requires SuperGrok Heavy",
+      } satisfies AccountInfo;
+    }
+
+    const email = entry.email?.trim();
+    let authLabel = "Requires SuperGrok Heavy";
+
+    if (entry.key) {
+      const claims = decodeJwtPayload(entry.key);
+      const tier = claims?.tier;
+      if (typeof tier === "number" && tier >= MIN_SUPERGROK_HEAVY_TIER) {
+        authLabel = "SuperGrok Heavy";
+      }
+    }
+
+    return {
+      authStatus: "authenticated",
+      authType: "cli",
+      ...(email ? { authEmail: email } : {}),
+      authLabel,
+    } satisfies AccountInfo;
+  } catch {
+    // Unparseable auth.json → conservative: treat as needing the plan.
+    return {
+      authStatus: "authenticated",
+      authType: "cli",
+      authLabel: "Requires SuperGrok Heavy",
+    } satisfies AccountInfo;
+  }
+};
+
+// Grok stores OIDC credentials (JWT + email + tier claim) in `~/.grok/auth.json`
+// after `grok login`. We parse the JWT to read the `tier` claim and decide the
+// plan status:
 //
-// We can't currently verify the user's subscription tier from the CLI
-// alone — Grok's agent CLI requires an active SuperGrok Heavy plan to
-// actually drive sessions, but the OAuth artifact alone doesn't tell us
-// whether that plan is active. Carry the requirement in `authLabel` so
-// the card surfaces "Requires SuperGrok Heavy subscription" + a subscribe
-// CTA, and the user finds out before they hit a session-runtime 403.
+// - tier >= 5 → authLabel: "SuperGrok Heavy"   (good, card shows plan, toggle enabled)
+// - lower / no JWT / unreadable → authLabel: "Requires SuperGrok Heavy" (disabled + violet nag)
+//
+// This gives real plan details in the UI while keeping the safety net for
+// accounts that don't have the required SuperGrok Heavy plan. The final gate
+// is still enforced server-side by the Grok ACP.
 const probeGrokAccount: Effect.Effect<AccountInfo, never, FileSystem.FileSystem> =
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
-    const path = join(homedir(), ".grok");
-    const exists = yield* fs
-      .exists(path)
+    const dir = join(homedir(), ".grok");
+    const authPath = join(dir, "auth.json");
+
+    const authExists = yield* fs
+      .exists(authPath)
       .pipe(Effect.catchAll(() => Effect.succeed(false)));
-    return exists
+
+    if (authExists) {
+      const raw = yield* fs
+        .readFileString(authPath)
+        .pipe(Effect.catchAll(() => Effect.succeed("")));
+      if (raw.length > 0) {
+        return parseGrokAuthJson(raw);
+      }
+    }
+
+    // No auth.json (legacy dir, API key only, or first-run state).
+    // We conservatively report "Requires SuperGrok Heavy" so the UI disables
+    // the toggle and shows the subscription notice (same as before for unknown plans).
+    const dirExists = yield* fs
+      .exists(dir)
+      .pipe(Effect.catchAll(() => Effect.succeed(false)));
+    return dirExists
       ? ({
           authStatus: "authenticated",
           authType: "cli",

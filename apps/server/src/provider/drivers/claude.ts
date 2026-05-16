@@ -1195,15 +1195,21 @@ export const startClaudeSession = (
         `Phase 3 — Ask. When a real fork in the road exists (which library, which scope, which approach), call ${ASK_USER_QUESTION_FQN} with the choices instead of guessing.`,
         "Phase 4 — Propose. Call ExitPlanMode with a concise plan: what changes, where, and how to verify.",
       ].join("\n"),
-      // `effort: "high"` enables deep reasoning. We pair it with an
-      // explicit `display: "summarized"` because Opus 4.7 defaults the
-      // adaptive-thinking display to "omitted" — meaning the API
-      // intentionally returns empty thinking text plus a signature.
-      // Without this override, our `thinking_delta` chunks arrive empty
-      // even though the model thought (we see `signature_delta` only).
-      // Other Claude 4 models default to "summarized" so this is a
-      // no-op for them.
-      effort: "high",
+      // Reasoning effort: mapped from FE picker via `input.modelOptions
+      // .reasoning` (the per-model descriptor in
+      // `MODELS_BY_PROVIDER[claude]` declares which models expose this).
+      // Falls back to "high" when omitted to preserve prior default. We
+      // pair it with an explicit `display: "summarized"` because Opus
+      // 4.7 defaults the adaptive-thinking display to "omitted" — without
+      // this override our `thinking_delta` chunks arrive empty (only
+      // signatures), which would break the streaming thinking UI. Other
+      // Claude 4 models default to "summarized" so this is a no-op for
+      // them.
+      effort: (() => {
+        const r = input.modelOptions?.["reasoning"];
+        if (r === "low" || r === "medium" || r === "high") return r;
+        return "high";
+      })(),
       thinking: { type: "adaptive", display: "summarized" },
       forwardSubagentText: true,
       // Surfaces thinking deltas in the partial-message stream so we
