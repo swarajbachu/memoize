@@ -16,6 +16,7 @@ const seedModels = (): Record<ProviderId, string> => ({
   claude: defaultModelFor("claude"),
   codex: defaultModelFor("codex"),
   grok: defaultModelFor("grok"),
+  cursor: defaultModelFor("cursor"),
   gemini: defaultModelFor("gemini"),
 });
 
@@ -39,7 +40,11 @@ type Persisted = {
 };
 
 const isProviderId = (v: unknown): v is ProviderId =>
-  v === "claude" || v === "codex" || v === "grok" || v === "gemini";
+  v === "claude" ||
+  v === "codex" ||
+  v === "grok" ||
+  v === "gemini" ||
+  v === "cursor";
 
 const isRuntimeMode = (v: unknown): v is RuntimeMode =>
   v === "approval-required" || v === "auto-accept-edits" || v === "full-access";
@@ -49,6 +54,7 @@ const seedEnabled = (): Record<ProviderId, boolean> => ({
   codex: true,
   grok: true,
   gemini: true,
+  cursor: true,
 });
 
 const freshDefaults = (): Persisted => ({
@@ -89,6 +95,12 @@ const loadPersisted = (): Persisted => {
         typeof parsed.defaultModelByProvider?.grok === "string"
           ? parsed.defaultModelByProvider.grok
           : seeded.grok,
+      ),
+      cursor: resolveModelSlug(
+        "cursor",
+        typeof parsed.defaultModelByProvider?.cursor === "string"
+          ? parsed.defaultModelByProvider.cursor
+          : seeded.cursor,
       ),
       gemini: resolveModelSlug(
         "gemini",
@@ -132,6 +144,10 @@ const loadPersisted = (): Persisted => {
         gemini:
           typeof parsed.providerEnabled?.gemini === "boolean"
             ? parsed.providerEnabled.gemini
+            : true,
+        cursor:
+          typeof parsed.providerEnabled?.cursor === "boolean"
+            ? parsed.providerEnabled.cursor
             : true,
       },
     };

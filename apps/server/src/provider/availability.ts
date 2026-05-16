@@ -71,6 +71,17 @@ const PROBES: ReadonlyArray<ProviderProbe> = [
     minVersion: null,
     upgradeCommand: "npm i -g @google/gemini-cli",
   },
+  {
+    providerId: "cursor",
+    displayName: "Cursor",
+    cliBinary: "cursor-agent",
+    // No version floor yet. ACP support landed in a recent `cursor-agent`
+    // release; older builds will surface a handshake timeout when the user
+    // tries to start a session. Revisit once we pin the exact
+    // ACP-introducing version.
+    minVersion: null,
+    upgradeCommand: "curl https://cursor.com/install -fsS | bash",
+  },
 ];
 
 const PROBE_TIMEOUT = Duration.seconds(4);
@@ -407,6 +418,34 @@ const probeGeminiAccount: Effect.Effect<AccountInfo, never, FileSystem.FileSyste
       : ({ authStatus: "unauthenticated" } satisfies AccountInfo);
   });
 
+// Cursor Agent stores OAuth credentials under `~/.local/share/cursor-agent/`
+// after `cursor-agent login`. The directory is also created on first install
+// regardless of auth state, so its mere presence isn't a perfect proxy — but
+// it's the best we have without driving the ACP probe. The renderer also
+// flips to "ready" via `hasApiKey` once a key lands in the keychain.
+//
+// Like Grok, we can't verify the user's plan from the CLI alone — driving
+// agent sessions through `cursor-agent acp` requires an active Cursor Pro
+// (or higher) subscription, but the OAuth artifact alone doesn't tell us
+// whether that plan is active. Carry the requirement in `authLabel` so the
+// card surfaces "Requires Cursor Pro subscription" + a subscribe CTA, and
+// the user finds out before they hit a session-runtime 403.
+const probeCursorAccount: Effect.Effect<AccountInfo, never, FileSystem.FileSystem> =
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = join(homedir(), ".local", "share", "cursor-agent");
+    const exists = yield* fs
+      .exists(path)
+      .pipe(Effect.catchAll(() => Effect.succeed(false)));
+    return exists
+      ? ({
+          authStatus: "authenticated",
+          authType: "cli",
+          authLabel: "Requires Cursor Pro",
+        } satisfies AccountInfo)
+      : ({ authStatus: "unauthenticated" } satisfies AccountInfo);
+  });
+
 const probeAccount = (
   providerId: ProviderId,
   cliPath: string,
@@ -424,6 +463,8 @@ const probeAccount = (
       return probeGrokAccount;
     case "gemini":
       return probeGeminiAccount;
+    case "cursor":
+      return probeCursorAccount;
   }
 };
 

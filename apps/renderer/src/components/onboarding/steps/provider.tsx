@@ -1,4 +1,4 @@
-import { Check, Eye, EyeOff } from "lucide-react";
+import { Check, ExternalLink, Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
 
 import type { AgentAvailability, ProviderId } from "@memoize/wire";
@@ -12,10 +12,35 @@ import { useProvidersStore } from "../../../store/providers.ts";
 import { useSettingsStore } from "../../../store/settings.ts";
 import { StepHeader } from "./shared.tsx";
 
+// Subscription-gated providers — same set surfaced as violet notices on the
+// settings ProviderCard and filtered out of the composer's provider picker.
+// We can't verify the plan from the CLI, so the onboarding card flags the
+// requirement before the user picks the provider and discovers it the
+// hard way mid-session.
+const SUBSCRIPTION_INFO: Partial<
+  Record<ProviderId, { readonly plan: string; readonly url: string }>
+> = {
+  grok: { plan: "SuperGrok Heavy", url: "https://grok.com/#subscribe" },
+  cursor: { plan: "Cursor Pro", url: "https://cursor.com/pricing" },
+};
+
+const openExternal = (url: string): void => {
+  if (typeof window === "undefined") return;
+  const bridge = (window as unknown as {
+    memoize?: { app?: { openExternal?: (u: string) => void } };
+  }).memoize?.app?.openExternal;
+  if (typeof bridge === "function") {
+    bridge(url);
+    return;
+  }
+  window.open(url, "_blank", "noopener");
+};
+
 const LOGIN_HINT: Record<ProviderId, string> = {
   claude: "claude /login",
   codex: "codex login",
   grok: "grok",
+  cursor: "cursor-agent login",
   gemini: "gemini",
 };
 
@@ -23,6 +48,7 @@ const INSTALL_HINT: Record<ProviderId, string> = {
   claude: "npm i -g @anthropic-ai/claude-code",
   codex: "npm i -g @openai/codex",
   grok: "curl -fsSL https://x.ai/cli/install.sh | bash",
+  cursor: "curl https://cursor.com/install -fsS | bash",
   gemini: "npm i -g @google/gemini-cli",
 };
 
@@ -30,6 +56,7 @@ const PROVIDER_TAGLINE: Record<ProviderId, string> = {
   claude: "Anthropic · Opus, Sonnet, Haiku",
   codex: "OpenAI · GPT-5 family",
   grok: "xAI · Grok",
+  cursor: "Cursor · GPT, Sonnet, Opus",
   gemini: "Google · Gemini 3 Pro",
 };
 
@@ -77,6 +104,7 @@ export function ProviderStep() {
     "codex",
     "grok",
     "gemini",
+    "cursor",
   ];
 
   return (
@@ -149,7 +177,14 @@ function ProviderCard({
           {PROVIDER_TAGLINE[providerId]}
         </span>
       </span>
-      <StateLine state={state} />
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <StateLine state={state} />
+        {SUBSCRIPTION_INFO[providerId] !== undefined && (
+          <span className="rounded-full bg-violet-500/[0.12] px-1.5 py-px text-[9px] font-medium uppercase tracking-wide text-violet-300">
+            Subscription
+          </span>
+        )}
+      </div>
     </button>
   );
 }
@@ -195,7 +230,7 @@ function StateLine({ state }: { state: ProviderState }) {
           ? "text-rose-300/90"
           : "text-muted-foreground";
   return (
-    <span className={cn("mt-2 text-[10px] font-medium tracking-wide", tone)}>
+    <span className={cn("text-[10px] font-medium tracking-wide", tone)}>
       {text.toUpperCase()}
     </span>
   );
@@ -240,6 +275,7 @@ function ProviderStatus({
   const showInstallBlock = state.kind === "missing";
   const showUpgradeBlock = state.kind === "outdated";
   const apiSummary = state.kind === "ready" && state.via === "key";
+  const subscription = SUBSCRIPTION_INFO[providerId];
 
   return (
     <div className="flex flex-col gap-3 rounded-2xl bg-white/[0.025] p-4">
@@ -254,6 +290,14 @@ function ProviderStatus({
         </div>
         <StatusPill state={state} />
       </div>
+
+      {subscription !== undefined && (
+        <SubscriptionNotice
+          providerId={providerId}
+          plan={subscription.plan}
+          url={subscription.url}
+        />
+      )}
 
       {showInstallBlock && (
         <CodeRow
@@ -284,6 +328,39 @@ function ProviderStatus({
           <ApiKeyRow providerId={providerId} />
         </div>
       </details>
+    </div>
+  );
+}
+
+function SubscriptionNotice({
+  providerId,
+  plan,
+  url,
+}: {
+  providerId: ProviderId;
+  plan: string;
+  url: string;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5 rounded-xl border border-violet-400/25 bg-violet-500/[0.08] px-3 py-2.5">
+      <span className="text-[11px] font-medium text-violet-200">
+        Requires {plan} subscription
+      </span>
+      <p className="text-[11px] leading-snug text-muted-foreground">
+        Sessions will fail if your plan doesn&apos;t include {plan}. Subscribe
+        (or confirm your existing plan) before using {PROVIDER_LABEL[providerId]}.
+      </p>
+      <div>
+        <Button
+          size="xs"
+          variant="ghost"
+          onClick={() => openExternal(url)}
+          className="gap-1.5 rounded-full bg-violet-500/15 px-2.5 text-[11px] text-violet-200 hover:bg-violet-500/25 hover:text-violet-100"
+        >
+          <ExternalLink className="size-3" />
+          Subscribe to {plan}
+        </Button>
+      </div>
     </div>
   );
 }

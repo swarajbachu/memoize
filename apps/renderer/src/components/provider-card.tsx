@@ -31,6 +31,7 @@ const PROVIDER_LABEL: Record<ProviderId, string> = {
   codex: "Codex",
   grok: "Grok",
   gemini: "Gemini",
+  cursor: "Cursor",
 };
 
 const INSTALL_HINT: Record<ProviderId, string> = {
@@ -38,6 +39,7 @@ const INSTALL_HINT: Record<ProviderId, string> = {
   codex: "npm i -g @openai/codex",
   grok: "curl -fsSL https://x.ai/cli/install.sh | bash",
   gemini: "npm i -g @google/gemini-cli",
+  cursor: "curl https://cursor.com/install -fsS | bash",
 };
 
 const LOGIN_HINT: Record<ProviderId, string> = {
@@ -45,6 +47,7 @@ const LOGIN_HINT: Record<ProviderId, string> = {
   codex: "codex login",
   grok: "grok",
   gemini: "gemini /auth",
+  cursor: "cursor-agent login",
 };
 
 /**
@@ -57,6 +60,7 @@ const SUBSCRIPTION_INFO: Partial<
   Record<ProviderId, { readonly plan: string; readonly url: string }>
 > = {
   grok: { plan: "SuperGrok Heavy", url: "https://grok.com/#subscribe" },
+  cursor: { plan: "Cursor Pro", url: "https://cursor.com/pricing" },
 };
 
 export function ProviderCard({

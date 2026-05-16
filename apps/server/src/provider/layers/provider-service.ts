@@ -31,6 +31,10 @@ import {
   startGeminiSession,
   type GeminiSessionHandle,
 } from "../drivers/gemini.ts";
+import {
+  startCursorSession,
+  type CursorSessionHandle,
+} from "../drivers/cursor.ts";
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
 import { CredentialsService } from "../services/credentials-service.ts";
 import { PermissionService } from "../services/permission-service.ts";
@@ -50,7 +54,8 @@ type SessionHandle =
   | ClaudeSessionHandle
   | CodexSessionHandle
   | GrokSessionHandle
-  | GeminiSessionHandle;
+  | GeminiSessionHandle
+  | CursorSessionHandle;
 type SessionEntry = {
   readonly providerId: ProviderId;
   readonly handle: SessionHandle;
@@ -192,6 +197,34 @@ export const ProviderServiceLive = Layer.effect(
               cwd,
               apiKey,
               grokPath,
+              sessionId,
+              resumeCursor,
+            ).pipe(Effect.provideService(AttachmentService, attachmentService));
+          } else if (input.providerId === "cursor") {
+            // Cursor exposes an ACP server via `cursor-agent acp`. The
+            // documented installed binary is `cursor-agent` (not `cursor`);
+            // surface a clean install message rather than letting spawn
+            // fail with ENOENT inside the driver. Older `cursor-agent`
+            // builds (pre-ACP) will instead drop into a TUI and the
+            // handshake will time out — that's a separate, also-clean
+            // error path from the driver.
+            const cursorPath = yield* resolveCliPath("cursor-agent").pipe(
+              Effect.provideService(CommandExecutor.CommandExecutor, executor),
+            );
+            if (cursorPath === null) {
+              return yield* Effect.fail(
+                new AgentSessionStartError({
+                  providerId: "cursor",
+                  reason:
+                    "Cursor CLI not found on PATH. Install Cursor Agent from https://cursor.com/install and try again.",
+                }),
+              );
+            }
+            handle = yield* startCursorSession(
+              input,
+              cwd,
+              apiKey,
+              cursorPath,
               sessionId,
               resumeCursor,
             ).pipe(Effect.provideService(AttachmentService, attachmentService));

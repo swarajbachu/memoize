@@ -836,6 +836,7 @@ const PROVIDER_LABEL: Record<ProviderId, string> = {
   claude: "Claude Code",
   codex: "Codex",
   grok: "Grok",
+  cursor: "Cursor",
   gemini: "Gemini",
 };
 
@@ -877,11 +878,12 @@ function ModelPicker({
     return (Object.keys(MODELS_BY_PROVIDER) as ReadonlyArray<ProviderId>).filter(
       (pid) => {
         if (pid === providerId) return true;
-        // Subscription-gated providers (Grok → SuperGrok Heavy) are
-        // intentionally unselectable until we can verify the plan — see
-        // SUBSCRIPTION_GATED in provider-card. Mirror the list here rather
-        // than importing it cross-feature; the set is small and rare.
-        if (pid === "grok") return false;
+        // Subscription-gated providers (Grok → SuperGrok Heavy,
+        // Cursor → Cursor Pro) are intentionally unselectable until we
+        // can verify the plan — see SUBSCRIPTION_GATED in provider-card.
+        // Mirror the list here rather than importing it cross-feature;
+        // the set is small and rare.
+        if (pid === "grok" || pid === "cursor") return false;
         if (providerEnabled[pid] === false) return false;
         const a = availabilityById.get(pid);
         if (a !== undefined && a.status === "error") return false;
