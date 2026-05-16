@@ -402,6 +402,46 @@ export function collectWhenIdentifiers(
   return out;
 }
 
+/**
+ * Inverse of `parseWhen` — render a `KeybindingWhenNode` AST back to the
+ * canonical text form. Parens are inserted only where needed for clarity
+ * given precedence (`!` > `&&` > `||`); the result re-parses back into an
+ * equivalent AST so the visual builder and text input stay in sync.
+ */
+export function whenAstToString(
+  node: KeybindingWhenNode | null | undefined,
+): string {
+  if (!node) return "";
+  return renderNode(node, 0);
+}
+
+const PRECEDENCE: Record<KeybindingWhenNode["type"], number> = {
+  identifier: 3,
+  not: 2,
+  and: 1,
+  or: 0,
+};
+
+function renderNode(node: KeybindingWhenNode, parentPrecedence: number): string {
+  const own = PRECEDENCE[node.type];
+  let text: string;
+  switch (node.type) {
+    case "identifier":
+      text = node.name;
+      break;
+    case "not":
+      text = `!${renderNode(node.node, PRECEDENCE.not)}`;
+      break;
+    case "and":
+      text = `${renderNode(node.left, PRECEDENCE.and)} && ${renderNode(node.right, PRECEDENCE.and)}`;
+      break;
+    case "or":
+      text = `${renderNode(node.left, PRECEDENCE.or)} || ${renderNode(node.right, PRECEDENCE.or)}`;
+      break;
+  }
+  return own < parentPrecedence ? `(${text})` : text;
+}
+
 /* ────────────────────────── Display formatting ──────────────────────── */
 
 /**

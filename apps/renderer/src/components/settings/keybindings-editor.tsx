@@ -1,13 +1,26 @@
-import { Plus, RotateCcw, Search, Trash2, TriangleAlert } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import {
+  ChevronDown,
+  Ellipsis,
+  FileJson,
+  Plus,
+  Search,
+  TriangleAlert,
+} from "lucide-react";
+import {
+  type KeyboardEvent as ReactKeyboardEvent,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 
 import {
   type Command,
   type KeybindingRule,
-  collectWhenIdentifiers,
-  formatKeyForDisplay,
-  parseKey,
-  parseWhen,
+  type KeybindingWhenNode,
+  keyStringFromEvent,
+  whenAstToString,
 } from "@memoize/wire";
 
 import { cn } from "~/lib/utils";
@@ -15,32 +28,99 @@ import {
   COMMAND_META,
   COMMANDS_IN_ORDER,
   DEFAULT_KEYBINDINGS,
-  KNOWN_WHEN_IDENTIFIERS,
 } from "../../lib/default-keybindings";
 import { useKeybindingsStore } from "../../store/keybindings";
 import { Button } from "../ui/button";
-import { KeyCapture } from "./key-capture";
+import { Input } from "../ui/input";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
+import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { KeybindingPill } from "./keybinding-pill";
+import { WhenExpressionBuilder } from "./when-expression-builder";
 
 const IS_MAC =
   typeof navigator !== "undefined" &&
   /Mac|iPhone|iPod|iPad/.test(navigator.userAgent);
 
-/* ──────────────── data shaping — turn resolved rules into editor rows ───────── */
+/* ────────────────────── Row model — derived from store ───────────────────── */
+
+type RuleSource = "Default" | "Custom";
 
 interface EditorRow {
-  readonly rule: KeybindingRule;
-  readonly isDefault: boolean;
-  /** Index into `userRules` — only meaningful when `isDefault === false`. */
+  /** Stable id — survives across resolved rules being rebuilt. */
+  readonly id: string;
+  readonly source: RuleSource;
+  readonly command: Command;
+  /** Current key string. */
+  readonly key: string;
+  /** Current canonical when text (empty string when none). */
+  readonly when: string;
+  /** Parsed AST cache for the editor popover. */
+  readonly whenAst: KeybindingWhenNode | undefined;
+  /** Index into `userRules` — only set for Custom rows. */
   readonly userIndex: number | null;
+  /** The default key chord for this command, if any. */
+  readonly defaultKey: string | null;
 }
 
-const isKnownIdentifier = (name: string): boolean =>
-  KNOWN_WHEN_IDENTIFIERS.includes(name);
+const conflictKey = (key: string, when: string): string => `${key}::${when}`;
 
-const conflictKey = (rule: KeybindingRule): string =>
-  `${rule.key}::${rule.when ?? ""}`;
+/* ──────────── per-row draft state — manages dirty edits in flight ───────── */
 
-/* ───────────────────────────── KeybindingsEditor ─────────────────────────────── */
+interface RowDraftState {
+  readonly keyDraft: string;
+  readonly whenDraft: KeybindingWhenNode | undefined;
+  readonly isRecording: boolean;
+  readonly isWhenValid: boolean;
+}
+
+type RowDraftAction =
+  | { readonly type: "reset"; readonly row: EditorRow }
+  | { readonly type: "patch"; readonly patch: Partial<RowDraftState> };
+
+const draftFromRow = (row: EditorRow): RowDraftState => ({
+  keyDraft: row.key,
+  whenDraft: row.whenAst,
+  isRecording: false,
+  isWhenValid: true,
+});
+
+const draftReducer = (
+  state: RowDraftState,
+  action: RowDraftAction,
+): RowDraftState => {
+  if (action.type === "reset") return draftFromRow(action.row);
+  return { ...state, ...action.patch };
+};
+
+/* ────────────────────────── Conflict labels ──────────────────────────────── */
+
+function conflictsFor(
+  rows: ReadonlyArray<EditorRow>,
+  self: { readonly id: string; readonly key: string; readonly when: string },
+): ReadonlyArray<string> {
+  const out: string[] = [];
+  for (const row of rows) {
+    if (row.id === self.id) continue;
+    if (row.key !== self.key) continue;
+    // Empty `when` collides with everything else on the same key; otherwise
+    // require exact match (we don't try to reason about overlapping ASTs).
+    const rowWhen = row.when ?? "";
+    const selfWhen = self.when ?? "";
+    if (rowWhen !== "" && selfWhen !== "" && rowWhen !== selfWhen) continue;
+    out.push(COMMAND_META[row.command].label);
+  }
+  return out;
+}
+
+/* ─────────────────────────── Editor entrypoint ───────────────────────────── */
 
 export function KeybindingsEditor() {
   const resolved = useKeybindingsStore((s) => s.resolvedRules);
@@ -54,62 +134,114 @@ export function KeybindingsEditor() {
   }, [hydrate]);
 
   const [query, setQuery] = useState("");
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchRef = useRef<HTMLInputElement | null>(null);
+  const [isAdding, setIsAdding] = useState(false);
 
-  // Build editor rows from resolved rules. We track each rule's index into
-  // `userRules` separately so the remove/replace actions know what to mutate.
   const rows: ReadonlyArray<EditorRow> = useMemo(() => {
-    const list: EditorRow[] = [];
-    for (const r of resolved) {
+    const out: EditorRow[] = [];
+    for (let i = 0; i < resolved.length; i++) {
+      const r = resolved[i];
+      if (r === undefined) continue;
       const userIndex = userRules.indexOf(r.rule);
-      list.push({
-        rule: r.rule,
-        isDefault: userIndex === -1,
-        userIndex: userIndex === -1 ? null : userIndex,
+      const isCustom = userIndex !== -1;
+      const defaultKey = findDefaultKey(r.rule.command);
+      const whenAst = r.whenAst ?? undefined;
+      out.push({
+        id: isCustom ? `user:${userIndex}` : `default:${r.rule.command}:${i}`,
+        source: isCustom ? "Custom" : "Default",
+        command: r.rule.command,
+        key: r.rule.key,
+        when: r.rule.when ?? "",
+        whenAst,
+        userIndex: isCustom ? userIndex : null,
+        defaultKey,
       });
     }
-    return list;
+    return out;
   }, [resolved, userRules]);
-
-  // Conflict map: how many rules share `key + when`. Any value > 1 → warn.
-  const conflictCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const row of rows) {
-      const k = conflictKey(row.rule);
-      counts.set(k, (counts.get(k) ?? 0) + 1);
-    }
-    return counts;
-  }, [rows]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (q.length === 0) return rows;
     return rows.filter((row) => {
-      const meta = COMMAND_META[row.rule.command];
-      if (meta.label.toLowerCase().includes(q)) return true;
-      if (row.rule.command.toLowerCase().includes(q)) return true;
-      if (row.rule.key.toLowerCase().includes(q)) return true;
-      if (row.rule.when?.toLowerCase().includes(q)) return true;
-      return false;
+      const meta = COMMAND_META[row.command];
+      return (
+        meta.label.toLowerCase().includes(q) ||
+        row.command.toLowerCase().includes(q) ||
+        row.key.toLowerCase().includes(q) ||
+        row.when.toLowerCase().includes(q)
+      );
     });
   }, [rows, query]);
 
   return (
-    <section className="flex flex-col gap-4 pt-1">
-      <header className="flex flex-col gap-1">
-        <h2 className="text-sm font-medium text-foreground">
-          Keyboard shortcuts
-        </h2>
-        <p className="text-xs leading-relaxed text-muted-foreground">
-          Rebind any command. Bindings persist to{" "}
-          <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
-            keybindings.json
-          </code>{" "}
-          under your app data folder and can be hand-edited. Standard editing
-          keys (cut, copy, paste, undo) follow your OS defaults.
-        </p>
-      </header>
+    <div className="flex flex-col gap-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-col gap-1">
+          <h2 className="text-sm font-medium text-foreground">
+            Keyboard shortcuts
+          </h2>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Click a chord to record a new one. Bindings persist to{" "}
+            <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
+              keybindings.json
+            </code>{" "}
+            under your app data folder.
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <ExpandableSearch
+            query={query}
+            onQueryChange={setQuery}
+            isOpen={searchOpen}
+            onOpenChange={setSearchOpen}
+            inputRef={searchRef}
+            countLabel={`${rows.length} bindings`}
+          />
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  size="icon-xs"
+                  variant="ghost"
+                  className="text-muted-foreground hover:text-foreground"
+                  onClick={() => setIsAdding(true)}
+                  disabled={isAdding}
+                  aria-label="Add keybinding"
+                >
+                  <Plus className="size-3.5" />
+                </Button>
+              }
+            />
+            <TooltipPopup side="top">Add keybinding</TooltipPopup>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  size="icon-xs"
+                  variant="ghost"
+                  className="text-muted-foreground hover:text-foreground"
+                  onClick={() => {
+                    // No file:// access from renderer in Electron; surface a hint.
+                    // eslint-disable-next-line no-alert
+                    alert(
+                      "Open ~/Library/Application Support/memoize/keybindings.json (or the Win/Linux equivalent) in your editor to hand-edit. Changes are picked up live.",
+                    );
+                  }}
+                  aria-label="Show keybindings file location"
+                >
+                  <FileJson className="size-3.5" />
+                </Button>
+              }
+            />
+            <TooltipPopup side="top">Find keybindings.json</TooltipPopup>
+          </Tooltip>
+        </div>
+      </div>
 
       {error !== null && (
         <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
@@ -117,245 +249,251 @@ export function KeybindingsEditor() {
         </div>
       )}
 
-      <div className="flex items-center gap-2">
-        <div className="relative flex flex-1 items-center">
-          <Search
-            className="absolute left-2.5 size-3.5 text-muted-foreground"
-            aria-hidden
-          />
-          <input
-            type="text"
-            placeholder="Search by command, key, or when clause…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="h-8 w-full rounded-md border border-border/50 bg-background pl-8 pr-2 text-xs text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-foreground/40 focus-visible:ring-2 focus-visible:ring-ring"
-          />
+      <div className="overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm/4">
+        <div className="grid min-w-[680px] grid-cols-[minmax(190px,1.1fr)_minmax(220px,0.85fr)_minmax(210px,1fr)_60px] border-b border-border/70 bg-muted/25 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">
+          <div>Command</div>
+          <div>Keybinding</div>
+          <div>When</div>
+          <div className="text-right">Status</div>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setAdding(true)}
-          disabled={adding}
-        >
-          <Plus className="mr-1 size-3.5" />
-          Add binding
-        </Button>
+        <div className="divide-y divide-border/60">
+          {!loaded && (
+            <div className="px-4 py-12 text-center text-sm text-muted-foreground">
+              Loading…
+            </div>
+          )}
+          {loaded && filtered.length === 0 && !isAdding && (
+            <div className="px-4 py-12 text-center text-sm text-muted-foreground">
+              {query.trim().length > 0
+                ? "No keybindings match your search."
+                : "No keybindings."}
+            </div>
+          )}
+          {filtered.map((row) => (
+            <RowEditor key={row.id} row={row} allRows={rows} />
+          ))}
+          {isAdding && (
+            <NewRow
+              allRows={rows}
+              onCancel={() => setIsAdding(false)}
+              onSaved={() => setIsAdding(false)}
+            />
+          )}
+        </div>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-border/50">
-        <div className="grid grid-cols-[1fr_minmax(8rem,12rem)_minmax(8rem,14rem)_auto] gap-2 border-b border-border/50 bg-muted/30 px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          <span>Command</span>
-          <span>Key</span>
-          <span>When</span>
-          <span className="text-right">Actions</span>
-        </div>
-        {!loaded && (
-          <div className="flex items-center justify-center px-3 py-6 text-xs text-muted-foreground">
-            Loading…
-          </div>
-        )}
-        {loaded && filtered.length === 0 && (
-          <div className="flex items-center justify-center px-3 py-6 text-xs text-muted-foreground">
-            No bindings match this search.
-          </div>
-        )}
-        {filtered.map((row, i) => {
-          const conflict = (conflictCounts.get(conflictKey(row.rule)) ?? 0) > 1;
-          const rowId = `${row.rule.command}|${row.rule.key}|${row.rule.when ?? ""}|${i}`;
-          const isEditing = editingId === rowId;
-          return (
-            <Row
-              key={rowId}
-              row={row}
-              conflict={conflict}
-              isEditing={isEditing}
-              onEdit={() => setEditingId(rowId)}
-              onCancel={() => setEditingId(null)}
-              onSaved={() => setEditingId(null)}
-            />
-          );
-        })}
-        {adding && (
-          <AddRow
-            onCancel={() => setAdding(false)}
-            onSaved={() => setAdding(false)}
-          />
-        )}
-      </div>
-    </section>
+      <ResetAllFooter />
+    </div>
   );
 }
 
-/* ───────────────────────────── Single row ────────────────────────────────────── */
+/* ─────────────────── Existing-row editor ────────────────────────────────── */
 
-function Row({
+function RowEditor({
   row,
-  conflict,
-  isEditing,
-  onEdit,
-  onCancel,
-  onSaved,
+  allRows,
 }: {
   readonly row: EditorRow;
-  readonly conflict: boolean;
-  readonly isEditing: boolean;
-  readonly onEdit: () => void;
-  readonly onCancel: () => void;
-  readonly onSaved: () => void;
+  readonly allRows: ReadonlyArray<EditorRow>;
 }) {
+  const [draft, dispatch] = useReducer(draftReducer, row, draftFromRow);
+  const addRule = useKeybindingsStore((s) => s.addRule);
   const replaceUserRuleAt = useKeybindingsStore((s) => s.replaceUserRuleAt);
   const removeUserRuleAt = useKeybindingsStore((s) => s.removeUserRuleAt);
-  const addRule = useKeybindingsStore((s) => s.addRule);
+  const resetCommand = useKeybindingsStore((s) => s.resetCommand);
 
-  const [captureMode, setCaptureMode] = useState(false);
-  const [whenDraft, setWhenDraft] = useState(row.rule.when ?? "");
+  // When the upstream row changes (e.g. saved → echoed back through stream),
+  // reset the draft so the "dirty" indicator clears.
+  useEffect(() => {
+    dispatch({ type: "reset", row });
+  }, [row]);
 
-  const meta = COMMAND_META[row.rule.command];
-  const keyValid = parseKey(row.rule.key) !== null;
-  const formattedKey = keyValid
-    ? formatKeyForDisplay(row.rule.key, IS_MAC)
-    : row.rule.key;
+  const whenText = whenAstToString(draft.whenDraft);
+  const isDirty = draft.keyDraft !== row.key || whenText !== row.when;
+  const showPill =
+    !draft.isRecording &&
+    draft.keyDraft === row.key &&
+    row.key.length > 0 &&
+    !isDirty;
 
-  const whenIssue = useMemo(() => evaluateWhenIssue(row.rule.when), [row.rule.when]);
+  const conflictLabels = conflictsFor(allRows, {
+    id: row.id,
+    key: draft.keyDraft,
+    when: whenText,
+  });
 
-  const handleSave = async (nextKey: string, nextWhen: string) => {
-    const trimmedWhen = nextWhen.trim();
+  const meta = COMMAND_META[row.command];
+  const canReset = row.source === "Custom" && row.defaultKey !== null;
+  const canRemove = row.source !== "Default";
+
+  const save = async () => {
+    const trimmedWhen = whenText.trim();
     const next: KeybindingRule = {
-      key: nextKey,
-      command: row.rule.command,
+      key: draft.keyDraft,
+      command: row.command,
       when: trimmedWhen.length > 0 ? trimmedWhen : undefined,
     };
-    if (row.isDefault || row.userIndex === null) {
-      await addRule(next);
-    } else {
+    if (row.source === "Custom" && row.userIndex !== null) {
       await replaceUserRuleAt(row.userIndex, next);
+    } else {
+      await addRule(next);
     }
-    onSaved();
   };
 
-  const handleRemove = async () => {
-    if (row.userIndex === null) return;
-    await removeUserRuleAt(row.userIndex);
+  const onKey = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Tab") return;
+    event.preventDefault();
+    if (event.key === "Escape") {
+      dispatch({ type: "patch", patch: { keyDraft: row.key, isRecording: false } });
+      return;
+    }
+    const next = keyStringFromEvent(event.nativeEvent, IS_MAC);
+    if (next === null) return;
+    dispatch({ type: "patch", patch: { keyDraft: next, isRecording: false } });
   };
 
   return (
-    <div
-      className={cn(
-        "grid grid-cols-[1fr_minmax(8rem,12rem)_minmax(8rem,14rem)_auto] items-center gap-2 border-b border-border/30 px-3 py-2 last:border-b-0 hover:bg-muted/20",
-        isEditing && "bg-muted/30",
-      )}
-    >
-      <div className="flex min-w-0 flex-col gap-0.5">
-        <span className="truncate text-sm font-medium text-foreground">
+    <div className="grid min-w-[680px] grid-cols-[minmax(190px,1.1fr)_minmax(220px,0.85fr)_minmax(210px,1fr)_60px] items-center px-4 py-1.5 text-sm even:bg-muted/15 hover:bg-accent/40">
+      <div className="min-w-0 pr-4">
+        <div className="truncate text-[13px] font-medium text-foreground" title={row.command}>
           {meta.label}
-        </span>
-        <span className="truncate text-[11px] text-muted-foreground">
-          {meta.group} · {row.rule.command}
-        </span>
+        </div>
+        <div className="truncate text-[11px] text-muted-foreground" title={row.command}>
+          {meta.group}
+        </div>
       </div>
 
-      <div className="flex items-center gap-1.5">
-        {captureMode ? (
-          <KeyCapture
-            onCapture={async (key) => {
-              setCaptureMode(false);
-              await handleSave(key, whenDraft);
-            }}
-            onCancel={() => setCaptureMode(false)}
-          />
-        ) : (
+      <div className="flex min-w-0 items-center gap-2 pr-4">
+        {showPill ? (
           <button
             type="button"
-            onClick={() => setCaptureMode(true)}
-            className={cn(
-              "inline-flex h-7 items-center rounded-md border border-border/40 bg-background px-2 text-xs text-foreground transition-colors hover:border-foreground/40 hover:bg-muted/40",
-              !keyValid && "border-destructive/60 text-destructive",
-            )}
-            aria-label={`Change keybinding for ${meta.label}`}
+            onClick={() =>
+              dispatch({ type: "patch", patch: { isRecording: true } })
+            }
+            aria-label={`Edit shortcut for ${meta.label}`}
+            className="group inline-flex h-7 items-center gap-1.5 rounded-md border border-transparent px-1.5 outline-none transition-colors hover:border-border/70 hover:bg-background focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/24"
           >
-            {formattedKey}
+            <KeybindingPill value={row.key} />
+            <span className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/0 transition-opacity group-hover:text-muted-foreground/70 group-focus-visible:text-muted-foreground/70">
+              Edit
+            </span>
           </button>
-        )}
-        {conflict && (
-          <span
-            title="Another rule binds the same chord in the same context. The last-defined rule wins."
-            className="text-amber-500"
-          >
-            <TriangleAlert className="size-3.5" aria-hidden />
-          </span>
-        )}
-      </div>
-
-      <div className="flex flex-col gap-0.5">
-        {isEditing ? (
-          <input
-            type="text"
-            value={whenDraft}
-            onChange={(e) => setWhenDraft(e.target.value)}
-            placeholder="optional"
-            className="h-7 w-full rounded-md border border-border/40 bg-background px-2 text-xs text-foreground outline-none focus-visible:border-foreground/40 focus-visible:ring-2 focus-visible:ring-ring"
-          />
         ) : (
-          <span className="truncate text-xs text-muted-foreground">
-            {row.rule.when ?? "—"}
-          </span>
+          <Input
+            autoFocus={draft.isRecording}
+            aria-label={`Keybinding for ${meta.label}`}
+            value={draft.isRecording ? "" : draft.keyDraft}
+            placeholder={draft.isRecording ? "Press shortcut" : "Unassigned"}
+            className={cn(
+              "h-7 w-44 rounded-md font-mono text-[12px]",
+              draft.isRecording && "border-primary/70 bg-primary/5",
+            )}
+            onFocus={() =>
+              dispatch({ type: "patch", patch: { isRecording: true } })
+            }
+            onBlur={() =>
+              dispatch({ type: "patch", patch: { isRecording: false } })
+            }
+            onChange={(e) =>
+              dispatch({
+                type: "patch",
+                patch: { keyDraft: e.currentTarget.value },
+              })
+            }
+            onKeyDown={onKey}
+          />
         )}
-        {whenIssue !== null && (
-          <span className="text-[10px] text-amber-500">{whenIssue}</span>
+        {isDirty && (
+          <Button
+            size="xs"
+            className="h-7"
+            disabled={draft.keyDraft.trim().length === 0 || !draft.isWhenValid}
+            onClick={() => void save()}
+          >
+            Save
+          </Button>
         )}
       </div>
 
-      <div className="flex justify-end gap-1">
-        {!isEditing && (
-          <Button variant="ghost" size="sm" onClick={onEdit}>
-            Edit
-          </Button>
-        )}
-        {isEditing && (
-          <>
-            <Button variant="ghost" size="sm" onClick={onCancel}>
-              Cancel
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void handleSave(row.rule.key, whenDraft)}
+      <div className="pr-4">
+        <Popover>
+          <PopoverTrigger
+            className={cn(
+              "inline-flex h-7 w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-2.5 text-left font-mono text-[12px] text-foreground shadow-xs/5 outline-none transition-colors hover:bg-accent focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/24",
+              !whenText && "text-muted-foreground",
+            )}
+            aria-label={`Edit when clause for ${meta.label}`}
+          >
+            <span className="truncate">{whenText || "Always"}</span>
+            <ChevronDown className="size-3.5 shrink-0 opacity-60" />
+          </PopoverTrigger>
+          <PopoverPopup align="start" sideOffset={6}>
+            <div className="p-3">
+              <WhenExpressionBuilder
+                value={draft.whenDraft}
+                onChange={(next) =>
+                  dispatch({ type: "patch", patch: { whenDraft: next } })
+                }
+                onValidityChange={(valid) =>
+                  dispatch({ type: "patch", patch: { isWhenValid: valid } })
+                }
+              />
+            </div>
+          </PopoverPopup>
+        </Popover>
+      </div>
+
+      <div className="flex items-center justify-end gap-1">
+        <ConflictWarning labels={conflictLabels} />
+        {(canReset || canRemove) && (
+          <Menu>
+            <MenuTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="size-7 text-muted-foreground hover:text-foreground"
+                  aria-label={`Actions for ${meta.label}`}
+                />
+              }
             >
-              Save when
-            </Button>
-          </>
-        )}
-        {!row.isDefault && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => void handleRemove()}
-            title="Remove this user rule"
-          >
-            <Trash2 className="size-3.5" aria-hidden />
-          </Button>
-        )}
-        {row.isDefault && (
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled
-            title="This is the built-in default. Click Edit to override it; the original is restored when the override is removed."
-          >
-            <RotateCcw className="size-3.5" aria-hidden />
-          </Button>
+              <Ellipsis className="size-3.5" />
+            </MenuTrigger>
+            <MenuPopup align="end" className="min-w-36">
+              {canReset && (
+                <MenuItem
+                  onClick={() => void resetCommand(row.command)}
+                >
+                  Reset to default
+                </MenuItem>
+              )}
+              {canRemove && (
+                <MenuItem
+                  className="text-destructive"
+                  onClick={() => {
+                    if (row.userIndex !== null) void removeUserRuleAt(row.userIndex);
+                  }}
+                >
+                  Remove
+                </MenuItem>
+              )}
+            </MenuPopup>
+          </Menu>
         )}
       </div>
     </div>
   );
 }
 
-/* ──────────────────────────── Add-new row ─────────────────────────────────── */
+/* ─────────────────── New-binding row ─────────────────────────────────────── */
 
-function AddRow({
+function NewRow({
+  allRows,
   onCancel,
   onSaved,
 }: {
+  readonly allRows: ReadonlyArray<EditorRow>;
   readonly onCancel: () => void;
   readonly onSaved: () => void;
 }) {
@@ -363,100 +501,269 @@ function AddRow({
   const [command, setCommand] = useState<Command>(
     COMMANDS_IN_ORDER[0] ?? "new-chat",
   );
-  const [whenDraft, setWhenDraft] = useState("");
+  const [draft, dispatch] = useReducer(draftReducer, undefined, () => ({
+    keyDraft: "",
+    whenDraft: undefined,
+    isRecording: true,
+    isWhenValid: true,
+  }));
+  const whenText = whenAstToString(draft.whenDraft);
+
+  const conflictLabels = conflictsFor(allRows, {
+    id: "new",
+    key: draft.keyDraft,
+    when: whenText,
+  });
+
+  const canSave = draft.keyDraft.trim().length > 0 && draft.isWhenValid;
+
+  const save = async () => {
+    const trimmedWhen = whenText.trim();
+    await addRule({
+      key: draft.keyDraft,
+      command,
+      when: trimmedWhen.length > 0 ? trimmedWhen : undefined,
+    });
+    onSaved();
+  };
+
+  const onKey = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Tab") return;
+    event.preventDefault();
+    if (event.key === "Escape") {
+      onCancel();
+      return;
+    }
+    const next = keyStringFromEvent(event.nativeEvent, IS_MAC);
+    if (next === null) return;
+    dispatch({ type: "patch", patch: { keyDraft: next, isRecording: false } });
+  };
 
   return (
-    <div className="grid grid-cols-[1fr_minmax(8rem,12rem)_minmax(8rem,14rem)_auto] items-center gap-2 border-b border-border/30 bg-accent/20 px-3 py-2">
-      <select
-        value={command}
-        onChange={(e) => setCommand(e.target.value as Command)}
-        className="h-7 w-full rounded-md border border-border/40 bg-background px-2 text-xs text-foreground"
+    <div className="grid min-w-[680px] grid-cols-[minmax(190px,1.1fr)_minmax(220px,0.85fr)_minmax(210px,1fr)_60px] items-center bg-accent/20 px-4 py-2 text-sm">
+      <div className="min-w-0 pr-4">
+        <Select value={command} onValueChange={(v) => setCommand(v as Command)}>
+          <SelectTrigger size="sm" className="h-7 min-h-7 w-full rounded-md text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="max-h-72">
+            {COMMANDS_IN_ORDER.map((cmd) => (
+              <SelectItem key={cmd} value={cmd} className="text-xs">
+                <span className="flex flex-col">
+                  <span>{COMMAND_META[cmd].label}</span>
+                  <span className="text-[10px] text-muted-foreground">
+                    {COMMAND_META[cmd].group}
+                  </span>
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="flex min-w-0 items-center gap-2 pr-4">
+        <Input
+          autoFocus
+          aria-label="Keybinding for new rule"
+          value={draft.isRecording ? "" : draft.keyDraft}
+          placeholder={draft.isRecording ? "Press shortcut" : "Unassigned"}
+          className={cn(
+            "h-7 w-44 rounded-md font-mono text-[12px]",
+            draft.isRecording && "border-primary/70 bg-primary/5",
+          )}
+          onFocus={() =>
+            dispatch({ type: "patch", patch: { isRecording: true } })
+          }
+          onBlur={() =>
+            dispatch({ type: "patch", patch: { isRecording: false } })
+          }
+          onChange={(e) =>
+            dispatch({
+              type: "patch",
+              patch: { keyDraft: e.currentTarget.value },
+            })
+          }
+          onKeyDown={onKey}
+        />
+      </div>
+
+      <div className="pr-4">
+        <Popover>
+          <PopoverTrigger
+            className={cn(
+              "inline-flex h-7 w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-2.5 text-left font-mono text-[12px] text-foreground shadow-xs/5 outline-none transition-colors hover:bg-accent focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/24",
+              !whenText && "text-muted-foreground",
+            )}
+            aria-label="Edit when clause for new binding"
+          >
+            <span className="truncate">{whenText || "Always"}</span>
+            <ChevronDown className="size-3.5 shrink-0 opacity-60" />
+          </PopoverTrigger>
+          <PopoverPopup align="start" sideOffset={6}>
+            <div className="p-3">
+              <WhenExpressionBuilder
+                value={draft.whenDraft}
+                onChange={(next) =>
+                  dispatch({ type: "patch", patch: { whenDraft: next } })
+                }
+                onValidityChange={(valid) =>
+                  dispatch({ type: "patch", patch: { isWhenValid: valid } })
+                }
+              />
+            </div>
+          </PopoverPopup>
+        </Popover>
+      </div>
+
+      <div className="flex items-center justify-end gap-1">
+        <ConflictWarning labels={conflictLabels} />
+        <Button size="xs" variant="ghost" className="h-7" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button size="xs" className="h-7" disabled={!canSave} onClick={() => void save()}>
+          Add
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────── Conflict warning bubble ───────────────────────────── */
+
+function ConflictWarning({ labels }: { readonly labels: ReadonlyArray<string> }) {
+  if (labels.length === 0) return null;
+  const description =
+    labels.length === 1
+      ? `Conflicts with ${labels[0]}.`
+      : `Conflicts with ${labels.slice(0, 3).join(", ")}${labels.length > 3 ? ", and more" : ""}.`;
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span
+            tabIndex={0}
+            aria-label={description}
+            className="inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-amber-500 outline-none transition-colors hover:bg-amber-500/10 focus-visible:ring-[3px] focus-visible:ring-amber-500/25"
+          >
+            <TriangleAlert className="size-3.5" />
+          </span>
+        }
+      />
+      <TooltipPopup
+        side="top"
+        className="max-w-72 whitespace-normal leading-relaxed"
       >
-        {COMMANDS_IN_ORDER.map((cmd) => (
-          <option key={cmd} value={cmd}>
-            {COMMAND_META[cmd].group} · {COMMAND_META[cmd].label}
-          </option>
-        ))}
-      </select>
-      <KeyCapture
-        onCapture={async (key) => {
-          const trimmedWhen = whenDraft.trim();
-          await addRule({
-            key,
-            command,
-            when: trimmedWhen.length > 0 ? trimmedWhen : undefined,
-          });
-          onSaved();
-        }}
-        onCancel={onCancel}
+        {description} The most recent matching binding wins when both
+        conditions can apply.
+      </TooltipPopup>
+    </Tooltip>
+  );
+}
+
+/* ─────────────────── Expandable header search ──────────────────────────── */
+
+function ExpandableSearch({
+  query,
+  onQueryChange,
+  isOpen,
+  onOpenChange,
+  inputRef,
+  countLabel,
+}: {
+  readonly query: string;
+  readonly onQueryChange: (q: string) => void;
+  readonly isOpen: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly inputRef: React.RefObject<HTMLInputElement | null>;
+  readonly countLabel: string;
+}) {
+  if (!isOpen) {
+    return (
+      <>
+        <span className="text-[11px] text-muted-foreground/70">{countLabel}</span>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                size="icon-xs"
+                variant="ghost"
+                className="text-muted-foreground hover:text-foreground"
+                onClick={() => onOpenChange(true)}
+                aria-label="Search keybindings"
+              >
+                <Search className="size-3.5" />
+              </Button>
+            }
+          />
+          <TooltipPopup side="top">Search keybindings</TooltipPopup>
+        </Tooltip>
+      </>
+    );
+  }
+  return (
+    <div className="relative">
+      <Search
+        className="pointer-events-none absolute left-2 top-1/2 size-3 -translate-y-1/2 text-muted-foreground"
+        aria-hidden
       />
       <input
+        ref={inputRef}
+        autoFocus
         type="text"
-        value={whenDraft}
-        onChange={(e) => setWhenDraft(e.target.value)}
-        placeholder="optional when clause"
-        className="h-7 w-full rounded-md border border-border/40 bg-background px-2 text-xs text-foreground"
+        value={query}
+        onChange={(e) => onQueryChange(e.currentTarget.value)}
+        onBlur={() => {
+          if (query.length === 0) onOpenChange(false);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            e.preventDefault();
+            onQueryChange("");
+            onOpenChange(false);
+          }
+        }}
+        placeholder="Search keybindings"
+        aria-label="Search keybindings"
+        className="h-6 w-44 rounded-md border border-input bg-background pl-7 pr-2 text-[11px] text-foreground outline-none placeholder:text-muted-foreground/70 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/24"
       />
-      <Button variant="ghost" size="sm" onClick={onCancel}>
-        Cancel
-      </Button>
     </div>
   );
 }
 
-/* ──────────────────────────── Helpers ─────────────────────────────────────── */
+/* ─────────────────── Reset-all footer (only with overrides) ────────────── */
 
-/**
- * Return a human-readable issue for the given `when` string, or `null` if
- * it's empty / well-formed and references only known identifiers.
- */
-function evaluateWhenIssue(when: string | undefined): string | null {
-  if (when === undefined || when.length === 0) return null;
-  const parsed = parseWhen(when);
-  if (parsed === null) return null;
-  if (!("type" in parsed)) {
-    return `${parsed.message} (col ${parsed.position + 1})`;
-  }
-  const ids = collectWhenIdentifiers(parsed);
-  const unknown = [...ids].filter((id) => !isKnownIdentifier(id));
-  if (unknown.length > 0) {
-    return `Unknown identifier: ${unknown.join(", ")}`;
-  }
-  return null;
-}
-
-/**
- * Stable export so settings-page.tsx imports it directly. Wraps the editor
- * in the same `Section` chrome the other panes use.
- */
-export function KeybindingsPane() {
-  return (
-    <div className="flex flex-col gap-4">
-      <KeybindingsEditor />
-      <ResetAllRow />
-    </div>
-  );
-}
-
-function ResetAllRow() {
+function ResetAllFooter() {
   const userRulesCount = useKeybindingsStore((s) => s.userRules.length);
   const resetAll = useKeybindingsStore((s) => s.resetAll);
   if (userRulesCount === 0) return null;
   return (
     <div className="flex items-center justify-between rounded-md border border-border/40 bg-muted/20 px-3 py-2 text-xs">
       <span className="text-muted-foreground">
-        You have {userRulesCount} custom rule{userRulesCount === 1 ? "" : "s"}.
+        {userRulesCount} custom rule{userRulesCount === 1 ? "" : "s"} active.
       </span>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => void resetAll()}
-      >
+      <Button variant="outline" size="sm" onClick={() => void resetAll()}>
         Reset all to defaults
       </Button>
     </div>
   );
 }
 
-/* Re-export default-keybindings so the editor file owns a single boundary. */
-export { DEFAULT_KEYBINDINGS };
+/* ─────────────────── Wrapper used by settings-page.tsx ─────────────────── */
+
+export function KeybindingsPane() {
+  return (
+    <div className="flex flex-col gap-4">
+      <KeybindingsEditor />
+    </div>
+  );
+}
+
+/* ─────────────────── helpers ────────────────────────────────────────────── */
+
+function findDefaultKey(command: Command): string | null {
+  for (const r of DEFAULT_KEYBINDINGS) {
+    if (r.command === command) return r.key;
+  }
+  return null;
+}
