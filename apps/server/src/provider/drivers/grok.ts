@@ -14,6 +14,8 @@ import {
 } from "@memoize/wire";
 
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
+import { createAcpTranslator } from "./acp/translate.ts";
+import { applyPlanModePrefix } from "./planMode.ts";
 
 /**
  * Live-only handle for one Grok conversation. Mirrors Codex/Claude handle
@@ -52,248 +54,6 @@ export interface GrokSessionHandle {
   ) => Effect.Effect<void>;
 }
 
-let itemCounter = 0;
-const nextItemId = (): AgentItemId =>
-  `i_${Date.now()}_${++itemCounter}` as AgentItemId;
-
-/**
- * Translate one ACP `session/update` payload into zero or more
- * `AgentEvent`s. The ACP v1 spec uses `"sessionUpdate"` as the
- * discriminator but the ResponseItem shape (v2+) uses `"type"` — we
- * check both so either format works.
- *
- * ACP v1 sessionUpdate values:
- *   agent_message_chunk, agent_thought_chunk, thinking_chunk,
- *   tool_call, tool_use, tool_result, tool_output,
- *   function_call, function_call_output,
- *   custom_tool_call, custom_tool_call_output,
- *   tool_search_call, tool_search_output,
- *   local_shell_call, web_search_call,
- *   error, agent_error
- *
- * Gemini-specific (nonstandard) type values:
- *   tool_call_update, available_commands_update
- *
- * ACP v2 ResponseItem type values (also accepted):
- *   message, function_call, custom_tool_call, tool_search_call,
- *   local_shell_call, web_search_call, image_generation_call,
- *   function_call_output, custom_tool_call_output, tool_search_output,
- *   compaction, context_compaction
- */
-const translateSessionUpdate = (update: unknown): ReadonlyArray<AgentEvent> => {
-  if (update === null || typeof update !== "object") return [];
-  const u = update as Record<string, unknown>;
-  const kind =
-    typeof u["sessionUpdate"] === "string"
-      ? (u["sessionUpdate"] as string)
-      : typeof u["type"] === "string"
-        ? (u["type"] as string)
-        : null;
-  if (kind === null) return [];
-
-  const asText = (v: unknown): string | null => {
-    if (typeof v === "string") return v;
-    if (v !== null && typeof v === "object" && "text" in v) {
-      const t = (v as { text: unknown }).text;
-      return typeof t === "string" ? t : null;
-    }
-    return null;
-  };
-
-  const extractMessageText = (content: unknown): string | null => {
-    if (!Array.isArray(content)) return asText(content);
-    const parts: string[] = [];
-    for (const item of content) {
-      if (item !== null && typeof item === "object" && "text" in item) {
-        const t = (item as Record<string, unknown>)["text"];
-        if (typeof t === "string") parts.push(t);
-      }
-    }
-    return parts.length > 0 ? parts.join("") : null;
-  };
-
-  const extractCallId = (): AgentItemId => {
-    const raw =
-      typeof u["toolCallId"] === "string"
-        ? u["toolCallId"]
-        : typeof u["call_id"] === "string"
-          ? u["call_id"]
-          : typeof u["id"] === "string"
-            ? u["id"]
-            : typeof (u as Record<string, unknown>)["callId"] === "string"
-              ? (u as Record<string, unknown>)["callId"]
-              : null;
-    return raw !== null ? (raw as AgentItemId) : nextItemId();
-  };
-
-  const extractToolName = (): string => {
-    return typeof u["tool"] === "string"
-      ? (u["tool"] as string)
-      : typeof u["name"] === "string"
-        ? (u["name"] as string)
-        : typeof u["execution"] === "string"
-          ? (u["execution"] as string)
-          : typeof u["command"] === "string"
-            ? (u["command"] as string)
-            : "tool";
-  };
-
-  const extractInput = (): unknown => {
-    if (u["input"] !== undefined) return u["input"];
-    if (u["arguments"] !== undefined) {
-      const a = u["arguments"];
-      if (typeof a === "string") {
-        try {
-          return JSON.parse(a);
-        } catch {
-          return a;
-        }
-      }
-      return a;
-    }
-    if (u["command"] !== undefined) return { command: u["command"] };
-    return null;
-  };
-
-  const extractOutput = (): unknown => {
-    if (u["output"] !== undefined) {
-      const o = u["output"];
-      if (o !== null && typeof o === "object" && "content" in o) {
-        return (o as Record<string, unknown>)["content"] ?? o;
-      }
-      return o;
-    }
-    if (u["content"] !== undefined) return u["content"];
-    if (u["result"] !== undefined) return u["result"];
-    return null;
-  };
-
-  switch (kind) {
-    case "agent_message_chunk":
-    case "message": {
-      const text =
-        kind === "message"
-          ? extractMessageText(u["content"])
-          : asText(u["content"]);
-      if (text === null || text.length === 0) return [];
-      return [
-        {
-          _tag: "AssistantMessage",
-          itemId: nextItemId(),
-          text,
-        },
-      ];
-    }
-    case "agent_thought_chunk":
-    case "agent_reasoning_chunk":
-    case "thinking_chunk":
-    case "reasoning": {
-      const text = asText(u["content"]);
-      if (text === null || text.length === 0) return [];
-      return [
-        {
-          _tag: "Thinking",
-          itemId: nextItemId(),
-          text,
-          redacted: false,
-        },
-      ];
-    }
-    case "tool_call":
-    case "tool_use":
-    case "tool_call_update":
-    case "function_call":
-    case "custom_tool_call":
-    case "tool_search_call":
-    case "local_shell_call":
-    case "web_search_call":
-    case "image_generation_call": {
-      if (GROK_RPC_TRACE) {
-        process.stderr.write(
-          `[grok.translate.tool] kind=${kind} payload=${JSON.stringify(u).slice(0, 4096)}\n`,
-        );
-      }
-      const toolUse = {
-        _tag: "ToolUse" as const,
-        itemId: extractCallId(),
-        tool: extractToolName(),
-        input: extractInput(),
-      };
-      if (GROK_RPC_TRACE) {
-        process.stderr.write(
-          `[grok.translate.tool] → ToolUse itemId=${toolUse.itemId} tool=${toolUse.tool} input=${JSON.stringify(toolUse.input).slice(0, 2048)}\n`,
-        );
-      }
-      return [toolUse];
-    }
-    case "tool_result":
-    case "tool_output":
-    case "function_call_output":
-    case "custom_tool_call_output":
-    case "tool_search_output": {
-      if (GROK_RPC_TRACE) {
-        process.stderr.write(
-          `[grok.translate.result] kind=${kind} payload=${JSON.stringify(u).slice(0, 4096)}\n`,
-        );
-      }
-      const isError = u["isError"] === true || u["is_error"] === true;
-      const toolResult = {
-        _tag: "ToolResult" as const,
-        itemId: extractCallId(),
-        output: extractOutput(),
-        isError,
-      };
-      if (GROK_RPC_TRACE) {
-        process.stderr.write(
-          `[grok.translate.result] → ToolResult itemId=${toolResult.itemId} output=${JSON.stringify(toolResult.output).slice(0, 2048)}\n`,
-        );
-      }
-      return [toolResult];
-    }
-    case "error":
-    case "agent_error": {
-      // Pull useful detail from multiple possible fields. ACP doesn't
-      // pin the error payload shape, and grok itself sometimes nests the
-      // real reason under `data`/`details`/`error`.
-      const detail =
-        typeof u["message"] === "string" && (u["message"] as string).length > 0
-          ? (u["message"] as string)
-          : typeof u["error"] === "string"
-            ? (u["error"] as string)
-            : typeof u["details"] === "string"
-              ? (u["details"] as string)
-              : typeof u["data"] === "string"
-                ? (u["data"] as string)
-                : null;
-      const message =
-        detail !== null && detail.length > 0
-          ? detail
-          : (() => {
-              try {
-                const serialized = JSON.stringify(u);
-                return serialized === "{}"
-                  ? "Grok agent reported an error with no detail."
-                  : `Grok agent error: ${serialized}`;
-              } catch {
-                return "Grok agent reported an error.";
-              }
-            })();
-      return [{ _tag: "Error", message }];
-    }
-    case "available_commands_update":
-      return [];
-    default:
-      console.warn(
-        `[grok.translate] unknown sessionUpdate/type=${kind} payload=${((): string => {
-          try {
-            const s = JSON.stringify(u).slice(0, 2048);
-            return s.length > 0 ? s : "(empty)";
-          } catch { return "(unserialisable)"; }
-        })()}`,
-      );
-      return [];
-  }
-};
 
 interface JsonRpcError {
   readonly code?: number;
@@ -417,6 +177,11 @@ export const startGrokSession = (
       mode: "sdk",
     });
 
+    // Per-session translator coalesces agent_message_chunk deltas into
+    // one AssistantMessage per burst so the renderer doesn't show one
+    // bubble per token.
+    const translator = createAcpTranslator("grok");
+
     let child: ChildProcessWithoutNullStreams;
     try {
       child = spawn(grokPath, ["agent", "stdio"], {
@@ -452,8 +217,10 @@ export const startGrokSession = (
       method: string,
       params: unknown,
       timeoutMs = 30_000,
+      onAssignedId?: (id: number) => void,
     ): Promise<unknown> => {
       const id = nextRpcId++;
+      onAssignedId?.(id);
       return new Promise<unknown>((resolve, reject) => {
         const timer = setTimeout(() => {
           pending.delete(id);
@@ -475,6 +242,28 @@ export const startGrokSession = (
       writeMessage({ jsonrpc: "2.0", method, params });
     };
 
+    /**
+     * Currently in-flight `session/prompt` rpc id. See gemini.ts for the
+     * rationale — interrupt needs to force-reject the pending request so
+     * the `inflight` chain unblocks.
+     */
+    let currentPromptRpcId: number | null = null;
+    const rejectCurrentPrompt = (reason: string): void => {
+      const id = currentPromptRpcId;
+      if (id === null) return;
+      const resolver = pending.get(id);
+      if (resolver === undefined) return;
+      pending.delete(id);
+      clearTimeout(resolver.timer);
+      currentPromptRpcId = null;
+      if (GROK_RPC_TRACE) {
+        process.stderr.write(
+          `[grok.rpc.cancel] force-reject id=${id} method=${resolver.method} reason=${reason}\n`,
+        );
+      }
+      resolver.reject(new Error(reason));
+    };
+
     rl.on("line", (line: string) => {
       if (line.trim().length === 0) return;
       if (GROK_RPC_TRACE) process.stderr.write(`[grok.rpc.recv] ${line}\n`);
@@ -494,7 +283,7 @@ export const startGrokSession = (
         if (msg.method === "session/update") {
           const update = msg.params?.update;
           if (update !== undefined) {
-            for (const ev of translateSessionUpdate(update)) {
+            for (const ev of translator.translate(update)) {
               events.unsafeOffer(ev);
             }
           }
@@ -648,15 +437,23 @@ export const startGrokSession = (
     const enqueuePrompt = (text: string): void => {
       const sid = acpSessionId;
       if (sid === null) return;
+      // Plan-mode emulation: grok ACP has no native read-only switch, so
+      // prepend a developer-instructions block while plan mode is active.
+      const promptText = applyPlanModePrefix(currentMode, text);
       inflight = inflight
         .then(async () => {
           if (closed) return;
+          if (GROK_RPC_TRACE) {
+            process.stderr.write(
+              `[grok.prompt] enqueue len=${promptText.length} mode=${currentMode}\n`,
+            );
+          }
           try {
             await request(
               "session/prompt",
               {
                 sessionId: sid,
-                prompt: [{ type: "text", text }],
+                prompt: [{ type: "text", text: promptText }],
                 // Server may ignore unknown keys; pass mode + model as
                 // metadata so a future ACP rev can honour them without a
                 // driver change.
@@ -666,16 +463,32 @@ export const startGrokSession = (
                 },
               },
               5 * 60_000,
+              (id) => {
+                currentPromptRpcId = id;
+              },
             );
+            if (GROK_RPC_TRACE) {
+              process.stderr.write(`[grok.prompt] completed\n`);
+            }
           } catch (cause) {
-            if (!closed) {
+            const reason = cause instanceof Error ? cause.message : String(cause);
+            if (GROK_RPC_TRACE) {
+              process.stderr.write(`[grok.prompt] failed: ${reason}\n`);
+            }
+            const isCancellation = /cancel|interrupt/i.test(reason);
+            if (!closed && !isCancellation) {
               events.unsafeOffer({
                 _tag: "Error",
-                message: cause instanceof Error ? cause.message : String(cause),
+                message: reason,
               });
             }
           } finally {
+            currentPromptRpcId = null;
+            // Drain any buffered assistant text from the translator so the
+            // final delta lands as a normal AssistantMessage instead of
+            // sitting unobserved in memory.
             if (!closed) {
+              for (const ev of translator.flush()) events.unsafeOffer(ev);
               events.unsafeOffer({ _tag: "Status", status: "idle" });
             }
           }
@@ -704,11 +517,19 @@ export const startGrokSession = (
         Effect.sync(() => {
           const sid = acpSessionId;
           if (sid === null) return;
+          if (GROK_RPC_TRACE) {
+            process.stderr.write(
+              `[grok.interrupt] sid=${sid} pendingPrompt=${currentPromptRpcId ?? "(none)"}\n`,
+            );
+          }
           // Best-effort cancel. We deliberately do NOT SIGINT the child —
           // that would kill the persistent agent and end every future send
           // for this session. If `session/cancel` isn't recognised the
           // server replies with an error we ignore.
           notify("session/cancel", { sessionId: sid });
+          // Force-reject the in-flight prompt so the inflight chain
+          // unblocks even if grok's ACP doesn't honour `session/cancel`.
+          rejectCurrentPrompt("Interrupted by user");
         }),
       close: () =>
         Effect.gen(function* () {

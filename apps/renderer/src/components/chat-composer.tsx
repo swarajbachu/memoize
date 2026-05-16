@@ -16,12 +16,14 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   MODELS_BY_PROVIDER,
+  findModelDescriptor,
   type AgentAvailability,
   type Message,
   type PermissionMode,
   type PermissionRequest,
   type ProviderId,
   type RuntimeMode,
+  type SelectOptionDescriptor,
   type Session,
   type SessionId,
 } from "@memoize/wire";
@@ -86,12 +88,6 @@ const MIN_HEIGHT = 56;
 const MAX_HEIGHT = 240;
 const MAX_ATTACHMENTS_PER_TURN = 20;
 
-type ReasoningLevel = "low" | "medium" | "high";
-const REASONING_LEVELS: ReadonlyArray<ReasoningLevel> = [
-  "low",
-  "medium",
-  "high",
-];
 
 export function ChatComposer({ session }: { session: Session }) {
   const sessionId: SessionId = session.id;
@@ -655,11 +651,18 @@ export function ChatComposer({ session }: { session: Session }) {
                   providerId={session.providerId}
                   currentModel={session.model}
                 />
-                <ReasoningPicker sessionId={sessionId} />
-                <PlanModeToggle
+                <ReasoningPicker
                   sessionId={sessionId}
-                  current={session.permissionMode}
+                  providerId={session.providerId}
+                  model={session.model}
                 />
+                {(findModelDescriptor(session.providerId, session.model)
+                  ?.supportsPlanMode ?? true) && (
+                  <PlanModeToggle
+                    sessionId={sessionId}
+                    current={session.permissionMode}
+                  />
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <RuntimeModeToggle
@@ -878,12 +881,12 @@ function ModelPicker({
     return (Object.keys(MODELS_BY_PROVIDER) as ReadonlyArray<ProviderId>).filter(
       (pid) => {
         if (pid === providerId) return true;
-        // Subscription-gated providers (Grok → SuperGrok Heavy,
-        // Cursor → Cursor Pro) are intentionally unselectable until we
-        // can verify the plan — see SUBSCRIPTION_GATED in provider-card.
-        // Mirror the list here rather than importing it cross-feature;
-        // the set is small and rare.
-        if (pid === "grok" || pid === "cursor") return false;
+        // Cursor still has an unconditional subscription gate (we haven't
+        // wired plan detection from its auth store yet). Grok is no longer
+        // auto-excluded here because a successful `~/.grok/auth.json` login
+        // (with email + tier) now produces a clean authenticated state and
+        // the toggle is allowed.
+        if (pid === "cursor") return false;
         if (providerEnabled[pid] === false) return false;
         const a = availabilityById.get(pid);
         if (a !== undefined && a.status === "error") return false;
@@ -959,45 +962,67 @@ function ModelPicker({
 }
 
 /**
- * Reasoning effort selector. UI-only for now — wire integration is a
- * follow-up (codex driver needs to forward `--reasoning-effort`, claude
- * driver maps to thinking budget). State is per-session and lives in
- * sessionStorage so reloads keep the chosen level visible.
+ * Reasoning effort selector. Visible only when the current model declares
+ * a `reasoning` SelectOptionDescriptor in `MODELS_BY_PROVIDER`. Selection
+ * is per-session and persisted to sessionStorage; the messages store reads
+ * it back at send time and forwards as `modelOptions.reasoning`.
  */
-function ReasoningPicker({ sessionId }: { sessionId: SessionId }) {
+function ReasoningPicker({
+  sessionId,
+  providerId,
+  model,
+}: {
+  sessionId: SessionId;
+  providerId: ProviderId;
+  model: string;
+}) {
+  const descriptor = findModelDescriptor(providerId, model);
+  const reasoningDescriptor = descriptor?.optionDescriptors?.find(
+    (d): d is SelectOptionDescriptor => d.kind === "select" && d.id === "reasoning",
+  );
+  const defaultId = reasoningDescriptor?.defaultId ?? "medium";
+
   const storageKey = `memoize.reasoning.${sessionId}`;
-  const [level, setLevel] = useState<ReasoningLevel>(() => {
-    if (typeof window === "undefined") return "medium";
+  const [level, setLevel] = useState<string>(() => {
+    if (typeof window === "undefined") return defaultId;
     const stored = window.sessionStorage.getItem(storageKey);
-    return stored === "low" || stored === "high" ? stored : "medium";
+    if (stored !== null) return stored;
+    return defaultId;
   });
 
+  if (reasoningDescriptor === undefined) return null;
+
+  const options = reasoningDescriptor.options;
+
   const onChange = (next: string) => {
-    if (next !== "low" && next !== "medium" && next !== "high") return;
+    if (!options.some((o) => o.id === next)) return;
     setLevel(next);
     if (typeof window !== "undefined") {
       window.sessionStorage.setItem(storageKey, next);
     }
   };
 
+  const activeLabel =
+    options.find((o) => o.id === level)?.label ?? level;
+
   return (
     <Menu>
       <MenuTrigger
         className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-foreground hover:bg-muted/60 data-[popup-open]:bg-muted/60"
-        aria-label="Reasoning effort"
-        title="Reasoning effort for the next message"
+        aria-label={reasoningDescriptor.label}
+        title={`${reasoningDescriptor.label} for the next message`}
       >
         <Gauge className="size-3" />
-        <span className="capitalize">{level}</span>
+        <span>{activeLabel}</span>
         <ChevronDown className="size-3 opacity-60" />
       </MenuTrigger>
       <MenuPopup side="top" align="start" className="w-44">
         <MenuGroup>
-          <MenuGroupLabel>Reasoning effort</MenuGroupLabel>
+          <MenuGroupLabel>{reasoningDescriptor.label}</MenuGroupLabel>
           <MenuRadioGroup value={level} onValueChange={onChange}>
-            {REASONING_LEVELS.map((l) => (
-              <MenuRadioItem key={l} value={l}>
-                <span className="capitalize">{l}</span>
+            {options.map((o) => (
+              <MenuRadioItem key={o.id} value={o.id}>
+                {o.label}
               </MenuRadioItem>
             ))}
           </MenuRadioGroup>

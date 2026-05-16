@@ -79,6 +79,49 @@ export type PermissionMode = typeof PermissionMode.Type;
 export const DEFAULT_PERMISSION_MODE: PermissionMode = "default";
 
 /**
+ * Canonical reasoning effort levels exposed to the user. Providers map these
+ * to their native concept:
+ *   - Claude → `maxThinkingTokens` (low=5k, medium=15k, high=60k)
+ *   - Codex → `reasoning_effort` enum (low/medium/high pass through)
+ *   - Gemini Pro → `thinkingConfig.thinkingBudget` (low=4k, medium=16k, high=32k)
+ *
+ * Providers/models that don't support thinking simply omit the descriptor
+ * from `ModelDescriptor.optionDescriptors`, which hides the FE picker.
+ */
+export const ReasoningLevel = Schema.Literal("low", "medium", "high");
+export type ReasoningLevel = typeof ReasoningLevel.Type;
+
+/**
+ * A single UI control a model exposes. The renderer renders these
+ * dynamically from `ModelDescriptor.optionDescriptors`, so adding a new
+ * per-model knob is a wire change + driver change — no FE switch needed.
+ */
+export const SelectOptionDescriptor = Schema.Struct({
+  kind: Schema.Literal("select"),
+  id: Schema.String,
+  label: Schema.String,
+  options: Schema.Array(
+    Schema.Struct({ id: Schema.String, label: Schema.String }),
+  ),
+  defaultId: Schema.optional(Schema.String),
+});
+export type SelectOptionDescriptor = typeof SelectOptionDescriptor.Type;
+
+export const BooleanOptionDescriptor = Schema.Struct({
+  kind: Schema.Literal("boolean"),
+  id: Schema.String,
+  label: Schema.String,
+  defaultValue: Schema.optional(Schema.Boolean),
+});
+export type BooleanOptionDescriptor = typeof BooleanOptionDescriptor.Type;
+
+export const OptionDescriptor = Schema.Union(
+  SelectOptionDescriptor,
+  BooleanOptionDescriptor,
+);
+export type OptionDescriptor = typeof OptionDescriptor.Type;
+
+/**
  * Per-provider verdict on whether the installed CLI is new enough for the
  * SDK we ship against.
  *
@@ -248,6 +291,36 @@ const ThinkingEvent = Schema.TaggedStruct("Thinking", {
   parentItemId: Schema.optional(AgentItemId),
 });
 
+/**
+ * Normalized Tool-Call Contract
+ * -----------------------------
+ * All drivers emit `ToolUseEvent` / `ToolResultEvent` with the canonical
+ * shape Claude produces. The renderer at
+ * `apps/renderer/src/components/tool-row.tsx` switches on `tool` and reads
+ * specific keys out of `input` — to keep every provider's row rendering
+ * identical, ACP drivers translate native frames into these shapes
+ * (`apps/server/src/provider/drivers/acp/translate.ts`).
+ *
+ *   tool          input keys                              result `output`
+ *   ---------     ------------------------------------    -------------------
+ *   Edit          { file_path, old_string, new_string }   diff text or {}
+ *   MultiEdit     { file_path, edits: [...] }             diff text or {}
+ *   Write         { file_path, content }                  ""
+ *   Read          { file_path, offset?, limit? }          file slice (string
+ *                                                          or [{type:"text"}])
+ *   Bash          { command, description? }               stdout/stderr text
+ *   Grep          { pattern, path?, glob?, output_mode? } match listing
+ *   Glob          { pattern, path? }                      file listing
+ *   WebSearch     { query }                               result array (or
+ *                                                          empty for
+ *                                                          `queryOnly` models)
+ *   WebFetch      { url, prompt? }                        page summary text
+ *   TodoWrite     { todos: [...] }                        ""
+ *
+ * Adding a new tool: extend this block AND add a `case` in tool-row.tsx so
+ * the renderer knows how to label/render it. Unknown tools fall through to
+ * the default Wrench row, which is correct but unstyled.
+ */
 const ToolUseEvent = Schema.TaggedStruct("ToolUse", {
   itemId: AgentItemId,
   tool: Schema.String,
@@ -468,31 +541,115 @@ export const StartSessionInput = Schema.Struct({
    * for 0.04.
    */
   toolSearch: Schema.optional(Schema.Boolean),
+  /**
+   * Opaque per-model knob values. Keys map to
+   * `ModelDescriptor.optionDescriptors[].id` (e.g. `"reasoning"`); values
+   * are the selected option id (`"low" | "medium" | "high"`) for selects
+   * or `"true" | "false"` for booleans. Drivers consume what they support
+   * and ignore the rest — the FE composer renders only the descriptors
+   * the current model declared, so no value should arrive that the driver
+   * can't interpret.
+   */
+  modelOptions: Schema.optional(
+    Schema.Record({ key: Schema.String, value: Schema.String }),
+  ),
 });
 export type StartSessionInput = typeof StartSessionInput.Type;
 
 /**
- * Curated list of provider × model pairs the renderer offers in the
- * new-session picker. Source of truth so the dropdown and the server agree
- * on what's selectable. Adding a model here is the only change needed —
- * drivers pass the string through to the SDK as-is.
+ * What each model declares about itself — the source of truth the renderer
+ * uses to decide whether to show the reasoning picker, plan-mode toggle,
+ * and to label WebSearch result behavior. Driver behavior is keyed off the
+ * same descriptors so FE and BE stay in lockstep.
+ *
+ *   - `optionDescriptors`: per-model knobs the composer renders (reasoning,
+ *     etc.). Omitting the descriptor hides the control.
+ *   - `supportsPlanMode`: whether the plan-mode toggle is shown for this
+ *     model. `true` for every model today (native for Claude/Cursor,
+ *     emulated via dev-instructions prefix for Codex/Grok/Gemini); set
+ *     `false` only when there's a hard reason not to allow planning.
+ *   - `supportsWebSearch`: `"native"` (driver emits real results),
+ *     `"queryOnly"` (driver emits the query but no results), or omitted
+ *     (provider doesn't search).
  */
 export interface ModelOption {
   readonly id: string;
   readonly label: string;
+  readonly optionDescriptors?: ReadonlyArray<OptionDescriptor>;
+  readonly supportsPlanMode?: boolean;
+  readonly supportsWebSearch?: "native" | "queryOnly";
 }
+
+/**
+ * Standard reasoning-level descriptor reused across providers that support
+ * thinking. Keep id/options aligned with `ReasoningLevel`.
+ */
+const reasoningSelectDescriptor = (
+  defaultId: ReasoningLevel = "medium",
+): SelectOptionDescriptor => ({
+  kind: "select",
+  id: "reasoning",
+  label: "Reasoning",
+  options: [
+    { id: "low", label: "Low" },
+    { id: "medium", label: "Medium" },
+    { id: "high", label: "High" },
+  ],
+  defaultId,
+});
 
 export const MODELS_BY_PROVIDER: Record<ProviderId, ReadonlyArray<ModelOption>> = {
   claude: [
-    { id: "claude-opus-4-7", label: "Opus 4.7" },
-    { id: "claude-sonnet-4-6", label: "Sonnet 4.6" },
-    { id: "claude-haiku-4-5", label: "Haiku 4.5" },
+    {
+      id: "claude-opus-4-7",
+      label: "Opus 4.7",
+      optionDescriptors: [reasoningSelectDescriptor("high")],
+      supportsPlanMode: true,
+      supportsWebSearch: "native",
+    },
+    {
+      id: "claude-sonnet-4-6",
+      label: "Sonnet 4.6",
+      optionDescriptors: [reasoningSelectDescriptor("medium")],
+      supportsPlanMode: true,
+      supportsWebSearch: "native",
+    },
+    {
+      id: "claude-haiku-4-5",
+      label: "Haiku 4.5",
+      supportsPlanMode: true,
+      supportsWebSearch: "native",
+    },
   ],
   codex: [
-    { id: "gpt-5.4", label: "GPT-5.4" },
-    { id: "gpt-5.4-mini", label: "GPT-5.4 mini" },
-    { id: "gpt-5.3-codex", label: "GPT-5.3 Codex" },
-    { id: "gpt-5.3-codex-spark", label: "GPT-5.3 Codex Spark" },
+    {
+      id: "gpt-5.4",
+      label: "GPT-5.4",
+      optionDescriptors: [reasoningSelectDescriptor("medium")],
+      supportsPlanMode: true,
+      supportsWebSearch: "native",
+    },
+    {
+      id: "gpt-5.4-mini",
+      label: "GPT-5.4 mini",
+      optionDescriptors: [reasoningSelectDescriptor("medium")],
+      supportsPlanMode: true,
+      supportsWebSearch: "native",
+    },
+    {
+      id: "gpt-5.3-codex",
+      label: "GPT-5.3 Codex",
+      optionDescriptors: [reasoningSelectDescriptor("medium")],
+      supportsPlanMode: true,
+      supportsWebSearch: "native",
+    },
+    {
+      id: "gpt-5.3-codex-spark",
+      label: "GPT-5.3 Codex Spark",
+      optionDescriptors: [reasoningSelectDescriptor("medium")],
+      supportsPlanMode: true,
+      supportsWebSearch: "native",
+    },
   ],
   // Seed list — Grok CLI's `-m` flag accepts any model id it knows, so a
   // custom slug typed by the user still works; this list is just what the
@@ -502,33 +659,94 @@ export const MODELS_BY_PROVIDER: Record<ProviderId, ReadonlyArray<ModelOption>> 
   // a clean 403 surfaced through grok's streaming-json `type: "error"`
   // envelope, so no client-side validation needed.
   grok: [
-    { id: "grok-build", label: "Grok Build" },
-    { id: "grok-4", label: "Grok 4" },
-    { id: "grok-4-fast", label: "Grok 4 Fast" },
-    { id: "grok-code-fast-1", label: "Grok Code Fast" },
+    {
+      id: "grok-build",
+      label: "Grok Build",
+      supportsPlanMode: true,
+      supportsWebSearch: "queryOnly",
+    },
+    {
+      id: "grok-4",
+      label: "Grok 4",
+      supportsPlanMode: true,
+      supportsWebSearch: "queryOnly",
+    },
+    {
+      id: "grok-4-fast",
+      label: "Grok 4 Fast",
+      supportsPlanMode: true,
+      supportsWebSearch: "queryOnly",
+    },
+    {
+      id: "grok-code-fast-1",
+      label: "Grok Code Fast",
+      supportsPlanMode: true,
+      supportsWebSearch: "queryOnly",
+    },
   ],
   // Gemini CLI accepts any model slug it knows via the ACP `_meta.model`
-  // hint; this list is just what the picker offers by default.
+  // hint; this list is just what the picker offers by default. Gemini's
+  // ACP server does not expose a runtime reasoning-effort knob (the
+  // native gemini CLI doesn't show one either), so no reasoning descriptor
+  // is declared — the FE picker is hidden across the whole provider.
   gemini: [
-    { id: "gemini-3-pro-preview", label: "Gemini 3 Pro" },
-    { id: "gemini-3-flash-preview", label: "Gemini 3 Flash" },
-    { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
-    { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+    {
+      id: "gemini-3-pro-preview",
+      label: "Gemini 3 Pro",
+      supportsPlanMode: true,
+      supportsWebSearch: "queryOnly",
+    },
+    {
+      id: "gemini-3-flash-preview",
+      label: "Gemini 3 Flash",
+      supportsPlanMode: true,
+      supportsWebSearch: "queryOnly",
+    },
+    {
+      id: "gemini-2.5-pro",
+      label: "Gemini 2.5 Pro",
+      supportsPlanMode: true,
+      supportsWebSearch: "queryOnly",
+    },
+    {
+      id: "gemini-2.5-flash",
+      label: "Gemini 2.5 Flash",
+      supportsPlanMode: true,
+      supportsWebSearch: "queryOnly",
+    },
   ],
   // Cursor's CLI exposes models via the ACP session config-option picker;
   // these are the slugs `cursor-agent --model` advertises today. Like grok,
   // the picker accepts any model the agent knows, so a custom slug typed by
   // the user still works — this list is the default shown in the picker.
+  // Cursor has native plan mode via ACP `setSessionMode("plan")`.
   cursor: [
-    { id: "gpt-5", label: "GPT-5" },
-    { id: "sonnet-4", label: "Claude Sonnet 4" },
-    { id: "sonnet-4-thinking", label: "Claude Sonnet 4 (Thinking)" },
-    { id: "opus-4.1", label: "Claude Opus 4.1" },
+    { id: "gpt-5", label: "GPT-5", supportsPlanMode: true },
+    { id: "sonnet-4", label: "Claude Sonnet 4", supportsPlanMode: true },
+    {
+      id: "sonnet-4-thinking",
+      label: "Claude Sonnet 4 (Thinking)",
+      optionDescriptors: [reasoningSelectDescriptor("medium")],
+      supportsPlanMode: true,
+    },
+    { id: "opus-4.1", label: "Claude Opus 4.1", supportsPlanMode: true },
   ],
 };
 
 export const defaultModelFor = (providerId: ProviderId): string =>
   MODELS_BY_PROVIDER[providerId][0]!.id;
+
+/**
+ * Look up a model's descriptor by `(providerId, modelId)`. Returns
+ * `undefined` when the slug isn't in our curated list (e.g. user typed
+ * a custom slug), in which case the caller should fall through to
+ * provider-level defaults.
+ */
+export const findModelDescriptor = (
+  providerId: ProviderId,
+  modelId: string,
+): ModelOption | undefined =>
+  MODELS_BY_PROVIDER[providerId].find((m) => m.id === modelId);
 
 /**
  * Aliases for codex model slugs that no longer work — current Codex CLI rejects
@@ -575,6 +793,14 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
 export const SendInput = Schema.Struct({
   sessionId: AgentSessionId,
   text: Schema.String,
+  /**
+   * Per-turn override of the session's `modelOptions` (see
+   * `StartSessionInput.modelOptions`). When omitted, drivers reuse the
+   * value supplied at session start.
+   */
+  modelOptions: Schema.optional(
+    Schema.Record({ key: Schema.String, value: Schema.String }),
+  ),
 });
 export type SendInput = typeof SendInput.Type;
 

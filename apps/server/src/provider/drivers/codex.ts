@@ -17,6 +17,7 @@ import {
 } from "@memoize/wire";
 
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
+import { applyPlanModePrefix } from "./planMode.ts";
 import { CodexAppServerClient } from "../codex-app-server-client.ts";
 import type { ServerNotification } from "../codex-app-protocol/ServerNotification";
 import type { ServerRequest } from "../codex-app-protocol/ServerRequest";
@@ -188,11 +189,14 @@ const translateItem = (
       ];
     case "webSearch":
       if (phase !== "completed") return [];
+      // Use the Claude-canonical "WebSearch" tool name so the renderer's
+      // tool-row switch picks up the globe icon + result rendering.
+      // `query` is the canonical input key per the wire contract.
       return [
         {
           _tag: "ToolUse",
           itemId: item.id as AgentItemId,
-          tool: "web_search",
+          tool: "WebSearch",
           input: { query: item.query, action: item.action },
         },
       ];
@@ -394,13 +398,27 @@ export const startCodexSession = (
       if (commandHandled) return;
 
       emit({ _tag: "Status", status: "running" });
+      // Plan-mode emulation: Codex has no native "plan" runtime mode, so
+      // prepend a developer-instructions block while plan mode is active.
+      // The sandbox policy still gates writes, so this is belt-and-braces.
+      const promptText = applyPlanModePrefix(currentMode, text);
+      // Reasoning effort: forwarded from FE picker via
+      // `input.modelOptions.reasoning`. Pass through low/medium/high
+      // directly — Codex accepts the same literal set we use in wire's
+      // `ReasoningLevel`.
+      const reasoning = input.modelOptions?.["reasoning"];
+      const effort: "low" | "medium" | "high" | null =
+        reasoning === "low" || reasoning === "medium" || reasoning === "high"
+          ? reasoning
+          : null;
       const turn = await app.request<{ turn: { id: string } }>("turn/start", {
         threadId: activeThreadId,
-        input: [...(await buildUserInput(text, attachmentRefs, fileRefs, skillRefs))],
+        input: [...(await buildUserInput(promptText, attachmentRefs, fileRefs, skillRefs))],
         cwd,
         approvalPolicy: "never",
         sandboxPolicy: toSandboxPolicy(currentMode, cwd),
         model: input.model ?? null,
+        ...(effort !== null ? { effort } : {}),
       });
       currentTurnId = turn.turn.id;
     };

@@ -14,6 +14,7 @@ import {
 } from "@memoize/wire";
 
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
+import { createAcpTranslator } from "./acp/translate.ts";
 
 /**
  * Live-only handle for one Cursor Agent conversation. Mirrors Grok's
@@ -51,133 +52,6 @@ export interface CursorSessionHandle {
   ) => Effect.Effect<void>;
 }
 
-let itemCounter = 0;
-const nextItemId = (): AgentItemId =>
-  `i_${Date.now()}_${++itemCounter}` as AgentItemId;
-
-/**
- * Translate one ACP `session/update` payload into zero or more
- * `AgentEvent`s. Cursor's ACP server emits the same shapes as Grok per the
- * ACP spec; the handler is a direct copy of grok.ts's translator.
- */
-const translateSessionUpdate = (update: unknown): ReadonlyArray<AgentEvent> => {
-  if (update === null || typeof update !== "object") return [];
-  const u = update as Record<string, unknown>;
-  const kind = typeof u["sessionUpdate"] === "string"
-    ? (u["sessionUpdate"] as string)
-    : null;
-  if (kind === null) return [];
-
-  const asText = (v: unknown): string | null => {
-    if (typeof v === "string") return v;
-    if (v !== null && typeof v === "object" && "text" in v) {
-      const t = (v as { text: unknown }).text;
-      return typeof t === "string" ? t : null;
-    }
-    return null;
-  };
-
-  switch (kind) {
-    case "agent_message_chunk": {
-      const text = asText(u["content"]);
-      if (text === null || text.length === 0) return [];
-      return [
-        {
-          _tag: "AssistantMessage",
-          itemId: nextItemId(),
-          text,
-        },
-      ];
-    }
-    case "agent_thought_chunk":
-    case "agent_reasoning_chunk":
-    case "thinking_chunk": {
-      const text = asText(u["content"]);
-      if (text === null || text.length === 0) return [];
-      return [
-        {
-          _tag: "Thinking",
-          itemId: nextItemId(),
-          text,
-          redacted: false,
-        },
-      ];
-    }
-    case "tool_call":
-    case "tool_use": {
-      const id =
-        typeof u["toolCallId"] === "string"
-          ? ((u["toolCallId"] as string) as AgentItemId)
-          : typeof u["id"] === "string"
-            ? ((u["id"] as string) as AgentItemId)
-            : nextItemId();
-      const tool =
-        typeof u["tool"] === "string"
-          ? (u["tool"] as string)
-          : typeof u["name"] === "string"
-            ? (u["name"] as string)
-            : "tool";
-      const input = u["input"] ?? u["arguments"] ?? null;
-      return [
-        {
-          _tag: "ToolUse",
-          itemId: id,
-          tool,
-          input,
-        },
-      ];
-    }
-    case "tool_result":
-    case "tool_output": {
-      const id =
-        typeof u["toolCallId"] === "string"
-          ? ((u["toolCallId"] as string) as AgentItemId)
-          : typeof u["id"] === "string"
-            ? ((u["id"] as string) as AgentItemId)
-            : nextItemId();
-      const output = u["output"] ?? u["content"] ?? u["result"] ?? null;
-      const isError = u["isError"] === true || u["is_error"] === true;
-      return [
-        {
-          _tag: "ToolResult",
-          itemId: id,
-          output,
-          isError,
-        },
-      ];
-    }
-    case "error":
-    case "agent_error": {
-      const detail =
-        typeof u["message"] === "string" && (u["message"] as string).length > 0
-          ? (u["message"] as string)
-          : typeof u["error"] === "string"
-            ? (u["error"] as string)
-            : typeof u["details"] === "string"
-              ? (u["details"] as string)
-              : typeof u["data"] === "string"
-                ? (u["data"] as string)
-                : null;
-      const message =
-        detail !== null && detail.length > 0
-          ? detail
-          : (() => {
-              try {
-                const serialized = JSON.stringify(u);
-                return serialized === "{}"
-                  ? "Cursor agent reported an error with no detail."
-                  : `Cursor agent error: ${serialized}`;
-              } catch {
-                return "Cursor agent reported an error.";
-              }
-            })();
-      return [{ _tag: "Error", message }];
-    }
-    default:
-      console.warn(`[cursor.translate] unknown sessionUpdate=${kind}`);
-      return [];
-  }
-};
 
 interface JsonRpcError {
   readonly code?: number;
@@ -291,6 +165,11 @@ export const startCursorSession = (
       mode: "sdk",
     });
 
+    // Per-session translator coalesces agent_message_chunk deltas into
+    // one AssistantMessage per burst so the renderer doesn't show one
+    // bubble per token.
+    const translator = createAcpTranslator("cursor");
+
     let child: ChildProcessWithoutNullStreams;
     try {
       child = spawn(cursorPath, ["acp"], {
@@ -326,8 +205,10 @@ export const startCursorSession = (
       method: string,
       params: unknown,
       timeoutMs = 30_000,
+      onAssignedId?: (id: number) => void,
     ): Promise<unknown> => {
       const id = nextRpcId++;
+      onAssignedId?.(id);
       return new Promise<unknown>((resolve, reject) => {
         const timer = setTimeout(() => {
           pending.delete(id);
@@ -349,6 +230,28 @@ export const startCursorSession = (
       writeMessage({ jsonrpc: "2.0", method, params });
     };
 
+    /**
+     * Currently in-flight `session/prompt` rpc id. See gemini.ts for the
+     * rationale — interrupt needs to force-reject the pending request so
+     * the `inflight` chain unblocks.
+     */
+    let currentPromptRpcId: number | null = null;
+    const rejectCurrentPrompt = (reason: string): void => {
+      const id = currentPromptRpcId;
+      if (id === null) return;
+      const resolver = pending.get(id);
+      if (resolver === undefined) return;
+      pending.delete(id);
+      clearTimeout(resolver.timer);
+      currentPromptRpcId = null;
+      if (CURSOR_RPC_TRACE) {
+        process.stderr.write(
+          `[cursor.rpc.cancel] force-reject id=${id} method=${resolver.method} reason=${reason}\n`,
+        );
+      }
+      resolver.reject(new Error(reason));
+    };
+
     rl.on("line", (line: string) => {
       if (line.trim().length === 0) return;
       if (CURSOR_RPC_TRACE) process.stderr.write(`[cursor.rpc.recv] ${line}\n`);
@@ -365,7 +268,7 @@ export const startCursorSession = (
         if (msg.method === "session/update") {
           const update = msg.params?.update;
           if (update !== undefined) {
-            for (const ev of translateSessionUpdate(update)) {
+            for (const ev of translator.translate(update)) {
               events.unsafeOffer(ev);
             }
           }
@@ -507,12 +410,25 @@ export const startCursorSession = (
       );
     }
 
+    // If the session was created in plan mode, inform the ACP server via
+    // native `session/setMode`. Cursor exposes plan/architect modes
+    // natively, so this is real plan mode — not the dev-instructions
+    // emulation that grok/gemini/codex fall back to.
+    if (currentMode === "plan") {
+      notify("session/setMode", { sessionId: acpSessionId, modeId: "plan" });
+    }
+
     const enqueuePrompt = (text: string): void => {
       const sid = acpSessionId;
       if (sid === null) return;
       inflight = inflight
         .then(async () => {
           if (closed) return;
+          if (CURSOR_RPC_TRACE) {
+            process.stderr.write(
+              `[cursor.prompt] enqueue len=${text.length} mode=${currentMode}\n`,
+            );
+          }
           try {
             await request(
               "session/prompt",
@@ -525,16 +441,32 @@ export const startCursorSession = (
                 },
               },
               5 * 60_000,
+              (id) => {
+                currentPromptRpcId = id;
+              },
             );
+            if (CURSOR_RPC_TRACE) {
+              process.stderr.write(`[cursor.prompt] completed\n`);
+            }
           } catch (cause) {
-            if (!closed) {
+            const reason = cause instanceof Error ? cause.message : String(cause);
+            if (CURSOR_RPC_TRACE) {
+              process.stderr.write(`[cursor.prompt] failed: ${reason}\n`);
+            }
+            const isCancellation = /cancel|interrupt/i.test(reason);
+            if (!closed && !isCancellation) {
               events.unsafeOffer({
                 _tag: "Error",
-                message: cause instanceof Error ? cause.message : String(cause),
+                message: reason,
               });
             }
           } finally {
+            currentPromptRpcId = null;
+            // Drain any buffered assistant text from the translator so the
+            // final delta lands as a normal AssistantMessage instead of
+            // sitting unobserved in memory.
             if (!closed) {
+              for (const ev of translator.flush()) events.unsafeOffer(ev);
               events.unsafeOffer({ _tag: "Status", status: "idle" });
             }
           }
@@ -585,6 +517,17 @@ export const startCursorSession = (
           if (mode === currentMode) return;
           currentMode = mode;
           events.unsafeOffer({ _tag: "PermissionModeChanged", mode });
+          // Cursor exposes plan/architect modes natively via ACP
+          // `session/setMode`. Server replies with `current_mode_update`
+          // which our translator swallows. Fire-and-forget — the user's
+          // `permissionMode` chip is already updated locally; if the ACP
+          // server doesn't recognize the mode it just stays in its
+          // previous mode and the user can retry.
+          const sid = acpSessionId;
+          if (sid !== null) {
+            const modeId = mode === "plan" ? "plan" : "code";
+            notify("session/setMode", { sessionId: sid, modeId });
+          }
         }),
       answerQuestion: () => Effect.void,
     };

@@ -1,4 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import * as readline from "node:readline";
 import { Effect, Mailbox, Stream } from "effect";
 
@@ -14,6 +17,8 @@ import {
 } from "@memoize/wire";
 
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
+import { createAcpTranslator } from "./acp/translate.ts";
+import { applyPlanModePrefix } from "./planMode.ts";
 
 /**
  * Live-only handle for one Gemini conversation. Mirrors the Grok/Codex/Claude
@@ -54,295 +59,6 @@ export interface GeminiSessionHandle {
   ) => Effect.Effect<void>;
 }
 
-let itemCounter = 0;
-const nextItemId = (): AgentItemId =>
-  `i_${Date.now()}_${++itemCounter}` as AgentItemId;
-
-/**
- * Translate one ACP `session/update` payload into zero or more
- * `AgentEvent`s. The ACP v1 spec uses `"sessionUpdate"` as the
- * discriminator but the ResponseItem shape (v2+) uses `"type"` — we
- * check both so either format works with Gemini's evolving ACP impl.
- *
- * ACP v1 sessionUpdate values:
- *   agent_message_chunk, agent_thought_chunk, thinking_chunk,
- *   tool_call, tool_use, tool_result, tool_output,
- *   function_call, function_call_output,
- *   custom_tool_call, custom_tool_call_output,
- *   tool_search_call, tool_search_output,
- *   local_shell_call, web_search_call,
- *   error, agent_error
- *
- * Gemini-specific (nonstandard) type values:
- *   tool_call_update, available_commands_update
- *
- * ACP v2 ResponseItem type values (also accepted):
- *   message, function_call, custom_tool_call, tool_search_call,
- *   local_shell_call, web_search_call, image_generation_call,
- *   function_call_output, custom_tool_call_output, tool_search_output,
- *   compaction, context_compaction
- */
-const translateSessionUpdate = (update: unknown): ReadonlyArray<AgentEvent> => {
-  if (update === null || typeof update !== "object") return [];
-  const u = update as Record<string, unknown>;
-  const kind =
-    typeof u["sessionUpdate"] === "string"
-      ? (u["sessionUpdate"] as string)
-      : typeof u["type"] === "string"
-        ? (u["type"] as string)
-        : null;
-  if (kind === null) return [];
-
-  const asText = (v: unknown): string | null => {
-    if (typeof v === "string") return v;
-    if (v !== null && typeof v === "object" && "text" in v) {
-      const t = (v as { text: unknown }).text;
-      return typeof t === "string" ? t : null;
-    }
-    return null;
-  };
-
-  const extractMessageText = (content: unknown): string | null => {
-    if (!Array.isArray(content)) return asText(content);
-    const parts: string[] = [];
-    for (const item of content) {
-      if (item !== null && typeof item === "object" && "text" in item) {
-        const t = (item as Record<string, unknown>)["text"];
-        if (typeof t === "string") parts.push(t);
-      }
-    }
-    return parts.length > 0 ? parts.join("") : null;
-  };
-
-  const extractCallId = (): AgentItemId => {
-    const raw =
-      typeof u["toolCallId"] === "string"
-        ? u["toolCallId"]
-        : typeof u["call_id"] === "string"
-          ? u["call_id"]
-          : typeof u["id"] === "string"
-            ? u["id"]
-            : typeof (u as Record<string, unknown>)["callId"] === "string"
-              ? (u as Record<string, unknown>)["callId"]
-              : null;
-    return raw !== null ? (raw as AgentItemId) : nextItemId();
-  };
-
-  const extractToolName = (): string => {
-    return typeof u["tool"] === "string"
-      ? (u["tool"] as string)
-      : typeof u["name"] === "string"
-        ? (u["name"] as string)
-        : typeof u["kind"] === "string"
-          ? (u["kind"] as string)
-          : typeof u["execution"] === "string"
-            ? (u["execution"] as string)
-            : typeof u["command"] === "string"
-              ? (u["command"] as string)
-              : "tool";
-  };
-
-  const extractInput = (): unknown => {
-    if (u["input"] !== undefined) return u["input"];
-    if (u["arguments"] !== undefined) {
-      const a = u["arguments"];
-      if (typeof a === "string") {
-        try {
-          return JSON.parse(a);
-        } catch {
-          return a;
-        }
-      }
-      return a;
-    }
-    if (u["command"] !== undefined) return { command: u["command"] };
-    if (u["cmd"] !== undefined) return { command: u["cmd"] };
-    if (Array.isArray(u["locations"]) && u["locations"].length > 0) {
-      const loc = (u["locations"] as Array<Record<string, unknown>>)[0];
-      if (loc !== undefined && typeof loc["path"] === "string") return { path: loc["path"] };
-    }
-    return null;
-  };
-
-  const extractOutput = (): unknown => {
-    if (u["output"] !== undefined) {
-      const o = u["output"];
-      if (o !== null && typeof o === "object" && "content" in o) {
-        return (o as Record<string, unknown>)["content"] ?? o;
-      }
-      return o;
-    }
-    if (u["content"] !== undefined) return u["content"];
-    if (u["result"] !== undefined) return u["result"];
-    return null;
-  };
-
-  const normalizeGeminiTool = (rawKind: string): string => {
-    switch (rawKind) {
-      case "read": return "Read";
-      case "bash": return "Bash";
-      case "edit": return "Edit";
-      case "write": return "Write";
-      case "grep": return "Grep";
-      case "glob": return "Glob";
-      case "search": return "WebSearch";
-      case "fetch": return "WebFetch";
-      default: return rawKind.charAt(0).toUpperCase() + rawKind.slice(1);
-    }
-  };
-
-  const buildGeminiInput = (u: Record<string, unknown>, geminiKind: string | null): unknown => {
-    const input: Record<string, unknown> = {};
-    if (typeof u["title"] === "string") {
-      input["description"] = u["title"];
-    }
-    switch (geminiKind) {
-      case "read":
-      case "edit":
-      case "write": {
-        const locations = u["locations"];
-        if (Array.isArray(locations) && locations.length > 0) {
-          const loc = locations[0];
-          if (loc !== null && typeof loc === "object" && typeof (loc as Record<string, unknown>)["path"] === "string") {
-            input["file_path"] = (loc as Record<string, unknown>)["path"];
-          }
-        }
-        break;
-      }
-      case "bash": {
-        if (typeof u["command"] === "string") input["command"] = u["command"];
-        else if (typeof u["cmd"] === "string") input["command"] = u["cmd"];
-        break;
-      }
-      case "grep":
-      case "glob": {
-        if (typeof u["pattern"] === "string") input["pattern"] = u["pattern"];
-        if (typeof u["path"] === "string") input["path"] = u["path"];
-        break;
-      }
-    }
-    return Object.keys(input).length > 0 ? input : null;
-  };
-
-  switch (kind) {
-    case "agent_message_chunk":
-    case "message": {
-      const text =
-        kind === "message"
-          ? extractMessageText(u["content"])
-          : asText(u["content"]);
-      if (text === null || text.length === 0) return [];
-      return [
-        {
-          _tag: "AssistantMessage",
-          itemId: nextItemId(),
-          text,
-        },
-      ];
-    }
-    case "agent_thought_chunk":
-    case "agent_reasoning_chunk":
-    case "thinking_chunk":
-    case "reasoning": {
-      const text = asText(u["content"]);
-      if (text === null || text.length === 0) return [];
-      return [
-        {
-          _tag: "Thinking",
-          itemId: nextItemId(),
-          text,
-          redacted: false,
-        },
-      ];
-    }
-    case "tool_call":
-    case "tool_use":
-    case "function_call":
-    case "custom_tool_call":
-    case "tool_search_call":
-    case "local_shell_call":
-    case "web_search_call":
-    case "image_generation_call": {
-      const geminiToolKind = typeof u["kind"] === "string" ? (u["kind"] as string) : null;
-      if (geminiToolKind === "think") return [];
-      const toolName = geminiToolKind !== null ? normalizeGeminiTool(geminiToolKind) : extractToolName();
-      const input = geminiToolKind !== null ? buildGeminiInput(u, geminiToolKind) : extractInput();
-      console.log(
-        `[gemini.translate.tool] initCallId=${extractCallId()} tool=${toolName} input=${JSON.stringify(input).slice(0, 2048)}`,
-      );
-      return [
-        {
-          _tag: "ToolUse" as const,
-          itemId: extractCallId(),
-          tool: toolName,
-          input,
-        },
-      ];
-    }
-    case "tool_call_update":
-    case "available_commands_update":
-      return [];
-    case "tool_result":
-    case "tool_output":
-    case "function_call_output":
-    case "custom_tool_call_output":
-    case "tool_search_output": {
-      console.log(
-        `[gemini.translate.result] kind=${kind} raw=${JSON.stringify(u).slice(0, 4096)}`,
-      );
-      const isError = u["isError"] === true || u["is_error"] === true;
-      const toolResult = {
-        _tag: "ToolResult" as const,
-        itemId: extractCallId(),
-        output: extractOutput(),
-        isError,
-      };
-      console.log(
-        `[gemini.translate.result] → ToolResult itemId=${toolResult.itemId} output=${JSON.stringify(toolResult.output).slice(0, 2048)}`,
-      );
-      return [toolResult];
-    }
-    case "error":
-    case "agent_error": {
-      const detail =
-        typeof u["message"] === "string" && (u["message"] as string).length > 0
-          ? (u["message"] as string)
-          : typeof u["error"] === "string"
-            ? (u["error"] as string)
-            : typeof u["details"] === "string"
-              ? (u["details"] as string)
-              : typeof u["data"] === "string"
-                ? (u["data"] as string)
-                : null;
-      const message =
-        detail !== null && detail.length > 0
-          ? detail
-          : (() => {
-              try {
-                const serialized = JSON.stringify(u);
-                return serialized === "{}"
-                  ? "Gemini agent reported an error with no detail."
-                  : `Gemini agent error: ${serialized}`;
-              } catch {
-                return "Gemini agent reported an error.";
-              }
-            })();
-      return [{ _tag: "Error", message }];
-    }
-    case "available_commands_update":
-      return [];
-    default:
-      console.warn(
-        `[gemini.translate] unknown sessionUpdate/type=${kind} payload=${((): string => {
-          try {
-            const s = JSON.stringify(u).slice(0, 2048);
-            return s.length > 0 ? s : "(empty)";
-          } catch { return "(unserialisable)"; }
-        })()}`,
-      );
-      return [];
-  }
-};
 
 interface JsonRpcError {
   readonly code?: number;
@@ -436,6 +152,63 @@ const formatRpcError = (
 };
 
 /**
+ * Add `cwd` to `~/.gemini/trustedFolders.json` so the CLI's folder-trust
+ * check passes. Without this, Gemini logs `Skipping project agents due to
+ * untrusted folder` and disables project hooks / project agents / ripgrep.
+ *
+ * File format: `{ "<absolute-path>": "TRUST_FOLDER" }` (per the official
+ * gemini-cli docs, docs/cli/trusted-folders.md). We always merge — never
+ * overwrite — because the user may have trusted other folders manually.
+ *
+ * Best-effort: if any fs op fails the CLI just stays in safe mode, so we
+ * swallow errors via `Effect.ignore`.
+ */
+const ensureGeminiFolderTrusted = (cwd: string): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    const home = os.homedir();
+    if (home.length === 0) return;
+    const geminiDir = path.join(home, ".gemini");
+    const trustedFile = path.join(geminiDir, "trustedFolders.json");
+    const absCwd = path.resolve(cwd);
+
+    const current = yield* Effect.tryPromise(() =>
+      fs.promises.readFile(trustedFile, "utf-8"),
+    ).pipe(
+      Effect.flatMap((raw) =>
+        Effect.try(() => {
+          const parsed: unknown = JSON.parse(raw);
+          if (
+            parsed === null ||
+            typeof parsed !== "object" ||
+            Array.isArray(parsed)
+          ) {
+            return {} as Record<string, string>;
+          }
+          return parsed as Record<string, string>;
+        }),
+      ),
+      Effect.catchAll(() => Effect.succeed({} as Record<string, string>)),
+    );
+
+    if (current[absCwd] === "TRUST_FOLDER") return;
+
+    const next = { ...current, [absCwd]: "TRUST_FOLDER" };
+
+    yield* Effect.tryPromise(() =>
+      fs.promises.mkdir(geminiDir, { recursive: true, mode: 0o700 }),
+    ).pipe(Effect.ignore);
+
+    yield* Effect.tryPromise(() =>
+      fs.promises.writeFile(trustedFile, JSON.stringify(next, null, 2), {
+        encoding: "utf-8",
+        mode: 0o600,
+      }),
+    ).pipe(Effect.ignore);
+
+    yield* Effect.logInfo(`gemini: trusted folder ${absCwd}`);
+  });
+
+/**
  * Spin up a Gemini conversation backed by a persistent ACP child process.
  * The handshake (`initialize` → `authenticate` → `session/new`) runs once
  * synchronously inside `start()`; auth or transport failures surface there
@@ -488,6 +261,13 @@ export const startGeminiSession = (
       mode: "sdk",
     });
 
+    yield* ensureGeminiFolderTrusted(cwd);
+
+    // Per-session translator coalesces agent_message_chunk deltas into
+    // one AssistantMessage per burst so the renderer doesn't show one
+    // bubble per token.
+    const translator = createAcpTranslator("gemini");
+
     let child: ChildProcessWithoutNullStreams;
     try {
       child = spawn(geminiPath, ["--experimental-acp"], {
@@ -523,8 +303,10 @@ export const startGeminiSession = (
       method: string,
       params: unknown,
       timeoutMs = 30_000,
+      onAssignedId?: (id: number) => void,
     ): Promise<unknown> => {
       const id = nextRpcId++;
+      onAssignedId?.(id);
       return new Promise<unknown>((resolve, reject) => {
         const timer = setTimeout(() => {
           pending.delete(id);
@@ -543,6 +325,30 @@ export const startGeminiSession = (
 
     const notify = (method: string, params: unknown): void => {
       writeMessage({ jsonrpc: "2.0", method, params });
+    };
+
+    /**
+     * Currently in-flight `session/prompt` rpc id. We track this so
+     * `interrupt()` can both (a) send `session/cancel` to the agent AND
+     * (b) force-reject the pending request, which unblocks the `inflight`
+     * promise chain so subsequent `send()` calls don't queue behind a
+     * dead request.
+     */
+    let currentPromptRpcId: number | null = null;
+    const rejectCurrentPrompt = (reason: string): void => {
+      const id = currentPromptRpcId;
+      if (id === null) return;
+      const resolver = pending.get(id);
+      if (resolver === undefined) return;
+      pending.delete(id);
+      clearTimeout(resolver.timer);
+      currentPromptRpcId = null;
+      if (GEMINI_RPC_TRACE) {
+        process.stderr.write(
+          `[gemini.rpc.cancel] force-reject id=${id} method=${resolver.method} reason=${reason}\n`,
+        );
+      }
+      resolver.reject(new Error(reason));
     };
 
     rl.on("line", (line: string) => {
@@ -567,7 +373,7 @@ export const startGeminiSession = (
         if (msg.method === "session/update") {
           const update = msg.params?.update;
           if (update !== undefined) {
-            for (const ev of translateSessionUpdate(update)) {
+            for (const ev of translator.translate(update)) {
               events.unsafeOffer(ev);
             }
           }
@@ -711,31 +517,59 @@ export const startGeminiSession = (
     const enqueuePrompt = (text: string): void => {
       const sid = acpSessionId;
       if (sid === null) return;
+      // Plan-mode emulation: gemini ACP has no native read-only switch, so
+      // prepend a developer-instructions block while plan mode is active.
+      const promptText = applyPlanModePrefix(currentMode, text);
       inflight = inflight
         .then(async () => {
           if (closed) return;
+          if (GEMINI_RPC_TRACE) {
+            process.stderr.write(
+              `[gemini.prompt] enqueue len=${promptText.length} mode=${currentMode}\n`,
+            );
+          }
           try {
             await request(
               "session/prompt",
               {
                 sessionId: sid,
-                prompt: [{ type: "text", text }],
+                prompt: [{ type: "text", text: promptText }],
                 _meta: {
                   permissionMode: currentMode,
                   ...(input.model !== undefined ? { model: input.model } : {}),
                 },
               },
               5 * 60_000,
+              (id) => {
+                currentPromptRpcId = id;
+              },
             );
+            if (GEMINI_RPC_TRACE) {
+              process.stderr.write(`[gemini.prompt] completed\n`);
+            }
           } catch (cause) {
-            if (!closed) {
+            const reason = cause instanceof Error ? cause.message : String(cause);
+            if (GEMINI_RPC_TRACE) {
+              process.stderr.write(`[gemini.prompt] failed: ${reason}\n`);
+            }
+            // Cancellation is a clean stop, not an error condition — the
+            // user already knows they interrupted. Surface other failures
+            // (timeouts, transport errors, server-side rejections) so the
+            // chat bubble shows them.
+            const isCancellation = /cancel|interrupt/i.test(reason);
+            if (!closed && !isCancellation) {
               events.unsafeOffer({
                 _tag: "Error",
-                message: cause instanceof Error ? cause.message : String(cause),
+                message: reason,
               });
             }
           } finally {
+            currentPromptRpcId = null;
+            // Drain any buffered assistant text from the translator so the
+            // final delta lands as a normal AssistantMessage instead of
+            // sitting unobserved in memory.
             if (!closed) {
+              for (const ev of translator.flush()) events.unsafeOffer(ev);
               events.unsafeOffer({ _tag: "Status", status: "idle" });
             }
           }
@@ -762,9 +596,20 @@ export const startGeminiSession = (
         Effect.sync(() => {
           const sid = acpSessionId;
           if (sid === null) return;
+          if (GEMINI_RPC_TRACE) {
+            process.stderr.write(
+              `[gemini.interrupt] sid=${sid} pendingPrompt=${currentPromptRpcId ?? "(none)"}\n`,
+            );
+          }
           // Best-effort cancel; do NOT SIGINT the child or the persistent
           // session dies for every subsequent send.
           notify("session/cancel", { sessionId: sid });
+          // Force-reject the in-flight `session/prompt` request so the
+          // `inflight` promise chain unblocks. Without this, if Gemini's
+          // CLI doesn't honour `session/cancel` (or responds slowly), the
+          // user's next message queues behind a dead request and the
+          // session feels stuck.
+          rejectCurrentPrompt("Interrupted by user");
         }),
       close: () =>
         Effect.gen(function* () {

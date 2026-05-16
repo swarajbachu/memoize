@@ -481,14 +481,13 @@ function ProvidersPane() {
         <OptionGroup columns={3}>
           {providers
             .filter((pid) => {
-              // Hide providers the user has toggled off, and the
-              // subscription-gated ones (Grok → SuperGrok Heavy, Cursor →
-              // Cursor Pro) — they can't be launched until we can verify
-              // the plan, so picking them as "default" would just route
-              // the user into a doomed 403 on the next new chat. Mirrors
-              // the composer's provider-picker filter.
+              // Hide providers the user has toggled off. Cursor is still
+              // excluded because it has an unconditional subscription gate.
+              // Grok is allowed once the user has a real login (the probe
+              // now surfaces email from auth.json and does not force a
+              // "Requires..." label).
               if (providerEnabled[pid] === false) return false;
-              if (pid === "grok" || pid === "cursor") return false;
+              if (pid === "cursor") return false;
               return true;
             })
             .map((pid) => (

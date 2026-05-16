@@ -632,12 +632,27 @@ const buildToolView = (
         icon: GlobeIcon,
         label: "WebSearch",
         trailing: q !== null ? <InlineCodeChip value={q} /> : undefined,
-        resultPanel: (result) => (
-          <PreBlock
-            text={truncate(toResultText(result.output), 4000)}
-            isError={result.isError}
-          />
-        ),
+        resultPanel: (result) => {
+          // ACP providers (Gemini/Grok) don't surface search results
+          // through ACP frames — only the fact that a search ran. Show a
+          // muted hint instead of an empty pre block so the row carries
+          // information even without results. Claude/Codex emit real
+          // result text and fall through to the PreBlock path.
+          const text = toResultText(result.output);
+          if (text.trim().length === 0 && !result.isError) {
+            return (
+              <p className="px-1 text-[11px] text-muted-foreground italic">
+                (no results returned)
+              </p>
+            );
+          }
+          return (
+            <PreBlock
+              text={truncate(text, 4000)}
+              isError={result.isError}
+            />
+          );
+        },
       };
     }
 

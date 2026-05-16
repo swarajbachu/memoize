@@ -51,10 +51,11 @@ const LOGIN_HINT: Record<ProviderId, string> = {
 };
 
 /**
- * Provider-specific subscription pages. When a provider gates session
- * driving behind a paid plan (Grok → SuperGrok Heavy), the card renders
- * an inline notice + this button so the user lands on the upgrade flow
- * before they hit a session-runtime 403.
+ * Providers that have a known paid-plan requirement for full agent usage.
+ * For Grok we now decode the `tier` claim from `~/.grok/auth.json` JWT:
+ *   - tier >= 5 → authLabel = "SuperGrok Heavy" (positive, shows plan, toggle works)
+ *   - lower / unknown → authLabel = "Requires SuperGrok Heavy" → violet nag + disabled
+ * The frontend only forces the subscription alarm/disable when the label contains "Requires".
  */
 const SUBSCRIPTION_INFO: Partial<
   Record<ProviderId, { readonly plan: string; readonly url: string }>
@@ -76,32 +77,37 @@ export function ProviderCard({
   const subscription = SUBSCRIPTION_INFO[providerId];
   const persistedEnabled =
     useSettingsStore((s) => s.providerEnabled[providerId]) ?? true;
-  // Subscription-gated providers (Grok → SuperGrok Heavy) can never be
-  // "enabled" until the user confirms the upgrade — until we have a way
-  // to actually verify the plan from the CLI, we force the toggle off so
-  // sessions can't be launched into a doomed 403. The visible state lies
-  // to the user with intent: the underlying persisted value is whatever
-  // they set, but the rendering + composer filter treat it as off.
-  const enabled = subscription !== undefined ? false : persistedEnabled;
+
+  // For providers that have a known subscription gate (grok, cursor), we only
+  // force-disable + show the violet alarm *when the server probe explicitly
+  // tells us the requirement is unmet* (i.e. authLabel contains "Requires").
+  // Once the user has a real login (auth.json with email/tier), the probe
+  // returns clean "authenticated + authEmail" and we treat the card normally.
+  // This removes the permanent "you still need to subscribe" lie for paying
+  // Grok users while still protecting people on free tiers from silent 403s.
+  const unmetSubscriptionRequirement =
+    subscription !== undefined &&
+    availability?.authLabel?.toLowerCase().includes("require") === true;
+
+  const enabled = unmetSubscriptionRequirement ? false : persistedEnabled;
   const setProviderEnabled = useSettingsStore((s) => s.setProviderEnabled);
   const baseSummary = useMemo(
     () => getProviderSummary(availability, enabled, loading),
     [availability, enabled, loading],
   );
-  // Promote the card to the violet "subscription" status when this provider
-  // is plan-gated, regardless of whether the CLI itself reports
-  // authenticated. The headline reads "Subscription required" so the dot
-  // color isn't doing all the work.
-  const summary =
-    subscription !== undefined
-      ? {
-          ...baseSummary,
-          statusKey: "subscription" as const,
-          headline: `Requires ${subscription.plan}`,
-          detail: null,
-          authEmail: null,
-        }
-      : baseSummary;
+  // Only force the violet "subscription" status + "Requires ..." headline
+  // when the backend probe says the plan requirement is still unmet.
+  // For a user with a valid Grok login the card will now show the normal
+  // emerald "Authenticated as <email>" (or "Authenticated") state.
+  const summary = unmetSubscriptionRequirement
+    ? {
+        ...baseSummary,
+        statusKey: "subscription" as const,
+        headline: `Requires ${subscription!.plan}`,
+        detail: null,
+        authEmail: null,
+      }
+    : baseSummary;
   const styles = PROVIDER_STATUS_STYLES[summary.statusKey];
   const versionLabel = formatVersionLabel(availability?.cliVersion);
   const showUpgrade =
@@ -111,7 +117,7 @@ export function ProviderCard({
     <div
       className={cn(
         "flex flex-col overflow-hidden rounded-lg border border-border/50 bg-card transition-colors",
-        !enabled && subscription === undefined && "opacity-70",
+        !enabled && !unmetSubscriptionRequirement && "opacity-70",
       )}
     >
       <button
@@ -149,20 +155,20 @@ export function ProviderCard({
         </div>
         <Switch
           checked={enabled}
-          disabled={subscription !== undefined}
+          disabled={unmetSubscriptionRequirement}
           onClick={(e) => e.stopPropagation()}
           onCheckedChange={(value) => {
-            if (subscription !== undefined) return;
+            if (unmetSubscriptionRequirement) return;
             setProviderEnabled(providerId, value);
           }}
           aria-label={
-            subscription !== undefined
-              ? `${PROVIDER_LABEL[providerId]} requires a ${subscription.plan} subscription`
+            unmetSubscriptionRequirement
+              ? `${PROVIDER_LABEL[providerId]} requires a ${subscription!.plan} subscription`
               : `Enable ${PROVIDER_LABEL[providerId]}`
           }
           title={
-            subscription !== undefined
-              ? `Requires ${subscription.plan} subscription`
+            unmetSubscriptionRequirement
+              ? `Requires ${subscription!.plan} subscription`
               : undefined
           }
         />
@@ -197,7 +203,10 @@ export function ProviderCard({
             availability.authStatus === "unauthenticated" && (
               <CodeRow label="Sign in" command={LOGIN_HINT[providerId]} />
             )}
-          <SubscriptionRow providerId={providerId} />
+          <SubscriptionRow
+            providerId={providerId}
+            availability={availability}
+          />
 
           <ModelDefault providerId={providerId} />
 
@@ -250,12 +259,6 @@ function ModelDefault({ providerId }: { providerId: ProviderId }) {
 }
 
 /**
- * Subscription-gate notice for providers that need a paid plan beyond the
- * CLI's local OAuth (Grok → SuperGrok Heavy). The card shows this whenever
- * `SUBSCRIPTION_INFO[providerId]` is set; clicking the button opens the
- * provider's subscribe page in the user's default browser.
- */
-/**
  * Open a URL in the user's OS browser via the preload bridge (Electron's
  * `shell.openExternal`). Falls back to `window.open` for web/dev contexts.
  * We intentionally avoid an in-app webview here: a paid-checkout flow
@@ -270,9 +273,31 @@ const openExternal = (url: string) => {
   window.open(url, "_blank", "noopener,noreferrer");
 };
 
-function SubscriptionRow({ providerId }: { providerId: ProviderId }) {
+/**
+ * Subscription / plan notice for providers that gate behind a paid tier
+ * (Grok → SuperGrok Heavy, Cursor → Cursor Pro).
+ *
+ * - If the server probe reports an unmet requirement (authLabel contains
+ *   "Requires"), we show the strong violet alarm box + Subscribe CTA.
+ * - If the user has a successful login (clean authenticated + email from
+ *   auth.json), we render nothing — the card already shows "Authenticated
+ *   as <email>" and the toggle works. The plan gate is still real and will
+ *   be reported by the ACP at runtime with a helpful error.
+ */
+function SubscriptionRow({
+  providerId,
+  availability,
+}: {
+  providerId: ProviderId;
+  availability?: AgentAvailability;
+}) {
   const info = SUBSCRIPTION_INFO[providerId];
   if (info === undefined) return null;
+
+  const unmet =
+    availability?.authLabel?.toLowerCase().includes("require") === true;
+  if (!unmet) return null;
+
   return (
     <div className="flex flex-col gap-1.5 rounded-md border border-violet-400/25 bg-violet-500/[0.06] px-3 py-2.5">
       <span className="text-[11px] font-medium text-violet-300">
