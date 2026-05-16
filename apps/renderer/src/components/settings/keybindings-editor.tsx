@@ -251,7 +251,7 @@ export function KeybindingsEditor() {
       )}
 
       <div className="overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm/4">
-        <div className="grid grid-cols-[minmax(120px,1.3fr)_minmax(130px,0.9fr)_minmax(100px,0.9fr)_44px] border-b border-border/70 bg-muted/25 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">
+        <div className="grid grid-cols-[minmax(110px,1fr)_minmax(180px,1.1fr)_minmax(90px,0.8fr)_44px] border-b border-border/70 bg-muted/25 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">
           <div>Command</div>
           <div>Keybinding</div>
           <div>When</div>
@@ -440,7 +440,7 @@ function RowEditor({
   };
 
   return (
-    <div className="grid grid-cols-[minmax(120px,1.3fr)_minmax(130px,0.9fr)_minmax(100px,0.9fr)_44px] items-center px-3 py-1.5 text-sm even:bg-muted/15 hover:bg-accent/40">
+    <div className="grid grid-cols-[minmax(110px,1fr)_minmax(180px,1.1fr)_minmax(90px,0.8fr)_44px] items-center px-3 py-1.5 text-sm even:bg-muted/15 hover:bg-accent/40">
       <div className="min-w-0 pr-4">
         <div className="truncate text-[13px] font-medium text-foreground" title={row.command}>
           {meta.label}
@@ -455,7 +455,7 @@ function RowEditor({
           <>
             <div
               className={cn(
-                "inline-flex h-7 min-w-0 items-center gap-1.5 rounded-md border px-1.5",
+                "flex h-7 min-w-0 flex-1 items-center gap-1.5 overflow-x-auto rounded-md border px-1.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
                 isDirty
                   ? "border-primary/40 bg-primary/5"
                   : "border-transparent",
@@ -470,7 +470,7 @@ function RowEditor({
                     type="button"
                     size="icon-xs"
                     variant="ghost"
-                    className="text-muted-foreground hover:text-foreground"
+                    className="shrink-0 text-muted-foreground hover:text-foreground"
                     onClick={() =>
                       dispatch({
                         type: "patch",
@@ -494,7 +494,7 @@ function RowEditor({
                         type="button"
                         size="icon-xs"
                         variant="ghost"
-                        className="text-muted-foreground hover:text-foreground"
+                        className="shrink-0 text-muted-foreground hover:text-foreground"
                         onClick={() => dispatch({ type: "reset", row })}
                         aria-label="Discard pending changes"
                       >
@@ -646,7 +646,7 @@ function NewRow({
   };
 
   return (
-    <div className="grid grid-cols-[minmax(120px,1.3fr)_minmax(130px,0.9fr)_minmax(100px,0.9fr)_44px] items-center bg-accent/20 px-3 py-2 text-sm">
+    <div className="grid grid-cols-[minmax(110px,1fr)_minmax(180px,1.1fr)_minmax(90px,0.8fr)_44px] items-center bg-accent/20 px-3 py-2 text-sm">
       <div className="min-w-0 pr-4">
         <Select value={command} onValueChange={(v) => setCommand(v as Command)}>
           <SelectTrigger size="sm" className="h-7 min-h-7 w-full rounded-md text-xs">

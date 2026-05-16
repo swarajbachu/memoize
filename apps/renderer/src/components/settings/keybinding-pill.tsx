@@ -25,11 +25,13 @@ export function KeybindingPill({
 }): React.ReactElement {
   const parts = value.split("+").map((p) => p.trim()).filter(Boolean);
   return (
-    <KbdGroup className={cn("bg-transparent p-0 shadow-none", className)}>
+    <KbdGroup
+      className={cn("shrink-0 bg-transparent p-0 shadow-none", className)}
+    >
       {parts.map((part, i) => (
         <Kbd
           key={`${part}-${i}`}
-          className="min-w-6 justify-center px-1.5"
+          className="min-w-6 shrink-0 justify-center px-1.5"
         >
           {renderTokenForDisplay(part)}
         </Kbd>
