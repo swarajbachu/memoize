@@ -396,6 +396,7 @@ function ProvidersPane() {
   const refresh = useProvidersStore((s) => s.refresh);
   const defaultProviderId = useSettingsStore((s) => s.defaultProviderId);
   const setDefaultProvider = useSettingsStore((s) => s.setDefaultProvider);
+  const providerEnabled = useSettingsStore((s) => s.providerEnabled);
 
   // Refresh once on mount + re-poll when the window regains focus so the
   // "Checked X ago" line reflects reality without forcing the user to hit
@@ -478,15 +479,27 @@ function ProvidersPane() {
         description="Which provider new chats start in. Change per session from the composer."
       >
         <OptionGroup columns={3}>
-          {providers.map((pid) => (
-            <OptionCard
-              key={pid}
-              iconNode={<ProviderIcon providerId={pid} className="size-4" />}
-              title={PROVIDER_LABEL[pid]}
-              active={pid === defaultProviderId}
-              onClick={() => setDefaultProvider(pid)}
-            />
-          ))}
+          {providers
+            .filter((pid) => {
+              // Hide providers the user has toggled off, and the
+              // subscription-gated ones (Grok → SuperGrok Heavy, Cursor →
+              // Cursor Pro) — they can't be launched until we can verify
+              // the plan, so picking them as "default" would just route
+              // the user into a doomed 403 on the next new chat. Mirrors
+              // the composer's provider-picker filter.
+              if (providerEnabled[pid] === false) return false;
+              if (pid === "grok" || pid === "cursor") return false;
+              return true;
+            })
+            .map((pid) => (
+              <OptionCard
+                key={pid}
+                iconNode={<ProviderIcon providerId={pid} className="size-4" />}
+                title={PROVIDER_LABEL[pid]}
+                active={pid === defaultProviderId}
+                onClick={() => setDefaultProvider(pid)}
+              />
+            ))}
         </OptionGroup>
       </Section>
     </>
