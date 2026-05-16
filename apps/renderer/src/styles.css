@@ -222,14 +222,14 @@ body,
   --popover: oklch(1 0 0);
   --popover-foreground: var(--foreground);
 
-  --primary: oklch(0.24 0.008 70);
-  --primary-foreground: oklch(0.985 0.003 75);
+  --primary: oklch(0.62 0.18 102);
+  --primary-foreground: oklch(0.985 0.003 102);
   --secondary: oklch(0.955 0.005 70);
   --secondary-foreground: var(--foreground);
   --muted: oklch(0.955 0.005 70);
   --muted-foreground: oklch(0.52 0.012 70);
-  --accent: oklch(0.955 0.005 70);
-  --accent-foreground: var(--foreground);
+  --accent: oklch(0.94 0.03 102);
+  --accent-foreground: oklch(0.24 0.06 102);
 
   --destructive: oklch(0.585 0.22 27);
   --destructive-foreground: oklch(0.985 0.003 75);
@@ -280,6 +280,7 @@ body,
 }
 
 .dark {
+  /* Keep original surface values exactly as they were (no panel style changes) */
   --background: oklch(0.18 0.004 260);
   --foreground: oklch(0.955 0.004 260);
 
@@ -294,8 +295,12 @@ body,
   --popover: oklch(0.255 0.006 260);
   --popover-foreground: var(--foreground);
 
-  --primary: oklch(0.94 0.004 260);
-  --primary-foreground: oklch(0.18 0.004 260);
+  /* Soft lime accent. Lower L/C than a pure-neon lime so it reads as an
+     accent, not a glare. Reused via --lime across primary/ring/sidebar/
+     glow utilities — change it here and everything follows. */
+  --lime: oklch(0.88 0.15 118);
+  --primary: var(--lime);
+  --primary-foreground: oklch(0.18 0.02 118);
 
   --secondary: oklch(0.305 0.006 260);
   --secondary-foreground: var(--foreground);
@@ -309,20 +314,15 @@ body,
   --destructive: oklch(0.68 0.19 25);
   --destructive-foreground: oklch(0.985 0.003 260);
 
-  --success: oklch(0.72 0.13 155);
+  --success: #26bd6c;
   --success-foreground: oklch(0.18 0.004 260);
 
-  --warning: oklch(0.8 0.12 85);
+  --warning: #f48e2f;
   --warning-foreground: oklch(0.18 0.004 260);
 
-  --info: oklch(0.7 0.09 245);
+  --info: #4778f5;
   --info-foreground: oklch(0.985 0.003 260);
 
-  /* Dark-mode alert surfaces — soft warm hues, dark enough to be a card
-     background. L≈0.36 keeps it clearly "the card is red/amber" while the
-     reduced chroma (compared to `--destructive` at 0.19) keeps it soft, not
-     loud. Hue shifted slightly warm (25→18 for red, 85→70 for amber) so
-     the surface reads warmer than the icon's saturated stroke. */
   --alert-error-bg: oklch(0.36 0.07 18);
   --alert-warning-bg: oklch(0.36 0.06 70);
   --alert-info-bg: oklch(0.36 0.05 240);
@@ -330,32 +330,32 @@ body,
 
   --border: oklch(1 0 0 / 0.09);
   --input: oklch(1 0 0 / 0.14);
-  --ring: oklch(0.65 0.025 260);
+  --ring: var(--lime);
 
   --sidebar: oklch(0.2 0.004 260);
   --sidebar-foreground: oklch(0.955 0.004 260);
 
-  --sidebar-primary: oklch(0.72 0.075 260);
-  --sidebar-primary-foreground: oklch(0.18 0.004 260);
+  --sidebar-primary: var(--lime);
+  --sidebar-primary-foreground: oklch(0.18 0.02 118);
 
   --sidebar-accent: oklch(0.285 0.006 260);
   --sidebar-accent-foreground: var(--foreground);
 
   --sidebar-border: oklch(1 0 0 / 0.09);
-  --sidebar-ring: oklch(0.65 0.025 260);
+  --sidebar-ring: var(--lime);
 
-  --chart-1: oklch(0.72 0.075 260);
-  --chart-2: oklch(0.72 0.12 155);
-  --chart-3: oklch(0.78 0.11 85);
-  --chart-4: oklch(0.72 0.09 295);
-  --chart-5: oklch(0.68 0.17 25);
+  /* Subtle glass button tokens */
+  --color-neutral-primary-reverted-5: #ffffff0d;
+  --color-neutral-primary-reverted-20: #ffffff14;
+  --color-white-3: #ffffff08;
 
-  /* Chat bubble + prose. The user bubble sits one rung above `accent` with
-     a slight blue tint so it reads as a distinct surface, not a button.
-     `--message-text` and `--message-heading` are both dimmed below
-     `--foreground` (0.955) so a long answer feels like a calm read rather
-     than a wall of white. Headings stay only ~0.08 above body so the
-     hierarchy comes from weight + spacing, not blast-bright text. */
+  --chart-1: var(--lime);
+  --chart-2: #26bd6c;
+  --chart-3: #f48e2f;
+  --chart-4: #4778f5;
+  --chart-5: #e6483d;
+
+  /* Chat bubble + prose kept close to original for now */
   --user-bubble: oklch(0.36 0.022 260);
   --user-bubble-foreground: oklch(0.96 0.005 260);
   --message-text: oklch(0.78 0.006 260);
@@ -584,5 +584,74 @@ body,
   /* Image-thumb chips: thumbnail fills the icon slot with no inner bg. */
   .fz-chip[data-kind="image"] .fz-chip-icon:has(.fz-chip-thumb) {
     background-color: transparent;
+  }
+}
+
+/* ============================================================
+   Neon lime + embodied UI enhancements
+   ============================================================ */
+
+/* Lime glow utilities. All alpha layers derived from --lime via color-mix
+   so re-toning the accent (in .dark { --lime: … }) propagates here. */
+@layer components {
+  .neon-lime {
+    color: var(--lime);
+    text-shadow:
+      0 0 4px color-mix(in oklch, var(--lime) 25%, transparent),
+      0 0 12px color-mix(in oklch, var(--lime) 15%, transparent);
+  }
+
+  .shadow-lime-glow {
+    box-shadow:
+      0 0 0 1px color-mix(in oklch, var(--lime) 20%, transparent),
+      0 0 10px color-mix(in oklch, var(--lime) 25%, transparent),
+      0 0 24px color-mix(in oklch, var(--lime) 15%, transparent);
+  }
+
+  .shadow-lime-glow-strong {
+    box-shadow:
+      0 0 0 1px color-mix(in oklch, var(--lime) 32%, transparent),
+      0 0 14px color-mix(in oklch, var(--lime) 36%, transparent),
+      0 0 32px color-mix(in oklch, var(--lime) 24%, transparent);
+  }
+
+  /* Embodied primary button */
+  .btn-lime-embodied {
+    transition:
+      box-shadow 120ms cubic-bezier(0.23, 1, 0.32, 1),
+      transform 80ms cubic-bezier(0.23, 1, 0.32, 1),
+      background-color 120ms ease;
+  }
+  .btn-lime-embodied:hover:not(:disabled):not([data-loading]) {
+    box-shadow:
+      0 0 0 1px color-mix(in oklch, var(--lime) 25%, transparent),
+      0 0 12px color-mix(in oklch, var(--lime) 32%, transparent),
+      var(--tw-shadow, 0 0 #0000);
+    transform: translateY(-0.5px);
+  }
+  .btn-lime-embodied:active:not(:disabled):not([data-loading]),
+  .btn-lime-embodied[data-pressed]:not(:disabled):not([data-loading]) {
+    transform: translateY(0.5px) scale(0.985);
+    box-shadow:
+      0 0 0 1px color-mix(in oklch, var(--lime) 15%, transparent),
+      0 0 6px color-mix(in oklch, var(--lime) 20%, transparent),
+      var(--tw-shadow, 0 0 #0000);
+  }
+
+  /* Framed card polish — ensure inner FramePanels get the full layered
+     bevel treatment when nested inside the main shell Frames. */
+  [data-slot="frame"] [data-slot="card"] {
+    box-shadow:
+      0 1px 0 oklch(1 0 0 / 0.035) inset,
+      0 -1px 0 oklch(0 0 0 / 0.25) inset,
+      var(--tw-shadow, 0 0 #0000);
+  }
+}
+
+/* Lime focus ring override for inputs/selects when inside dark framed surfaces */
+@layer base {
+  .dark .focus-lime-ring:focus-visible,
+  .dark [data-slot="input-control"]:has(:focus-visible) {
+    --ring: oklch(0.82 0.17 102 / 0.55);
   }
 }

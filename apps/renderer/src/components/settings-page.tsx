@@ -42,6 +42,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select.tsx";
+import { Switch } from "./ui/switch";
+import { Frame, FrameFooter, FrameHeader } from "./ui/frame.tsx";
+import { Card } from "./ui/card.tsx";
 
 const PROVIDER_LABEL: Record<ProviderId, string> = {
   claude: "Claude Code",
@@ -303,46 +306,61 @@ function GeneralPane() {
     (s) => s.setOnboardingCompleted,
   );
   const setView = useUiStore((s) => s.setView);
+
   return (
     <>
-      <Section
+      <SettingsFrame
         title="Default permission mode"
+        trailing={
+          <Select
+            value={defaultRuntimeMode}
+            onValueChange={(v) => setDefaultRuntimeMode(v as RuntimeMode)}
+            items={MODES_ORDER.map((m) => ({
+              label: MODE_META[m].label,
+              value: m,
+            }))}
+          >
+            <SelectTrigger size="sm" className="w-[180px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectPopup>
+              {MODES_ORDER.map((mode) => {
+                const m = MODE_META[mode];
+                return (
+                  <SelectItem key={mode} value={mode}>
+                    <div className="flex flex-col">
+                      <span>{m.label}</span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {m.description}
+                      </span>
+                    </div>
+                  </SelectItem>
+                );
+              })}
+            </SelectPopup>
+          </Select>
+        }
         description="How the agent handles tool calls in new sessions. Each session can override this from its composer."
-      >
-        <OptionGroup>
-          {MODES_ORDER.map((mode) => {
-            const m = MODE_META[mode];
-            return (
-              <OptionCard
-                key={mode}
-                icon={m.Icon}
-                title={m.label}
-                description={m.description}
-                active={mode === defaultRuntimeMode}
-                onClick={() => setDefaultRuntimeMode(mode)}
-              />
-            );
-          })}
-        </OptionGroup>
-      </Section>
+      />
+
       <SubagentsSection />
-      <Section
+
+      <SettingsFrame
         title="Onboarding"
-        description="Replay the first-launch welcome flow. Your existing projects and credentials stay put."
-      >
-        <div>
+        trailing={
           <Button
-            variant="outline"
+            variant="settings"
             size="sm"
             onClick={() => {
               setView("chat");
               setOnboardingCompleted(false);
             }}
           >
-            Show onboarding again
+            Show again
           </Button>
-        </div>
-      </Section>
+        }
+        description="Replay the first-launch welcome flow. Your existing projects and credentials stay put."
+      />
     </>
   );
 }
@@ -390,53 +408,72 @@ function ProvidersPane() {
     return map;
   }, [availability]);
 
+  const statusLabel = loading
+    ? "Checking…"
+    : error !== null
+      ? `Probe failed · ${error}`
+      : lastCheckedAt
+        ? `Checked ${formatRelativeTime(lastCheckedAt, now) ?? "just now"}`
+        : availability.length > 0
+          ? "Checked"
+          : "Not checked yet";
+
   return (
     <>
-      <Section
-        title="Installed providers"
-        description="memoize uses your existing CLI credentials — Claude Code, Codex, Grok, Gemini, and Cursor all sign in through their own login flows."
-      >
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>
-            {loading
-              ? "Checking…"
-              : error !== null
-                ? `Probe failed · ${error}`
-                : lastCheckedAt
-                  ? `Checked ${formatRelativeTime(lastCheckedAt, now) ?? "just now"}`
-                  : availability.length > 0
-                    ? "Checked"
-                    : "Not checked yet"}
-          </span>
-          <Button
-            variant="ghost"
-            size="xs"
-            onClick={() => void refresh()}
-            disabled={loading}
-            aria-label="Refresh provider status"
-          >
-            <RotateCw
-              className={cn("size-3.5", loading && "animate-spin")}
-              aria-hidden
-            />
-          </Button>
-        </div>
-        <div className="flex flex-col gap-2">
-          {providers.map((pid) => (
-            <ProviderCard
-              key={pid}
-              providerId={pid}
-              availability={availabilityById.get(pid)}
-              loading={loading}
-            />
-          ))}
-        </div>
-      </Section>
-      <Section
+      <Frame>
+        <FrameHeader className="flex flex-row items-center justify-between px-2 py-2 w-full">
+          <p className="text-sm font-semibold text-foreground">
+            Installed providers
+          </p>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-muted-foreground/80">
+              {statusLabel}
+            </span>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={() => void refresh()}
+              disabled={loading}
+              aria-label="Refresh provider status"
+            >
+              <RotateCw
+                className={cn("size-3.5", loading && "animate-spin")}
+                aria-hidden
+              />
+            </Button>
+          </div>
+        </FrameHeader>
+        <Card>
+          <div className="flex flex-col divide-y divide-border/40">
+            {providers.map((pid) => (
+              <ProviderCard
+                key={pid}
+                providerId={pid}
+                availability={availabilityById.get(pid)}
+                loading={loading}
+              />
+            ))}
+          </div>
+        </Card>
+        <FrameFooter className="px-2 py-1 w-full">
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Nuuk uses your existing CLI credentials — Claude Code, Codex,
+            Grok, Gemini, and Cursor all sign in through their own login
+            flows.
+          </p>
+        </FrameFooter>
+      </Frame>
+
+      <SettingsFrame
         title="Default agent"
         description="Which provider new chats start in. Change per session from the composer."
+        flush
       >
-        <OptionGroup columns={3}>
+        <div
+          role="radiogroup"
+          aria-label="Default agent"
+          className="flex flex-col divide-y divide-border/40"
+        >
           {providers
             .filter((pid) => {
               // Hide providers the user has toggled off. Cursor is still
@@ -448,17 +485,27 @@ function ProvidersPane() {
               if (pid === "cursor") return false;
               return true;
             })
-            .map((pid) => (
-              <OptionCard
-                key={pid}
-                iconNode={<ProviderIcon providerId={pid} className="size-4" />}
-                title={PROVIDER_LABEL[pid]}
-                active={pid === defaultProviderId}
-                onClick={() => setDefaultProvider(pid)}
-              />
-            ))}
-        </OptionGroup>
-      </Section>
+            .map((pid) => {
+              const selected = pid === defaultProviderId;
+              return (
+                <button
+                  key={pid}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  onClick={() => setDefaultProvider(pid)}
+                  className="group flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40"
+                >
+                  <ProviderIcon providerId={pid} className="size-4 shrink-0" />
+                  <span className="flex-1 truncate text-sm font-medium text-foreground">
+                    {PROVIDER_LABEL[pid]}
+                  </span>
+                  <RadioCheck active={selected} />
+                </button>
+              );
+            })}
+        </div>
+      </SettingsFrame>
     </>
   );
 }
@@ -471,17 +518,16 @@ function WorkspacePane() {
     (s) => s.setDefaultAutoCreateWorktree,
   );
   return (
-    <Section
-      title="New chat workspace"
-      description="Memoize can run each chat in its own git worktree under .memoize/repo-worktree/, branched off the project's HEAD. Per-repo settings override this default."
-    >
-      <CheckboxField
-        checked={defaultAutoCreateWorktree}
-        onChange={setDefaultAutoCreateWorktree}
-        label="Create a new worktree for new chats by default"
-        description='Pre-selects "New worktree" in the composer&apos;s workspace picker. You can still flip back to "Current checkout" before sending the first message.'
-      />
-    </Section>
+    <SettingsFrame
+      title="Auto-create worktree for new chats"
+      trailing={
+        <Switch
+          checked={defaultAutoCreateWorktree}
+          onCheckedChange={setDefaultAutoCreateWorktree}
+        />
+      }
+      description="When on, each new chat runs in its own git worktree under .nuuk/repo-worktree/, branched off the project's HEAD. Per-repo settings can override this default."
+    />
   );
 }
 
@@ -502,79 +548,107 @@ function SubagentsSection() {
   const setPresetOverride = useSubagentsStore((s) => s.setPresetOverride);
 
   const claudeModels = MODELS_BY_PROVIDER.claude;
-  const claudeModelItems = useMemo(
-    () => claudeModels.map((m) => ({ value: m.id, label: m.label })),
-    [claudeModels],
-  );
 
   return (
-    <Section
-      title="Sub-agents"
-      description="Let your main agent delegate scoped tasks to cheaper models. Saves tokens on long sessions."
-    >
-      <CheckboxField
-        checked={enableForNewSessions}
-        onChange={setEnableForNewSessions}
-        label="Enable sub-agents for new sessions"
-      />
+    <Frame>
+      <FrameHeader className="flex flex-row items-center justify-between px-2 py-2 w-full">
+        <p className="text-sm font-semibold text-foreground">Sub-agents</p>
+        <Switch
+          checked={enableForNewSessions}
+          onCheckedChange={setEnableForNewSessions}
+        />
+      </FrameHeader>
 
-      <div
+      <Card
         className={cn(
-          "flex flex-col gap-0.5 rounded-lg border border-border/50 p-1.5 transition-opacity",
           enableForNewSessions ? "" : "pointer-events-none opacity-50",
         )}
       >
-        {DEFAULT_SUBAGENT_PRESETS.map((preset) => {
-          const ps = presets[preset.name] ?? {
-            enabled: true,
-            overrides: {},
-          };
-          const model = ps.overrides.model ?? preset.definition.model;
-          const rowDisabled = !enableForNewSessions || !ps.enabled;
-          return (
-            <div
-              key={preset.name}
-              className="flex items-center gap-3 rounded-md px-2.5 py-2 transition-colors hover:bg-muted/40"
-            >
-              <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-3">
-                <CheckboxInput
-                  checked={ps.enabled && enableForNewSessions}
-                  disabled={!enableForNewSessions}
-                  onChange={(v) => setPresetEnabled(preset.name, v)}
-                />
-                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span className="truncate text-sm font-medium leading-none">
-                    {preset.displayName}
+        <div className="flex flex-col divide-y divide-border/40 overflow-hidden">
+          {DEFAULT_SUBAGENT_PRESETS.map((preset) => {
+            const ps = presets[preset.name] ?? {
+              enabled: true,
+              overrides: {},
+            };
+            const currentModel =
+              ps.overrides.model ?? preset.definition.model ?? "";
+            const rowDisabled = !enableForNewSessions || !ps.enabled;
+            return (
+              <div key={preset.name} className="flex flex-col gap-3 px-4 py-3.5">
+                <label className="group flex cursor-pointer items-start gap-3">
+                  <Switch
+                    checked={ps.enabled && enableForNewSessions}
+                    disabled={!enableForNewSessions}
+                    onCheckedChange={(v) => setPresetEnabled(preset.name, v)}
+                    className="mt-0.5 shrink-0"
+                  />
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span className="text-sm font-semibold leading-none text-foreground">
+                      {preset.displayName}
+                    </span>
+                    <span className="text-xs leading-snug text-muted-foreground">
+                      {preset.summary}
+                    </span>
                   </span>
-                  <span className="truncate text-xs leading-snug text-muted-foreground">
-                    {preset.summary}
-                  </span>
-                </span>
-              </label>
-              <Select
-                value={model ?? ""}
-                disabled={rowDisabled}
-                onValueChange={(next) =>
-                  setPresetOverride(preset.name, { model: next as string })
-                }
-                items={claudeModelItems}
-              >
-                <SelectTrigger size="sm" className="w-auto min-w-44">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectPopup>
-                  {claudeModels.map((m) => (
-                    <SelectItem key={m.id} value={m.id}>
-                      {m.label}
-                    </SelectItem>
-                  ))}
-                </SelectPopup>
-              </Select>
-            </div>
-          );
-        })}
-      </div>
-    </Section>
+                </label>
+
+                <div
+                  className={cn(
+                    "ml-[calc(--spacing(9)+--spacing(3))] flex flex-col gap-2",
+                    rowDisabled && "pointer-events-none opacity-50",
+                  )}
+                >
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-[13px] font-semibold leading-none text-foreground">
+                      Model
+                    </span>
+                    <span className="text-xs leading-snug text-muted-foreground">
+                      Pick which model handles this sub-agent's turns.
+                    </span>
+                  </div>
+                  <div
+                    role="radiogroup"
+                    aria-label={`Model for ${preset.displayName}`}
+                    className="flex flex-col"
+                  >
+                    {claudeModels.map((m) => {
+                      const selected = currentModel === m.id;
+                      return (
+                        <label
+                          key={m.id}
+                          className="group flex cursor-pointer items-center gap-3 py-1.5"
+                        >
+                          <input
+                            type="radio"
+                            name={`subagent-model-${preset.name}`}
+                            value={m.id}
+                            checked={selected}
+                            onChange={() =>
+                              setPresetOverride(preset.name, { model: m.id })
+                            }
+                            className="sr-only"
+                          />
+                          <RadioCheck active={selected} />
+                          <span className="text-sm text-foreground">
+                            {m.label}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+      <FrameFooter className="px-2 py-1 w-full">
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          Let your main agent delegate scoped tasks to cheaper models. Saves
+          tokens on long sessions.
+        </p>
+      </FrameFooter>
+    </Frame>
   );
 }
 
@@ -582,6 +656,146 @@ function SubagentsSection() {
 // Shared building blocks
 // ---------------------------------------------------------------------------
 
+/**
+ * Frame-shaped settings block: outer muted shell with `FrameHeader` (title
+ * + optional trailing action), optional inner `Card` body, and
+ * `FrameFooter` for the description. Use for every settings group that
+ * fits the "title • body • description" shape — sub-agents-style.
+ */
+export function SettingsFrame({
+  title,
+  trailing,
+  description,
+  bodyClassName,
+  flush,
+  children,
+}: {
+  title: string;
+  trailing?: React.ReactNode;
+  description?: React.ReactNode;
+  bodyClassName?: string;
+  /** When true, render children flush inside the Card without inner padding. */
+  flush?: boolean;
+  children?: React.ReactNode;
+}) {
+  return (
+    <Frame>
+      <FrameHeader className="flex flex-row items-center justify-between px-2 py-2 w-full">
+        <p className="text-sm font-semibold text-foreground">{title}</p>
+        {trailing}
+      </FrameHeader>
+      {children && (
+        <Card className={bodyClassName}>
+          {flush ? children : <div className="px-4 py-3">{children}</div>}
+        </Card>
+      )}
+      {description && (
+        <FrameFooter className="px-2 py-1 w-full">
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {description}
+          </p>
+        </FrameFooter>
+      )}
+    </Frame>
+  );
+}
+
+/**
+ * Single-surface container for a group of settings rows. Renders one
+ * rounded panel with a subtle muted background — no inner card, no double
+ * nesting. Pair with `SettingsRow` for the row layout.
+ */
+export function SettingsCard({
+  className,
+  children,
+}: {
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex flex-col divide-y divide-border/40 overflow-hidden rounded-2xl border border-border/40 bg-muted/30",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Compact uppercase header bar for a `SettingsCard`. Single line, optional
+ * leading icon, optional trailing slot (status text, refresh button,
+ * toggle). Renders above the rest of the card content with a bottom
+ * divider courtesy of the parent's `divide-y`.
+ */
+export function SettingsCardHeader({
+  icon: Icon,
+  title,
+  trailing,
+}: {
+  icon?: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
+  title: string;
+  trailing?: React.ReactNode;
+}) {
+  return (
+    <header className="flex h-10 shrink-0 items-center gap-2 px-4 text-muted-foreground">
+      {Icon && <Icon className="size-3.5" aria-hidden />}
+      <span className="min-w-0 flex-1 truncate text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">
+        {title}
+      </span>
+      {trailing && (
+        <div className="flex shrink-0 items-center gap-2">{trailing}</div>
+      )}
+    </header>
+  );
+}
+
+/**
+ * Settings row: title + (optional) description on the left, action on the
+ * right. When `children` are passed instead of `action`, they render under
+ * the title/description (for cases like radio-group pickers).
+ */
+export function SettingsRow({
+  icon: Icon,
+  title,
+  description,
+  action,
+  children,
+}: {
+  icon?: React.ComponentType<{ className?: string }>;
+  title: string;
+  description?: string;
+  action?: React.ReactNode;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-3 px-4 py-3.5">
+      <div className="flex items-center gap-3">
+        {Icon && (
+          <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+        )}
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <div className="text-sm font-medium text-foreground">{title}</div>
+          {description && (
+            <div className="text-xs leading-snug text-muted-foreground">
+              {description}
+            </div>
+          )}
+        </div>
+        {action && <div className="shrink-0">{action}</div>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Legacy `Section` helper kept for back-compat with call-sites that
+ * haven't been migrated to `SettingsCard` + `SettingsRow`. New code should
+ * prefer those primitives.
+ */
 export function Section({
   title,
   description,
@@ -592,17 +806,11 @@ export function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="flex flex-col gap-3 border-t border-border/40 pt-6 first:border-t-0 first:pt-0">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-sm font-medium text-foreground">{title}</h2>
-        {description && (
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            {description}
-          </p>
-        )}
-      </div>
-      {children}
-    </section>
+    <SettingsCard>
+      <SettingsRow title={title} description={description}>
+        {children}
+      </SettingsRow>
+    </SettingsCard>
   );
 }
 
@@ -710,6 +918,39 @@ function RadioDot({
           active ? "scale-100" : "scale-0",
         )}
       />
+    </span>
+  );
+}
+
+/**
+ * Cleaner radio rendering: filled solid disc with checkmark when selected,
+ * hollow bordered circle when not. No inner-dot pattern.
+ */
+export function RadioCheck({
+  active,
+  className,
+}: {
+  active: boolean;
+  className?: string;
+}) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "flex size-4 shrink-0 items-center justify-center rounded-full border transition-colors",
+        active
+          ? "border-primary bg-primary"
+          : "border-border bg-background group-hover:border-foreground/60",
+        className,
+      )}
+    >
+      {active && (
+        <Check
+          className="size-2.5 text-primary-foreground"
+          strokeWidth={3.5}
+          aria-hidden
+        />
+      )}
     </span>
   );
 }

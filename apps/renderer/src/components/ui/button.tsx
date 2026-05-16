@@ -31,7 +31,7 @@ export const buttonVariants = cva(
       },
       variant: {
         default:
-          "not-disabled:inset-shadow-[0_1px_--theme(--color-white/16%)] border-primary bg-primary text-primary-foreground shadow-primary/24 shadow-xs hover:bg-primary/90 data-pressed:bg-primary/90 *:data-[slot=button-loading-indicator]:text-primary-foreground [:active,[data-pressed]]:inset-shadow-[0_1px_--theme(--color-black/8%)] [:disabled,:active,[data-pressed]]:shadow-none",
+          "not-disabled:inset-shadow-[0_1px_--theme(--color-white/16%)] border-primary bg-primary text-primary-foreground shadow-primary/24 shadow-xs hover:bg-primary/90 data-pressed:bg-primary/90 *:data-[slot=button-loading-indicator]:text-primary-foreground [:active,[data-pressed]]:inset-shadow-[0_1px_--theme(--color-black/8%)] [:disabled,:active,[data-pressed]]:shadow-none btn-lime-embodied",
         destructive:
           "not-disabled:inset-shadow-[0_1px_--theme(--color-white/16%)] border-destructive bg-destructive text-white shadow-destructive/24 shadow-xs hover:bg-destructive/90 data-pressed:bg-destructive/90 *:data-[slot=button-loading-indicator]:text-white [:active,[data-pressed]]:inset-shadow-[0_1px_--theme(--color-black/8%)] [:disabled,:active,[data-pressed]]:shadow-none",
         "destructive-outline":
@@ -43,6 +43,14 @@ export const buttonVariants = cva(
           "border-input bg-popover not-dark:bg-clip-padding text-foreground shadow-xs/5 not-disabled:not-active:not-data-pressed:before:shadow-[0_1px_--theme(--color-black/4%)] hover:bg-accent/50 data-pressed:bg-accent/50 *:data-[slot=button-loading-indicator]:text-foreground dark:bg-input/32 dark:data-pressed:bg-input/64 dark:hover:bg-input/64 dark:not-disabled:before:shadow-[0_-1px_--theme(--color-white/2%)] dark:not-disabled:not-active:not-data-pressed:before:shadow-[0_-1px_--theme(--color-white/6%)] [:disabled,:active,[data-pressed]]:shadow-none",
         secondary:
           "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/90 data-pressed:bg-secondary/90 *:data-[slot=button-loading-indicator]:text-secondary-foreground [:active,[data-pressed]]:bg-secondary/80",
+
+        /* Subtle glass button (glassmorphic secondary) */
+        subtle:
+          "h-10 rounded-[10px] border border-white/10 bg-neutral-primary-reverted-5 px-[10px] text-sm font-semibold text-foreground shadow-[0_2px_1.5px_-0.5px_rgba(0,0,0,0.03),inset_0_2px_3px_0_rgba(255,255,255,0.03)] backdrop-blur-[12px] hover:bg-white/8 active:bg-white/12 data-pressed:bg-white/12 *:data-[slot=button-loading-indicator]:text-foreground before:hidden",
+
+        /* Settings: flat translucent action button used on settings rows. */
+        settings:
+          "rounded-[10px] border-white/8 bg-neutral-primary-reverted-20 text-foreground/90 shadow-none hover:bg-white/14 active:bg-white/16 data-pressed:bg-white/16 *:data-[slot=button-loading-indicator]:text-foreground before:hidden",
       },
     },
   },
