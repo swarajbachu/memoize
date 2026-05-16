@@ -295,12 +295,12 @@ body,
   --popover: oklch(0.255 0.006 260);
   --popover-foreground: var(--foreground);
 
-  /* Soft lime accent. Lower L/C than a pure-neon lime so it reads as an
-     accent, not a glare. Reused via --lime across primary/ring/sidebar/
-     glow utilities — change it here and everything follows. */
-  --lime: oklch(0.88 0.15 118);
+  /* Bright lime accent. Reused via --lime across primary/ring/sidebar/
+     glow utilities — change it here and everything follows. Hue/chroma
+     intentionally a touch off the obvious neon pin so it reads as ours. */
+  --lime: oklch(0.94 0.2 122);
   --primary: var(--lime);
-  --primary-foreground: oklch(0.18 0.02 118);
+  --primary-foreground: oklch(0.18 0.02 122);
 
   --secondary: oklch(0.305 0.006 260);
   --secondary-foreground: var(--foreground);
@@ -336,7 +336,7 @@ body,
   --sidebar-foreground: oklch(0.955 0.004 260);
 
   --sidebar-primary: var(--lime);
-  --sidebar-primary-foreground: oklch(0.18 0.02 118);
+  --sidebar-primary-foreground: oklch(0.18 0.02 122);
 
   --sidebar-accent: oklch(0.285 0.006 260);
   --sidebar-accent-foreground: var(--foreground);
