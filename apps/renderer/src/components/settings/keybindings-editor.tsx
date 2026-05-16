@@ -4,7 +4,6 @@ import {
   FileJson,
   Pencil,
   Plus,
-  RotateCcw,
   Search,
   TriangleAlert,
 } from "lucide-react";
@@ -487,23 +486,14 @@ function RowEditor({
             </Tooltip>
             {isDirty && (
               <>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        type="button"
-                        size="icon-xs"
-                        variant="ghost"
-                        className="shrink-0 text-muted-foreground hover:text-foreground"
-                        onClick={() => dispatch({ type: "reset", row })}
-                        aria-label="Discard pending changes"
-                      >
-                        <RotateCcw className="size-3.5" />
-                      </Button>
-                    }
-                  />
-                  <TooltipPopup side="top">Discard changes</TooltipPopup>
-                </Tooltip>
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  className="h-7 shrink-0 px-2 text-muted-foreground hover:text-foreground"
+                  onClick={() => dispatch({ type: "reset", row })}
+                >
+                  Cancel
+                </Button>
                 <Button
                   size="xs"
                   className="h-7 shrink-0"
@@ -645,11 +635,21 @@ function NewRow({
     onSaved();
   };
 
+  // Free-flowing flex layout (not the table grid) so the Add / Cancel
+  // buttons can't get clipped by the narrow Status column when the
+  // settings pane is tight. Fields wrap onto a second line on very narrow
+  // viewports rather than disappearing.
   return (
-    <div className="grid grid-cols-[minmax(110px,1fr)_minmax(180px,1.1fr)_minmax(90px,0.8fr)_44px] items-center bg-accent/20 px-3 py-2 text-sm">
-      <div className="min-w-0 pr-4">
+    <div className="flex flex-col gap-2 bg-accent/20 px-3 py-3 text-sm">
+      <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.07em] text-muted-foreground">
+        <Plus className="size-3" /> New binding
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
         <Select value={command} onValueChange={(v) => setCommand(v as Command)}>
-          <SelectTrigger size="sm" className="h-7 min-h-7 w-full rounded-md text-xs">
+          <SelectTrigger
+            size="sm"
+            className="h-7 min-h-7 min-w-[10rem] flex-1 rounded-md text-xs"
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent className="max-h-72">
@@ -665,70 +665,68 @@ function NewRow({
             ))}
           </SelectContent>
         </Select>
-      </div>
 
-      <div className="flex min-w-0 items-center gap-2 pr-4">
-        {draft.isRecording ? (
-          <RecordingSurface
-            ariaLabel="Recording shortcut for new binding"
-            onCapture={(key) =>
-              dispatch({
-                type: "patch",
-                patch: { keyDraft: key, isRecording: false },
-              })
-            }
-            onExit={() =>
-              dispatch({ type: "patch", patch: { isRecording: false } })
-            }
-          />
-        ) : draft.keyDraft.length > 0 ? (
-          <>
-            <div className="inline-flex h-7 min-w-0 items-center gap-1.5 rounded-md border border-primary/40 bg-primary/5 px-1.5">
-              <KeybindingPill value={draft.keyDraft} />
-            </div>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    size="icon-xs"
-                    variant="ghost"
-                    className="text-muted-foreground hover:text-foreground"
-                    onClick={() =>
-                      dispatch({
-                        type: "patch",
-                        patch: { isRecording: true },
-                      })
-                    }
-                    aria-label="Re-record shortcut for new binding"
-                  >
-                    <Pencil className="size-3.5" />
-                  </Button>
-                }
-              />
-              <TooltipPopup side="top">Record again</TooltipPopup>
-            </Tooltip>
-          </>
-        ) : (
-          <button
-            type="button"
-            onClick={() =>
-              dispatch({ type: "patch", patch: { isRecording: true } })
-            }
-            aria-label="Record shortcut for new binding"
-            className="inline-flex h-7 min-w-0 items-center gap-1.5 rounded-md border border-border/70 bg-background px-2 text-[11px] text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
-          >
-            <Pencil className="size-3" />
-            Click to record
-          </button>
-        )}
-      </div>
+        <div className="flex min-w-0 items-center gap-1">
+          {draft.isRecording ? (
+            <RecordingSurface
+              ariaLabel="Recording shortcut for new binding"
+              onCapture={(key) =>
+                dispatch({
+                  type: "patch",
+                  patch: { keyDraft: key, isRecording: false },
+                })
+              }
+              onExit={() =>
+                dispatch({ type: "patch", patch: { isRecording: false } })
+              }
+            />
+          ) : draft.keyDraft.length > 0 ? (
+            <>
+              <div className="flex h-7 min-w-0 items-center gap-1.5 overflow-x-auto rounded-md border border-primary/40 bg-primary/5 px-1.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <KeybindingPill value={draft.keyDraft} />
+              </div>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      type="button"
+                      size="icon-xs"
+                      variant="ghost"
+                      className="shrink-0 text-muted-foreground hover:text-foreground"
+                      onClick={() =>
+                        dispatch({
+                          type: "patch",
+                          patch: { isRecording: true },
+                        })
+                      }
+                      aria-label="Re-record shortcut for new binding"
+                    >
+                      <Pencil className="size-3.5" />
+                    </Button>
+                  }
+                />
+                <TooltipPopup side="top">Record again</TooltipPopup>
+              </Tooltip>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() =>
+                dispatch({ type: "patch", patch: { isRecording: true } })
+              }
+              aria-label="Record shortcut for new binding"
+              className="inline-flex h-7 min-w-0 shrink-0 items-center gap-1.5 rounded-md border border-border/70 bg-background px-2 text-[11px] text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+            >
+              <Pencil className="size-3" />
+              Click to record
+            </button>
+          )}
+        </div>
 
-      <div className="pr-4">
         <Popover>
           <PopoverTrigger
             className={cn(
-              "inline-flex h-7 w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-2.5 text-left font-mono text-[12px] text-foreground shadow-xs/5 outline-none transition-colors hover:bg-accent focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/24",
+              "inline-flex h-7 min-w-[7rem] flex-1 items-center justify-between gap-2 rounded-md border border-input bg-background px-2.5 text-left font-mono text-[12px] text-foreground shadow-xs/5 outline-none transition-colors hover:bg-accent focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/24",
               !whenText && "text-muted-foreground",
             )}
             aria-label="Edit when clause for new binding"
@@ -750,16 +748,27 @@ function NewRow({
             </div>
           </PopoverPopup>
         </Popover>
-      </div>
 
-      <div className="flex items-center justify-end gap-1">
         <ConflictWarning labels={conflictLabels} />
-        <Button size="xs" variant="ghost" className="h-7" onClick={onCancel}>
-          Cancel
-        </Button>
-        <Button size="xs" className="h-7" disabled={!canSave} onClick={() => void save()}>
-          Add
-        </Button>
+
+        <div className="ml-auto flex items-center gap-1.5">
+          <Button
+            size="xs"
+            variant="ghost"
+            className="h-7 px-2 text-muted-foreground hover:text-foreground"
+            onClick={onCancel}
+          >
+            Cancel
+          </Button>
+          <Button
+            size="xs"
+            className="h-7"
+            disabled={!canSave}
+            onClick={() => void save()}
+          >
+            Add
+          </Button>
+        </div>
       </div>
     </div>
   );
