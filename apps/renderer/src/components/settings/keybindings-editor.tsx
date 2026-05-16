@@ -250,7 +250,7 @@ export function KeybindingsEditor() {
       )}
 
       <div className="overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm/4">
-        <div className="grid min-w-[680px] grid-cols-[minmax(190px,1.1fr)_minmax(220px,0.85fr)_minmax(210px,1fr)_60px] border-b border-border/70 bg-muted/25 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">
+        <div className="grid grid-cols-[minmax(120px,1.3fr)_minmax(130px,0.9fr)_minmax(100px,0.9fr)_44px] border-b border-border/70 bg-muted/25 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">
           <div>Command</div>
           <div>Keybinding</div>
           <div>When</div>
@@ -353,7 +353,7 @@ function RowEditor({
   };
 
   return (
-    <div className="grid min-w-[680px] grid-cols-[minmax(190px,1.1fr)_minmax(220px,0.85fr)_minmax(210px,1fr)_60px] items-center px-4 py-1.5 text-sm even:bg-muted/15 hover:bg-accent/40">
+    <div className="grid grid-cols-[minmax(120px,1.3fr)_minmax(130px,0.9fr)_minmax(100px,0.9fr)_44px] items-center px-3 py-1.5 text-sm even:bg-muted/15 hover:bg-accent/40">
       <div className="min-w-0 pr-4">
         <div className="truncate text-[13px] font-medium text-foreground" title={row.command}>
           {meta.label}
@@ -385,7 +385,7 @@ function RowEditor({
             value={draft.isRecording ? "" : draft.keyDraft}
             placeholder={draft.isRecording ? "Press shortcut" : "Unassigned"}
             className={cn(
-              "h-7 w-44 rounded-md font-mono text-[12px]",
+              "h-7 w-full min-w-0 rounded-md font-mono text-[12px]",
               draft.isRecording && "border-primary/70 bg-primary/5",
             )}
             onFocus={() =>
@@ -540,7 +540,7 @@ function NewRow({
   };
 
   return (
-    <div className="grid min-w-[680px] grid-cols-[minmax(190px,1.1fr)_minmax(220px,0.85fr)_minmax(210px,1fr)_60px] items-center bg-accent/20 px-4 py-2 text-sm">
+    <div className="grid grid-cols-[minmax(120px,1.3fr)_minmax(130px,0.9fr)_minmax(100px,0.9fr)_44px] items-center bg-accent/20 px-3 py-2 text-sm">
       <div className="min-w-0 pr-4">
         <Select value={command} onValueChange={(v) => setCommand(v as Command)}>
           <SelectTrigger size="sm" className="h-7 min-h-7 w-full rounded-md text-xs">
