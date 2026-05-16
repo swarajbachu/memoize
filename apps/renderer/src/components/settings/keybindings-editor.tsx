@@ -4,6 +4,7 @@ import {
   FileJson,
   Pencil,
   Plus,
+  RotateCcw,
   Search,
   TriangleAlert,
 } from "lucide-react";
@@ -486,14 +487,23 @@ function RowEditor({
             </Tooltip>
             {isDirty && (
               <>
-                <Button
-                  size="xs"
-                  variant="ghost"
-                  className="h-7 shrink-0 px-2 text-muted-foreground hover:text-foreground"
-                  onClick={() => dispatch({ type: "reset", row })}
-                >
-                  Cancel
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        type="button"
+                        size="icon-xs"
+                        variant="ghost"
+                        className="shrink-0 text-muted-foreground hover:text-foreground"
+                        onClick={() => dispatch({ type: "reset", row })}
+                        aria-label="Discard pending changes"
+                      >
+                        <RotateCcw className="size-3.5" />
+                      </Button>
+                    }
+                  />
+                  <TooltipPopup side="top">Discard changes</TooltipPopup>
+                </Tooltip>
                 <Button
                   size="xs"
                   className="h-7 shrink-0"
