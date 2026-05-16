@@ -725,7 +725,25 @@ export const MessageStoreLive = Layer.scoped(
               WHERE project_id = ${projectId} AND archived_at IS NULL
               ORDER BY updated_at DESC
             `.pipe(Effect.orDie);
-        return rows.map(sessionFromRow);
+        // Defensive filter — `chat_id` is NOT NULL since migration 0012, but
+        // any row that somehow slips through with NULL would crash the
+        // Session schema decode and take the entire sidebar / fs / terminal
+        // down with it. Drop and log instead.
+        const usable: SessionRow[] = [];
+        let dropped = 0;
+        for (const row of rows) {
+          if (row.chat_id === null) {
+            dropped += 1;
+            continue;
+          }
+          usable.push(row);
+        }
+        if (dropped > 0) {
+          yield* Effect.logWarning(
+            `[MessageStore] listSessions: dropped ${dropped} row(s) with NULL chat_id (project ${projectId})`,
+          );
+        }
+        return usable.map(sessionFromRow);
       });
 
     /**
