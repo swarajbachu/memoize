@@ -9,50 +9,46 @@ import {
 
 import { APPLICATION_COMMANDS, dispatchCommand } from "../lib/commands";
 import { useKeybindingsStore } from "../store/keybindings";
-import { readWhenContext } from "./use-keybinding-context";
 
-/**
- * Is the host environment a Mac? Read once at module-load — runtime
- * platform doesn't change, and we want a constant for the `matchesShortcut`
- * call (it's pure on `isMac`).
- */
 const IS_MAC =
   typeof navigator !== "undefined" &&
   /Mac|iPhone|iPod|iPad/.test(navigator.userAgent);
 
 /**
- * Mount a single document-level keydown listener that walks the live
- * keybinding rules, matches against the current event, evaluates the
- * when-clause, and fires the command via `dispatchCommand`. Last-defined
- * rule wins (matching VS Code & t3code) — user overrides land at the end
- * of the merged list and shadow defaults.
+ * Document-level keybinding dispatcher. Walks the live keybindings store
+ * last-first on every keydown and fires the matched application command.
+ * Composer / editor commands are NOT dispatched here — those live inside
+ * the corresponding CodeMirror keymaps so they only fire when the user is
+ * actually focused in that surface.
  *
- * Composer / editor commands are NOT dispatched from here. CodeMirror's
- * own keymap handles them inside the focused editor; a duplicate fire
- * from the document listener would (a) submit messages twice and (b)
- * race with CodeMirror's preventDefault.
+ * The dispatcher still consults a rule's `when` AST if one is present
+ * (hand-edits to `keybindings.json` can add them), but the settings UI no
+ * longer exposes a builder — defaults never carry a when-clause, so for
+ * the typical user the evaluator is a no-op and every matching binding
+ * just fires unconditionally.
  */
 export function useKeybindingDispatch(): void {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      // Cheap bail-out for modifier-only events (Shift, Ctrl, Cmd, Alt
-      // pressed alone) — these never match an application command.
       const base = normalizeEventKey(event.key);
       if (base === "shift" || base === "ctrl" || base === "meta" || base === "alt") {
         return;
       }
 
       const rules = useKeybindingsStore.getState().resolvedRules;
-      const context = readWhenContext();
 
-      // Walk last-first so later (user) rules shadow earlier (default) rules.
       for (let i = rules.length - 1; i >= 0; i--) {
         const r = rules[i];
         if (r === undefined) continue;
         const command: Command = r.rule.command;
         if (!APPLICATION_COMMANDS.has(command)) continue;
         if (!matchesShortcut(event, r.shortcut, IS_MAC)) continue;
-        if (r.whenAst !== null && !evaluateWhen(r.whenAst, context)) continue;
+        // Hand-edited when-clauses evaluate against an empty context — any
+        // identifier resolves to false, so a rule like `when: composerFocus`
+        // simply won't fire from here. (composer/editor commands are
+        // excluded above and handled inside their CodeMirror keymap, where
+        // focus is implicit.)
+        if (r.whenAst !== null && !evaluateWhen(r.whenAst, {})) continue;
 
         event.preventDefault();
         event.stopPropagation();

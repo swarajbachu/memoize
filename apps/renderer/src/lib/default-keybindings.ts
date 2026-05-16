@@ -87,8 +87,20 @@ export const COMMANDS_IN_ORDER: ReadonlyArray<Command> = Object.keys(
 /**
  * Default rules merged on top of (or under) the user's `keybindings.json`
  * overrides. The matcher walks rules last-first so a user rule with the
- * same `command` + `when` shadows the default; otherwise the default
- * still applies (multiple keys → same command is fine).
+ * same `command` shadows the default; otherwise the default still applies
+ * (multiple keys → same command is fine).
+ *
+ * Scoping is structural rather than expression-based:
+ *   - `composer.*` bindings only live inside the composer's CodeMirror
+ *     keymap (built in `composer-keymap.ts`).
+ *   - `editor.*` bindings only live inside the file editor's keymap
+ *     (built in `setup.ts`).
+ *   - Everything else is global, dispatched by `useKeybindingDispatch`.
+ *
+ * The wire type still carries an optional `when` field for power users
+ * who hand-edit `keybindings.json` — the dispatcher's evaluator is wired
+ * up but the settings UI no longer exposes a builder. See
+ * `packages/wire/src/keybindings-parse.ts` for the AST.
  */
 export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+n", command: "new-chat" },
@@ -99,46 +111,25 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+alt+b", command: "toggle-right-sidebar" },
   { key: "mod+j", command: "toggle-terminal" },
   { key: "mod+l", command: "focus-composer" },
-  { key: "enter", command: "composer.submit", when: "composerFocus" },
-  { key: "shift+enter", command: "composer.newline", when: "composerFocus" },
-  { key: "mod+enter", command: "composer.forceSubmit", when: "composerFocus" },
-  {
-    key: "shift+tab",
-    command: "composer.togglePlanMode",
-    when: "composerFocus",
-  },
-  { key: "mod+s", command: "editor.save", when: "editorFocus" },
-];
-
-/**
- * Identifiers known to the when-clause evaluator. The editor warns the
- * user if they reference an identifier outside this set — most likely a
- * typo (`composerFocs`) rather than an intentional new context variable.
- */
-export const KNOWN_WHEN_IDENTIFIERS: ReadonlyArray<string> = [
-  "composerFocus",
-  "editorFocus",
-  "terminalFocus",
-  "settingsOpen",
-  "leftSidebarOpen",
-  "rightSidebarOpen",
+  { key: "enter", command: "composer.submit" },
+  { key: "shift+enter", command: "composer.newline" },
+  { key: "mod+enter", command: "composer.forceSubmit" },
+  { key: "shift+tab", command: "composer.togglePlanMode" },
+  { key: "mod+s", command: "editor.save" },
 ];
 
 /**
  * Merge user overrides on top of defaults. User rules win when they share
- * the same `command` AND the same (possibly absent) `when` clause. Other
- * defaults stay — so a user can add a *new* binding for an action without
- * losing the existing one.
+ * the same `command`. Other defaults stay — so a user can add a *new*
+ * binding for an action without losing the existing one.
  */
 export function mergeWithDefaults(
   userRules: ReadonlyArray<KeybindingRule>,
 ): ReadonlyArray<KeybindingRule> {
   const out: KeybindingRule[] = [];
+  const overriddenCommands = new Set(userRules.map((r) => r.command));
   for (const def of DEFAULT_KEYBINDINGS) {
-    const shadowed = userRules.some(
-      (u) => u.command === def.command && (u.when ?? "") === (def.when ?? ""),
-    );
-    if (!shadowed) out.push(def);
+    if (!overriddenCommands.has(def.command)) out.push(def);
   }
   out.push(...userRules);
   return out;

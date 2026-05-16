@@ -1,7 +1,5 @@
 import {
-  ChevronDown,
   Ellipsis,
-  FileJson,
   Pencil,
   Plus,
   RotateCcw,
@@ -20,9 +18,7 @@ import {
 import {
   type Command,
   type KeybindingRule,
-  type KeybindingWhenNode,
   keyStringFromEvent,
-  whenAstToString,
 } from "@memoize/wire";
 
 import { cn } from "~/lib/utils";
@@ -34,7 +30,6 @@ import {
 import { useKeybindingsStore } from "../../store/keybindings";
 import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
-import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import {
   Select,
   SelectContent,
@@ -44,7 +39,6 @@ import {
 } from "../ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { KeybindingPill } from "./keybinding-pill";
-import { WhenExpressionBuilder } from "./when-expression-builder";
 
 const IS_MAC =
   typeof navigator !== "undefined" &&
@@ -55,31 +49,19 @@ const IS_MAC =
 type RuleSource = "Default" | "Custom";
 
 interface EditorRow {
-  /** Stable id — survives across resolved rules being rebuilt. */
   readonly id: string;
   readonly source: RuleSource;
   readonly command: Command;
-  /** Current key string. */
   readonly key: string;
-  /** Current canonical when text (empty string when none). */
-  readonly when: string;
-  /** Parsed AST cache for the editor popover. */
-  readonly whenAst: KeybindingWhenNode | undefined;
-  /** Index into `userRules` — only set for Custom rows. */
   readonly userIndex: number | null;
-  /** The default key chord for this command, if any. */
   readonly defaultKey: string | null;
 }
-
-const conflictKey = (key: string, when: string): string => `${key}::${when}`;
 
 /* ──────────── per-row draft state — manages dirty edits in flight ───────── */
 
 interface RowDraftState {
   readonly keyDraft: string;
-  readonly whenDraft: KeybindingWhenNode | undefined;
   readonly isRecording: boolean;
-  readonly isWhenValid: boolean;
 }
 
 type RowDraftAction =
@@ -88,9 +70,7 @@ type RowDraftAction =
 
 const draftFromRow = (row: EditorRow): RowDraftState => ({
   keyDraft: row.key,
-  whenDraft: row.whenAst,
   isRecording: false,
-  isWhenValid: true,
 });
 
 const draftReducer = (
@@ -103,203 +83,31 @@ const draftReducer = (
 
 /* ────────────────────────── Conflict labels ──────────────────────────────── */
 
+/**
+ * Return the labels of any rules (other than `self`) that bind the same
+ * chord. With when-clauses gone from the UI the conflict check is just an
+ * exact key match — the last-defined rule wins on press.
+ */
 function conflictsFor(
   rows: ReadonlyArray<EditorRow>,
-  self: { readonly id: string; readonly key: string; readonly when: string },
+  self: { readonly id: string; readonly key: string },
 ): ReadonlyArray<string> {
   const out: string[] = [];
   for (const row of rows) {
     if (row.id === self.id) continue;
     if (row.key !== self.key) continue;
-    // Empty `when` collides with everything else on the same key; otherwise
-    // require exact match (we don't try to reason about overlapping ASTs).
-    const rowWhen = row.when ?? "";
-    const selfWhen = self.when ?? "";
-    if (rowWhen !== "" && selfWhen !== "" && rowWhen !== selfWhen) continue;
     out.push(COMMAND_META[row.command].label);
   }
   return out;
 }
 
-/* ─────────────────────────── Editor entrypoint ───────────────────────────── */
-
-export function KeybindingsEditor() {
-  const resolved = useKeybindingsStore((s) => s.resolvedRules);
-  const userRules = useKeybindingsStore((s) => s.userRules);
-  const loaded = useKeybindingsStore((s) => s.loaded);
-  const hydrate = useKeybindingsStore((s) => s.hydrate);
-  const error = useKeybindingsStore((s) => s.error);
-
-  useEffect(() => {
-    void hydrate();
-  }, [hydrate]);
-
-  const [query, setQuery] = useState("");
-  const [searchOpen, setSearchOpen] = useState(false);
-  const searchRef = useRef<HTMLInputElement | null>(null);
-  const [isAdding, setIsAdding] = useState(false);
-
-  const rows: ReadonlyArray<EditorRow> = useMemo(() => {
-    const out: EditorRow[] = [];
-    for (let i = 0; i < resolved.length; i++) {
-      const r = resolved[i];
-      if (r === undefined) continue;
-      const userIndex = userRules.indexOf(r.rule);
-      const isCustom = userIndex !== -1;
-      const defaultKey = findDefaultKey(r.rule.command);
-      const whenAst = r.whenAst ?? undefined;
-      out.push({
-        id: isCustom ? `user:${userIndex}` : `default:${r.rule.command}:${i}`,
-        source: isCustom ? "Custom" : "Default",
-        command: r.rule.command,
-        key: r.rule.key,
-        when: r.rule.when ?? "",
-        whenAst,
-        userIndex: isCustom ? userIndex : null,
-        defaultKey,
-      });
-    }
-    return out;
-  }, [resolved, userRules]);
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (q.length === 0) return rows;
-    return rows.filter((row) => {
-      const meta = COMMAND_META[row.command];
-      return (
-        meta.label.toLowerCase().includes(q) ||
-        row.command.toLowerCase().includes(q) ||
-        row.key.toLowerCase().includes(q) ||
-        row.when.toLowerCase().includes(q)
-      );
-    });
-  }, [rows, query]);
-
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-col gap-1">
-          <h2 className="text-sm font-medium text-foreground">
-            Keyboard shortcuts
-          </h2>
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            Click a chord to record a new one. Bindings persist to{" "}
-            <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
-              keybindings.json
-            </code>{" "}
-            under your app data folder.
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <ExpandableSearch
-            query={query}
-            onQueryChange={setQuery}
-            isOpen={searchOpen}
-            onOpenChange={setSearchOpen}
-            inputRef={searchRef}
-            countLabel={`${rows.length} bindings`}
-          />
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  size="icon-xs"
-                  variant="ghost"
-                  className="text-muted-foreground hover:text-foreground"
-                  onClick={() => setIsAdding(true)}
-                  disabled={isAdding}
-                  aria-label="Add keybinding"
-                >
-                  <Plus className="size-3.5" />
-                </Button>
-              }
-            />
-            <TooltipPopup side="top">Add keybinding</TooltipPopup>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  size="icon-xs"
-                  variant="ghost"
-                  className="text-muted-foreground hover:text-foreground"
-                  onClick={() => {
-                    // No file:// access from renderer in Electron; surface a hint.
-                    // eslint-disable-next-line no-alert
-                    alert(
-                      "Open ~/Library/Application Support/memoize/keybindings.json (or the Win/Linux equivalent) in your editor to hand-edit. Changes are picked up live.",
-                    );
-                  }}
-                  aria-label="Show keybindings file location"
-                >
-                  <FileJson className="size-3.5" />
-                </Button>
-              }
-            />
-            <TooltipPopup side="top">Find keybindings.json</TooltipPopup>
-          </Tooltip>
-        </div>
-      </div>
-
-      {error !== null && (
-        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-          Failed to load keybindings: {error}
-        </div>
-      )}
-
-      <div className="overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm/4">
-        <div className="grid grid-cols-[minmax(110px,1fr)_minmax(180px,1.1fr)_minmax(90px,0.8fr)_44px] border-b border-border/70 bg-muted/25 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">
-          <div>Command</div>
-          <div>Keybinding</div>
-          <div>When</div>
-          <div className="text-right">Status</div>
-        </div>
-        <div className="divide-y divide-border/60">
-          {!loaded && (
-            <div className="px-4 py-12 text-center text-sm text-muted-foreground">
-              Loading…
-            </div>
-          )}
-          {loaded && filtered.length === 0 && !isAdding && (
-            <div className="px-4 py-12 text-center text-sm text-muted-foreground">
-              {query.trim().length > 0
-                ? "No keybindings match your search."
-                : "No keybindings."}
-            </div>
-          )}
-          {filtered.map((row) => (
-            <RowEditor key={row.id} row={row} allRows={rows} />
-          ))}
-          {isAdding && (
-            <NewRow
-              allRows={rows}
-              onCancel={() => setIsAdding(false)}
-              onSaved={() => setIsAdding(false)}
-            />
-          )}
-        </div>
-      </div>
-
-      <ResetAllFooter />
-    </div>
-  );
-}
-
-/* ─────────────────── Recording surface ──────────────────────────────────── */
+/* ─────────────────────────── Recording surface ──────────────────────────── */
 
 /**
  * Focusable surface that live-renders the currently-held modifiers as the
  * user reaches for the base key. Captures the full chord on the first
  * non-modifier press and fires `onCapture`; Escape and blur both call
  * `onExit` so the parent can drop back to its default display.
- *
- * Why a `<div>` instead of an `<input>`: an input would absorb any
- * accidentally-typed characters (e.g. macOS may forward `option+letter`
- * as a typed glyph), and would render the literal `mod+v` text — which
- * is exactly what users found confusing in the first cut.
  */
 function RecordingSurface({
   ariaLabel,
@@ -312,7 +120,7 @@ function RecordingSurface({
 }) {
   const [pending, setPending] = useState<string | null>(null);
 
-  const updatePendingFromEvent = (event: ReactKeyboardEvent<HTMLElement>) => {
+  const updatePending = (event: ReactKeyboardEvent<HTMLElement>) => {
     const mods: string[] = [];
     if (IS_MAC) {
       if (event.metaKey) mods.push("mod");
@@ -337,8 +145,7 @@ function RecordingSurface({
     }
     const captured = keyStringFromEvent(event.nativeEvent, IS_MAC);
     if (captured === null) {
-      // Modifier-only — update the live preview and keep waiting.
-      updatePendingFromEvent(event);
+      updatePending(event);
       return;
     }
     setPending(null);
@@ -346,8 +153,6 @@ function RecordingSurface({
   };
 
   const onKeyUp = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    // If every modifier was released without us capturing a chord, clear
-    // the preview so the surface is ready for the next attempt.
     if (
       !event.metaKey &&
       !event.ctrlKey &&
@@ -385,6 +190,147 @@ function RecordingSurface({
   );
 }
 
+/* ─────────────────────────── Editor entrypoint ───────────────────────────── */
+
+export function KeybindingsEditor() {
+  const resolved = useKeybindingsStore((s) => s.resolvedRules);
+  const userRules = useKeybindingsStore((s) => s.userRules);
+  const loaded = useKeybindingsStore((s) => s.loaded);
+  const hydrate = useKeybindingsStore((s) => s.hydrate);
+  const error = useKeybindingsStore((s) => s.error);
+
+  useEffect(() => {
+    void hydrate();
+  }, [hydrate]);
+
+  const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchRef = useRef<HTMLInputElement | null>(null);
+  const [isAdding, setIsAdding] = useState(false);
+
+  const rows: ReadonlyArray<EditorRow> = useMemo(() => {
+    const out: EditorRow[] = [];
+    for (let i = 0; i < resolved.length; i++) {
+      const r = resolved[i];
+      if (r === undefined) continue;
+      const userIndex = userRules.indexOf(r.rule);
+      const isCustom = userIndex !== -1;
+      const defaultKey = findDefaultKey(r.rule.command);
+      out.push({
+        id: isCustom ? `user:${userIndex}` : `default:${r.rule.command}:${i}`,
+        source: isCustom ? "Custom" : "Default",
+        command: r.rule.command,
+        key: r.rule.key,
+        userIndex: isCustom ? userIndex : null,
+        defaultKey,
+      });
+    }
+    return out;
+  }, [resolved, userRules]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (q.length === 0) return rows;
+    return rows.filter((row) => {
+      const meta = COMMAND_META[row.command];
+      return (
+        meta.label.toLowerCase().includes(q) ||
+        row.command.toLowerCase().includes(q) ||
+        row.key.toLowerCase().includes(q)
+      );
+    });
+  }, [rows, query]);
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-col gap-1">
+          <h2 className="text-sm font-medium text-foreground">
+            Keyboard shortcuts
+          </h2>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Click the pencil on any row to record a new chord. Bindings
+            persist to{" "}
+            <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
+              keybindings.json
+            </code>{" "}
+            in your app data folder; hand-edit there for advanced
+            scoping.
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <ExpandableSearch
+            query={query}
+            onQueryChange={setQuery}
+            isOpen={searchOpen}
+            onOpenChange={setSearchOpen}
+            inputRef={searchRef}
+            countLabel={`${rows.length} bindings`}
+          />
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  size="icon-xs"
+                  variant="ghost"
+                  className="text-muted-foreground hover:text-foreground"
+                  onClick={() => setIsAdding(true)}
+                  disabled={isAdding}
+                  aria-label="Add keybinding"
+                >
+                  <Plus className="size-3.5" />
+                </Button>
+              }
+            />
+            <TooltipPopup side="top">Add keybinding</TooltipPopup>
+          </Tooltip>
+        </div>
+      </div>
+
+      {error !== null && (
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          Failed to load keybindings: {error}
+        </div>
+      )}
+
+      <div className="overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm/4">
+        <div className="grid grid-cols-[minmax(140px,1fr)_minmax(200px,1.2fr)_44px] border-b border-border/70 bg-muted/25 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">
+          <div>Command</div>
+          <div>Keybinding</div>
+          <div className="text-right">Status</div>
+        </div>
+        <div className="divide-y divide-border/60">
+          {!loaded && (
+            <div className="px-4 py-12 text-center text-sm text-muted-foreground">
+              Loading…
+            </div>
+          )}
+          {loaded && filtered.length === 0 && !isAdding && (
+            <div className="px-4 py-12 text-center text-sm text-muted-foreground">
+              {query.trim().length > 0
+                ? "No keybindings match your search."
+                : "No keybindings."}
+            </div>
+          )}
+          {filtered.map((row) => (
+            <RowEditor key={row.id} row={row} allRows={rows} />
+          ))}
+          {isAdding && (
+            <NewRow
+              allRows={rows}
+              onCancel={() => setIsAdding(false)}
+              onSaved={() => setIsAdding(false)}
+            />
+          )}
+        </div>
+      </div>
+
+      <ResetAllFooter />
+    </div>
+  );
+}
+
 /* ─────────────────── Existing-row editor ────────────────────────────────── */
 
 function RowEditor({
@@ -406,19 +352,12 @@ function RowEditor({
     dispatch({ type: "reset", row });
   }, [row]);
 
-  const whenText = whenAstToString(draft.whenDraft);
-  const isDirty = draft.keyDraft !== row.key || whenText !== row.when;
-  // Show the pill whenever we're not actively recording — even when the row
-  // is dirty (the pill renders the freshly-captured chord; the Save button
-  // next to it commits the change). Only the brief recording window shows
-  // the raw Input, so users never see the literal `mod+v` text wondering
-  // why the cell looks broken.
+  const isDirty = draft.keyDraft !== row.key;
   const showPill = !draft.isRecording && draft.keyDraft.length > 0;
 
   const conflictLabels = conflictsFor(allRows, {
     id: row.id,
     key: draft.keyDraft,
-    when: whenText,
   });
 
   const meta = COMMAND_META[row.command];
@@ -426,11 +365,9 @@ function RowEditor({
   const canRemove = row.source !== "Default";
 
   const save = async () => {
-    const trimmedWhen = whenText.trim();
     const next: KeybindingRule = {
       key: draft.keyDraft,
       command: row.command,
-      when: trimmedWhen.length > 0 ? trimmedWhen : undefined,
     };
     if (row.source === "Custom" && row.userIndex !== null) {
       await replaceUserRuleAt(row.userIndex, next);
@@ -440,12 +377,18 @@ function RowEditor({
   };
 
   return (
-    <div className="grid grid-cols-[minmax(110px,1fr)_minmax(180px,1.1fr)_minmax(90px,0.8fr)_44px] items-center px-3 py-1.5 text-sm even:bg-muted/15 hover:bg-accent/40">
+    <div className="grid grid-cols-[minmax(140px,1fr)_minmax(200px,1.2fr)_44px] items-center px-3 py-1.5 text-sm even:bg-muted/15 hover:bg-accent/40">
       <div className="min-w-0 pr-4">
-        <div className="truncate text-[13px] font-medium text-foreground" title={row.command}>
+        <div
+          className="truncate text-[13px] font-medium text-foreground"
+          title={row.command}
+        >
           {meta.label}
         </div>
-        <div className="truncate text-[11px] text-muted-foreground" title={row.command}>
+        <div
+          className="truncate text-[11px] text-muted-foreground"
+          title={row.command}
+        >
           {meta.group}
         </div>
       </div>
@@ -507,9 +450,7 @@ function RowEditor({
                 <Button
                   size="xs"
                   className="h-7 shrink-0"
-                  disabled={
-                    draft.keyDraft.trim().length === 0 || !draft.isWhenValid
-                  }
+                  disabled={draft.keyDraft.trim().length === 0}
                   onClick={() => void save()}
                 >
                   Save
@@ -533,34 +474,6 @@ function RowEditor({
         )}
       </div>
 
-      <div className="pr-4">
-        <Popover>
-          <PopoverTrigger
-            className={cn(
-              "inline-flex h-7 w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-2.5 text-left font-mono text-[12px] text-foreground shadow-xs/5 outline-none transition-colors hover:bg-accent focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/24",
-              !whenText && "text-muted-foreground",
-            )}
-            aria-label={`Edit when clause for ${meta.label}`}
-          >
-            <span className="truncate">{whenText || "Always"}</span>
-            <ChevronDown className="size-3.5 shrink-0 opacity-60" />
-          </PopoverTrigger>
-          <PopoverPopup align="start" sideOffset={6}>
-            <div className="p-3">
-              <WhenExpressionBuilder
-                value={draft.whenDraft}
-                onChange={(next) =>
-                  dispatch({ type: "patch", patch: { whenDraft: next } })
-                }
-                onValidityChange={(valid) =>
-                  dispatch({ type: "patch", patch: { isWhenValid: valid } })
-                }
-              />
-            </div>
-          </PopoverPopup>
-        </Popover>
-      </div>
-
       <div className="flex items-center justify-end gap-1">
         <ConflictWarning labels={conflictLabels} />
         {(canReset || canRemove) && (
@@ -580,9 +493,7 @@ function RowEditor({
             </MenuTrigger>
             <MenuPopup align="end" className="min-w-36">
               {canReset && (
-                <MenuItem
-                  onClick={() => void resetCommand(row.command)}
-                >
+                <MenuItem onClick={() => void resetCommand(row.command)}>
                   Reset to default
                 </MenuItem>
               )}
@@ -590,7 +501,8 @@ function RowEditor({
                 <MenuItem
                   className="text-destructive"
                   onClick={() => {
-                    if (row.userIndex !== null) void removeUserRuleAt(row.userIndex);
+                    if (row.userIndex !== null)
+                      void removeUserRuleAt(row.userIndex);
                   }}
                 >
                   Remove
@@ -621,34 +533,23 @@ function NewRow({
   );
   const [draft, dispatch] = useReducer(draftReducer, undefined, () => ({
     keyDraft: "",
-    whenDraft: undefined,
     isRecording: true,
-    isWhenValid: true,
   }));
-  const whenText = whenAstToString(draft.whenDraft);
 
   const conflictLabels = conflictsFor(allRows, {
     id: "new",
     key: draft.keyDraft,
-    when: whenText,
   });
 
-  const canSave = draft.keyDraft.trim().length > 0 && draft.isWhenValid;
+  const canSave = draft.keyDraft.trim().length > 0;
 
   const save = async () => {
-    const trimmedWhen = whenText.trim();
-    await addRule({
-      key: draft.keyDraft,
-      command,
-      when: trimmedWhen.length > 0 ? trimmedWhen : undefined,
-    });
+    await addRule({ key: draft.keyDraft, command });
     onSaved();
   };
 
-  // Free-flowing flex layout (not the table grid) so the Add / Cancel
-  // buttons can't get clipped by the narrow Status column when the
-  // settings pane is tight. Fields wrap onto a second line on very narrow
-  // viewports rather than disappearing.
+  // Free-flowing flex layout so the Add / Cancel buttons can't be
+  // clipped by a narrow table column.
   return (
     <div className="flex flex-col gap-2 bg-accent/20 px-3 py-3 text-sm">
       <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.07em] text-muted-foreground">
@@ -733,32 +634,6 @@ function NewRow({
           )}
         </div>
 
-        <Popover>
-          <PopoverTrigger
-            className={cn(
-              "inline-flex h-7 min-w-[7rem] flex-1 items-center justify-between gap-2 rounded-md border border-input bg-background px-2.5 text-left font-mono text-[12px] text-foreground shadow-xs/5 outline-none transition-colors hover:bg-accent focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/24",
-              !whenText && "text-muted-foreground",
-            )}
-            aria-label="Edit when clause for new binding"
-          >
-            <span className="truncate">{whenText || "Always"}</span>
-            <ChevronDown className="size-3.5 shrink-0 opacity-60" />
-          </PopoverTrigger>
-          <PopoverPopup align="start" sideOffset={6}>
-            <div className="p-3">
-              <WhenExpressionBuilder
-                value={draft.whenDraft}
-                onChange={(next) =>
-                  dispatch({ type: "patch", patch: { whenDraft: next } })
-                }
-                onValidityChange={(valid) =>
-                  dispatch({ type: "patch", patch: { isWhenValid: valid } })
-                }
-              />
-            </div>
-          </PopoverPopup>
-        </Popover>
-
         <ConflictWarning labels={conflictLabels} />
 
         <div className="ml-auto flex items-center gap-1.5">
@@ -786,7 +661,11 @@ function NewRow({
 
 /* ─────────────────── Conflict warning bubble ───────────────────────────── */
 
-function ConflictWarning({ labels }: { readonly labels: ReadonlyArray<string> }) {
+function ConflictWarning({
+  labels,
+}: {
+  readonly labels: ReadonlyArray<string>;
+}) {
   if (labels.length === 0) return null;
   const description =
     labels.length === 1
@@ -810,7 +689,7 @@ function ConflictWarning({ labels }: { readonly labels: ReadonlyArray<string> })
         className="max-w-72 whitespace-normal leading-relaxed"
       >
         {description} The most recent matching binding wins when both
-        conditions can apply.
+        fire on the same chord.
       </TooltipPopup>
     </Tooltip>
   );
@@ -836,7 +715,9 @@ function ExpandableSearch({
   if (!isOpen) {
     return (
       <>
-        <span className="text-[11px] text-muted-foreground/70">{countLabel}</span>
+        <span className="text-[11px] text-muted-foreground/70">
+          {countLabel}
+        </span>
         <Tooltip>
           <TooltipTrigger
             render={

@@ -22,7 +22,6 @@ import { SettingsPage } from "./components/settings-page";
 import { TopBarLeft, TopBarMain, TopBarRight } from "./components/top-bar.tsx";
 import { UpdateBanner } from "./components/update-banner.tsx";
 import { useKeybindingDispatch } from "./hooks/use-keybinding-dispatch.ts";
-import { useSyncWhenContextFromUi } from "./hooks/use-keybinding-context.ts";
 import { useMenuShortcuts } from "./hooks/use-menu-shortcuts.ts";
 import { getRpcClient } from "./lib/rpc-client.ts";
 import { useKeybindingsStore } from "./store/keybindings.ts";
@@ -59,7 +58,6 @@ export function App() {
   // and editor commands are handled by CodeMirror keymaps, so this hook
   // ignores them.
   useKeybindingDispatch();
-  useSyncWhenContextFromUi();
 
   // Hydrate settings + keybindings + subagents from the on-disk config
   // store. Each call is idempotent; subsequent emits flow through the
