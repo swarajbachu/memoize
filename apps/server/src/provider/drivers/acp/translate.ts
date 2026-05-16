@@ -83,30 +83,85 @@ const extractCallId = (u: Record<string, unknown>): AgentItemId => {
 };
 
 /**
- * Map an ACP `kind` string (lowercase, single word) to the Claude-canonical
- * tool name the renderer's tool-row switch expects.
+ * Convert a snake_case or camelCase identifier into a nice TitleCase label
+ * suitable for display in the UI (e.g. "list_dir" → "List Dir",
+ * "readFile" → "Read File"). Used both for unknown tool normalization and
+ * as the fallback label in the renderer when we still don't have an exact
+ * mapping.
+ */
+const toNiceToolLabel = (raw: string): string => {
+  if (!raw) return "Tool";
+  // Split on underscores or camelCase boundaries
+  const words = raw
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+  return words.join(" ");
+};
+
+/**
+ * Map an ACP `kind` (or tool name) string to the Claude-canonical tool name
+ * the renderer's ToolRow switch + iconForTool expect. We now handle the
+ * full set of common Grok / ACP FS & shell tools so "list_dir", "read_file"
+ * etc. stop showing up as the generic "tool" / "Other" rows the user saw.
  */
 const normalizeAcpKind = (rawKind: string): string => {
-  switch (rawKind) {
+  const k = rawKind.toLowerCase();
+  switch (k) {
     case "read":
+    case "read_file":
+    case "readfile":
       return "Read";
     case "bash":
     case "execute":
+    case "run_command":
+    case "run_terminal_cmd":
+    case "shell":
+    case "shell_command":
+    case "terminal":
       return "Bash";
     case "edit":
+    case "edit_file":
+    case "editfile":
       return "Edit";
     case "write":
+    case "write_file":
+    case "writefile":
       return "Write";
     case "grep":
+    case "search":
+    case "search_files":
+    case "searchfiles":
       return "Grep";
     case "glob":
+    case "glob_files":
+    case "globfiles":
       return "Glob";
-    case "search":
+    case "websearch":
+    case "web_search":
       return "WebSearch";
+    case "webfetch":
+    case "web_fetch":
     case "fetch":
+    case "fetch_url":
       return "WebFetch";
+    case "list_dir":
+    case "listdir":
+    case "list_directory":
+    case "directory":
+      return "ListDir";
+    case "multi_edit":
+    case "multiedit":
+      return "MultiEdit";
+    case "todo_write":
+    case "todowrite":
+      return "TodoWrite";
     default:
-      return rawKind.charAt(0).toUpperCase() + rawKind.slice(1);
+      // Fall back to a clean Title Case label (handles the rest of Grok's
+      // native tools gracefully even if we haven't wired a dedicated case
+      // in the renderer yet).
+      return toNiceToolLabel(rawKind);
   }
 };
 
@@ -258,12 +313,50 @@ const buildCanonicalInput = (
 };
 
 const extractToolName = (u: Record<string, unknown>): string => {
+  // Direct fields first (most ACP implementations put the kind here)
   const kind = typeof u["kind"] === "string" ? (u["kind"] as string) : null;
-  if (kind !== null) return normalizeAcpKind(kind);
-  if (typeof u["tool"] === "string") return u["tool"] as string;
-  if (typeof u["name"] === "string") return u["name"] as string;
-  if (typeof u["execution"] === "string") return u["execution"] as string;
-  if (typeof u["command"] === "string") return u["command"] as string;
+  if (kind !== null && kind.length > 0) return normalizeAcpKind(kind);
+
+  if (typeof u["tool"] === "string" && u["tool"].length > 0) return u["tool"] as string;
+  if (typeof u["name"] === "string" && u["name"].length > 0) return u["name"] as string;
+  if (typeof u["execution"] === "string" && u["execution"].length > 0) return u["execution"] as string;
+  if (typeof u["command"] === "string" && u["command"].length > 0) return u["command"] as string;
+
+  // Grok (and some other agents) sometimes nest the tool identity under
+  // toolCall / tool_call / toolInfo. Look one level deeper so we don't
+  // fall back to the useless generic "tool" label the user reported.
+  const nestedCandidates = [
+    u["toolCall"],
+    u["tool_call"],
+    u["toolInfo"],
+    u["tool_info"],
+    u["call"],
+  ];
+  for (const cand of nestedCandidates) {
+    if (cand && typeof cand === "object") {
+      const c = cand as Record<string, unknown>;
+      const nestedKind = typeof c["kind"] === "string" ? (c["kind"] as string) : null;
+      if (nestedKind && nestedKind.length > 0) return normalizeAcpKind(nestedKind);
+      const nestedName =
+        (typeof c["name"] === "string" && c["name"]) ||
+        (typeof c["tool"] === "string" && c["tool"]) ||
+        (typeof c["command"] === "string" && c["command"]);
+      if (nestedName && typeof nestedName === "string" && nestedName.length > 0) {
+        return normalizeAcpKind(nestedName);
+      }
+    }
+  }
+
+  // Last-ditch: sometimes the title/description of the call *is* the tool
+  // (e.g. Grok sends title: "list_dir" with no kind). Use it.
+  const title = typeof u["title"] === "string" ? (u["title"] as string) : null;
+  if (title && title.length > 0 && title.length < 40) {
+    // Heuristic: if it looks like a tool identifier, normalize it.
+    if (/^[a-z0-9_]+$/i.test(title)) return normalizeAcpKind(title);
+  }
+
+  // Give the caller a chance to log the raw payload under debug before we
+  // return the ultimate fallback.
   return "tool";
 };
 
@@ -298,6 +391,26 @@ const safeStringify = (u: Record<string, unknown>): string => {
 };
 
 /**
+ * When extractToolName still returns the generic fallback "tool", dump the
+ * full raw ACP update under the existing ACP debug flag so we can quickly
+ * add the missing mapping on the next Grok (or Gemini/Cursor) release.
+ * This directly implements the user's request for "add some logs".
+ */
+const logUnknownToolIfNeeded = (
+  provider: AcpProviderTag,
+  u: Record<string, unknown>,
+  toolName: string,
+  phase: string,
+): void => {
+  if (toolName !== "tool") return;
+  if (!ACP_TRACE) return;
+  trace(
+    provider,
+    `unknown tool ${phase} — raw payload=${safePreview(u, 800)}`,
+  );
+};
+
+/**
  * Whether the update kind contributes to an in-flight assistant message
  * burst. ACP streams text as many tiny `agent_message_chunk` frames
  * (sometimes mid-token, like `monore` + `po`); the renderer would render
@@ -306,6 +419,18 @@ const safeStringify = (u: Record<string, unknown>): string => {
  */
 const isAssistantTextChunk = (kind: string): boolean =>
   kind === "agent_message_chunk" || kind === "message";
+
+/**
+ * Whether the update kind is a streaming thinking/reasoning delta.
+ * Grok (and other ACP agents) emit one token per `agent_thought_chunk` /
+ * `thinking_chunk`. Without coalescing we would emit a separate Thinking
+ * row for every word — exactly the bug the user reported.
+ */
+const isThinkingChunk = (kind: string): boolean =>
+  kind === "agent_thought_chunk" ||
+  kind === "agent_reasoning_chunk" ||
+  kind === "thinking_chunk" ||
+  kind === "reasoning";
 
 interface AcpTranslator {
   /**
@@ -349,6 +474,14 @@ export const createAcpTranslator = (provider: AcpProviderTag): AcpTranslator => 
   // each flush.
   let assistantBuffer = "";
   let assistantItemId: AgentItemId | null = null;
+
+  // Parallel buffer for thinking/reasoning chunks (Grok agent streams these
+  // one token at a time). We coalesce them into a single Thinking event so
+  // the UI shows one nice collapsible "Thinking" row instead of 20 one-word
+  // rows.
+  let thinkingBuffer = "";
+  let thinkingItemId: AgentItemId | null = null;
+
   const toolStates = new Map<string, ToolCallState>();
 
   const flushAssistant = (): ReadonlyArray<AgentEvent> => {
@@ -365,6 +498,35 @@ export const createAcpTranslator = (provider: AcpProviderTag): AcpTranslator => 
     assistantBuffer = "";
     assistantItemId = null;
     return [ev];
+  };
+
+  const flushThinking = (): ReadonlyArray<AgentEvent> => {
+    if (thinkingBuffer.length === 0) return [];
+    const ev: AgentEvent = {
+      _tag: "Thinking",
+      itemId: thinkingItemId ?? nextItemId(),
+      text: thinkingBuffer,
+      redacted: false,
+    };
+    trace(
+      provider,
+      `flush Thinking itemId=${ev.itemId} len=${thinkingBuffer.length} preview=${safePreview(thinkingBuffer)}`,
+    );
+    thinkingBuffer = "";
+    thinkingItemId = null;
+    return [ev];
+  };
+
+  /**
+   * Drain any pending thinking + assistant text. Order: thinking first
+   * (the model usually emits reasoning before its final answer), then the
+   * assistant message. Used both on explicit flush() and before every
+   * non-streaming event.
+   */
+  const flushPending = (): ReadonlyArray<AgentEvent> => {
+    const t = flushThinking();
+    const a = flushAssistant();
+    return t.length === 0 ? a : a.length === 0 ? t : [...t, ...a];
   };
 
   const getOrInitToolState = (id: string): ToolCallState => {
@@ -387,8 +549,19 @@ export const createAcpTranslator = (provider: AcpProviderTag): AcpTranslator => 
           : null;
     if (kind === null) return [];
 
-    // Coalesce: append to buffer, don't emit yet. The next non-chunk
-    // event (or `flush`) will drain.
+    // 1. Thinking / reasoning delta — buffer (coalesce) exactly like assistant
+    //    text. This is the fix for the "Thinking The user is asking if I can..."
+    //    word-by-word explosion the user reported with Grok.
+    if (isThinkingChunk(kind)) {
+      const text = asText(u["content"]);
+      if (text === null || text.length === 0) return [];
+      if (thinkingItemId === null) thinkingItemId = nextItemId();
+      thinkingBuffer += text;
+      trace(provider, `buffer thinking chunk len=${text.length} totalLen=${thinkingBuffer.length}`);
+      return [];
+    }
+
+    // 2. Assistant text delta — buffer, don't emit yet.
     if (isAssistantTextChunk(kind)) {
       const text =
         kind === "message"
@@ -401,9 +574,10 @@ export const createAcpTranslator = (provider: AcpProviderTag): AcpTranslator => 
       return [];
     }
 
-    // Any non-chunk event flushes the buffered assistant text first so
-    // the order on the wire is "all-text-so-far → next thing".
-    const flushed = flushAssistant();
+    // 3. Any other event: flush both pending thinking + assistant text first
+    //    so the timeline order stays correct ("reasoning burst → next tool /
+    //    final answer").
+    const flushed = flushPending();
 
     const tail = ((): ReadonlyArray<AgentEvent> => {
       switch (kind) {
@@ -439,6 +613,7 @@ export const createAcpTranslator = (provider: AcpProviderTag): AcpTranslator => 
 
           const callId = extractCallId(u);
           const toolName = extractToolName(u);
+          logUnknownToolIfNeeded(provider, u, toolName, "tool_call");
           const input = buildCanonicalInput(toolName, u);
           const inputJson = safeStringify({ input });
           const state = getOrInitToolState(callId);
@@ -482,6 +657,7 @@ export const createAcpTranslator = (provider: AcpProviderTag): AcpTranslator => 
           if (provider === "gemini" && rawKind === "think") return [];
           const callId = extractCallId(u);
           const toolName = extractToolName(u);
+          logUnknownToolIfNeeded(provider, u, toolName, "tool_call_update");
           const input = buildCanonicalInput(toolName, u);
           const state = getOrInitToolState(callId);
           const events: AgentEvent[] = [];
@@ -621,7 +797,7 @@ export const createAcpTranslator = (provider: AcpProviderTag): AcpTranslator => 
 
   return {
     translate: translateOne,
-    flush: flushAssistant,
+    flush: flushPending,
   };
 };
 

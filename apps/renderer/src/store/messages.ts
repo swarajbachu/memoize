@@ -31,7 +31,7 @@ export type ChatError =
   | { readonly kind: "generic"; readonly message: string };
 
 const AUTH_PATTERN =
-  /\b401\b|\bunauthorized\b|expired token|invalid_grant|signed?\s?out|sign\s?in required|please log in/i;
+  /\b401\b|\bunauthorized\b|expired token|invalid_grant|signed?\s?out|sign\s?in required|please log in|authorizationrequired|auth\(authorizationrequired\)|authentication failed/i;
 const NETWORK_PATTERN =
   /\b(network|fetch|econn|enotfound|etimedout|timeout|getaddrinfo)\b/i;
 

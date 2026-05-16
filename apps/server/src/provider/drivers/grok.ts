@@ -79,6 +79,40 @@ type PendingResolver = {
 const GROK_RPC_TRACE = process.env.MEMOIZE_DEBUG_GROK === "1";
 
 /**
+ * Detect fatal authorization failures from the grok agent's own stderr.
+ * When the cached token is missing/expired/insufficient (SuperGrok Heavy
+ * tier required), the agent prints:
+ *   "worker quit with fatal: Transport channel closed, when Auth(AuthorizationRequired)"
+ * and dies. We watch for this in real time so we can fail the in-flight
+ * prompt *immediately* instead of waiting for the 5-minute timeout, and
+ * we can surface a clean actionable message instead of the raw timeout.
+ */
+const isFatalAuthError = (text: string): boolean => {
+  const t = text.toLowerCase();
+  return (
+    t.includes("authorizationrequired") ||
+    t.includes("auth(authorizationrequired)") ||
+    (t.includes("worker quit with fatal") && t.includes("auth")) ||
+    (t.includes("transport channel closed") && t.includes("auth"))
+  );
+};
+
+/**
+ * Turn a raw stderr snippet (from the grok binary) into a user-friendly
+ * error message. When we see the known fatal auth line we produce a clear,
+ * actionable string instead of the confusing "timed out after 300000ms"
+ * that the user was getting.
+ */
+const friendlyErrorFromStderr = (rawTail: string): string | null => {
+  if (!isFatalAuthError(rawTail)) return null;
+  return (
+    "Grok authentication failed (AuthorizationRequired). " +
+    "Your login may have expired or your account does not have the SuperGrok Heavy tier required for the coding agent. " +
+    "Run `grok login` again, then retry the turn. If the problem persists, check your plan at https://x.ai/."
+  );
+};
+
+/**
  * Build a human-readable error from a JSON-RPC error envelope. ACP servers
  * commonly stash the real failure in `error.data` and leave `error.message`
  * as a generic "Internal error" — surfacing only `error.message` would
@@ -225,6 +259,11 @@ export const startGrokSession = (
         const timer = setTimeout(() => {
           pending.delete(id);
           const trimmedStderr = stderrTail.trim();
+          const friendly = friendlyErrorFromStderr(trimmedStderr);
+          if (friendly !== null) {
+            reject(new Error(friendly));
+            return;
+          }
           const detail =
             trimmedStderr.length > 0 ? ` — stderr: ${trimmedStderr}` : "";
           reject(
@@ -290,10 +329,36 @@ export const startGrokSession = (
           return;
         }
         if (msg.id !== undefined) {
-          // Server→client request. Permission prompts likely land here once
-          // ACP spec is verified; for now log and ignore so the turn either
-          // proceeds or times out grok-side. Wiring to PermissionService is
-          // an open follow-up.
+          // Server→client request (fs/*, permission prompts, etc.).
+          // We now:
+          //  - Log verbosely under the existing GROK_RPC_TRACE flag so the
+          //    user (and we) can see exactly which tools Grok tries to call
+          //    on the client ("add some logs").
+          //  - For fs/* methods we reply with a clean "not implemented yet"
+          //    error so the agent does not hang waiting for a response.
+          //    This often makes Grok fall back to its own well-named internal
+          //    tools (list_dir etc.) which our translator now renders nicely.
+          const isFs = msg.method.startsWith("fs/");
+          if (GROK_RPC_TRACE || isFs) {
+            process.stderr.write(
+              `[grok.rpc] server→client request method=${msg.method} id=${msg.id} params=${JSON.stringify(msg.params ?? {})}\n`,
+            );
+          }
+          if (isFs) {
+            // Reply immediately so the agent can continue instead of timing
+            // out on an unhandled client capability.
+            writeMessage({
+              jsonrpc: "2.0",
+              id: msg.id,
+              error: {
+                code: -32601,
+                message: `Method not implemented by memoize ACP client: ${msg.method}`,
+              },
+            });
+            return;
+          }
+          // For everything else (permission requests, etc.) we still just
+          // warn and let the server time out or proceed.
           console.warn(
             `[grok.rpc] unhandled server→client request method=${msg.method} id=${msg.id}`,
           );
@@ -337,6 +402,30 @@ export const startGrokSession = (
       // grok's generic JSON-RPC "Internal error".
       stderrTail = (stderrTail + chunk).slice(-4096);
       process.stderr.write(`[grok.stderr] ${chunk}`);
+
+      // Fast-path: if the agent itself reports a fatal auth failure
+      // (token expired / wrong tier), kill the in-flight prompt right now
+      // instead of letting the 5-minute timeout fire. This is what the
+      // user meant by "not auto stopping".
+      if (isFatalAuthError(chunk) || isFatalAuthError(stderrTail)) {
+        if (currentPromptRpcId !== null) {
+          rejectCurrentPrompt(
+            "Grok authentication failed (AuthorizationRequired). " +
+              "Your cached login may have expired or your account lacks the SuperGrok Heavy tier required to use the agent. " +
+              "Run `grok login` again, then retry.",
+          );
+        }
+        // Surface a clean error immediately so the UI can stop the spinner
+        // and show the auth-classified error card with the "Open settings" button.
+        if (!closed) {
+          events.unsafeOffer({
+            _tag: "Error",
+            message:
+              "Grok authentication failed (AuthorizationRequired). " +
+              "Run `grok login` again or verify that your account has the SuperGrok Heavy plan.",
+          });
+        }
+      }
     });
 
     child.on("error", (err) => {
@@ -347,9 +436,13 @@ export const startGrokSession = (
     child.on("close", (code, signal) => {
       rl.close();
       const trimmedStderr = stderrTail.trim();
-      const exitDetail = trimmedStderr.length > 0
-        ? `Grok ACP exited (code ${code ?? "null"}, signal ${signal ?? "null"}): ${trimmedStderr}`
-        : `Grok ACP exited unexpectedly (code ${code ?? "null"}, signal ${signal ?? "null"}).`;
+      const friendly = friendlyErrorFromStderr(trimmedStderr);
+      const exitDetail =
+        friendly !== null
+          ? friendly
+          : trimmedStderr.length > 0
+            ? `Grok ACP exited (code ${code ?? "null"}, signal ${signal ?? "null"}): ${trimmedStderr}`
+            : `Grok ACP exited unexpectedly (code ${code ?? "null"}, signal ${signal ?? "null"}).`;
       for (const { reject, timer } of pending.values()) {
         clearTimeout(timer);
         reject(new Error(exitDetail));
@@ -367,7 +460,14 @@ export const startGrokSession = (
         const init = (await request("initialize", {
           protocolVersion: 1,
           clientCapabilities: {
-            fs: { readTextFile: true, writeTextFile: true },
+            fs: {
+              readTextFile: true,
+              writeTextFile: true,
+              readDirectory: true,
+              createDirectory: true,
+              deleteFile: true,
+              moveFile: true,
+            },
             terminal: true,
           },
         })) as { authMethods?: ReadonlyArray<{ id?: unknown }> };

@@ -4,6 +4,7 @@ import {
   CheckListIcon,
   Copy01Icon,
   File01Icon,
+  Folder01Icon,
   GlobeIcon,
   PencilEdit01Icon,
   Robot01Icon,
@@ -48,14 +49,20 @@ export const iconForTool = (tool: string): IconHandle => {
     case "Bash":
       return TerminalIcon;
     case "Read":
+    case "ReadFile":
       return File01Icon;
     case "Edit":
     case "Write":
+    case "WriteFile":
     case "MultiEdit":
       return PencilEdit01Icon;
     case "Grep":
     case "Glob":
+    case "Search":
       return SearchIcon;
+    case "ListDir":
+    case "ListDirectory":
+      return Folder01Icon;
     case "Task":
     case "Agent":
       return Robot01Icon;
@@ -64,8 +71,18 @@ export const iconForTool = (tool: string): IconHandle => {
       return GlobeIcon;
     case "TodoWrite":
       return CheckListIcon;
-    default:
+    default: {
+      // Heuristic fallback for any Grok-native or future tool we haven't
+      // wired an exact case for yet. "list dir", "read file", "run shell"
+      // etc. will now get a reasonable icon instead of the generic wrench.
+      const t = tool.toLowerCase();
+      if (t.includes("dir") || t.includes("folder") || t.includes("list")) return Folder01Icon;
+      if (t.includes("file") || t.includes("read") || t.includes("write")) return File01Icon;
+      if (t.includes("bash") || t.includes("shell") || t.includes("cmd") || t.includes("exec")) return TerminalIcon;
+      if (t.includes("search") || t.includes("grep") || t.includes("glob")) return SearchIcon;
+      if (t.includes("web") || t.includes("http")) return GlobeIcon;
       return Wrench01Icon;
+    }
   }
 };
 
@@ -689,9 +706,20 @@ const buildToolView = (
     }
 
     default: {
+      // Produce a human-friendly label even for completely unknown tools
+      // (Grok's future native tools, custom MCP tools, etc.). We title-case
+      // and replace underscores so "list_dir" or "run_terminal_cmd" look
+      // reasonable instead of the raw token the user was seeing.
+      const niceLabel = tool
+        .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+        .replace(/[_\-.]+/g, " ")
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        .join(" ");
       return {
-        icon: Wrench01Icon,
-        label: tool,
+        icon: iconForTool(tool), // will pick a heuristic icon
+        label: niceLabel || "Tool",
         fallbackBody: <PreBlock text={stringifyJson(input)} />,
         resultPanel: (result) => (
           <PreBlock

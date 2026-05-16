@@ -275,6 +275,23 @@ export const startCursorSession = (
           return;
         }
         if (msg.id !== undefined) {
+          const isFs = msg.method.startsWith("fs/");
+          if (CURSOR_RPC_TRACE || isFs) {
+            process.stderr.write(
+              `[cursor.rpc] server→client request method=${msg.method} id=${msg.id} params=${JSON.stringify(msg.params ?? {})}\n`,
+            );
+          }
+          if (isFs) {
+            writeMessage({
+              jsonrpc: "2.0",
+              id: msg.id,
+              error: {
+                code: -32601,
+                message: `Method not implemented by memoize ACP client: ${msg.method}`,
+              },
+            });
+            return;
+          }
           console.warn(
             `[cursor.rpc] unhandled server→client request method=${msg.method} id=${msg.id}`,
           );
@@ -339,7 +356,14 @@ export const startCursorSession = (
         const init = (await request("initialize", {
           protocolVersion: 1,
           clientCapabilities: {
-            fs: { readTextFile: true, writeTextFile: true },
+            fs: {
+              readTextFile: true,
+              writeTextFile: true,
+              readDirectory: true,
+              createDirectory: true,
+              deleteFile: true,
+              moveFile: true,
+            },
             terminal: true,
           },
         })) as { authMethods?: ReadonlyArray<{ id?: unknown }> };
