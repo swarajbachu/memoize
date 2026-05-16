@@ -23,7 +23,6 @@ import {
   useRelativeTimeTick,
 } from "~/lib/use-relative-time.ts";
 import { cn } from "~/lib/utils";
-import { formatAccelerator, SHORTCUTS } from "../lib/shortcuts.ts";
 import { DEFAULT_SUBAGENT_PRESETS } from "../lib/subagent-presets.ts";
 import { useProvidersStore } from "../store/providers.ts";
 import { useSettingsStore } from "../store/settings.ts";
@@ -33,6 +32,7 @@ import { useWorkspaceStore } from "../store/workspace.ts";
 import { ProviderCard } from "./provider-card.tsx";
 import { ProviderIcon } from "./provider-icons.tsx";
 import { MODES_ORDER, MODE_META } from "./runtime-mode-meta.ts";
+import { KeybindingsPane } from "./settings/keybindings-editor.tsx";
 import { RepositorySettings } from "./settings-repository.tsx";
 import { Button } from "./ui/button.tsx";
 import {
@@ -290,50 +290,8 @@ function Pane({ section }: { section: SettingsSection }) {
   if (section.kind === "general") return <GeneralPane />;
   if (section.kind === "providers") return <ProvidersPane />;
   if (section.kind === "workspace") return <WorkspacePane />;
-  if (section.kind === "shortcuts") return <ShortcutsPane />;
+  if (section.kind === "shortcuts") return <KeybindingsPane />;
   return <RepositorySettings projectId={section.projectId} />;
-}
-
-/**
- * Read-only reference list of every shortcut the app installs in the
- * native menu. Tooltips around the app point at the same `SHORTCUTS`
- * source of truth so users don't have to come here to discover them —
- * this page just collects them in one place.
- */
-function ShortcutsPane() {
-  return (
-    <Section
-      title="All shortcuts"
-      description="Edit shortcuts isn't supported yet — for now these are fixed. Standard editing keys (cut, copy, paste, undo) follow your OS defaults."
-    >
-      <ul className="flex flex-col gap-0.5 rounded-lg border border-border/50 p-1.5">
-        {SHORTCUTS.map((s) => (
-          <li
-            key={s.id}
-            className="flex items-center gap-3 rounded-md px-2.5 py-2 hover:bg-muted/40"
-          >
-            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span className="truncate text-sm font-medium leading-none text-foreground">
-                {s.label}
-              </span>
-              <span className="truncate text-xs leading-snug text-muted-foreground">
-                {s.description}
-              </span>
-            </span>
-            <Kbd>{formatAccelerator(s.accelerator)}</Kbd>
-          </li>
-        ))}
-      </ul>
-    </Section>
-  );
-}
-
-function Kbd({ children }: { children: React.ReactNode }) {
-  return (
-    <kbd className="shrink-0 font-sans text-sm text-muted-foreground">
-      {children}
-    </kbd>
-  );
 }
 
 function GeneralPane() {

@@ -1,32 +1,29 @@
+import { Effect, Fiber, Stream } from "effect";
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
 
-import type { AgentDefinition } from "@memoize/wire";
+import type { AgentDefinition, SettingsFile } from "@memoize/wire";
 
+import { getRpcClient } from "../lib/rpc-client";
 import {
   DEFAULT_SUBAGENT_PRESETS,
   type SubagentPreset,
-} from "../lib/subagent-presets.ts";
+} from "../lib/subagent-presets";
 
 /**
- * Per-preset overlay. Stores any field the user changed; `undefined`
- * fields fall back to the seed. We keep a separate overlay (rather than
- * cloning the full definition into storage) so seed updates from new
- * memoize builds reach the user — a future tweak to the `research`
- * prompt would have applied retroactively had they not edited it.
+ * Per-preset overlay matching the wire `SubagentPresetState` shape. Storing
+ * a partial overlay (not a cloned `AgentDefinition`) lets a new memoize
+ * build update the seed prompts/models without retroactively losing user
+ * tweaks.
  */
 interface PresetState {
   readonly enabled: boolean;
-  /** Partial overrides; merged on top of the seed at read time. */
   readonly overrides: Partial<AgentDefinition>;
 }
 
 interface SubagentsState {
-  /** Master toggle: gate `enableSubagents` on new sessions. */
   readonly enableForNewSessions: boolean;
-  readonly setEnableForNewSessions: (v: boolean) => void;
-  /** Per-preset state keyed by `SubagentPreset.name`. */
   readonly presets: Record<string, PresetState>;
+  readonly setEnableForNewSessions: (v: boolean) => void;
   readonly setPresetEnabled: (name: string, enabled: boolean) => void;
   readonly setPresetOverride: (
     name: string,
@@ -42,42 +39,102 @@ const defaultPresetsState = (): Record<string, PresetState> => {
   return out;
 };
 
-export const useSubagentsStore = create<SubagentsState>()(
-  persist(
-    (set) => ({
-      enableForNewSessions: true,
-      setEnableForNewSessions: (v) => set({ enableForNewSessions: v }),
-      presets: defaultPresetsState(),
-      setPresetEnabled: (name, enabled) =>
-        set((s) => {
-          const cur = s.presets[name] ?? { enabled: true, overrides: {} };
-          return {
-            presets: {
-              ...s.presets,
-              [name]: { ...cur, enabled },
-            },
-          };
-        }),
-      setPresetOverride: (name, override) =>
-        set((s) => {
-          const cur = s.presets[name] ?? { enabled: true, overrides: {} };
-          return {
-            presets: {
-              ...s.presets,
-              [name]: {
-                ...cur,
-                overrides: { ...cur.overrides, ...override },
-              },
-            },
-          };
-        }),
+/** Mirror the subagents slice from a server `SettingsFile`. */
+const sliceFromFile = (
+  file: SettingsFile,
+): { enableForNewSessions: boolean; presets: Record<string, PresetState> } => {
+  // Seed defaults so newly-added presets in code show up even if the
+  // user's file hasn't been touched.
+  const presets: Record<string, PresetState> = defaultPresetsState();
+  for (const [name, state] of Object.entries(file.subagents.presets)) {
+    presets[name] = {
+      enabled: state.enabled,
+      overrides: { ...state.overrides },
+    };
+  }
+  return {
+    enableForNewSessions: file.subagents.enableForNewSessions,
+    presets,
+  };
+};
+
+let streamFiber: Fiber.RuntimeFiber<unknown, unknown> | null = null;
+
+const stopStream = async () => {
+  if (streamFiber !== null) {
+    const f = streamFiber;
+    streamFiber = null;
+    await Effect.runPromise(Fiber.interrupt(f));
+  }
+};
+
+/**
+ * Push the current presets state up to the main process. Subagents are
+ * persisted inside `settings.json`, so we send a `subagents` patch that
+ * carries the whole slice — the main process replaces it wholesale.
+ */
+const pushPresets = async (
+  enableForNewSessions: boolean,
+  presets: Record<string, PresetState>,
+): Promise<void> => {
+  const client = await getRpcClient();
+  await Effect.runPromise(
+    client.settings.update({
+      patch: {
+        subagents: {
+          enableForNewSessions,
+          presets,
+        },
+      },
     }),
-    {
-      name: "memoize.subagents",
-      version: 1,
-    },
-  ),
-);
+  );
+};
+
+export const useSubagentsStore = create<SubagentsState>((set, get) => ({
+  enableForNewSessions: true,
+  presets: defaultPresetsState(),
+  setEnableForNewSessions: (v) => {
+    set({ enableForNewSessions: v });
+    void pushPresets(v, get().presets);
+  },
+  setPresetEnabled: (name, enabled) => {
+    const cur = get().presets[name] ?? { enabled: true, overrides: {} };
+    const next = { ...get().presets, [name]: { ...cur, enabled } };
+    set({ presets: next });
+    void pushPresets(get().enableForNewSessions, next);
+  },
+  setPresetOverride: (name, override) => {
+    const cur = get().presets[name] ?? { enabled: true, overrides: {} };
+    const next = {
+      ...get().presets,
+      [name]: { ...cur, overrides: { ...cur.overrides, ...override } },
+    };
+    set({ presets: next });
+    void pushPresets(get().enableForNewSessions, next);
+  },
+}));
+
+/**
+ * Hydrate the subagents store from `settings.get` + `settings.stream`.
+ * Kept separate from useSettingsStore.hydrate to avoid a single fiber
+ * owning the lifecycle of two stores — they boot in parallel.
+ */
+export async function hydrateSubagentsStore(): Promise<void> {
+  try {
+    const client = await getRpcClient();
+    const file = await Effect.runPromise(client.settings.get());
+    useSubagentsStore.setState(sliceFromFile(file));
+
+    await stopStream();
+    streamFiber = Effect.runFork(
+      Stream.runForEach(client.settings.stream(), (next) =>
+        Effect.sync(() => useSubagentsStore.setState(sliceFromFile(next))),
+      ),
+    );
+  } catch {
+    // Stay on defaults if RPC fails.
+  }
+}
 
 /**
  * Merge the seed and the user's overlay into the live `AgentDefinition`

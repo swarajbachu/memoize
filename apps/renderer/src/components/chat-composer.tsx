@@ -31,10 +31,12 @@ import { Frame, FrameFooter } from "~/components/ui/frame";
 import {
   composerDoc,
   createComposerView,
+  reconfigureComposerKeymap,
   replaceWithChip,
   setComposerDoc,
   type ActiveTrigger,
 } from "~/lib/codemirror/composer";
+import { useKeybindingsStore } from "../store/keybindings";
 import {
   addChipEffect,
   clearChipsEffect,
@@ -211,20 +213,29 @@ export function ChatComposer({ session }: { session: Session }) {
     const host = editorHostRef.current;
     if (host === null) return;
 
+    const callbacks = {
+      onSubmit: () => submitRef.current(),
+      onChange: (doc: string) => setHasText(doc.trim().length > 0),
+      onTrigger: (t: ActiveTrigger | null) => setTrigger(t),
+      onFilesDropped: (files: ReadonlyArray<File>) =>
+        filesDroppedRef.current(files),
+      onTogglePlanMode: () => togglePlanModeRef.current(),
+    };
     const view = createComposerView({
       parent: host,
       placeholderText:
         "Ask to make changes at the @ mentioned files or run slash commands, shift enter for next line.",
-      callbacks: {
-        onSubmit: () => submitRef.current(),
-        onChange: (doc) => setHasText(doc.trim().length > 0),
-        onTrigger: (t) => setTrigger(t),
-        onFilesDropped: (files) => filesDroppedRef.current(files),
-        onTogglePlanMode: () => togglePlanModeRef.current(),
-      },
+      callbacks,
     });
     editorViewRef.current = view;
     view.focus();
+
+    // Live-reconfigure the composer keymap when the user edits keybindings.
+    // The compartment swap is a single CodeMirror transaction, so the
+    // cursor / selection / pending text are preserved.
+    const unsubKeybindings = useKeybindingsStore.subscribe(() => {
+      reconfigureComposerKeymap(view, callbacks);
+    });
 
     // Register imperative entrypoints on the composer bridge so the file tree
     // (and the top-bar workflow buttons) can drop chips / text into this view
@@ -258,6 +269,7 @@ export function ChatComposer({ session }: { session: Session }) {
     });
 
     return () => {
+      unsubKeybindings();
       const b = useComposerBridge.getState();
       b.setAttachFile(null);
       b.setInsertText(null);

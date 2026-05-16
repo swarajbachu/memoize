@@ -54,6 +54,15 @@ export interface MenuBridge {
    * than a navigation intent.
    */
   readonly onCloseTab: (handler: () => void) => () => void;
+  /**
+   * Push the current resolved accelerator map up to the main process so the
+   * native menu re-installs with the user's overrides. `null` for a command
+   * means "unbound — drop the accelerator from the menu item entirely."
+   * Renderer fires this from its keybindings store on every change.
+   */
+  readonly setAccelerators?: (
+    accelerators: Readonly<Record<string, string | null>>,
+  ) => void;
 }
 
 export interface MemoizeBridge {

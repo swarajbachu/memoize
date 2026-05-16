@@ -6,6 +6,7 @@ import { MemoizeRpcs } from "@memoize/wire";
 
 import { AppPaths } from "./app-paths.ts";
 import { AttachmentServiceLive } from "./attachment/layers/attachment-service.ts";
+import { ConfigStoreServiceLive } from "./config-store/layers/config-store-service.ts";
 import { FsServiceLive } from "./fs/layers/fs-service.ts";
 import { GitServiceLive } from "./git/layers/git-service.ts";
 import { HandlersLayer } from "./handlers.ts";
@@ -102,6 +103,13 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(MigratedSqlite),
   );
 
+  // Global settings + user keybindings live in JSON files under userData
+  // (Electron's `app.getPath("userData")`). Watched for external hand-edits.
+  const ConfigStoreLayer = ConfigStoreServiceLive.pipe(
+    Layer.provide(AppPathsLayer),
+    Layer.provide(NodeContext.layer),
+  );
+
   // FsService walks the project tree one directory at a time. WorkspaceService
   // resolves folderId → path; WorktreeService swaps the root to a worktree's
   // path when the renderer passes `worktreeId`; FileSystem reads dirs/stats.
@@ -189,6 +197,7 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(GitLayer),
     Layer.provide(WorktreeLayer),
     Layer.provide(RepositorySettingsLayer),
+    Layer.provide(ConfigStoreLayer),
     Layer.provide(FsLayer),
     Layer.provide(FileSearchLayer),
     Layer.provide(ProviderLayer),

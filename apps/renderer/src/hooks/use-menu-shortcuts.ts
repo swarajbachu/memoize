@@ -1,15 +1,18 @@
 import { useEffect } from "react";
 
+import type { Command } from "@memoize/wire";
+
 import type { MenuAction } from "../lib/bridge";
-import { createNewSession } from "../components/projects-sidebar";
-import { useComposerBridge } from "../store/composer-bridge";
-import { useUiStore } from "../store/ui";
-import { useWorkspaceStore } from "../store/workspace";
+import { dispatchCommand } from "../lib/commands";
 
 /**
- * Subscribe to native Application Menu clicks emitted by the main process.
- * Each `MenuAction` dispatches to the relevant store via `.getState()` so
- * we don't re-bind the listener on every render.
+ * Subscribe to native Application Menu clicks emitted by the main process
+ * and forward them through the central command dispatcher. The actual
+ * handlers live in `lib/commands.ts` so the menu, the document keydown
+ * listener, and (eventually) any future surface share one fan-in point.
+ *
+ * `MenuAction` is a structural subset of `Command`; the cast is safe so
+ * long as we don't introduce menu items that aren't commands.
  */
 export function useMenuShortcuts(): void {
   useEffect(() => {
@@ -17,47 +20,7 @@ export function useMenuShortcuts(): void {
     if (menu === undefined) return;
 
     const handle = (action: MenuAction) => {
-      switch (action) {
-        case "new-chat": {
-          const projectId = useWorkspaceStore.getState().selectedFolderId;
-          if (projectId === null) return;
-          void createNewSession(projectId);
-          return;
-        }
-        case "open-project": {
-          void useWorkspaceStore.getState().add();
-          return;
-        }
-        case "settings": {
-          const ui = useUiStore.getState();
-          ui.setView(ui.view === "settings" ? "chat" : "settings");
-          return;
-        }
-        case "toggle-left-sidebar": {
-          const ui = useUiStore.getState();
-          ui.setLeftSidebarOpen(!ui.leftSidebarOpen);
-          return;
-        }
-        case "toggle-right-sidebar": {
-          const ui = useUiStore.getState();
-          ui.setRightSidebarOpen(!ui.rightSidebarOpen);
-          return;
-        }
-        case "toggle-terminal": {
-          const ui = useUiStore.getState();
-          if (!ui.rightSidebarOpen) ui.setRightSidebarOpen(true);
-          ui.setActiveRightTab(
-            ui.activeRightTab === "terminal" && ui.rightSidebarOpen
-              ? "files"
-              : "terminal",
-          );
-          return;
-        }
-        case "focus-composer": {
-          useComposerBridge.getState().focus?.();
-          return;
-        }
-      }
+      dispatchCommand(action as Command);
     };
 
     return menu.onAction(handle as (action: string) => void);
