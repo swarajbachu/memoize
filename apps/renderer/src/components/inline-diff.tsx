@@ -2,6 +2,9 @@ import { PatchDiff } from "@pierre/diffs/react";
 import { createPatch, structuredPatch } from "diff";
 import { useMemo } from "react";
 
+import { cn } from "~/lib/utils";
+import { FileIcon } from "./file-icon.tsx";
+
 export interface FileEdit {
   readonly path: string;
   readonly oldText: string;
@@ -243,6 +246,111 @@ function DiffRow({ line }: { line: DiffLine }) {
         {marker}
       </span>
       <span className="whitespace-pre-wrap break-words">
+        {line.text === "" ? " " : line.text}
+      </span>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Polished vertical diff used for Edit/Write/MultiEdit tool results in the
+// chat timeline. Matches CodeBlock chrome, has internal scroll cap, tight
+// gutters (consistent with the tightened code-block-shiki rules), and app-
+// native colors (no t3code zinc-900 or heavy alpha washes).
+// ---------------------------------------------------------------------------
+
+const basename = (p: string): string => {
+  const i = p.lastIndexOf("/");
+  return i === -1 ? p : p.slice(i + 1);
+};
+
+export function EditDiff({
+  edit,
+  showHeader = false,
+}: {
+  edit: FileEdit;
+  showHeader?: boolean;
+}) {
+  const lines = useMemo(() => buildDiff(edit), [edit]);
+  if (lines.length === 0) {
+    return (
+      <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
+        (no textual change)
+      </div>
+    );
+  }
+
+  const stats = diffStats([edit]);
+  const name = basename(edit.path);
+
+  return (
+    <div className="overflow-hidden rounded-md border border-border/60">
+      {showHeader ? (
+        <div className="flex items-center gap-2 border-b border-border/40 bg-muted/30 px-2 py-1 text-[11px] text-muted-foreground">
+          <FileIcon
+            name={name}
+            kind="file"
+            className="inline-flex size-3.5 shrink-0"
+          />
+          <span className="truncate font-mono text-foreground/80">{name}</span>
+          {stats.added > 0 ? (
+            <span className="ml-auto text-emerald-400 tabular-nums">+{stats.added}</span>
+          ) : null}
+          {stats.removed > 0 ? (
+            <span className="text-red-400 tabular-nums">-{stats.removed}</span>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div
+        className="code-block-scroll overflow-auto bg-muted/15 text-[12px] leading-[1.45]"
+        style={{ maxHeight: 420 }}
+      >
+        {lines.map((line, idx) => (
+          <EditDiffRow key={idx} line={line} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function EditDiffRow({ line }: { line: DiffLine }) {
+  if (line.kind === "hunk") {
+    return (
+      <div className="bg-sky-500/10 px-2 py-0.5 text-[10px] text-sky-300/80 font-mono tabular-nums">
+        {line.text}
+      </div>
+    );
+  }
+
+  const isAdd = line.kind === "add";
+  const isDel = line.kind === "del";
+
+  const bg = isAdd ? "bg-emerald-500/10" : isDel ? "bg-red-500/10" : "";
+  const bar = isAdd ? "bg-emerald-400" : isDel ? "bg-red-400" : "bg-transparent";
+  const marker = isAdd ? "+" : isDel ? "-" : " ";
+  const markerColor = isAdd
+    ? "text-emerald-400"
+    : isDel
+      ? "text-red-400"
+      : "text-muted-foreground/70";
+
+  // Two-column gutter (old | new) to match classic unified diff feel while
+  // staying compact. Widths chosen to align with the 2em tightened shiki
+  // line-number gutter used by CodeBlock.
+  return (
+    <div className={`flex items-start gap-0 ${bg}`}>
+      <div className={`w-0.5 shrink-0 self-stretch ${bar}`} />
+      <span className="w-7 shrink-0 select-none text-right pr-1 text-muted-foreground/60 tabular-nums">
+        {line.oldLine ?? ""}
+      </span>
+      <span className="w-7 shrink-0 select-none text-right pr-1 text-muted-foreground/60 tabular-nums">
+        {line.newLine ?? ""}
+      </span>
+      <span className={`w-3 shrink-0 select-none text-center ${markerColor}`}>
+        {marker}
+      </span>
+      <span className="flex-1 whitespace-pre font-mono text-foreground/90">
         {line.text === "" ? " " : line.text}
       </span>
     </div>

@@ -279,13 +279,190 @@ const isToolPart = (part: SdkPart): part is SdkToolPart =>
   (part as { type?: string }).type === "tool";
 
 /**
+ * Map opencode's lowercase tool names onto the Title-case names worcester's
+ * `tool-row.tsx:buildToolView` switch already understands. Anything not
+ * in this table passes through as-is — the renderer's default branch
+ * renders it as a generic tool row.
+ */
+const OPENCODE_TOOL_NAME: Record<string, string> = {
+  read: "Read",
+  write: "Write",
+  edit: "Edit",
+  multiedit: "MultiEdit",
+  bash: "Bash",
+  glob: "Glob",
+  grep: "Grep",
+  task: "Task",
+  todowrite: "TodoWrite",
+  todoread: "TodoRead",
+  webfetch: "WebFetch",
+  websearch: "WebSearch",
+  list: "ListDir",
+};
+
+const asStr = (v: unknown): string | null =>
+  typeof v === "string" && v.length > 0 ? v : null;
+
+/**
+ * Reshape an opencode tool's `state.input` into the canonical key bag the
+ * renderer expects (e.g. `file_path` instead of opencode's `filePath`).
+ * Mirrors `acp/translate.ts:buildCanonicalInput`. When the input is missing
+ * a key but `state.title` carries it (opencode often puts the relative
+ * file path there), fall back to the title so the row still shows a chip.
+ */
+const canonicalizeOpencodeInput = (
+  canonicalTool: string,
+  rawInput: unknown,
+  title: string | null,
+): unknown => {
+  const obj =
+    rawInput !== null && typeof rawInput === "object"
+      ? (rawInput as Record<string, unknown>)
+      : {};
+
+  switch (canonicalTool) {
+    case "Read": {
+      const file_path = asStr(obj["filePath"]) ?? asStr(obj["file_path"]) ?? title;
+      const out: Record<string, unknown> = {};
+      if (file_path !== null) out["file_path"] = file_path;
+      if (typeof obj["offset"] === "number") out["offset"] = obj["offset"];
+      if (typeof obj["limit"] === "number") out["limit"] = obj["limit"];
+      return out;
+    }
+    case "Edit": {
+      const file_path = asStr(obj["filePath"]) ?? asStr(obj["file_path"]) ?? title;
+      const out: Record<string, unknown> = {};
+      if (file_path !== null) out["file_path"] = file_path;
+      const oldS = asStr(obj["oldString"]) ?? asStr(obj["old_string"]);
+      const newS = asStr(obj["newString"]) ?? asStr(obj["new_string"]);
+      if (oldS !== null) out["old_string"] = oldS;
+      if (newS !== null) out["new_string"] = newS;
+      const replaceAll = obj["replaceAll"] ?? obj["replace_all"];
+      if (typeof replaceAll === "boolean") out["replace_all"] = replaceAll;
+      return out;
+    }
+    case "MultiEdit": {
+      const file_path = asStr(obj["filePath"]) ?? asStr(obj["file_path"]) ?? title;
+      const rawEdits = Array.isArray(obj["edits"]) ? obj["edits"] : [];
+      // Renderer's `extractEdits` reads `{old_string,new_string}` per entry.
+      const edits = rawEdits.map((e) => {
+        if (e === null || typeof e !== "object") return {};
+        const r = e as Record<string, unknown>;
+        return {
+          old_string:
+            asStr(r["oldString"]) ?? asStr(r["old_string"]) ?? "",
+          new_string:
+            asStr(r["newString"]) ?? asStr(r["new_string"]) ?? "",
+        };
+      });
+      const out: Record<string, unknown> = { edits };
+      if (file_path !== null) out["file_path"] = file_path;
+      return out;
+    }
+    case "Write": {
+      const file_path = asStr(obj["filePath"]) ?? asStr(obj["file_path"]) ?? title;
+      const out: Record<string, unknown> = {};
+      if (file_path !== null) out["file_path"] = file_path;
+      if (typeof obj["content"] === "string") out["content"] = obj["content"];
+      return out;
+    }
+    case "Bash": {
+      const command = asStr(obj["command"]) ?? asStr(obj["cmd"]) ?? title;
+      const out: Record<string, unknown> = {};
+      if (command !== null) out["command"] = command;
+      const description = asStr(obj["description"]);
+      if (description !== null) out["description"] = description;
+      return out;
+    }
+    case "Glob": {
+      const out: Record<string, unknown> = {};
+      const pattern = asStr(obj["pattern"]) ?? title;
+      if (pattern !== null) out["pattern"] = pattern;
+      const path = asStr(obj["path"]);
+      if (path !== null) out["path"] = path;
+      return out;
+    }
+    case "Grep": {
+      const out: Record<string, unknown> = {};
+      const pattern = asStr(obj["pattern"]) ?? title;
+      if (pattern !== null) out["pattern"] = pattern;
+      const path = asStr(obj["path"]);
+      if (path !== null) out["path"] = path;
+      // Opencode names the filename filter `include`; the renderer reads `glob`.
+      const glob = asStr(obj["include"]) ?? asStr(obj["glob"]);
+      if (glob !== null) out["glob"] = glob;
+      return out;
+    }
+    case "Task": {
+      const out: Record<string, unknown> = {};
+      const description = asStr(obj["description"]) ?? title;
+      if (description !== null) out["description"] = description;
+      const prompt = asStr(obj["prompt"]);
+      if (prompt !== null) out["prompt"] = prompt;
+      const subagent =
+        asStr(obj["subagent_type"]) ?? asStr(obj["subagentType"]);
+      if (subagent !== null) out["subagent_type"] = subagent;
+      return out;
+    }
+    case "TodoWrite": {
+      return { todos: Array.isArray(obj["todos"]) ? obj["todos"] : [] };
+    }
+    case "WebFetch": {
+      const out: Record<string, unknown> = {};
+      const url = asStr(obj["url"]) ?? title;
+      if (url !== null) out["url"] = url;
+      return out;
+    }
+    case "WebSearch": {
+      const out: Record<string, unknown> = {};
+      const query = asStr(obj["query"]) ?? asStr(obj["q"]) ?? title;
+      if (query !== null) out["query"] = query;
+      return out;
+    }
+    default:
+      return obj;
+  }
+};
+
+/**
+ * Strip opencode's `<path>…</path><type>file</type><content>\n…\n</content>`
+ * wrapper from a `read` tool's output, so `lineCountOf` measures file
+ * lines instead of wrapper lines. If the wrapper isn't present (e.g.
+ * opencode upstream changes the format), the original text is returned
+ * untouched.
+ */
+const unwrapReadOutput = (text: string): string => {
+  const contentOpen = text.indexOf("<content>");
+  const contentClose = text.lastIndexOf("</content>");
+  if (contentOpen < 0 || contentClose < 0 || contentClose <= contentOpen) {
+    return text;
+  }
+  const inner = text.slice(contentOpen + "<content>".length, contentClose);
+  // Trim the single \n that wraps the content body inside the tag pair.
+  return inner.replace(/^\n/, "").replace(/\n$/, "");
+};
+
+const toOutputString = (value: unknown): string => {
+  if (typeof value === "string") return value;
+  if (value === undefined || value === null) return "";
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+};
+
+/**
  * Translate an opencode SDK Part snapshot into the equivalent worcester
  * `AgentEvent`s. Called from the event pump on every `message.part.updated`
  * frame. The renderer dedupes events by `itemId`, so re-emitting the same
  * tool part as it transitions pending → running → completed updates the
  * existing row in place rather than spawning a new one.
  */
-const translatePart = (part: SdkPart): ReadonlyArray<AgentEvent> => {
+const translatePart = (
+  part: SdkPart,
+  state: DeltaState,
+): ReadonlyArray<AgentEvent> => {
   const partType = (part as { type?: string }).type;
   switch (partType) {
     case "text": {
@@ -319,30 +496,60 @@ const translatePart = (part: SdkPart): ReadonlyArray<AgentEvent> => {
       // `id` when callID isn't present.
       const id = ((part.callID ?? part.id) as string) as AgentItemId;
       const status = part.state.status;
+      const rawTool = part.tool;
+      const canonicalTool =
+        OPENCODE_TOOL_NAME[rawTool.toLowerCase()] ??
+        rawTool.charAt(0).toUpperCase() + rawTool.slice(1);
+      const title =
+        asStr((part.state as { title?: unknown }).title) ?? null;
+      const canonicalInput = canonicalizeOpencodeInput(
+        canonicalTool,
+        part.state.input,
+        title,
+      );
       dlog(
-        `tool ${part.tool} status=${status} callID=${part.callID ?? "(none)"} id=${part.id}`,
+        `tool ${rawTool}→${canonicalTool} status=${status} callID=${part.callID ?? "(none)"} id=${part.id}`,
       );
       ddump(`  tool.state`, part.state);
-      const events: AgentEvent[] = [
-        {
+      // Opencode emits a `message.part.updated` frame for every state
+      // transition (pending → running → completed). The persistence layer
+      // doesn't dedupe by itemId, so each ToolUse becomes its own row.
+      // Emit ToolUse exactly once per call — when we first see input or
+      // hit a terminal state — and emit ToolResult only on completion.
+      const events: AgentEvent[] = [];
+      const inputObj =
+        canonicalInput !== null && typeof canonicalInput === "object"
+          ? (canonicalInput as Record<string, unknown>)
+          : {};
+      const hasUsefulInput = Object.keys(inputObj).length > 0;
+      const isTerminal = status === "completed" || status === "error";
+      if (
+        !state.emittedToolUseIds.has(id) &&
+        (hasUsefulInput || isTerminal)
+      ) {
+        events.push({
           _tag: "ToolUse",
           itemId: id,
-          tool: part.tool,
-          input: part.state.input ?? {},
-        },
-      ];
+          tool: canonicalTool,
+          input: canonicalInput,
+        });
+        state.emittedToolUseIds.add(id);
+      }
       if (status === "completed") {
+        const raw = toOutputString(part.state.output);
+        const output =
+          canonicalTool === "Read" ? unwrapReadOutput(raw) : raw;
         events.push({
           _tag: "ToolResult",
           itemId: id,
-          output: part.state.output,
+          output,
           isError: false,
         });
       } else if (status === "error") {
         events.push({
           _tag: "ToolResult",
           itemId: id,
-          output: part.state.error,
+          output: toOutputString(part.state.error),
           isError: true,
         });
       }
@@ -370,12 +577,27 @@ interface DeltaState {
    *  via the prompt-response fallback — skip the SSE flush for these
    *  so we don't duplicate rows. */
   readonly flushedPartIds: Set<string>;
+  /** Tool itemIds we've already emitted a `ToolUse` for. Opencode pushes
+   *  a `message.part.updated` frame for every state transition (pending →
+   *  running → completed), but the renderer/message-store doesn't dedupe
+   *  by itemId — each event becomes a new row. So we emit ToolUse once
+   *  (the first frame with real input or the completed snapshot) and
+   *  only emit ToolResult on the terminal transition. */
+  readonly emittedToolUseIds: Set<string>;
+  /** Message IDs we've learned belong to the *user* (from `message.updated`
+   *  with role=user). Opencode also emits `message.part.updated` /
+   *  `message.part.delta` for the user message's text part, and our
+   *  translator would otherwise re-emit that text as an `AssistantMessage`,
+   *  duplicating the user's prompt on the left side. */
+  readonly userMessageIds: Set<string>;
 }
 
 const makeDeltaState = (): DeltaState => ({
   textByPartId: new Map(),
   reasoningByPartId: new Map(),
   flushedPartIds: new Set(),
+  emittedToolUseIds: new Set(),
+  userMessageIds: new Set(),
 });
 
 const flushDeltaState = (state: DeltaState): ReadonlyArray<AgentEvent> => {
@@ -423,9 +645,19 @@ const translateEvent = (
     case "message.part.updated": {
       const part = ev.properties.part;
       if (part.sessionID !== sessionID) return [];
+      // Opencode persists the user's message-as-text part too; skip parts
+      // owned by user messages so we don't echo the prompt back as an
+      // AssistantMessage on the left.
+      const partMessageId = (part as { messageID?: string }).messageID;
+      if (
+        partMessageId !== undefined &&
+        state.userMessageIds.has(partMessageId)
+      ) {
+        return [];
+      }
       const partId = (part as { id?: string }).id;
       if (partId !== undefined) state.flushedPartIds.add(partId);
-      return translatePart(part);
+      return translatePart(part, state);
     }
     // SDK 1.15.1's typed `Event` union is missing this case, but the
     // opencode server emits it as the canonical streaming-text frame
@@ -435,12 +667,21 @@ const translateEvent = (
       const props = (ev as unknown as {
         properties: {
           sessionID: string;
+          messageID?: string;
           partID: string;
           field: string;
           delta: string;
         };
       }).properties;
       if (props.sessionID !== sessionID) return [];
+      // Same user-text guard as above — the user message's text part can
+      // arrive as deltas in some opencode builds.
+      if (
+        props.messageID !== undefined &&
+        state.userMessageIds.has(props.messageID)
+      ) {
+        return [];
+      }
       if (state.flushedPartIds.has(props.partID)) return [];
       if (props.field === "text") {
         const prev = state.textByPartId.get(props.partID) ?? "";
@@ -454,6 +695,12 @@ const translateEvent = (
     case "message.updated": {
       const info = ev.properties.info;
       if (info.sessionID !== sessionID) return [];
+      // Remember user message ids so subsequent part/delta frames for
+      // those messages get dropped (see the two guards above).
+      if (info.role === "user") {
+        state.userMessageIds.add(info.id);
+        return [];
+      }
       if (info.role !== "assistant") return [];
       const tokens = info.tokens;
       if (info.time.completed === undefined) return [];
@@ -777,7 +1024,7 @@ export const startOpencodeSession = (
                 continue;
               }
               ddump(`  prompt.part`, part);
-              const out = translatePart(part as SdkPart);
+              const out = translatePart(part as SdkPart, deltaState);
               if (out.length > 0) {
                 dlog(`    → emit ${out.map((e) => e._tag).join(", ")}`);
               }

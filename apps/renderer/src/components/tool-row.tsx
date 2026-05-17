@@ -28,11 +28,12 @@ import type {
 import { cn } from "~/lib/utils";
 
 import { usePermissionsStore } from "../store/permissions.ts";
+import { CodeBlock } from "./code-block.tsx";
 import { FileBadge } from "./file-badge.tsx";
 import { MarkdownBody } from "./markdown-body.tsx";
 import {
-  DiffBody,
   diffStats,
+  EditDiff,
   extractEdits,
   type FileEdit,
 } from "./inline-diff.tsx";
@@ -340,7 +341,7 @@ function ExpandableIconRow({
         ) : null}
       </button>
       {expanded && hasContent ? (
-        <div className="ml-7 mt-1 max-w-2xl space-y-2 overflow-hidden border-l border-border/60 pl-3 pr-1">
+        <div className="ml-6 mt-1 max-w-2xl space-y-2 overflow-hidden border-l border-border/60 pl-2 pr-1">
           {body}
         </div>
       ) : null}
@@ -440,17 +441,17 @@ const buildToolView = (
           ) : undefined,
         resultPanel: (result) => {
           const text = toResultText(result.output);
-          const lineCount = text.length === 0 ? 0 : text.split("\n").length;
+          if (path === null) {
+            return (
+              <PreBlock text={truncate(text, 4000)} isError={result.isError} />
+            );
+          }
           return (
-            <div className="space-y-1">
-              <p className="text-[11px] text-muted-foreground">
-                {lineCount} line{lineCount === 1 ? "" : "s"}
-              </p>
-              <PreBlock
-                text={truncate(text, 4000)}
-                isError={result.isError}
-              />
-            </div>
+            <CodeBlock
+              filename={path}
+              text={text}
+              isError={result.isError}
+            />
           );
         },
       };
@@ -485,9 +486,9 @@ const buildToolView = (
           ) : undefined,
         fallbackBody:
           edits.length > 0 ? (
-            <div className="overflow-hidden rounded border border-border/60">
+            <div className="space-y-px">
               {edits.map((edit, i) => (
-                <DiffBody
+                <EditDiff
                   key={i}
                   edit={edit as FileEdit}
                   showHeader={edits.length > 1}

@@ -702,3 +702,45 @@ body,
     --ring: oklch(0.82 0.17 102 / 0.55);
   }
 }
+
+/* Shiki output container — line numbers gutter + padding + font.
+   Shiki emits `<pre class="shiki ..."><code><span class="line" data-line>…`. */
+@layer components {
+  .code-block-shiki pre {
+    margin: 0;
+    padding: 8px 0;
+    background: transparent !important;
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+    font-size: 12px;
+    line-height: 1.45;
+    counter-reset: line;
+  }
+  .code-block-shiki code {
+    display: block;
+    width: max-content;
+    min-width: 100%;
+  }
+  .code-block-shiki .line {
+    display: block;
+    padding: 0 8px;
+  }
+  .code-block-shiki .line::before {
+    counter-increment: line;
+    content: counter(line);
+    display: inline-block;
+    width: 2em;
+    margin-right: 0.6em;
+    text-align: right;
+    color: rgba(255, 255, 255, 0.25);
+    user-select: none;
+  }
+  /* Scrollbar polish — match xterm-viewport style. */
+  .code-block-scroll::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .code-block-scroll::-webkit-scrollbar-thumb {
+    background: var(--bg-overlay);
+    border-radius: 4px;
+  }
+}
