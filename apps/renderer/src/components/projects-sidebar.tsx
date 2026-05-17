@@ -608,6 +608,7 @@ const LOGIN_HINT: Record<ProviderId, string> = {
   grok: "Run `grok` in your terminal to sign in",
   cursor: "Run `cursor-agent login` in your terminal",
   gemini: "Run `gemini` in your terminal to sign in",
+  opencode: "Run `opencode auth login` in your terminal to connect a provider",
 };
 
 /**

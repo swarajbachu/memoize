@@ -37,20 +37,24 @@ const NETWORK_PATTERN =
 
 /**
  * Read the per-session model-option bag the composer's ReasoningPicker
- * persists to sessionStorage. Returns `null` when nothing has been set so
- * the RPC payload stays clean (drivers default to model presets).
+ * persists to sessionStorage. For opencode the value is a variant name
+ * (`high`, `medium`, `super-high`, …) that comes from the live inventory,
+ * so we pass it through as-is instead of enforcing the codex enum.
+ * Returns `null` when nothing has been set so the RPC payload stays
+ * clean (drivers default to model presets).
  */
 const readSessionModelOptions = (
   sessionId: SessionId,
 ): Record<string, string> | null => {
   if (typeof window === "undefined") return null;
+  const out: Record<string, string> = {};
   const reasoning = window.sessionStorage.getItem(
     `memoize.reasoning.${sessionId}`,
   );
-  if (reasoning === "low" || reasoning === "medium" || reasoning === "high") {
-    return { reasoning };
+  if (reasoning !== null && reasoning.length > 0) {
+    out["reasoning"] = reasoning;
   }
-  return null;
+  return Object.keys(out).length === 0 ? null : out;
 };
 
 const classifyMessage = (

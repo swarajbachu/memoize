@@ -128,6 +128,7 @@
         "@effect/sql-sqlite-node": "catalog:",
         "@memoize/wire": "*",
         "@openai/codex-sdk": "^0.128.0",
+        "@opencode-ai/sdk": "^1.3.15",
         "better-sqlite3": "^12.9.0",
         "effect": "catalog:",
         "fuzzysort": "catalog:",
@@ -660,6 +661,8 @@
     "@openai/codex-win32-arm64": ["@openai/codex@0.128.0-win32-arm64", "http://registry.npmjs.org/@openai/codex/-/codex-0.128.0-win32-arm64.tgz", { "os": "win32", "cpu": "arm64" }, "sha512-ECJvsqmYFdA9pn42xxK3Odp/G16AjmBW0BglX8L0PwPjqbstbmlew9bfHf7xvL+SNfNl4NmyotW0+RNo1phgaA=="],
 
     "@openai/codex-win32-x64": ["@openai/codex@0.128.0-win32-x64", "http://registry.npmjs.org/@openai/codex/-/codex-0.128.0-win32-x64.tgz", { "os": "win32", "cpu": "x64" }, "sha512-k3jmUAFrzkUtvjGTXvSKjQqJLLlzjxp/VoHJDYedgmXUn6j70HxK38IwapzmnYfiBiTuzETvGwjXHzZgzKjhoQ=="],
+
+    "@opencode-ai/sdk": ["@opencode-ai/sdk@1.15.1", "", { "dependencies": { "cross-spawn": "7.0.6" } }, "sha512-IHxGuizTR2x40GtB49o0swFTc1N4AZIdeYzJ5D8gVAJzfISKyOYn5o5YxDprYJ7z4oWxBXNELIDpYioGVDUkNw=="],
 
     "@oxc-project/types": ["@oxc-project/types@0.127.0", "http://registry.npmjs.org/@oxc-project/types/-/types-0.127.0.tgz", {}, "sha512-aIYXQBo4lCbO4z0R3FHeucQHpF46l2LbMdxRvqvuRuW2OxdnSkcng5B8+K12spgLDj93rtN3+J2Vac/TIO+ciQ=="],
 

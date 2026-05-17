@@ -32,6 +32,7 @@ const PROVIDER_LABEL: Record<ProviderId, string> = {
   grok: "Grok",
   gemini: "Gemini",
   cursor: "Cursor",
+  opencode: "OpenCode",
 };
 
 const INSTALL_HINT: Record<ProviderId, string> = {
@@ -40,6 +41,7 @@ const INSTALL_HINT: Record<ProviderId, string> = {
   grok: "curl -fsSL https://x.ai/cli/install.sh | bash",
   gemini: "npm i -g @google/gemini-cli",
   cursor: "curl https://cursor.com/install -fsS | bash",
+  opencode: "curl -fsSL https://opencode.ai/install | bash",
 };
 
 const LOGIN_HINT: Record<ProviderId, string> = {
@@ -48,6 +50,7 @@ const LOGIN_HINT: Record<ProviderId, string> = {
   grok: "grok",
   gemini: "gemini /auth",
   cursor: "cursor-agent login",
+  opencode: "opencode auth login",
 };
 
 /**

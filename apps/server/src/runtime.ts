@@ -206,6 +206,11 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(AttachmentLayer),
     Layer.provide(SkillBridgeLayer),
     Layer.provide(FolderPickerLayer),
+    // `agent.opencodeInventory` calls `resolveCliPath("opencode")` directly
+    // (it spins up a short-lived `opencode serve` to read the user's
+    // connected providers + agents). That uses `CommandExecutor` from
+    // NodeContext, so the handler layer must see it.
+    Layer.provide(NodeContext.layer),
   );
 
   const ServerLayer = RpcServer.layer(MemoizeRpcs).pipe(

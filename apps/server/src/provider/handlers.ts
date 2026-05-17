@@ -1,6 +1,14 @@
-import { CredentialStoreError, MemoizeRpcs, type ProviderId } from "@memoize/wire";
+import {
+  AgentSessionStartError,
+  CredentialStoreError,
+  MemoizeRpcs,
+  type ProviderId,
+} from "@memoize/wire";
+import { CommandExecutor } from "@effect/platform";
 import { Effect, Layer, Stream } from "effect";
 
+import { resolveCliPath } from "./availability.ts";
+import { loadOpencodeInventory } from "./drivers/opencode.ts";
 import { MessageStore } from "./services/message-store.ts";
 import { PermissionService } from "./services/permission-service.ts";
 import { ProviderService } from "./services/provider-service.ts";
@@ -56,6 +64,29 @@ const Events = MemoizeRpcs.toLayerHandler("agent.events", ({ sessionId }) =>
   Stream.unwrap(
     Effect.map(ProviderService, (svc) => svc.events(sessionId)),
   ),
+);
+
+// Renderer calls this on first open of the opencode model picker to refresh
+// the static `MODELS_BY_PROVIDER.opencode` seed list with whatever
+// providers and agents the user actually has connected/configured. We
+// short-live an `opencode serve` for the SDK calls and tear it down on
+// return so we don't leave a server lingering.
+const OpencodeInventory = MemoizeRpcs.toLayerHandler(
+  "agent.opencodeInventory",
+  () =>
+    Effect.gen(function* () {
+      const opencodePath = yield* resolveCliPath("opencode");
+      if (opencodePath === null) {
+        return yield* Effect.fail(
+          new AgentSessionStartError({
+            providerId: "opencode",
+            reason:
+              "OpenCode CLI not found on PATH. Install via `curl -fsSL https://opencode.ai/install | bash` and try again.",
+          }),
+        );
+      }
+      return yield* loadOpencodeInventory(opencodePath, process.cwd());
+    }),
 );
 
 // ---------------------------------------------------------------------------
@@ -342,6 +373,7 @@ export const ProviderHandlersLayer = Layer.mergeAll(
   Interrupt,
   Close,
   Events,
+  OpencodeInventory,
   SessionList,
   SessionGet,
   SessionCreate,

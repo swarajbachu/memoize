@@ -39,6 +39,7 @@ const PROVIDER_DISPLAY: Record<ProviderId, string> = {
   grok: "Grok",
   gemini: "Gemini",
   cursor: "Cursor",
+  opencode: "OpenCode",
 };
 
 /**

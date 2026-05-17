@@ -14,6 +14,7 @@ const UPGRADE_DOCS_URL: Record<ProviderId, string> = {
   grok: "https://docs.x.ai/build/overview",
   cursor: "https://cursor.com/cli",
   gemini: "https://github.com/google-gemini/gemini-cli#installation",
+  opencode: "https://opencode.ai/docs/install/",
 };
 
 /**
