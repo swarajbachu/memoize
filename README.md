@@ -1,159 +1,135 @@
-# Turborepo starter
+# memoize
 
-This Turborepo starter is maintained by the Turborepo core team.
+A chat-first desktop app for developers who work with AI coding agents. Wraps Claude Code, Codex, Grok, Gemini, Cursor, and OpenCode in a persistent, project-aware interface — structured chat history, rich composer, file viewer, integrated terminal, git worktrees, and session management, all stored locally.
 
-## Using this example
+> macOS only. Requires at least one supported agent CLI installed.
 
-Run the following command:
+---
 
-```sh
-npx create-turbo@latest
+## Supported agents
+
+| Provider | CLI |
+|---|---|
+| Claude | `claude` |
+| Codex | `codex` |
+| Grok | `grok` |
+| Gemini | `gemini` |
+| Cursor | `cursor` |
+| OpenCode | `opencode` |
+
+---
+
+## What's shipped
+
+### Agent sessions
+- Start and stop sessions for any supported provider, per project
+- Full streaming chat timeline — tool calls, thinking blocks, diffs, error bubbles
+- Turn summaries and loader states
+- Rate-limit error bubble with reset time
+- Answered `AskUserQuestion` cards rendered inline in the timeline
+
+### Composer
+- Slash commands: `/clear`, `/new`, `/model`, `/mode`, `/help`
+- `@`-mention file picker — fuzzy search any project file, inserts as an inline chip
+- Image and PDF attachments (drag-drop, paste, or button)
+- Plan mode with `AskUserQuestion` card and `Shift+Tab` flow
+- Mid-turn message queue
+
+### Permission system
+- Smart permission policy with always-allow and per-session overrides
+- Redesigned permission prompt as a composer-slot card
+- Permission inspector
+
+### Sub-agents
+- Cost-saving delegation — Opus 4.7 can spawn Haiku or Sonnet for sub-tasks
+- Collapsible wrapper rows in the chat timeline
+- Per-agent token accounting
+
+### Git worktrees
+- Per-chat git worktrees — each session gets an isolated working tree
+- Per-repo settings
+- Scoped `@`-mentions within a worktree
+
+### PR & Changes pane
+- PR tab with markdown rendering
+- Changes tab with diff view
+- Commit composer
+- Checks tab with CI status glyphs
+
+### File viewer & editor
+- File tree with Material Icon Theme file-type icons
+- Click-to-open any file in the main pane
+- CodeMirror 6 editor — TS/TSX, JS, JSON, Markdown, HTML, CSS, Python, Rust, Go
+- `Cmd+S` to save, mtime-based optimistic concurrency
+
+### Layout & UI
+- Three-pane layout: sidebar / chat / files+terminal
+- Resizable panes
+- Top bar with active session info
+- PTY terminal (xterm.js + node-pty)
+
+### Persistence & distribution
+- SQLite stores projects, sessions, messages, tool calls across restarts
+- Keychain-backed API keys (no plaintext storage)
+- Signed + notarized macOS universal `.dmg` (Apple Silicon + Intel)
+- In-app auto-update via GitHub Releases
+
+---
+
+## Tech stack
+
+| | |
+|---|---|
+| Shell | Electron 33 |
+| Renderer | React 19 + TypeScript + Vite |
+| Styling | Tailwind CSS v4 + shadcn/ui (zinc dark) |
+| State | Zustand (ephemeral) + SQLite (persistent) |
+| IPC | @effect/rpc with Electron IPC transport |
+| Runtime | Effect.ts (Layer, Stream, Schema) |
+| Terminal | xterm.js + node-pty |
+| Editor | CodeMirror 6 |
+| Monorepo | Bun workspaces + Turbo |
+
+---
+
+## Monorepo layout
+
+```
+apps/
+  desktop/     Electron shell
+  renderer/    React UI (Vite)
+  server/      All backend logic — Effect Layers
+  docs/        Next.js docs site
+packages/
+  wire/        @memoize/wire — typed RPC contracts + branded IDs
+  ui/          Shared React components
+specs/
+  0.01-MVP/    Foundation
+  0.02-MVP/    File viewer & editor
+  0.03-MVP/    Composer 2.0
+  0.04-MVP/    Code index (spec complete, not yet built)
+  sub-agents/  Sub-agent delegation
 ```
 
-## What's inside?
+---
 
-This Turborepo includes the following packages/apps:
+## Dev setup
 
-### Apps and Packages
+```bash
+# Install
+bun install
 
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `eslint-config-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
+# Dev (renderer + Electron)
+turbo dev --filter=renderer --filter=desktop
 
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
-
-### Utilities
-
-This Turborepo has some additional tools already setup for you:
-
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
-
-### Build
-
-To build all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
+# Build
 turbo build
+
+# Package macOS DMG (signed)
+bun run dist:mac
+
+# Package macOS DMG (unsigned, local testing)
+bun run dist:mac:unsigned
 ```
 
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo build
-bun dlx turbo build
-bun exec turbo build
-```
-
-You can build a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo build --filter=docs
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo build --filter=docs
-bun exec turbo build --filter=docs
-bun exec turbo build --filter=docs
-```
-
-### Develop
-
-To develop all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo dev
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo dev
-bun exec turbo dev
-bun exec turbo dev
-```
-
-You can develop a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo dev --filter=web
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo dev --filter=web
-bun exec turbo dev --filter=web
-bun exec turbo dev --filter=web
-```
-
-### Remote Caching
-
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
-
-Turborepo can use a technique known as [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
-
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo login
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo login
-bun exec turbo login
-bun exec turbo login
-```
-
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
-
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo link
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo link
-bun exec turbo link
-bun exec turbo link
-```
-
-## Useful Links
-
-Learn more about the power of Turborepo:
-
-- [Tasks](https://turborepo.dev/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.dev/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.dev/docs/reference/configuration)
-- [CLI Usage](https://turborepo.dev/docs/reference/command-line-reference)
+Requires: Bun 1.3.10+, Node.js ≥ 18, macOS.
