@@ -5,6 +5,29 @@ All notable changes to memoize will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0]
+
+### Added
+- xAI Grok provider via the Agent Client Protocol (ACP). Picker exposes Grok models alongside Claude/Codex; sessions stream through the shared ACP transport with the same permission/tool plumbing as the other ACP providers. (#64)
+- Gemini CLI provider. Adds Google's `gemini` CLI as a first-class driver; ACP v2 response types and tool-call normalization land in the same pass so tool results render correctly in the timeline. (#67)
+- Cursor Agent provider via ACP. (#69)
+- opencode provider with dynamic model inventory + variants. Models are fetched at runtime from the opencode catalog instead of being hardcoded, and the picker surfaces per-model variants. (#75)
+- Canonical tool translator for opencode. Provider-specific tool shapes are mapped to memoize's canonical schema, `ToolUse` events are deduplicated, and stale user-echo messages are dropped from the stream so the timeline matches what other providers produce. (#77)
+- User-editable keybindings backed by an on-disk config store. Settings → Keyboard shortcuts now writes through to a JSON config file; rebinds persist across launches and survive app upgrades. (#71)
+- Unified ACP translator + per-model capabilities + reliable interrupt. All ACP-based providers (Grok, Gemini, Cursor, opencode) share a single translator that normalizes streamed events into canonical timeline items; per-model capability metadata gates features like images/tools at the picker; interrupt now reliably halts in-flight ACP turns instead of leaving zombie streams. (#72)
+- Rich model picker: search, recents, provider chips, collapsible accordion sections, and stable `Cmd+1`–`Cmd+9` shortcuts that always map to the same top-pinned slots regardless of filter state. (#80)
+- Loading affordances during chat create + per-tab streaming. Creating a new chat now shows immediate feedback while the session boots, and streaming state is tracked per-tab so background tabs keep streaming while the foreground tab is interactive. (#66)
+
+### Changed
+- Settings redesigned with a minimal frame and a lime accent. Rows are tighter, section headers are quieter, and the new primary color flows through buttons, focus rings, and toggle states. (#73)
+- Top bar gains glass workflow buttons and inline "Fix" actions when CI is failing — the buttons read the latest run status and offer a one-click flow to push a fix branch. (#74)
+- README rewritten end-to-end as a full memoize project overview (what it is, providers, install, contributing). (#76)
+- UI polish pass: empty-state model picker matches the populated state, and Read/Edit tool result visuals now render diffs and file context in line with the rest of the timeline. (#79)
+- Provider diffs cleaned up in the renderer so per-provider streams normalize into the shared timeline without provider-specific branches in UI code. (#68)
+
+### Fixed
+- Sessions with NULL `chat_id` rows (left over from the 0.1.4 chats migration on some installs) are healed on startup and the column is now `NOT NULL` at the schema level, so the nested-tab UX can't fall back into a broken state. (#70)
+
 ## [0.1.4]
 
 ### Added
