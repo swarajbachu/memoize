@@ -786,6 +786,91 @@ export const createAcpTranslator = (provider: AcpProviderTag): AcpTranslator => 
         case "current_mode_update":
           return [];
 
+        // --- Grok agent swarming (collab agents) support ---
+        // The Grok Build ACP emits collabAgentToolCall ThreadItems (via session/update
+        // or wrapped in item_started / item_completed notifications) when the main
+        // agent uses spawnAgent / sendInput / closeAgent etc. to orchestrate 10+
+        // parallel sub-agents. We surface them as first-class ToolUse rows so the
+        // swarm activity is visible immediately; richer SwarmRow UI comes later.
+        case "collabAgentToolCall":
+        case "item_started":
+        case "item_completed": {
+          // The payload may be the collab item directly or wrapped: { item: ThreadItem, threadId, ... }
+          const maybeItem = (u as Record<string, unknown>)["item"];
+          const candidate = (maybeItem && typeof maybeItem === "object" ? maybeItem : u) as Record<string, unknown>;
+          if (candidate["type"] !== "collabAgentToolCall") {
+            // Not a collab item (some other item_started for plan / command etc.) — fall through
+            // but still avoid the generic "unknown" trace for item_* wrappers we don't care about.
+            if (kind === "item_started" || kind === "item_completed") return [];
+            return [];
+          }
+
+          const collab = candidate;
+          const tool = typeof collab["tool"] === "string" ? (collab["tool"] as string) : "unknown";
+          const callId = extractCallId(collab);
+          const status = typeof collab["status"] === "string" ? (collab["status"] as string) : null;
+          const receiverThreadIds = Array.isArray(collab["receiverThreadIds"])
+            ? (collab["receiverThreadIds"] as string[])
+            : [];
+          const prompt = typeof collab["prompt"] === "string" ? (collab["prompt"] as string) : null;
+          const model = typeof collab["model"] === "string" ? (collab["model"] as string) : null;
+          const agentsStates = (collab["agentsStates"] ?? {}) as Record<string, unknown>;
+
+          // Nice label for the tool row (SpawnAgent becomes "Spawn Agent", sendInput becomes "Collab Send Input")
+          const toolName =
+            tool === "spawnAgent"
+              ? "SpawnAgent"
+              : `Collab${tool.charAt(0).toUpperCase()}${tool.slice(1)}`;
+
+          const input: Record<string, unknown> = {
+            tool,
+            ...(prompt ? { prompt } : {}),
+            ...(model ? { model } : {}),
+            receiverThreadIds,
+            agentsStates,
+          };
+          if (status) input["status"] = status;
+
+          const state = getOrInitToolState(callId);
+          const isTerminal = status === "completed" || status === "failed";
+
+          // Emit (or re-emit with richer input) on first sight and on terminal transitions
+          // so the renderer row can show a final result panel with the ending agentsStates.
+          if (!state.useEmitted || isTerminal) {
+            state.useEmitted = true;
+            state.lastInputJson = JSON.stringify(input);
+            trace(
+              provider,
+              `emit CollabToolUse id=${callId} tool=${toolName} receivers=${receiverThreadIds.length} status=${status ?? ""}`,
+            );
+            const events: AgentEvent[] = [
+              {
+                _tag: "ToolUse",
+                itemId: callId,
+                tool: toolName,
+                input,
+              },
+            ];
+            if (isTerminal) {
+              // Surface a clean result so the row collapses / shows "done" state.
+              events.push({
+                _tag: "ToolResult",
+                itemId: callId,
+                output: { status, agentsStates },
+                isError: status === "failed",
+              });
+              state.resultEmitted = true;
+            }
+            return events;
+          }
+
+          // Intermediate state updates (agentsStates changing while running) — we can
+          // optionally emit a non-intrusive result or just trace. For v1 we stay silent
+          // to avoid spamming the timeline; the live states live in the initial row's input.
+          trace(provider, `skip duplicate collab update id=${callId} tool=${tool}`);
+          return [];
+        }
+
         default:
           trace(provider, `unknown kind=${kind} payload=${safePreview(u)}`);
           return [];

@@ -274,6 +274,23 @@ export const startCursorSession = (
           }
           return;
         }
+
+        // Forward item/* and thread/* notifications (collab swarming, per-thread
+        // lifecycle) to the shared translator. Mirrors the Grok driver change.
+        if (msg.method.startsWith("item/") || msg.method.startsWith("thread/")) {
+          if (CURSOR_RPC_TRACE) {
+            process.stderr.write(
+              `[cursor.rpc] ${msg.method} params=${JSON.stringify(msg.params ?? {})}\n`,
+            );
+          }
+          if (msg.params !== undefined) {
+            for (const ev of translator.translate(msg.params)) {
+              events.unsafeOffer(ev);
+            }
+          }
+          return;
+        }
+
         if (msg.id !== undefined) {
           const isFs = msg.method.startsWith("fs/");
           if (CURSOR_RPC_TRACE || isFs) {
@@ -385,6 +402,8 @@ export const startCursorSession = (
                 },
                 terminal: true,
                 _meta: { parameterizedModelPicker: true },
+                // Opt into experimental (collab/swarming) for future parity with Grok.
+                experimentalApi: true,
               },
             },
             5_000,

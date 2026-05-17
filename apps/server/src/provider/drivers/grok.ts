@@ -328,6 +328,27 @@ export const startGrokSession = (
           }
           return;
         }
+
+        // Grok swarming / collab agents + general thread/item lifecycle.
+        // The ACP server emits item/started, item/completed, thread/* etc.
+        // with payloads containing ThreadItem (including collabAgentToolCall)
+        // and per-thread metadata (nickname, role, states). Forward the
+        // params object to the translator so the new collab handling can
+        // extract them. Only log at trace level to avoid noise in normal use.
+        if (msg.method.startsWith("item/") || msg.method.startsWith("thread/")) {
+          if (GROK_RPC_TRACE) {
+            process.stderr.write(
+              `[grok.rpc] ${msg.method} params=${JSON.stringify(msg.params ?? {})}\n`,
+            );
+          }
+          if (msg.params !== undefined) {
+            for (const ev of translator.translate(msg.params)) {
+              events.unsafeOffer(ev);
+            }
+          }
+          return;
+        }
+
         if (msg.id !== undefined) {
           // Server→client request (fs/*, permission prompts, etc.).
           // We now:
@@ -469,6 +490,10 @@ export const startGrokSession = (
               moveFile: true,
             },
             terminal: true,
+            // Opt into experimental features (collab agents / swarming, richer
+            // thread/item notifications, etc.) so Grok Build will emit the full
+            // collabAgentToolCall stream for 10+ agent swarms.
+            experimentalApi: true,
           },
         })) as { authMethods?: ReadonlyArray<{ id?: unknown }> };
 

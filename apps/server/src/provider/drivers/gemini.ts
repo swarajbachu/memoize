@@ -379,6 +379,23 @@ export const startGeminiSession = (
           }
           return;
         }
+
+        // Forward item/* and thread/* notifications (collab swarming, per-thread
+        // lifecycle) to the shared translator. Mirrors the Grok driver change.
+        if (msg.method.startsWith("item/") || msg.method.startsWith("thread/")) {
+          if (GEMINI_RPC_TRACE) {
+            process.stderr.write(
+              `[gemini.rpc] ${msg.method} params=${JSON.stringify(msg.params ?? {})}\n`,
+            );
+          }
+          if (msg.params !== undefined) {
+            for (const ev of translator.translate(msg.params)) {
+              events.unsafeOffer(ev);
+            }
+          }
+          return;
+        }
+
         if (msg.id !== undefined) {
           const isFs = msg.method.startsWith("fs/");
           if (GEMINI_RPC_TRACE || isFs) {
@@ -472,6 +489,9 @@ export const startGeminiSession = (
               moveFile: true,
             },
             terminal: true,
+            // Opt into experimental (collab/swarming) so future Gemini ACP
+            // agents can emit the same collabAgentToolCall data.
+            experimentalApi: true,
           },
         })) as { authMethods?: ReadonlyArray<{ id?: unknown }> };
 
