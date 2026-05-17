@@ -82,6 +82,17 @@ const PROBES: ReadonlyArray<ProviderProbe> = [
     minVersion: null,
     upgradeCommand: "curl https://cursor.com/install -fsS | bash",
   },
+  {
+    providerId: "opencode",
+    displayName: "OpenCode",
+    cliBinary: "opencode",
+    // The SDK we bundle (`@opencode-ai/sdk`) targets the v2 HTTP shape that
+    // landed in `opencode` 1.3.15. Older binaries respond to
+    // `client.session.prompt` with a 404 (route renamed) — pin the floor
+    // so we surface the upgrade card before the user hits that.
+    minVersion: { major: 1, minor: 3, patch: 15, raw: "1.3.15" },
+    upgradeCommand: "curl -fsSL https://opencode.ai/install | bash",
+  },
 ];
 
 const PROBE_TIMEOUT = Duration.seconds(4);
@@ -531,6 +542,68 @@ const probeCursorAccount: Effect.Effect<AccountInfo, never, FileSystem.FileSyste
       : ({ authStatus: "unauthenticated" } satisfies AccountInfo);
   });
 
+// OpenCode stores per-provider credentials in `~/.local/share/opencode/auth.json`
+// after `opencode auth login <provider>`. Each top-level key is a provider id
+// (anthropic, openai, …) and the value carries the access token or API key.
+// We treat a non-empty file with at least one entry as "authenticated"; the
+// renderer then surfaces "Connected to N providers" once we wire the
+// dynamic inventory in. Falling back to the directory presence check
+// matches the Gemini/Cursor pattern when the file is missing but the CLI
+// has been installed.
+interface OpencodeAuthBlob {
+  readonly [providerId: string]: unknown;
+}
+
+const parseOpencodeAuth = (raw: string): AccountInfo => {
+  let parsed: OpencodeAuthBlob;
+  try {
+    parsed = JSON.parse(raw) as OpencodeAuthBlob;
+  } catch {
+    return { authStatus: "authenticated", authType: "cli" };
+  }
+  const providerIds = Object.keys(parsed).filter(
+    (k) => parsed[k] !== null && parsed[k] !== undefined,
+  );
+  if (providerIds.length === 0) {
+    return { authStatus: "unauthenticated" };
+  }
+  return {
+    authStatus: "authenticated",
+    authType: "cli",
+    authLabel:
+      providerIds.length === 1
+        ? `Connected to ${providerIds[0]}`
+        : `Connected to ${providerIds.length} providers`,
+  };
+};
+
+const probeOpencodeAccount: Effect.Effect<
+  AccountInfo,
+  never,
+  FileSystem.FileSystem
+> = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const authPath = join(
+    homedir(),
+    ".local",
+    "share",
+    "opencode",
+    "auth.json",
+  );
+  const exists = yield* fs
+    .exists(authPath)
+    .pipe(Effect.catchAll(() => Effect.succeed(false)));
+  if (!exists) {
+    return { authStatus: "unauthenticated" } satisfies AccountInfo;
+  }
+  const raw = yield* fs
+    .readFileString(authPath)
+    .pipe(Effect.catchAll(() => Effect.succeed("")));
+  return raw.length === 0
+    ? { authStatus: "authenticated", authType: "cli" }
+    : parseOpencodeAuth(raw);
+});
+
 const probeAccount = (
   providerId: ProviderId,
   cliPath: string,
@@ -550,6 +623,8 @@ const probeAccount = (
       return probeGeminiAccount;
     case "cursor":
       return probeCursorAccount;
+    case "opencode":
+      return probeOpencodeAccount;
   }
 };
 

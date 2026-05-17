@@ -42,6 +42,7 @@ const LOGIN_HINT: Record<ProviderId, string> = {
   grok: "grok",
   cursor: "cursor-agent login",
   gemini: "gemini",
+  opencode: "opencode auth login",
 };
 
 const INSTALL_HINT: Record<ProviderId, string> = {
@@ -50,6 +51,7 @@ const INSTALL_HINT: Record<ProviderId, string> = {
   grok: "curl -fsSL https://x.ai/cli/install.sh | bash",
   cursor: "curl https://cursor.com/install -fsS | bash",
   gemini: "npm i -g @google/gemini-cli",
+  opencode: "curl -fsSL https://opencode.ai/install | bash",
 };
 
 const PROVIDER_TAGLINE: Record<ProviderId, string> = {
@@ -58,6 +60,7 @@ const PROVIDER_TAGLINE: Record<ProviderId, string> = {
   grok: "xAI · Grok",
   cursor: "Cursor · GPT, Sonnet, Opus",
   gemini: "Google · Gemini 3 Pro",
+  opencode: "Any model · Local agents",
 };
 
 type ProviderState =
@@ -122,6 +125,7 @@ export function ProviderStep() {
     "grok",
     "gemini",
     "cursor",
+    "opencode",
   ];
 
   return (

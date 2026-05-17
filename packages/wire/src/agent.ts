@@ -13,7 +13,14 @@ import {
  * the literal union is the contract — adding a new provider is an additive
  * change here plus a new driver in `apps/server/src/provider/drivers/`.
  */
-export const ProviderId = Schema.Literal("claude", "codex", "grok", "gemini", "cursor");
+export const ProviderId = Schema.Literal(
+  "claude",
+  "codex",
+  "grok",
+  "gemini",
+  "cursor",
+  "opencode",
+);
 export type ProviderId = typeof ProviderId.Type;
 
 /**
@@ -413,6 +420,7 @@ const SessionCursorEvent = Schema.TaggedStruct("SessionCursor", {
     "grok-session-id",
     "cursor-session-id",
     "gemini-session-id",
+    "opencode-session-id",
   ),
 });
 
@@ -731,6 +739,36 @@ export const MODELS_BY_PROVIDER: Record<ProviderId, ReadonlyArray<ModelOption>> 
     },
     { id: "opus-4.1", label: "Claude Opus 4.1", supportsPlanMode: true },
   ],
+  // OpenCode is a meta-provider: it spawns a local `opencode serve` and
+  // forwards prompts to whichever underlying provider (anthropic, openai,
+  // google, …) the user has authenticated locally via `opencode auth login`.
+  // Model ids carry a `<providerID>/<modelID>` slug so the driver can split
+  // them on the slash before calling `session.prompt`.
+  //
+  // The list below is the static seed shown when the inventory RPC hasn't
+  // resolved yet (or fails). At runtime the renderer calls
+  // `agent.opencodeInventory` and replaces this list with the
+  // dynamically-discovered set of connected providers + models. The
+  // dedicated plan-mode toggle covers build/plan agent switching, so we
+  // don't expose an agent dropdown per-model. Reasoning/variant pickers
+  // are rendered dynamically from each model's `variants` array.
+  opencode: [
+    {
+      id: "anthropic/claude-sonnet-4-5",
+      label: "Anthropic · Claude Sonnet 4.5",
+      supportsPlanMode: true,
+    },
+    {
+      id: "openai/gpt-5",
+      label: "OpenAI · GPT-5",
+      supportsPlanMode: true,
+    },
+    {
+      id: "google/gemini-2.5-pro",
+      label: "Google · Gemini 2.5 Pro",
+      supportsPlanMode: true,
+    },
+  ],
 };
 
 export const defaultModelFor = (providerId: ProviderId): string =>
@@ -766,6 +804,7 @@ export const MODEL_ALIASES_BY_PROVIDER: Record<ProviderId, Record<string, string
     "gemini-3.1-pro-preview": "gemini-3-pro-preview",
   },
   cursor: {},
+  opencode: {},
 };
 
 export const resolveModelSlug = (providerId: ProviderId, slug: string): string =>
@@ -891,4 +930,60 @@ export const AgentSetCredentialRpc = Rpc.make("agent.setCredential", {
   payload: SetCredentialInput,
   success: Schema.Void,
   error: CredentialStoreError,
+});
+
+// ---------------------------------------------------------------------------
+// OpenCode dynamic inventory — single RPC the renderer calls when the user
+// opens the model picker for the opencode provider. Returns the
+// SDK-discovered set of connected providers + their models, and the set of
+// locally-defined agents (build, plan, plus any custom ones). The renderer
+// merges this into the static `MODELS_BY_PROVIDER.opencode` seed so the
+// picker reflects what the user actually has connected/configured.
+//
+// Lives next to the per-provider availability probe so it's discoverable
+// alongside the other agent.* RPCs; the handler short-lives an
+// `opencode serve` to make the SDK calls and tears it down on return.
+// ---------------------------------------------------------------------------
+
+export const OpencodeInventoryModel = Schema.Struct({
+  id: Schema.String,
+  label: Schema.String,
+  /**
+   * Variant names exposed by this opencode model — e.g. `["high", "medium",
+   * "low"]` for reasoning models, `["super-high"]` for some, or `[]` for
+   * models without a variant axis. Sourced from `provider.list()`'s
+   * per-model `variants` map. The renderer renders a "reasoning" picker
+   * only when this array is non-empty.
+   */
+  variants: Schema.Array(Schema.String),
+});
+export type OpencodeInventoryModel = typeof OpencodeInventoryModel.Type;
+
+export const OpencodeInventoryProvider = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  models: Schema.Array(OpencodeInventoryModel),
+});
+export type OpencodeInventoryProvider = typeof OpencodeInventoryProvider.Type;
+
+export const OpencodeInventoryAgent = Schema.Struct({
+  name: Schema.String,
+  mode: Schema.Literal("primary", "all"),
+  description: Schema.optional(Schema.String),
+});
+export type OpencodeInventoryAgent = typeof OpencodeInventoryAgent.Type;
+
+export const OpencodeInventory = Schema.Struct({
+  providers: Schema.Array(OpencodeInventoryProvider),
+  agents: Schema.Array(OpencodeInventoryAgent),
+});
+export type OpencodeInventory = typeof OpencodeInventory.Type;
+
+export const AgentOpencodeInventoryRpc = Rpc.make("agent.opencodeInventory", {
+  payload: Schema.Struct({}),
+  success: OpencodeInventory,
+  // Reused — `AgentSessionStartError` already carries `providerId` + `reason`
+  // and the failure mode here ("opencode not installed", "spawn failed") is
+  // the same shape the renderer already knows how to surface.
+  error: AgentSessionStartError,
 });

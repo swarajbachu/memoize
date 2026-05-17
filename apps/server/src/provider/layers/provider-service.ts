@@ -35,6 +35,10 @@ import {
   startCursorSession,
   type CursorSessionHandle,
 } from "../drivers/cursor.ts";
+import {
+  startOpencodeSession,
+  type OpencodeSessionHandle,
+} from "../drivers/opencode.ts";
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
 import { CredentialsService } from "../services/credentials-service.ts";
 import { PermissionService } from "../services/permission-service.ts";
@@ -55,7 +59,8 @@ type SessionHandle =
   | CodexSessionHandle
   | GrokSessionHandle
   | GeminiSessionHandle
-  | CursorSessionHandle;
+  | CursorSessionHandle
+  | OpencodeSessionHandle;
 type SessionEntry = {
   readonly providerId: ProviderId;
   readonly handle: SessionHandle;
@@ -197,6 +202,31 @@ export const ProviderServiceLive = Layer.effect(
               cwd,
               apiKey,
               grokPath,
+              sessionId,
+              resumeCursor,
+            ).pipe(Effect.provideService(AttachmentService, attachmentService));
+          } else if (input.providerId === "opencode") {
+            // OpenCode spawns a local HTTP server (`opencode serve`) and we
+            // drive it via @opencode-ai/sdk. Same install-message pattern
+            // as the other CLI-backed drivers — surface a clean error
+            // before the driver tries to spawn.
+            const opencodePath = yield* resolveCliPath("opencode").pipe(
+              Effect.provideService(CommandExecutor.CommandExecutor, executor),
+            );
+            if (opencodePath === null) {
+              return yield* Effect.fail(
+                new AgentSessionStartError({
+                  providerId: "opencode",
+                  reason:
+                    "OpenCode CLI not found on PATH. Install via `curl -fsSL https://opencode.ai/install | bash` and try again.",
+                }),
+              );
+            }
+            handle = yield* startOpencodeSession(
+              input,
+              cwd,
+              apiKey,
+              opencodePath,
               sessionId,
               resumeCursor,
             ).pipe(Effect.provideService(AttachmentService, attachmentService));

@@ -16,13 +16,39 @@ type ProviderIconProps = Omit<HugeProps, "icon"> & {
   providerId: ProviderId;
 };
 
-type HugeProviderId = Exclude<ProviderId, "grok" | "cursor">;
+type HugeProviderId = Exclude<ProviderId, "grok" | "cursor" | "opencode">;
 
 const HUGE_ICON_BY_PROVIDER = {
   claude: ClaudeIcon,
   codex: ChatGptIcon,
   gemini: GoogleGeminiIcon,
 } as const satisfies Record<HugeProviderId, HugeProps["icon"]>;
+
+/**
+ * OpenCode brand mark. HugeIcons doesn't ship one, so we inline the official
+ * SVG from the opencode brand kit and tint both paths via currentColor (the
+ * inner block at reduced opacity to preserve the original two-tone look).
+ */
+function OpencodeBrandIcon({
+  className,
+  ...props
+}: Omit<HugeProps, "icon">) {
+  return (
+    <svg
+      viewBox="0 0 240 300"
+      xmlns="http://www.w3.org/2000/svg"
+      className={cn("size-3.5 shrink-0 fill-current", className)}
+      aria-hidden="true"
+      {...(props as React.SVGProps<SVGSVGElement>)}
+    >
+      <path
+        d="M180 240H60V120H180V240Z"
+        fillOpacity={0.45}
+      />
+      <path d="M180 60H60V240H180V60ZM240 300H0V0H240V300Z" />
+    </svg>
+  );
+}
 
 /**
  * Cursor brand mark. HugeIcons doesn't ship a Cursor logo, so we inline the
@@ -65,6 +91,9 @@ export function ProviderIcon({
   }
   if (providerId === "cursor") {
     return <CursorBrandIcon className={className} {...props} />;
+  }
+  if (providerId === "opencode") {
+    return <OpencodeBrandIcon className={className} {...props} />;
   }
   return (
     <HugeiconsIcon

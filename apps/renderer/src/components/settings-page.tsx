@@ -54,6 +54,7 @@ const PROVIDER_LABEL: Record<ProviderId, string> = {
   grok: "Grok",
   cursor: "Cursor",
   gemini: "Gemini",
+  opencode: "OpenCode",
 };
 
 type RailItemBase = {
@@ -422,6 +423,7 @@ function ProvidersPane() {
     "grok",
     "gemini",
     "cursor",
+    "opencode",
   ];
   const availabilityById = useMemo(() => {
     const map = new Map<ProviderId, (typeof availability)[number]>();
@@ -479,8 +481,8 @@ function ProvidersPane() {
         <FrameFooter className="px-2 py-1 w-full">
           <p className="text-xs leading-relaxed text-muted-foreground">
             Nuuk uses your existing CLI credentials — Claude Code, Codex,
-            Grok, Gemini, and Cursor all sign in through their own login
-            flows.
+            Grok, Gemini, Cursor, and OpenCode all sign in through their own
+            login flows.
           </p>
         </FrameFooter>
       </Frame>

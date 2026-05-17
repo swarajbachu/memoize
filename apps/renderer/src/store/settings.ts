@@ -31,6 +31,7 @@ const PROVIDER_IDS: ReadonlyArray<ProviderId> = [
   "grok",
   "cursor",
   "gemini",
+  "opencode",
 ];
 
 const seedModels = (): Record<ProviderId, string> => ({
@@ -39,6 +40,7 @@ const seedModels = (): Record<ProviderId, string> => ({
   grok: defaultModelFor("grok"),
   cursor: defaultModelFor("cursor"),
   gemini: defaultModelFor("gemini"),
+  opencode: defaultModelFor("opencode"),
 });
 
 const seedProviderEnabled = (): Record<ProviderId, boolean> => {

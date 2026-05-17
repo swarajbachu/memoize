@@ -75,6 +75,7 @@ import {
   TooltipTrigger,
 } from "~/components/ui/tooltip";
 import { useMessagesStore } from "../store/messages.ts";
+import { useOpencodeInventory } from "../store/opencode-inventory.ts";
 import { useProvidersStore } from "../store/providers.ts";
 import { useSettingsStore } from "../store/settings.ts";
 import { usePermissionsStore } from "../store/permissions.ts";
@@ -854,6 +855,7 @@ const PROVIDER_LABEL: Record<ProviderId, string> = {
   grok: "Grok",
   cursor: "Cursor",
   gemini: "Gemini",
+  opencode: "OpenCode",
 };
 
 function ModelPicker({
@@ -869,6 +871,10 @@ function ModelPicker({
   const setProvider = useSessionsStore((s) => s.setProvider);
   const providerEnabled = useSettingsStore((s) => s.providerEnabled);
   const availability = useProvidersStore((s) => s.availability);
+  const opencodeInventory = useOpencodeInventory((s) => s.inventory);
+  const ensureOpencodeInventory = useOpencodeInventory(
+    (s) => s.ensureLoaded,
+  );
   const userMessageCount = useMessagesStore((s) => {
     const list = s.messagesBySession[sessionId] ?? [];
     let count = 0;
@@ -878,7 +884,23 @@ function ModelPicker({
     return count;
   });
   const isFresh = userMessageCount === 0;
-  const models = MODELS_BY_PROVIDER[providerId] ?? [];
+  // Lazy-load the opencode inventory the first time the picker is mounted
+  // for any session. Cached for the lifetime of the renderer process.
+  useEffect(() => {
+    void ensureOpencodeInventory();
+  }, [ensureOpencodeInventory]);
+  // For opencode: prefer the live `provider.list()` + `model.variants`
+  // snapshot from `agent.opencodeInventory` over the static seed. Other
+  // providers always use the static `MODELS_BY_PROVIDER` table.
+  const modelsForProvider = (pid: ProviderId) => {
+    if (pid !== "opencode" || opencodeInventory === null) {
+      return MODELS_BY_PROVIDER[pid] ?? [];
+    }
+    return opencodeInventory.providers.flatMap((p) =>
+      p.models.map((m) => ({ id: m.id, label: m.label })),
+    );
+  };
+  const models = modelsForProvider(providerId);
 
   // A provider is pickable when: user hasn't toggled it off in Settings AND
   // the server-side health probe didn't return `error` (e.g. CLI missing).
@@ -928,7 +950,7 @@ function ModelPicker({
               {i > 0 && <MenuSeparator />}
               <MenuGroup>
                 <MenuGroupLabel>{PROVIDER_LABEL[pid]}</MenuGroupLabel>
-                {MODELS_BY_PROVIDER[pid].map((m) => {
+                {modelsForProvider(pid).map((m) => {
                   const active = pid === providerId && m.id === currentModel;
                   const crossProvider = pid !== providerId;
                   // Cross-provider switches only land on a fresh session —
@@ -975,10 +997,16 @@ function ModelPicker({
 }
 
 /**
- * Reasoning effort selector. Visible only when the current model declares
- * a `reasoning` SelectOptionDescriptor in `MODELS_BY_PROVIDER`. Selection
- * is per-session and persisted to sessionStorage; the messages store reads
- * it back at send time and forwards as `modelOptions.reasoning`.
+ * Reasoning / variant selector. For non-opencode providers this reads
+ * the static `reasoning` SelectOptionDescriptor from `MODELS_BY_PROVIDER`.
+ * For opencode, the per-model variant list comes from the live inventory
+ * (`useOpencodeInventory`) so models like `anthropic/claude-sonnet-4-5`
+ * show their actual variants (`high`/`medium`/…) and models without
+ * variants render nothing.
+ *
+ * Selection persists per-session; the messages store reads it back at
+ * send time and forwards it as `modelOptions.reasoning` — which the
+ * opencode driver in turn translates into the prompt body's `model.variant`.
  */
 function ReasoningPicker({
   sessionId,
@@ -989,12 +1017,48 @@ function ReasoningPicker({
   providerId: ProviderId;
   model: string;
 }) {
-  const descriptor = findModelDescriptor(providerId, model);
-  const reasoningDescriptor = descriptor?.optionDescriptors?.find(
-    (d): d is SelectOptionDescriptor => d.kind === "select" && d.id === "reasoning",
-  );
-  const defaultId = reasoningDescriptor?.defaultId ?? "medium";
+  const opencodeInventory = useOpencodeInventory((s) => s.inventory);
 
+  // For opencode, the variant list is per-model and lives on the live
+  // inventory (`provider.list()` → `model.variants`). For other providers
+  // it's the static reasoning descriptor curated in `MODELS_BY_PROVIDER`.
+  const resolved = useMemo((): {
+    label: string;
+    options: ReadonlyArray<{ id: string; label: string }>;
+    defaultId: string;
+  } | null => {
+    if (providerId === "opencode") {
+      if (opencodeInventory === null) return null;
+      for (const p of opencodeInventory.providers) {
+        const m = p.models.find((mm) => mm.id === model);
+        if (m === undefined) continue;
+        if (m.variants.length === 0) return null;
+        return {
+          label: "Reasoning",
+          options: m.variants.map((v) => ({ id: v, label: v })),
+          defaultId: m.variants.includes("medium")
+            ? "medium"
+            : m.variants.includes("high")
+              ? "high"
+              : m.variants[0]!,
+        };
+      }
+      return null;
+    }
+    const descriptor = findModelDescriptor(providerId, model);
+    const reasoningDescriptor = descriptor?.optionDescriptors?.find(
+      (d): d is SelectOptionDescriptor =>
+        d.kind === "select" && d.id === "reasoning",
+    );
+    if (reasoningDescriptor === undefined) return null;
+    return {
+      label: reasoningDescriptor.label,
+      options: reasoningDescriptor.options,
+      defaultId: reasoningDescriptor.defaultId ?? "medium",
+    };
+  }, [providerId, model, opencodeInventory]);
+
+  const defaultId = resolved?.defaultId ?? "medium";
   const storageKey = `memoize.reasoning.${sessionId}`;
   const [level, setLevel] = useState<string>(() => {
     if (typeof window === "undefined") return defaultId;
@@ -1003,9 +1067,9 @@ function ReasoningPicker({
     return defaultId;
   });
 
-  if (reasoningDescriptor === undefined) return null;
+  if (resolved === null) return null;
 
-  const options = reasoningDescriptor.options;
+  const options = resolved.options;
 
   const onChange = (next: string) => {
     if (!options.some((o) => o.id === next)) return;
@@ -1015,15 +1079,14 @@ function ReasoningPicker({
     }
   };
 
-  const activeLabel =
-    options.find((o) => o.id === level)?.label ?? level;
+  const activeLabel = options.find((o) => o.id === level)?.label ?? level;
 
   return (
     <Menu>
       <MenuTrigger
         className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-foreground hover:bg-muted/60 data-[popup-open]:bg-muted/60"
-        aria-label={reasoningDescriptor.label}
-        title={`${reasoningDescriptor.label} for the next message`}
+        aria-label={resolved.label}
+        title={`${resolved.label} for the next message`}
       >
         <Gauge className="size-3" />
         <span>{activeLabel}</span>
@@ -1031,7 +1094,7 @@ function ReasoningPicker({
       </MenuTrigger>
       <MenuPopup side="top" align="start" className="w-44">
         <MenuGroup>
-          <MenuGroupLabel>{reasoningDescriptor.label}</MenuGroupLabel>
+          <MenuGroupLabel>{resolved.label}</MenuGroupLabel>
           <MenuRadioGroup value={level} onValueChange={onChange}>
             {options.map((o) => (
               <MenuRadioItem key={o.id} value={o.id}>
