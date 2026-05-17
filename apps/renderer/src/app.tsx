@@ -9,6 +9,7 @@ import {
 } from "react-resizable-panels";
 
 import { ChatComposer } from "./components/chat-composer";
+import { ChatLanding } from "./components/chat-landing.tsx";
 import { CliUpgradeBanner } from "./components/cli-upgrade-banner.tsx";
 import { TooltipProvider } from "./components/ui/tooltip.tsx";
 import { ChatView } from "./components/chat-view";
@@ -263,13 +264,7 @@ function MainShell() {
                   <ChatComposer session={selectedSession} />
                 </>
               ) : (
-                <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
-                  <p>
-                    {selectedFolder === null
-                      ? "Add a project on the left to begin."
-                      : "Pick or create a session in the sidebar."}
-                  </p>
-                </div>
+                <ChatLanding />
               )}
             </div>
             {openFile !== null && (

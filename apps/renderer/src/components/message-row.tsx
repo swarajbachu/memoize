@@ -23,14 +23,12 @@ import type {
   UserQuestionAnswer,
 } from "@memoize/wire";
 
-import {
-  getFileIconUrl,
-  getFolderIconUrl,
-} from "~/lib/icons/material-icons";
+import { getFileIconUrl } from "~/lib/icons/material-icons";
 import { cn } from "~/lib/utils";
 import { useMessagesStore, type ChatError } from "~/store/messages";
 import { useUiStore } from "~/store/ui";
 
+import { FileChip } from "./file-chip.tsx";
 import {
   ExitPlanModeRow,
   ThinkingRow,
@@ -43,11 +41,6 @@ export interface ToolResultRecord {
   readonly output: unknown;
   readonly isError: boolean;
 }
-
-const basename = (p: string): string => {
-  const i = p.lastIndexOf("/");
-  return i === -1 ? p : p.slice(i + 1);
-};
 
 const stringifyJson = (value: unknown): string => {
   try {
@@ -229,25 +222,14 @@ function UserBubble({
                 </a>
               );
             })}
-            {(fileRefs ?? []).map((f) => {
-              const name = basename(f.relPath);
-              const iconUrl =
-                f.kind === "directory"
-                  ? getFolderIconUrl(name, false)
-                  : getFileIconUrl(name);
-              return (
-                <span
-                  key={f.relPath}
-                  title={f.relPath}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 text-xs text-muted-foreground"
-                >
-                  {iconUrl !== null ? (
-                    <img src={iconUrl} alt="" className="size-4" />
-                  ) : null}
-                  <span className="truncate">{truncate(name)}</span>
-                </span>
-              );
-            })}
+            {(fileRefs ?? []).map((f) => (
+              <FileChip
+                key={f.relPath}
+                relPath={f.relPath}
+                absPath={f.absPath}
+                kind={f.kind}
+              />
+            ))}
             {(skillRefs ?? []).map((s) => (
               <span
                 key={s.name}

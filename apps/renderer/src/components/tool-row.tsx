@@ -28,6 +28,7 @@ import type {
 import { cn } from "~/lib/utils";
 
 import { usePermissionsStore } from "../store/permissions.ts";
+import { CodeBlock } from "./code-block.tsx";
 import { FileBadge } from "./file-badge.tsx";
 import { MarkdownBody } from "./markdown-body.tsx";
 import {
@@ -440,17 +441,17 @@ const buildToolView = (
           ) : undefined,
         resultPanel: (result) => {
           const text = toResultText(result.output);
-          const lineCount = text.length === 0 ? 0 : text.split("\n").length;
+          if (path === null) {
+            return (
+              <PreBlock text={truncate(text, 4000)} isError={result.isError} />
+            );
+          }
           return (
-            <div className="space-y-1">
-              <p className="text-[11px] text-muted-foreground">
-                {lineCount} line{lineCount === 1 ? "" : "s"}
-              </p>
-              <PreBlock
-                text={truncate(text, 4000)}
-                isError={result.isError}
-              />
-            </div>
+            <CodeBlock
+              filename={path}
+              text={text}
+              isError={result.isError}
+            />
           );
         },
       };

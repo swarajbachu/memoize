@@ -45,6 +45,7 @@ import {
   clearChipsEffect,
   updateImageChipEffect,
 } from "~/lib/codemirror/composer-chips";
+import { useActiveWorkspaceRoot } from "../store/active-workspace.ts";
 import { useAttachmentsStore } from "../store/attachments.ts";
 import { useComposerBridge } from "../store/composer-bridge.ts";
 import { cn } from "~/lib/utils";
@@ -53,7 +54,7 @@ import {
   type BuiltinCommand,
 } from "../composer/builtin-commands.ts";
 import { parseComposerInput } from "../composer/segment-parser.ts";
-import { FileChipHover } from "./composer/file-chip-hover.tsx";
+import { ComposerChipOverlay } from "./composer/composer-chip-overlay.tsx";
 import { FileTagPopover } from "./composer/file-tag-popover.tsx";
 import { QueueTray } from "./composer/queue-tray.tsx";
 import { SlashCommandPopover } from "./composer/slash-command-popover.tsx";
@@ -201,6 +202,7 @@ export function ChatComposer({ session }: { session: Session }) {
   const setActiveRightTab = useUiStore((s) => s.setActiveRightTab);
   const setView = useUiStore((s) => s.setView);
   const setSettingsSection = useUiStore((s) => s.setSettingsSection);
+  const workspaceRoot = useActiveWorkspaceRoot(session.projectId);
 
   const canSend = hasText;
 
@@ -617,6 +619,7 @@ export function ChatComposer({ session }: { session: Session }) {
                       view={editorViewRef.current}
                       projectId={session.projectId}
                       worktreeId={session.worktreeId}
+                      workspaceRoot={workspaceRoot}
                       onClose={() => setTrigger(null)}
                     />
                   )
@@ -630,9 +633,10 @@ export function ChatComposer({ session }: { session: Session }) {
                   }}
                   onClick={() => editorViewRef.current?.focus()}
                 />
-                <FileChipHover
+                <ComposerChipOverlay
                   hostRef={editorHostRef}
                   projectId={session.projectId}
+                  worktreeId={session.worktreeId}
                 />
               </CardPanel>
             </Card>

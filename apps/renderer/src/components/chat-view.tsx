@@ -19,6 +19,7 @@ import { groupMessages } from "../lib/group-messages.ts";
 import { useMessagesStore } from "../store/messages.ts";
 import { useSessionsStore } from "../store/sessions.ts";
 import { useSkillsStore } from "../store/skills.ts";
+import { FileChipProvider } from "./file-chip.tsx";
 import { ErrorBubble, MessageRow, type ToolResultRecord } from "./message-row.tsx";
 import { SubagentRow } from "./subagent-row.tsx";
 import { TurnSummary } from "./turn-summary.tsx";
@@ -153,6 +154,10 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
 
 
   return (
+    <FileChipProvider
+      folderId={session?.projectId ?? null}
+      worktreeId={session?.worktreeId ?? null}
+    >
     <div
       ref={scrollRef}
       onScroll={onScroll}
@@ -291,6 +296,7 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
         />
       )}
     </div>
+    </FileChipProvider>
   );
 }
 

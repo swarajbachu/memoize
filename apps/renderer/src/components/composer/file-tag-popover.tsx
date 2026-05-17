@@ -21,6 +21,14 @@ export interface FileTagPopoverProps {
   readonly view: EditorView;
   readonly projectId: FolderId;
   readonly worktreeId: WorktreeId | null;
+  /**
+   * Absolute path of the effective workspace root (project root or, when a
+   * worktree is selected, the worktree path). Used to drop stale results
+   * that race a session switch — anything whose absPath isn't under this
+   * root is silently dropped so the picker never shows files from another
+   * project.
+   */
+  readonly workspaceRoot: string | null;
   readonly onClose: () => void;
 }
 
@@ -40,6 +48,7 @@ export function FileTagPopover({
   view,
   projectId,
   worktreeId,
+  workspaceRoot,
   onClose,
 }: FileTagPopoverProps) {
   const [hits, setHits] = useState<readonly SearchHit[]>([]);
@@ -60,10 +69,20 @@ export function FileTagPopover({
             worktreeId,
           }),
         );
-        if (!cancelled) {
-          setHits(results as readonly SearchHit[]);
-          setHighlight(0);
-        }
+        if (cancelled) return;
+        // Belt-and-braces: drop any hit whose absPath isn't under the
+        // current workspace root. The server already reroots correctly
+        // when worktreeId matches, but a race where this effect fires
+        // mid-session-switch could otherwise show the previous root's
+        // files for a frame.
+        const filtered =
+          workspaceRoot === null
+            ? (results as readonly SearchHit[])
+            : (results as readonly SearchHit[]).filter((hit) =>
+                hit.absPath.startsWith(workspaceRoot),
+              );
+        setHits(filtered);
+        setHighlight(0);
       } catch {
         if (!cancelled) setHits([]);
       }
@@ -73,7 +92,7 @@ export function FileTagPopover({
       cancelled = true;
       window.clearTimeout(id);
     };
-  }, [projectId, worktreeId, query]);
+  }, [projectId, worktreeId, workspaceRoot, query]);
 
   const confirm = (hit: SearchHit) => {
     const token = `@${hit.relPath}`;
