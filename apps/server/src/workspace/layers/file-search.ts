@@ -67,14 +67,16 @@ export const FileSearchServiceLive = Layer.effect(
         const cap = limit && limit > 0 ? limit : DEFAULT_LIMIT;
 
         // Reroot at the worktree's path when one is supplied and it belongs
-        // to this project. Mismatched worktree → silent fallback to the
-        // project root; matches `FsTreeRpc`'s contract.
+        // to this project. Mismatched worktree → fail closed by returning
+        // an empty result set so a stale worktreeId from a freshly-switched
+        // session never surfaces files from the wrong project.
         let root = folder.path;
         if (worktreeId) {
           const wt = yield* worktrees.get(worktreeId);
-          if (wt !== null && wt.projectId === folderId) {
-            root = wt.path;
+          if (wt === null || wt.projectId !== folderId) {
+            return [] as ReadonlyArray<FileSearchHit>;
           }
+          root = wt.path;
         }
         const rootAbs = pathSvc.resolve(root);
 
