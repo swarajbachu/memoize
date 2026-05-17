@@ -12,7 +12,12 @@ import {
   Square,
   Upload,
 } from "lucide-react";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import {
   findModelDescriptor,
@@ -174,6 +179,7 @@ export function ChatComposer({ session }: { session: Session }) {
 
   const [hasText, setHasText] = useState(false);
   const [trigger, setTrigger] = useState<ActiveTrigger | null>(null);
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const editorHostRef = useRef<HTMLDivElement | null>(null);
   const editorViewRef = useRef<EditorView | null>(null);
@@ -493,7 +499,7 @@ export function ChatComposer({ session }: { session: Session }) {
 
   const submit = (): boolean => {
     // Don't submit while a popover is open — Enter belongs to the popover.
-    if (trigger !== null) return false;
+    if (trigger !== null || modelPickerOpen) return false;
 
     const view = editorViewRef.current;
     if (view === null) return false;
@@ -666,8 +672,11 @@ export function ChatComposer({ session }: { session: Session }) {
                 <ModelPicker
                   mode="session"
                   sessionId={sessionId}
+                  chatId={session.chatId}
+                  runtimeMode={session.runtimeMode}
                   providerId={session.providerId}
                   currentModel={session.model}
+                  onOpenChange={setModelPickerOpen}
                 />
                 <ReasoningPicker
                   sessionId={sessionId}
@@ -852,6 +861,8 @@ function PlanModeToggle({
     </Tooltip>
   );
 }
+
+
 
 
 /**
