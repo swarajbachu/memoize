@@ -2,23 +2,27 @@ import {
   GitBranch,
   GitMerge,
   GitPullRequestArrow,
+  Loader2,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
+  TriangleAlert,
   Upload,
+  Wrench,
 } from "lucide-react";
-import { useEffect } from "react";
+import { Effect } from "effect";
+import { useEffect, useState } from "react";
 
-import type { FolderId } from "@memoize/wire";
+import type { FolderId, WorktreeId } from "@memoize/wire";
 
+import { getRpcClient } from "../lib/rpc-client.ts";
 import { formatShortcut } from "../lib/shortcuts.ts";
 import {
-  softInteractive,
-  softTone,
-  solidInteractive,
-  type Tone,
-} from "../lib/tones.ts";
+  GlassActionButton,
+  GlassChip,
+  type GlassTone,
+} from "./glass-action.tsx";
 import { TooltipShortcut } from "./projects-sidebar.tsx";
 import { useActiveWorktreeId } from "../store/active-workspace.ts";
 import { useComposerBridge } from "../store/composer-bridge.ts";
@@ -205,8 +209,21 @@ type Workflow =
       url: string | null;
       isDraft: boolean;
       checks: "none" | "pending" | "success" | "failure";
+      mergeable: "clean" | "conflicting" | "unknown";
     };
 
+/**
+ * Priority is the user's next sensible action, in order of urgency:
+ *   1. dirty   — uncommitted files in the working tree
+ *   2. ahead   — local commits not yet pushed (regardless of PR state — if
+ *                there are unpushed commits, that's what the user should do
+ *                next, not stare at failing checks on stale code)
+ *   3. open-pr — a PR exists and the working tree + upstream are in sync
+ *   4. idle    — nothing to do
+ *
+ * Each kind carries only the fields its button needs, so the renderer
+ * doesn't have to re-narrow PR shape downstream.
+ */
 const deriveWorkflow = (
   status: { dirtyFiles: number; ahead: number } | null,
   pr: {
@@ -215,10 +232,12 @@ const deriveWorkflow = (
     url: string | null;
     isDraft?: boolean;
     checks?: "none" | "pending" | "success" | "failure";
+    mergeable?: "clean" | "conflicting" | "unknown";
   } | null,
 ): Workflow => {
   if (status === null) return { kind: "idle" };
   if (status.dirtyFiles > 0) return { kind: "dirty", count: status.dirtyFiles };
+  if (status.ahead > 0) return { kind: "ahead", count: status.ahead };
   if (pr && pr.state === "open") {
     return {
       kind: "open-pr",
@@ -226,10 +245,8 @@ const deriveWorkflow = (
       url: pr.url,
       isDraft: pr.isDraft === true,
       checks: pr.checks ?? "none",
+      mergeable: pr.mergeable ?? "unknown",
     };
-  }
-  if (status.ahead > 0 && (pr === null || pr.state === "none")) {
-    return { kind: "ahead", count: status.ahead };
   }
   return { kind: "idle" };
 };
@@ -276,49 +293,75 @@ export function TopBarRight({ folderId }: { folderId: FolderId | null }) {
     <header className={`${SECTION_CLASS} justify-between px-2`}>
       <div className={`flex min-w-0 flex-1 items-center gap-2 ${ACTION_CLASS}`}>
         {workflow.kind === "dirty" ? (
-          <Pill tone="amber">
+          <GlassChip tone="amber">
             {workflow.count} change{workflow.count === 1 ? "" : "s"}
-          </Pill>
+          </GlassChip>
         ) : null}
         {workflow.kind === "ahead" ? (
-          <Pill tone="sky">{workflow.count} ahead</Pill>
+          <GlassChip tone="pink">{workflow.count} ahead</GlassChip>
         ) : null}
         {workflow.kind === "open-pr" ? (
-          <Pill tone={prBadgeTone(workflow)}>#{workflow.number ?? "?"}</Pill>
+          <GlassChip tone={openPrChipTone(workflow)}>
+            #{workflow.number ?? "?"}
+          </GlassChip>
         ) : null}
       </div>
       <div className={`flex shrink-0 items-center gap-1 ${ACTION_CLASS}`}>
         {workflow.kind === "dirty" ? (
-          <ActionButton
+          <GlassActionButton
             tone="amber"
-            variant="solid"
-            icon={<Upload className="size-3.5" />}
+            icon={<Upload />}
             label="Commit & push"
             disabled={!composerReady}
             onClick={() => sendToComposer("commit and push the current changes")}
           />
         ) : null}
         {workflow.kind === "ahead" ? (
-          <ActionButton
-            tone="sky"
-            variant="solid"
-            icon={<GitPullRequestArrow className="size-3.5" />}
-            label="Create PR"
+          <GlassActionButton
+            tone="pink"
+            icon={<GitPullRequestArrow />}
+            label={pr && pr.state === "open" ? "Push commits" : "Create PR"}
             disabled={!composerReady}
-            onClick={() => sendToComposer("create a pull request for this branch")}
+            onClick={() =>
+              sendToComposer(
+                pr && pr.state === "open"
+                  ? "push the unpushed commits on this branch"
+                  : "create a pull request for this branch",
+              )
+            }
           />
         ) : null}
-        {workflow.kind === "open-pr" ? (
-          <ActionButton
-            tone="emerald"
-            variant="solid"
-            icon={<GitMerge className="size-3.5" />}
-            label={workflow.isDraft ? "Mark ready" : "Merge"}
-            disabled={
-              !composerReady ||
-              workflow.checks === "pending" ||
-              workflow.checks === "failure"
+        {workflow.kind === "open-pr" && workflow.mergeable === "conflicting" ? (
+          <GlassActionButton
+            tone="red"
+            icon={<TriangleAlert />}
+            label="Resolve conflicts"
+            disabled={!composerReady}
+            onClick={() =>
+              sendToComposer(
+                "this pull request has merge conflicts — help me resolve them",
+              )
             }
+          />
+        ) : null}
+        {workflow.kind === "open-pr" &&
+        workflow.mergeable !== "conflicting" &&
+        workflow.checks === "failure" &&
+        folderId !== null ? (
+          <FixActionsButton
+            folderId={folderId}
+            worktreeId={worktreeId}
+            disabled={!composerReady}
+          />
+        ) : null}
+        {workflow.kind === "open-pr" &&
+        workflow.mergeable !== "conflicting" &&
+        workflow.checks !== "failure" ? (
+          <GlassActionButton
+            tone={workflow.isDraft ? "zinc" : "green"}
+            icon={<GitMerge />}
+            label={workflow.isDraft ? "Mark ready" : "Merge"}
+            disabled={!composerReady || workflow.checks === "pending"}
             onClick={() =>
               sendToComposer(
                 workflow.isDraft
@@ -333,56 +376,75 @@ export function TopBarRight({ folderId }: { folderId: FolderId | null }) {
   );
 }
 
-function Pill({ tone, children }: { tone: Tone; children: React.ReactNode }) {
-  return (
-    <span
-      className={`flex shrink-0 items-center rounded-sm px-1.5 py-0.5 font-mono text-[10px] tracking-tight ${softTone(tone)}`}
-    >
-      {children}
-    </span>
-  );
-}
-
-type Variant = "solid" | "soft";
-
-function ActionButton({
-  tone,
-  variant,
-  icon,
-  label,
-  onClick,
-  disabled,
-  trailing,
-}: {
-  tone: Tone;
-  variant: Variant;
-  icon: React.ReactNode;
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-  trailing?: React.ReactNode;
-}) {
-  const palette =
-    variant === "solid" ? solidInteractive(tone) : softInteractive(tone);
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className={`flex items-center gap-1.5 rounded-sm px-2 py-1 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${palette}`}
-    >
-      {icon}
-      {label}
-      {trailing}
-    </button>
-  );
-}
-
-const prBadgeTone = (
+const openPrChipTone = (
   w: Extract<Workflow, { kind: "open-pr" }>,
-): Tone => {
+): GlassTone => {
+  if (w.mergeable === "conflicting") return "red";
   if (w.checks === "failure") return "red";
   if (w.checks === "pending") return "amber";
   if (w.isDraft) return "zinc";
-  return "emerald";
+  return "green";
 };
+
+/**
+ * Failing-checks CTA. On click, asks the server to drop a captured
+ * `.memoize/failing-checks-<ts>.txt` artifact, then attaches it to the
+ * composer as `@<relPath>` and primes the agent with a short instruction so
+ * the user just has to hit send.
+ *
+ * Stateful (loading spinner) because the server has to call `gh run view
+ * --log-failed` once per failing run; on a chunky pipeline this can take a
+ * couple seconds.
+ */
+function FixActionsButton({
+  folderId,
+  worktreeId,
+  disabled,
+}: {
+  folderId: FolderId;
+  worktreeId: WorktreeId | null;
+  disabled: boolean;
+}) {
+  const [loading, setLoading] = useState(false);
+  const attachFile = useComposerBridge((s) => s.attachFile);
+  const insertText = useComposerBridge((s) => s.insertText);
+  const focusComposer = useComposerBridge((s) => s.focus);
+  const setActiveMainTab = useUiStore((s) => s.setActiveMainTab);
+
+  const onClick = async () => {
+    if (loading) return;
+    setLoading(true);
+    try {
+      const client = await getRpcClient();
+      const artifact = await Effect.runPromise(
+        client.git.fixFailingChecks({ folderId, worktreeId }),
+      );
+      setActiveMainTab("chat");
+      attachFile?.({
+        relPath: artifact.relPath,
+        absPath: artifact.absPath,
+        kind: "file",
+      });
+      insertText?.(
+        `Please look at the failing CI checks captured in this log and fix them.`,
+      );
+      focusComposer?.();
+    } catch {
+      // Server already surfaces a GitCommandError; nothing useful to render
+      // in-place. The user can retry — leave the button enabled.
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <GlassActionButton
+      tone="red"
+      icon={loading ? <Loader2 className="animate-spin" /> : <Wrench />}
+      label={loading ? "Capturing…" : "Fix actions"}
+      disabled={disabled || loading}
+      onClick={onClick}
+    />
+  );
+}
+

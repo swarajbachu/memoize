@@ -486,6 +486,8 @@ function PrStatePill({ pr }: { pr: GitPrInfo }) {
   if (pr.isDraft) return <Pill tone="zinc">Draft</Pill>;
   if (pr.state === "merged") return <Pill tone="violet">Merged</Pill>;
   if (pr.state === "closed") return <Pill tone="rose">Closed</Pill>;
+  if (pr.mergeable === "conflicting")
+    return <Pill tone="red">Open · conflicts</Pill>;
   if (pr.checks === "failure")
     return <Pill tone="red">Open · checks failed</Pill>;
   if (pr.checks === "pending")

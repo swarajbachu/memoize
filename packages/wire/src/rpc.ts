@@ -14,6 +14,7 @@ import { FsReadFileRpc, FsTreeRpc, FsWriteFileRpc } from "./fs.ts";
 import {
   GitChangesRpc,
   GitCommitRpc,
+  GitFixFailingChecksRpc,
   GitHeadChangedRpc,
   GitLogRpc,
   GitOriginRpc,
@@ -128,6 +129,7 @@ export const MemoizeRpcs = RpcGroup.make(
   GitChangesRpc,
   GitCommitRpc,
   GitPushRpc,
+  GitFixFailingChecksRpc,
   FsTreeRpc,
   FsReadFileRpc,
   FsWriteFileRpc,

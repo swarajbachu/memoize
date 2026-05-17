@@ -18,6 +18,7 @@ export type SettingsSection =
   | { readonly kind: "providers" }
   | { readonly kind: "workspace" }
   | { readonly kind: "shortcuts" }
+  | { readonly kind: "developer" }
   | { readonly kind: "repository"; readonly projectId: FolderId };
 
 /**
