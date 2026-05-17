@@ -32,8 +32,8 @@ import { CodeBlock } from "./code-block.tsx";
 import { FileBadge } from "./file-badge.tsx";
 import { MarkdownBody } from "./markdown-body.tsx";
 import {
-  DiffBody,
   diffStats,
+  EditDiff,
   extractEdits,
   type FileEdit,
 } from "./inline-diff.tsx";
@@ -341,7 +341,7 @@ function ExpandableIconRow({
         ) : null}
       </button>
       {expanded && hasContent ? (
-        <div className="ml-7 mt-1 max-w-2xl space-y-2 overflow-hidden border-l border-border/60 pl-3 pr-1">
+        <div className="ml-6 mt-1 max-w-2xl space-y-2 overflow-hidden border-l border-border/60 pl-2 pr-1">
           {body}
         </div>
       ) : null}
@@ -486,9 +486,9 @@ const buildToolView = (
           ) : undefined,
         fallbackBody:
           edits.length > 0 ? (
-            <div className="overflow-hidden rounded border border-border/60">
+            <div className="space-y-px">
               {edits.map((edit, i) => (
-                <DiffBody
+                <EditDiff
                   key={i}
                   edit={edit as FileEdit}
                   showHeader={edits.length > 1}

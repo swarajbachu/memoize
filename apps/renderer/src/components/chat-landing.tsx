@@ -22,6 +22,7 @@ import {
 import { useChatsStore } from "~/store/chats";
 import { useSettingsStore } from "~/store/settings";
 import { useWorkspaceStore } from "~/store/workspace";
+import { ModelPicker } from "./model-picker.tsx";
 
 const SUGGESTIONS: ReadonlyArray<{ label: string }> = [
   { label: "Land targeted provider compatibility rules before the next harness drift" },
@@ -170,6 +171,7 @@ export function ChatLanding() {
               onPick={onPick}
               onAdd={onAdd}
             />
+            <ModelPicker mode="default" />
           </FrameFooter>
         </Frame>
 

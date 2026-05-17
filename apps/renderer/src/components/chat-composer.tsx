@@ -15,9 +15,7 @@ import {
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import {
-  MODELS_BY_PROVIDER,
   findModelDescriptor,
-  type AgentAvailability,
   type Message,
   type PermissionMode,
   type PermissionRequest,
@@ -27,6 +25,7 @@ import {
   type Session,
   type SessionId,
 } from "@memoize/wire";
+import { ModelPicker } from "./model-picker.tsx";
 
 import { Card, CardPanel } from "~/components/ui/card";
 import { Frame, FrameFooter } from "~/components/ui/frame";
@@ -665,6 +664,7 @@ export function ChatComposer({ session }: { session: Session }) {
                   </TooltipPopup>
                 </Tooltip>
                 <ModelPicker
+                  mode="session"
                   sessionId={sessionId}
                   providerId={session.providerId}
                   currentModel={session.model}
@@ -853,152 +853,6 @@ function PlanModeToggle({
   );
 }
 
-const PROVIDER_LABEL: Record<ProviderId, string> = {
-  claude: "Claude Code",
-  codex: "Codex",
-  grok: "Grok",
-  cursor: "Cursor",
-  gemini: "Gemini",
-  opencode: "OpenCode",
-};
-
-function ModelPicker({
-  sessionId,
-  providerId,
-  currentModel,
-}: {
-  sessionId: SessionId;
-  providerId: ProviderId;
-  currentModel: string;
-}) {
-  const setModel = useSessionsStore((s) => s.setModel);
-  const setProvider = useSessionsStore((s) => s.setProvider);
-  const providerEnabled = useSettingsStore((s) => s.providerEnabled);
-  const availability = useProvidersStore((s) => s.availability);
-  const opencodeInventory = useOpencodeInventory((s) => s.inventory);
-  const ensureOpencodeInventory = useOpencodeInventory(
-    (s) => s.ensureLoaded,
-  );
-  const userMessageCount = useMessagesStore((s) => {
-    const list = s.messagesBySession[sessionId] ?? [];
-    let count = 0;
-    for (const m of list) {
-      if (m.role === "user") count += 1;
-    }
-    return count;
-  });
-  const isFresh = userMessageCount === 0;
-  // Lazy-load the opencode inventory the first time the picker is mounted
-  // for any session. Cached for the lifetime of the renderer process.
-  useEffect(() => {
-    void ensureOpencodeInventory();
-  }, [ensureOpencodeInventory]);
-  // For opencode: prefer the live `provider.list()` + `model.variants`
-  // snapshot from `agent.opencodeInventory` over the static seed. Other
-  // providers always use the static `MODELS_BY_PROVIDER` table.
-  const modelsForProvider = (pid: ProviderId) => {
-    if (pid !== "opencode" || opencodeInventory === null) {
-      return MODELS_BY_PROVIDER[pid] ?? [];
-    }
-    return opencodeInventory.providers.flatMap((p) =>
-      p.models.map((m) => ({ id: m.id, label: m.label })),
-    );
-  };
-  const models = modelsForProvider(providerId);
-
-  // A provider is pickable when: user hasn't toggled it off in Settings AND
-  // the server-side health probe didn't return `error` (e.g. CLI missing).
-  // The current session's provider is always included so the user can see
-  // their selection even if its toggle just got flipped — switching away
-  // is the cure.
-  const availabilityById = useMemo(() => {
-    const m = new globalThis.Map<ProviderId, AgentAvailability>();
-    for (const a of availability) m.set(a.providerId, a);
-    return m;
-  }, [availability]);
-  const pickableProviders = useMemo(() => {
-    return (Object.keys(MODELS_BY_PROVIDER) as ReadonlyArray<ProviderId>).filter(
-      (pid) => {
-        if (pid === providerId) return true;
-        // Cursor still has an unconditional subscription gate (we haven't
-        // wired plan detection from its auth store yet). Grok is no longer
-        // auto-excluded here because a successful `~/.grok/auth.json` login
-        // (with email + tier) now produces a clean authenticated state and
-        // the toggle is allowed.
-        if (pid === "cursor") return false;
-        if (providerEnabled[pid] === false) return false;
-        const a = availabilityById.get(pid);
-        if (a !== undefined && a.status === "error") return false;
-        return true;
-      },
-    );
-  }, [providerId, providerEnabled, availabilityById]);
-  const current = models.find((m) => m.id === currentModel);
-  const label = current?.label ?? currentModel;
-
-  return (
-    <Menu>
-      <MenuTrigger
-        className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-foreground hover:bg-muted/60 data-[popup-open]:bg-muted/60"
-        aria-label="Change model"
-        title="Change model — applies to next message"
-      >
-        <ProviderIcon providerId={providerId} className="size-3" />
-        <span>{label}</span>
-        <ChevronDown className="size-3 opacity-60" />
-      </MenuTrigger>
-      <MenuPopup side="top" align="start" className="w-72">
-        {pickableProviders.map(
-          (pid, i) => (
-            <Fragment key={pid}>
-              {i > 0 && <MenuSeparator />}
-              <MenuGroup>
-                <MenuGroupLabel>{PROVIDER_LABEL[pid]}</MenuGroupLabel>
-                {modelsForProvider(pid).map((m) => {
-                  const active = pid === providerId && m.id === currentModel;
-                  const crossProvider = pid !== providerId;
-                  // Cross-provider switches only land on a fresh session —
-                  // the new CLI can't read the prior CLI's transcript, so
-                  // mid-chat callers see disabled rows with a tooltip.
-                  const disabled = crossProvider && !isFresh;
-                  return (
-                    <MenuItem
-                      key={m.id}
-                      onClick={() => {
-                        if (disabled) return;
-                        if (crossProvider) {
-                          void setProvider(sessionId, pid, m.id);
-                          return;
-                        }
-                        if (m.id !== currentModel)
-                          void setModel(sessionId, m.id);
-                      }}
-                      disabled={disabled}
-                      title={
-                        disabled
-                          ? "Start a new chat to switch provider"
-                          : undefined
-                      }
-                      className={
-                        active
-                          ? "bg-accent/60 text-accent-foreground data-highlighted:bg-accent"
-                          : undefined
-                      }
-                    >
-                      <ProviderIcon providerId={pid} className="size-3.5" />
-                      <span className="flex-1 truncate">{m.label}</span>
-                      {active && <Check className="size-3.5 opacity-90" />}
-                    </MenuItem>
-                  );
-                })}
-              </MenuGroup>
-            </Fragment>
-          ),
-        )}
-      </MenuPopup>
-    </Menu>
-  );
-}
 
 /**
  * Reasoning / variant selector. For non-opencode providers this reads

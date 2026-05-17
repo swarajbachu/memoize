@@ -722,14 +722,14 @@ body,
   }
   .code-block-shiki .line {
     display: block;
-    padding: 0 12px;
+    padding: 0 8px;
   }
   .code-block-shiki .line::before {
     counter-increment: line;
     content: counter(line);
     display: inline-block;
-    width: 2.5em;
-    margin-right: 1em;
+    width: 2em;
+    margin-right: 0.6em;
     text-align: right;
     color: rgba(255, 255, 255, 0.25);
     user-select: none;
