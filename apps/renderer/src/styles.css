@@ -295,12 +295,22 @@ body,
   --popover: oklch(0.255 0.006 260);
   --popover-foreground: var(--foreground);
 
-  /* Soft lime accent. Lower L/C than a pure-neon lime so it reads as an
-     accent, not a glare. Reused via --lime across primary/ring/sidebar/
-     glow utilities — change it here and everything follows. */
-  --lime: oklch(0.88 0.15 118);
+  /* Bright lime accent. Reused via --lime across primary/ring/sidebar/
+     glow utilities — change it here and everything follows. Hue/chroma
+     intentionally a touch off the obvious neon pin so it reads as ours. */
+  --lime: oklch(0.94 0.2 122);
   --primary: var(--lime);
-  --primary-foreground: oklch(0.18 0.02 118);
+  --primary-foreground: oklch(0.18 0.02 122);
+
+  /* Accent palette for stateful surfaces (PR card, status pills). Inspired
+     by but softer than the obvious rgb(245,68,181)/rgb(42,189,101)/
+     rgb(17,179,231) trio — oklch lets us keep them perceptually balanced. */
+  --accent-pink: oklch(0.7 0.2 0);
+  --accent-green: oklch(0.74 0.16 150);
+  --accent-blue: oklch(0.74 0.13 230);
+  --accent-amber: oklch(0.82 0.16 80);
+  --accent-red: oklch(0.66 0.22 25);
+  --accent-zinc: oklch(0.74 0.01 260);
 
   --secondary: oklch(0.305 0.006 260);
   --secondary-foreground: var(--foreground);
@@ -336,7 +346,7 @@ body,
   --sidebar-foreground: oklch(0.955 0.004 260);
 
   --sidebar-primary: var(--lime);
-  --sidebar-primary-foreground: oklch(0.18 0.02 118);
+  --sidebar-primary-foreground: oklch(0.18 0.02 122);
 
   --sidebar-accent: oklch(0.285 0.006 260);
   --sidebar-accent-foreground: var(--foreground);
@@ -645,6 +655,43 @@ body,
       0 1px 0 oklch(1 0 0 / 0.035) inset,
       0 -1px 0 oklch(0 0 0 / 0.25) inset,
       var(--tw-shadow, 0 0 #0000);
+  }
+
+  /* Tinted glass surfaces (PR card states, status buttons). Reads --tone
+     from a per-instance CSS var, e.g.
+       <div class="glass-tone" style={{ "--tone": "var(--accent-blue)" }}>
+     The bg + inset highlight + text color all derive from one var so we
+     never duplicate per-tone classes. */
+  .glass-tone {
+    background-color: color-mix(in oklch, var(--tone) 14%, transparent);
+    color: color-mix(in oklch, var(--tone) 88%, white);
+    box-shadow:
+      0 2px 1.5px -0.5px rgba(0, 0, 0, 0.04),
+      inset 0 1px 0 0 color-mix(in oklch, var(--tone) 24%, transparent),
+      inset 0 2px 3px 0 color-mix(in oklch, var(--tone) 14%, transparent);
+    backdrop-filter: blur(12px);
+  }
+  .glass-tone:hover:not(:disabled) {
+    background-color: color-mix(in oklch, var(--tone) 20%, transparent);
+  }
+  .glass-tone:active:not(:disabled) {
+    background-color: color-mix(in oklch, var(--tone) 26%, transparent);
+  }
+
+  /* Untinted glass — same shape, neutral palette. Used for secondary actions. */
+  .glass-neutral {
+    background-color: var(--color-neutral-primary-reverted-5);
+    color: var(--foreground);
+    box-shadow:
+      0 2px 1.5px -0.5px rgba(0, 0, 0, 0.03),
+      inset 0 2px 3px 0 rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(12px);
+  }
+  .glass-neutral:hover:not(:disabled) {
+    background-color: var(--color-neutral-primary-reverted-20);
+  }
+  .glass-neutral:active:not(:disabled) {
+    background-color: rgba(255, 255, 255, 0.16);
   }
 }
 

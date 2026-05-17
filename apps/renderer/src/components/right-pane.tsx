@@ -152,7 +152,12 @@ function renderChangesBadge(dirtyFiles: number): React.ReactNode {
 }
 
 function renderPrBadge(
-  pr: { state: string; isDraft: boolean; checks: string } | null,
+  pr: {
+    state: string;
+    isDraft: boolean;
+    checks: string;
+    mergeable: string;
+  } | null,
   details:
     | {
         comments: ReadonlyArray<unknown>;
@@ -163,6 +168,13 @@ function renderPrBadge(
 ): React.ReactNode {
   if (pr === null || pr.state === "none") return null;
   if (pr.state === "open" && !pr.isDraft) {
+    if (pr.mergeable === "conflicting") {
+      return (
+        <span className="flex items-center text-rose-300" title="Merge conflicts">
+          <span className="size-2 rounded-full bg-rose-400" />
+        </span>
+      );
+    }
     if (pr.checks === "failure") {
       const failing =
         details === null

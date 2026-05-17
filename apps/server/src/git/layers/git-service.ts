@@ -1,4 +1,4 @@
-import { Command, CommandExecutor } from "@effect/platform";
+import { Command, CommandExecutor, FileSystem, Path } from "@effect/platform";
 import {
   Duration,
   Effect,
@@ -14,6 +14,7 @@ import {
   GitChange,
   GitCommandError,
   GitCommit,
+  GitFailingChecksArtifact,
   GitFolderNotFoundError,
   GitNotARepoError,
   GitNotInstalledError,
@@ -302,6 +303,8 @@ export const GitServiceLive = Layer.effect(
     const workspace = yield* WorkspaceService;
     const worktrees = yield* WorktreeService;
     const executor = yield* CommandExecutor.CommandExecutor;
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
 
     const resolvePath = (
       folderId: FolderId,
@@ -487,6 +490,7 @@ export const GitServiceLive = Layer.effect(
             url: null,
             isDraft: false,
             checks: "none",
+            mergeable: "unknown",
           });
 
           // `gh pr view --json` returns the PR for the current branch. Exits
@@ -496,7 +500,7 @@ export const GitServiceLive = Layer.effect(
             "pr",
             "view",
             "--json",
-            "state,additions,deletions,number,url,headRefName,baseRefName,isDraft,statusCheckRollup",
+            "state,additions,deletions,number,url,headRefName,baseRefName,isDraft,statusCheckRollup,mergeable",
           ]).pipe(
             Effect.catchTags({
               GitNotInstalledError: () => Effect.succeed(""),
@@ -515,6 +519,7 @@ export const GitServiceLive = Layer.effect(
             headRefName?: string;
             baseRefName?: string;
             isDraft?: boolean;
+            mergeable?: string;
             statusCheckRollup?: ReadonlyArray<{
               status?: string;
               state?: string;
@@ -557,6 +562,7 @@ export const GitServiceLive = Layer.effect(
             url: parsed.url ?? null,
             isDraft: parsed.isDraft === true,
             checks,
+            mergeable: mapMergeable(parsed.mergeable),
           });
         }),
       );
@@ -577,6 +583,18 @@ export const GitServiceLive = Layer.effect(
           return "pending";
         default:
           return "commented";
+      }
+    };
+
+    const mapMergeable = (raw: string | undefined): GitPrInfo["mergeable"] => {
+      switch ((raw ?? "").toUpperCase()) {
+        case "MERGEABLE":
+        case "CLEAN":
+          return "clean";
+        case "CONFLICTING":
+          return "conflicting";
+        default:
+          return "unknown";
       }
     };
 
@@ -623,6 +641,7 @@ export const GitServiceLive = Layer.effect(
       url: null,
       isDraft: false,
       checks: "none",
+      mergeable: "unknown",
       additions: 0,
       deletions: 0,
       title: "",
@@ -643,7 +662,7 @@ export const GitServiceLive = Layer.effect(
             "pr",
             "view",
             "--json",
-            "state,additions,deletions,number,url,headRefName,baseRefName,isDraft,statusCheckRollup,title,body,author,comments,reviews,files",
+            "state,additions,deletions,number,url,headRefName,baseRefName,isDraft,statusCheckRollup,title,body,author,comments,reviews,files,mergeable",
           ]).pipe(
             Effect.catchTags({
               GitNotInstalledError: () => Effect.succeed(""),
@@ -662,6 +681,7 @@ export const GitServiceLive = Layer.effect(
             headRefName?: string;
             baseRefName?: string;
             isDraft?: boolean;
+            mergeable?: string;
             title?: string;
             body?: string;
             author?: { login?: string };
@@ -764,6 +784,7 @@ export const GitServiceLive = Layer.effect(
             url: parsed.url ?? null,
             isDraft: parsed.isDraft === true,
             checks,
+            mergeable: mapMergeable(parsed.mergeable),
             additions:
               typeof parsed.additions === "number" ? parsed.additions : 0,
             deletions:
@@ -841,6 +862,144 @@ export const GitServiceLive = Layer.effect(
         }),
       );
 
+    /**
+     * Capture logs from every failing GitHub Actions run on the current PR
+     * and drop them in `<worktree>/.memoize/failing-checks-<ts>.txt` so the
+     * renderer can attach the file to the composer (`@.memoize/...txt`) and
+     * ask the agent to fix it.
+     *
+     * Failing runs are detected via `gh pr view --json statusCheckRollup`;
+     * the run ID is parsed from each entry's `detailsUrl` (the
+     * `/actions/runs/<id>/...` segment). For each unique run we shell to
+     * `gh run view <id> --log-failed`, concatenate with a header, and write
+     * a single artifact. `.memoize/` is already excluded from git via the
+     * worktree layer + repo .gitignore, so the file won't pollute status.
+     */
+    const fixFailingChecks: GitService["Type"]["fixFailingChecks"] = (
+      folderId,
+      worktreeId,
+    ) =>
+      Effect.flatMap(resolvePathForWorktree(folderId, worktreeId), (cwd) =>
+        Effect.gen(function* () {
+          const stdout = yield* ghRun(folderId, cwd, [
+            "pr",
+            "view",
+            "--json",
+            "statusCheckRollup",
+          ]);
+
+          type RollupEntry = {
+            name?: string;
+            status?: string;
+            state?: string;
+            conclusion?: string;
+            detailsUrl?: string;
+            targetUrl?: string;
+          };
+          let rollup: ReadonlyArray<RollupEntry> = [];
+          try {
+            const parsed = JSON.parse(stdout) as {
+              statusCheckRollup?: ReadonlyArray<RollupEntry>;
+            };
+            rollup = parsed.statusCheckRollup ?? [];
+          } catch {
+            // fall through with empty rollup
+          }
+
+          const failing = rollup.filter((c) => {
+            const conclusion = (c.conclusion ?? c.state ?? "").toUpperCase();
+            return (
+              conclusion === "FAILURE" ||
+              conclusion === "CANCELLED" ||
+              conclusion === "TIMED_OUT" ||
+              conclusion === "ACTION_REQUIRED"
+            );
+          });
+
+          // Map each failing check to its workflow-run ID. gh emits two URL
+          // shapes: actions runs (`/actions/runs/<id>/job/<jobId>`) and
+          // external check URLs (no run id). Skip the latter — we can't
+          // pull logs for them.
+          const runIds = new Set<string>();
+          const failingNames: Array<string> = [];
+          for (const c of failing) {
+            failingNames.push(c.name ?? "(unnamed)");
+            const url = c.detailsUrl ?? c.targetUrl ?? "";
+            const m = /\/actions\/runs\/(\d+)/.exec(url);
+            if (m !== null && m[1] !== undefined) runIds.add(m[1]);
+          }
+
+          const sections: Array<string> = [];
+          for (const id of runIds) {
+            const log = yield* ghRun(folderId, cwd, [
+              "run",
+              "view",
+              id,
+              "--log-failed",
+            ]).pipe(
+              Effect.catchTag("GitCommandError", () =>
+                Effect.succeed(`(failed to fetch logs for run ${id})\n`),
+              ),
+            );
+            sections.push(`==== run ${id} ====\n${log.trim()}\n`);
+          }
+
+          const header =
+            failingNames.length === 0
+              ? "No failing checks found.\n"
+              : `Failing checks (${failingNames.length}):\n` +
+                failingNames.map((n) => `  - ${n}`).join("\n") +
+                "\n";
+          const body =
+            sections.length > 0
+              ? sections.join("\n")
+              : "(no actions run logs available — checks may be external or pending)\n";
+
+          const dir = path.join(cwd, ".memoize");
+          yield* fs
+            .makeDirectory(dir, { recursive: true })
+            .pipe(
+              Effect.catchAll((err) =>
+                Effect.fail(
+                  new GitCommandError({
+                    folderId,
+                    reason: `failed to create .memoize/: ${String(err)}`,
+                  }),
+                ),
+              ),
+            );
+
+          // Filesystem-safe ISO-ish timestamp (drop sub-second precision +
+          // colons that break some shells).
+          const ts = new Date()
+            .toISOString()
+            .replace(/[:.]/g, "-")
+            .replace(/-\d{3}Z$/, "Z");
+          const fileName = `failing-checks-${ts}.txt`;
+          const absPath = path.join(dir, fileName);
+          const relPath = `.memoize/${fileName}`;
+
+          yield* fs
+            .writeFileString(absPath, `${header}\n${body}`)
+            .pipe(
+              Effect.catchAll((err) =>
+                Effect.fail(
+                  new GitCommandError({
+                    folderId,
+                    reason: `failed to write ${relPath}: ${String(err)}`,
+                  }),
+                ),
+              ),
+            );
+
+          return GitFailingChecksArtifact.make({
+            relPath,
+            absPath,
+            failingCount: failingNames.length,
+          });
+        }),
+      );
+
     // Per-subscription stream: a forked fiber polls HEAD every 2s and pushes
     // into a Mailbox only when the SHA changes. The fiber is scoped to the
     // stream's lifetime, so interrupting the renderer's subscription stops
@@ -887,6 +1046,7 @@ export const GitServiceLive = Layer.effect(
       changes,
       commit,
       push,
+      fixFailingChecks,
     } as const;
   }),
 );

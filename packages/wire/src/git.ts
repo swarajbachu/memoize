@@ -112,6 +112,15 @@ export const GitPrChecks = Schema.Literal(
 );
 export type GitPrChecks = typeof GitPrChecks.Type;
 
+/**
+ * Merge-conflict state from `gh pr view --json mergeable`.
+ *   clean       — GitHub says the PR is mergeable.
+ *   conflicting — at least one path in the branch conflicts with the base.
+ *   unknown     — GitHub hasn't computed it yet, no PR exists, or `gh` couldn't read it.
+ */
+export const GitPrMergeable = Schema.Literal("clean", "conflicting", "unknown");
+export type GitPrMergeable = typeof GitPrMergeable.Type;
+
 export class GitPrInfo extends Schema.Class<GitPrInfo>("GitPrInfo")({
   state: GitPrState,
   branch: Schema.NullOr(Schema.String),
@@ -122,6 +131,7 @@ export class GitPrInfo extends Schema.Class<GitPrInfo>("GitPrInfo")({
   url: Schema.NullOr(Schema.String),
   isDraft: Schema.Boolean,
   checks: GitPrChecks,
+  mergeable: GitPrMergeable,
 }) {}
 
 export const GitPrStateRpc = Rpc.make("git.prState", {
@@ -203,6 +213,7 @@ export class GitPrDetails extends Schema.Class<GitPrDetails>("GitPrDetails")({
   url: Schema.NullOr(Schema.String),
   isDraft: Schema.Boolean,
   checks: GitPrChecks,
+  mergeable: GitPrMergeable,
   additions: Schema.Number,
   deletions: Schema.Number,
   title: Schema.String,
@@ -222,6 +233,30 @@ export const GitPrDetailsRpc = Rpc.make("git.prDetails", {
     worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
   }),
   success: GitPrDetails,
+  error: GitErrors,
+});
+
+/**
+ * Captured CI failure artifact. The server pulled logs for every failing
+ * check via `gh run view --log-failed`, concatenated them with run-name
+ * dividers, and wrote them to `.memoize/failing-checks-<ts>.txt` inside the
+ * worktree. The renderer attaches `relPath` to the composer so the agent can
+ * read it as `@<relPath>`.
+ */
+export class GitFailingChecksArtifact extends Schema.Class<GitFailingChecksArtifact>(
+  "GitFailingChecksArtifact",
+)({
+  relPath: Schema.String,
+  absPath: Schema.String,
+  failingCount: Schema.Number,
+}) {}
+
+export const GitFixFailingChecksRpc = Rpc.make("git.fixFailingChecks", {
+  payload: Schema.Struct({
+    folderId: FolderId,
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
+  }),
+  success: GitFailingChecksArtifact,
   error: GitErrors,
 });
 

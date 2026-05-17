@@ -2,6 +2,7 @@ import {
   ArrowLeft,
   Box,
   Check,
+  FlaskConical,
   FolderClosed,
   GitBranch,
   Keyboard,
@@ -32,6 +33,7 @@ import { useWorkspaceStore } from "../store/workspace.ts";
 import { ProviderCard } from "./provider-card.tsx";
 import { ProviderIcon } from "./provider-icons.tsx";
 import { MODES_ORDER, MODE_META } from "./runtime-mode-meta.ts";
+import { DeveloperPane } from "./settings/developer-pane.tsx";
 import { KeybindingsPane } from "./settings/keybindings-editor.tsx";
 import { RepositorySettings } from "./settings-repository.tsx";
 import { Button } from "./ui/button.tsx";
@@ -86,7 +88,19 @@ const TOP_RAIL: ReadonlyArray<RailItemBase> = [
     Icon: Keyboard,
     section: { kind: "shortcuts" },
   },
+  // Dev-only visual playground (accent swatches + workflow chip/button
+  // showcase). Filtered out of production bundles below.
+  {
+    id: "developer",
+    label: "Developer",
+    Icon: FlaskConical,
+    section: { kind: "developer" },
+  },
 ];
+
+const VISIBLE_RAIL: ReadonlyArray<RailItemBase> = import.meta.env.DEV
+  ? TOP_RAIL
+  : TOP_RAIL.filter((i) => i.id !== "developer");
 
 /**
  * Two-pane settings surface. The left rail navigates between global
@@ -147,7 +161,7 @@ function Rail({
   return (
     <nav className="flex w-56 shrink-0 flex-col gap-6 border-r border-border/40 bg-sidebar/40 px-3 py-6 text-sm text-sidebar-foreground">
       <div className="flex flex-col gap-0.5">
-        {TOP_RAIL.map((item) => {
+        {VISIBLE_RAIL.map((item) => {
           const active =
             section.kind !== "repository" && section.kind === item.section.kind;
           return (
@@ -263,6 +277,12 @@ function SectionTitle({
         subtitle: "These also appear under the menu bar.",
       };
     }
+    if (section.kind === "developer") {
+      return {
+        title: "Developer",
+        subtitle: "Accent palette + workflow chip/button states (dev builds only).",
+      };
+    }
     const f = folders.find((x) => x.id === section.projectId);
     return {
       title: f?.name ?? "Repository",
@@ -294,6 +314,7 @@ function Pane({ section }: { section: SettingsSection }) {
   if (section.kind === "providers") return <ProvidersPane />;
   if (section.kind === "workspace") return <WorkspacePane />;
   if (section.kind === "shortcuts") return <KeybindingsPane />;
+  if (section.kind === "developer") return <DeveloperPane />;
   return <RepositorySettings projectId={section.projectId} />;
 }
 

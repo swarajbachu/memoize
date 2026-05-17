@@ -63,6 +63,14 @@ const Push = MemoizeRpcs.toLayerHandler(
     Effect.flatMap(GitService, (svc) => svc.push(folderId, worktreeId ?? null)),
 );
 
+const FixFailingChecks = MemoizeRpcs.toLayerHandler(
+  "git.fixFailingChecks",
+  ({ folderId, worktreeId }) =>
+    Effect.flatMap(GitService, (svc) =>
+      svc.fixFailingChecks(folderId, worktreeId ?? null),
+    ),
+);
+
 export const GitHandlersLayer = Layer.mergeAll(
   Log,
   Status,
@@ -73,4 +81,5 @@ export const GitHandlersLayer = Layer.mergeAll(
   Changes,
   Commit,
   Push,
+  FixFailingChecks,
 );

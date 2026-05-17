@@ -5,6 +5,7 @@ import {
   type GitChange,
   type GitCommandError,
   type GitCommit,
+  type GitFailingChecksArtifact,
   type GitFolderNotFoundError,
   type GitNotARepoError,
   type GitNotInstalledError,
@@ -57,6 +58,10 @@ export interface GitServiceShape {
     folderId: FolderId,
     worktreeId?: WorktreeId | null,
   ) => Effect.Effect<{ readonly output: string }, GitFailure>;
+  readonly fixFailingChecks: (
+    folderId: FolderId,
+    worktreeId?: WorktreeId | null,
+  ) => Effect.Effect<GitFailingChecksArtifact, GitFailure>;
 }
 
 export class GitService extends Context.Tag("memoize/GitService")<
