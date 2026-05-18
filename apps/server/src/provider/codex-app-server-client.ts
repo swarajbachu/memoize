@@ -88,6 +88,16 @@ export class CodexAppServerClient {
       const text = String(chunk).trim();
       if (text.length > 0) console.warn(`[codex-app-server] ${text}`);
     });
+    // Without this listener, a spawn-time failure (ENOENT when codex isn't on
+    // PATH, EACCES on a non-executable file) becomes an uncaught exception
+    // that crashes the whole process. Surface it as a rejection of every
+    // pending request — including the `initialize` we're about to await —
+    // so callers see a normal Effect failure they already know how to catch.
+    child.once("error", (err) => {
+      bootstrap.closed = true;
+      for (const p of bootstrap.pending.values()) p.reject(err as Error);
+      bootstrap.pending.clear();
+    });
     child.once("exit", (code, signal) => {
       bootstrap.closed = true;
       const reason = new Error(

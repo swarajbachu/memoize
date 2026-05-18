@@ -173,7 +173,6 @@ export function ModelPicker(props: ModelPickerProps) {
     return (Object.keys(MODELS_BY_PROVIDER) as ReadonlyArray<ProviderId>).filter(
       (pid) => {
         if (pid === providerId) return true;
-        if (pid === "cursor") return false;
         if (providerEnabled[pid] === false) return false;
         const a = availabilityById.get(pid);
         return a?.status !== "error";

@@ -1143,6 +1143,10 @@ interface InventoryProviderModel {
   // protocol does carry it on each model — `Object.keys` of this map gives
   // the variant names (e.g. `["high", "medium", "low"]`).
   readonly variants?: Record<string, unknown>;
+  readonly status?: "alpha" | "beta" | "deprecated" | "active";
+  readonly capabilities?: {
+    readonly toolcall?: boolean;
+  };
 }
 
 interface InventoryProvider {
@@ -1150,6 +1154,17 @@ interface InventoryProvider {
   readonly name: string;
   readonly models: { readonly [key: string]: InventoryProviderModel };
 }
+
+// OpenCode reports every model its provider definitions know about — alpha,
+// beta, deprecated, audio-only, etc. For agentic chat we need active models
+// that support tool calls; everything else just clutters the picker (and
+// would fail mid-session). Mirrors what the SDK type declares on `Model`
+// (status + capabilities.toolcall).
+const isUsableInventoryModel = (m: InventoryProviderModel): boolean => {
+  if (m.status !== undefined && m.status !== "active") return false;
+  if (m.capabilities?.toolcall === false) return false;
+  return true;
+};
 
 const collectInventoryProviders = (
   all: ReadonlyArray<InventoryProvider>,
@@ -1162,6 +1177,7 @@ const collectInventoryProviders = (
       id: p.id,
       name: p.name,
       models: Object.values(p.models)
+        .filter(isUsableInventoryModel)
         .map((m) => ({
           id: `${p.id}/${m.id}`,
           label: m.name,
@@ -1169,6 +1185,7 @@ const collectInventoryProviders = (
         }))
         .sort((a, b) => a.label.localeCompare(b.label)),
     }))
+    .filter((p) => p.models.length > 0)
     .sort((a, b) => a.name.localeCompare(b.name));
 };
 
