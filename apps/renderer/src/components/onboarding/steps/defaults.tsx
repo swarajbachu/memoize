@@ -29,7 +29,6 @@ export function DefaultsStep() {
   return (
     <div className="flex flex-col gap-7">
       <StepHeader
-        kicker="Step 3"
         title="A few quick defaults"
         subtitle="Tweak any of these later in Settings. Per-chat overrides always win."
       />

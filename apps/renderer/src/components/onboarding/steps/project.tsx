@@ -25,7 +25,6 @@ export function ProjectStep() {
   return (
     <div className="flex flex-col gap-7">
       <StepHeader
-        kicker="Step 2"
         title="Add your first project"
         subtitle="Any folder on your machine — we'll list it in the sidebar, no copies made."
       />

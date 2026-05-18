@@ -54,15 +54,6 @@ const INSTALL_HINT: Record<ProviderId, string> = {
   opencode: "curl -fsSL https://opencode.ai/install | bash",
 };
 
-const PROVIDER_TAGLINE: Record<ProviderId, string> = {
-  claude: "Anthropic · Opus, Sonnet, Haiku",
-  codex: "OpenAI · GPT-5 family",
-  grok: "xAI · Grok",
-  cursor: "Cursor · GPT, Sonnet, Opus",
-  gemini: "Google · Gemini 3 Pro",
-  opencode: "Any model · Local agents",
-};
-
 type ProviderState =
   | { readonly kind: "loading" }
   | { readonly kind: "missing" } // CLI not installed
@@ -128,12 +119,16 @@ export function ProviderStep() {
     "opencode",
   ];
 
+  const selectedState = deriveState(defaultProviderId, availability, loading);
+
   return (
-    <div className="flex flex-col gap-7">
+    <div className="flex flex-col gap-4">
       <StepHeader
-        kicker="Step 1"
-        title="Pick your agent"
-        subtitle="Nuuk uses your existing CLI credentials — no API keys required."
+        title="Pick your default agent"
+        // Welcome step already established "we reuse your CLI auth, no new
+        // logins" — so here we just nudge them to pick and continue. Short
+        // subtitle keeps the cards above the fold.
+        subtitle="Whichever CLI you use most. You can change it anytime."
       />
 
       <div className="grid grid-cols-2 gap-2.5">
@@ -150,7 +145,7 @@ export function ProviderStep() {
 
       <ProviderStatus
         providerId={defaultProviderId}
-        state={deriveState(defaultProviderId, availability, loading)}
+        state={selectedState}
       />
     </div>
   );
@@ -173,43 +168,41 @@ function ProviderCard({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "group relative flex flex-col items-start gap-2 overflow-hidden rounded-2xl p-4 text-left transition-all",
+        // Tighter card: row layout (icon + text + state) instead of stacked
+        // tiles. Removes ~30% of vertical height while keeping the same
+        // information density.
+        "group relative flex items-center gap-3 overflow-hidden rounded-xl p-2.5 text-left transition-all",
         active
           ? "bg-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
           : "bg-white/[0.025] hover:bg-white/[0.05]",
       )}
     >
-      {active && (
-        <span className="absolute right-3 top-3 flex size-4 items-center justify-center rounded-full bg-foreground text-background">
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-white/[0.06] text-foreground">
+        <ProviderIcon providerId={providerId} className="size-4" />
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="flex items-center gap-1.5">
+          <span className="truncate text-[13px] font-medium leading-none text-foreground">
+            {PROVIDER_LABEL[providerId]}
+          </span>
+          {/* Only show the violet "Sub" chip when the probe actually detected
+              an unmet plan requirement. Users with a valid tier see a clean
+              card with no chip. */}
+          {state.kind === "subscription" && (
+            <span className="rounded-full bg-violet-500/[0.12] px-1.5 py-px text-[9px] font-medium uppercase tracking-wide text-violet-300">
+              Sub
+            </span>
+          )}
+        </span>
+        <StateLine state={state} />
+      </span>
+      {active ? (
+        <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-foreground text-background">
           <Check className="size-2.5" strokeWidth={3.5} />
         </span>
+      ) : (
+        <StateDot state={state} />
       )}
-      <div className="flex w-full items-center justify-between">
-        <span className="flex size-9 items-center justify-center rounded-xl bg-white/[0.06] text-foreground">
-          <ProviderIcon providerId={providerId} className="size-4" />
-        </span>
-        {!active && <StateDot state={state} />}
-      </div>
-      <span className="flex flex-col gap-0.5">
-        <span className="text-[15px] font-medium leading-none text-foreground">
-          {PROVIDER_LABEL[providerId]}
-        </span>
-        <span className="text-[11px] leading-snug text-muted-foreground">
-          {PROVIDER_TAGLINE[providerId]}
-        </span>
-      </span>
-      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        <StateLine state={state} />
-        {/* Only show the "Subscription" badge when the probe actually
-            detected an unmet plan requirement. Users with a valid tier
-            (authLabel = "SuperGrok Heavy") see a normal "CLI logged in"
-            card without the badge. */}
-        {state.kind === "subscription" && (
-          <span className="rounded-full bg-violet-500/[0.12] px-1.5 py-px text-[9px] font-medium uppercase tracking-wide text-violet-300">
-            Subscription
-          </span>
-        )}
-      </div>
     </button>
   );
 }
@@ -274,48 +267,61 @@ function ProviderStatus({
   state: ProviderState;
 }) {
   const refresh = useProvidersStore((s) => s.refresh);
+  const subscriptionInfo = SUBSCRIPTION_INFO[providerId];
 
+  // Ready state has nothing for the user to do — the heavy card was reading
+  // as a homework assignment ("did I miss a step?"). Collapse it to a slim
+  // confirmation row and hide the API-key disclosure unless they ask for it.
+  if (state.kind === "ready") {
+    const label =
+      state.via === "cli"
+        ? `${PROVIDER_LABEL[providerId]} CLI is logged in — you're all set.`
+        : `${PROVIDER_LABEL[providerId]} API key saved — you're all set.`;
+    return (
+      <div className="flex items-center gap-2 rounded-full bg-emerald-400/[0.08] px-3 py-2 text-[12px] text-emerald-200/90">
+        <Check className="size-3.5" strokeWidth={3} />
+        <span className="leading-none">{label}</span>
+      </div>
+    );
+  }
+
+  // Loading: a single quiet line, no big card.
+  if (state.kind === "loading") {
+    return (
+      <div className="flex items-center gap-2 rounded-full bg-white/[0.025] px-3 py-2 text-[12px] text-muted-foreground">
+        <span className="size-1.5 animate-pulse rounded-full bg-muted-foreground/60" />
+        Checking {PROVIDER_LABEL[providerId]}…
+      </div>
+    );
+  }
+
+  // Everything below requires the user to do something — keep the full card.
   const headline =
-    state.kind === "loading"
-      ? "Checking your machine…"
-      : state.kind === "ready"
-        ? state.via === "cli"
-          ? "Ready to go"
-          : "Ready — using API key"
-        : state.kind === "signed-out"
-          ? "Sign in to the CLI"
-          : state.kind === "subscription"
-            ? "Subscription required"
-            : state.kind === "outdated"
-              ? "Update the CLI"
-              : "Install the CLI";
+    state.kind === "signed-out"
+      ? "Sign in to the CLI"
+      : state.kind === "subscription"
+        ? "Subscription required"
+        : state.kind === "outdated"
+          ? "Update the CLI"
+          : "Install the CLI";
 
   const subline =
-    state.kind === "loading"
-      ? "Probing CLI install + login state."
-      : state.kind === "ready"
-        ? state.via === "cli"
-          ? "We picked up your existing CLI session."
-          : "Stored in your OS keychain."
-        : state.kind === "signed-out"
-          ? "Already installed — just run the login command below."
-          : state.kind === "subscription"
-            ? "Your CLI login was detected, but the required paid plan was not confirmed."
-            : state.kind === "outdated"
-              ? `${PROVIDER_LABEL[providerId]} ${state.current} is too old; Memoize needs ${state.required}.`
-              : `${PROVIDER_LABEL[providerId]}'s CLI isn't on your PATH yet.`;
+    state.kind === "signed-out"
+      ? "Already installed — just run the login command below."
+      : state.kind === "subscription"
+        ? "Your CLI login was detected, but the required paid plan was not confirmed."
+        : state.kind === "outdated"
+          ? `${PROVIDER_LABEL[providerId]} ${state.current} is too old; memoize needs ${state.required}.`
+          : `${PROVIDER_LABEL[providerId]}'s CLI isn't on your PATH yet.`;
 
-  const showLoginBlock = state.kind === "signed-out";
-  const showInstallBlock = state.kind === "missing";
-  const showUpgradeBlock = state.kind === "outdated";
-  const apiSummary = state.kind === "ready" && state.via === "key";
-
-  // Only show the violet subscription nag when the probe explicitly told us
-  // the plan requirement is unmet (authLabel contains "Requires"). If the
-  // user has a valid SuperGrok Heavy JWT (tier >= 5), authLabel will be
-  // "SuperGrok Heavy" and we treat them as ready (no nag).
-  const subscriptionInfo = SUBSCRIPTION_INFO[providerId];
-  const showSubscriptionNotice = state.kind === "subscription";
+  const command =
+    state.kind === "signed-out"
+      ? LOGIN_HINT[providerId]
+      : state.kind === "outdated"
+        ? state.command ?? INSTALL_HINT[providerId]
+        : state.kind === "missing"
+          ? INSTALL_HINT[providerId]
+          : null;
 
   return (
     <div className="flex flex-col gap-3 rounded-2xl bg-white/[0.025] p-4">
@@ -331,7 +337,7 @@ function ProviderStatus({
         <StatusPill state={state} />
       </div>
 
-      {showSubscriptionNotice && subscriptionInfo !== undefined && (
+      {state.kind === "subscription" && subscriptionInfo !== undefined && (
         <SubscriptionNotice
           providerId={providerId}
           plan={subscriptionInfo.plan}
@@ -339,30 +345,13 @@ function ProviderStatus({
         />
       )}
 
-      {showInstallBlock && (
-        <CodeRow
-          command={INSTALL_HINT[providerId]}
-          onRecheck={() => void refresh()}
-        />
-      )}
-      {showUpgradeBlock && state.kind === "outdated" && (
-        <CodeRow
-          command={state.command ?? INSTALL_HINT[providerId]}
-          onRecheck={() => void refresh()}
-        />
-      )}
-      {showLoginBlock && (
-        <CodeRow
-          command={LOGIN_HINT[providerId]}
-          onRecheck={() => void refresh()}
-        />
+      {command !== null && (
+        <CodeRow command={command} onRecheck={() => void refresh()} />
       )}
 
       <details className="group/keys">
         <summary className="cursor-pointer select-none list-none text-[11px] text-muted-foreground hover:text-foreground">
-          {apiSummary
-            ? "API key saved — replace it"
-            : "or paste an API key instead"}
+          or paste an API key instead
         </summary>
         <div className="pt-3">
           <ApiKeyRow providerId={providerId} />
