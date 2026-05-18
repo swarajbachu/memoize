@@ -60,3 +60,19 @@ export {
   listManifest,
   branchExists,
 } from "./manifest/manifest.ts";
+export { bm25Search, type Bm25Hit } from "./retrieval/bm25.ts";
+export { reciprocalRankFusion } from "./retrieval/rrf.ts";
+export { route, type Tier } from "./retrieval/router.ts";
+export {
+  isVectorAvailable,
+  vectorSearch,
+  writeEmbeddings,
+  type VectorHit,
+} from "./retrieval/vector.ts";
+export {
+  NullProvider,
+  getEmbeddingProvider,
+  setEmbeddingProvider,
+  type EmbeddingProvider,
+} from "./embedding/provider.ts";
+export { drainAll, drainEmbedQueue } from "./embedding/worker.ts";

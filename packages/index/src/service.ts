@@ -6,7 +6,11 @@ import { runMigrations } from "./schema/migrations.ts";
 import { IndexService } from "./api.ts";
 import { countAll } from "./blob/store.ts";
 import { branchExists } from "./manifest/manifest.ts";
+import { getEmbeddingProvider } from "./embedding/provider.ts";
 import { indexRepo } from "./indexer.ts";
+import { bm25Search } from "./retrieval/bm25.ts";
+import { reciprocalRankFusion } from "./retrieval/rrf.ts";
+import { route } from "./retrieval/router.ts";
 import {
   fetchChunk,
   findReferencesByName,
@@ -14,10 +18,12 @@ import {
   lookupSymbol,
   symbolHitToSearchHit,
 } from "./retrieval/symbol-lookup.ts";
+import { isVectorAvailable, vectorSearch } from "./retrieval/vector.ts";
 import {
   type IndexStatus,
   type SearchHit,
   type SearchInput,
+  type SymbolKind,
 } from "./types.ts";
 
 /**
@@ -139,56 +145,174 @@ export const IndexServiceLive = Layer.scoped(
         fetchChunk(db, chunkId, branchOr(branch)),
       listModule: ({ path, branch }) =>
         listFileSymbols(db, path, branchOr(branch)),
-      search: (input: SearchInput) =>
-        // Phase A: route every query through symbol lookup. Phase B fills
-        // in proper routing; Phase C+D add BM25 / vector / rerank.
-        Effect.gen(function* () {
-          const limit = input.limit ?? 5;
-          const branch = branchOr(input.branch);
-          const hits = yield* lookupSymbol(
-            db,
-            input.query,
-            branch,
-            undefined,
-            limit,
-          );
-          const out: SearchHit[] = [];
-          for (const h of hits) {
-            const chunk = yield* fetchChunkBySymbol(db, h.symbolId, branch);
-            out.push(
-              symbolHitToSearchHit(
-                h,
-                chunk?.content ?? `${h.kind} ${h.name}`,
-              ),
-            );
-          }
-          return out as ReadonlyArray<SearchHit>;
-        }),
+      search: (input: SearchInput) => runSearch(db, config.branch, input),
     });
   }),
 );
 
 /**
- * Used by `search` to resolve a symbol to its enclosing chunk's content so
- * the agent gets actual code text, not just `function foo(...)`.
+ * Used by `search` to resolve a symbol to its enclosing chunk's id + content
+ * so the agent gets actual code text, not just `function foo(...)`. Returns
+ * `null` when the symbol has no anchored chunk (type aliases, properties).
  */
 const fetchChunkBySymbol = (
   db: IndexDb,
   symbolId: number,
   branch: string,
-): Effect.Effect<{ content: string } | null, never> =>
+): Effect.Effect<{ chunkId: number; content: string } | null, never> =>
   Effect.sync(() => {
     try {
       const row = db
         .prepare(
-          `SELECT c.content FROM chunks c
+          `SELECT c.id, c.content FROM chunks c
            JOIN manifests m ON m.blob_id = c.blob_id AND m.branch = ?
            WHERE c.symbol_id = ?
            ORDER BY c.id ASC LIMIT 1`,
         )
-        .get(branch, symbolId) as { content: string } | undefined;
-      return row ?? null;
+        .get(branch, symbolId) as { id: number; content: string } | undefined;
+      return row ? { chunkId: row.id, content: row.content } : null;
     } catch {
       return null;
     }
+  });
+
+/**
+ * Hybrid search pipeline — routes the query into the tier(s) the router
+ * recommends, runs them in parallel, fuses via RRF when more than one
+ * tier fires. Symbol-only queries skip fusion entirely (single source,
+ * RRF would be a no-op).
+ */
+const runSearch = (
+  db: IndexDb,
+  defaultBranch: string,
+  input: SearchInput,
+): Effect.Effect<ReadonlyArray<SearchHit>, never> =>
+  Effect.gen(function* () {
+    const branch = input.branch ?? defaultBranch;
+    const limit = input.limit ?? 5;
+    const tiers = route(input.query, input.kind);
+
+    const wantsSymbol = tiers.includes("symbol");
+    const wantsBm25 = tiers.includes("bm25");
+    const wantsVector = tiers.includes("vector");
+
+    // Tier 1 — symbol lookup. Single-source path returns directly.
+    const symbolHits = wantsSymbol
+      ? yield* lookupSymbol(db, input.query, branch, undefined, 20).pipe(
+          Effect.catchAll(() =>
+            Effect.succeed([] as ReadonlyArray<ReturnType<typeof Object>>),
+          ),
+        )
+      : [];
+
+    if (tiers.length === 1 && wantsSymbol) {
+      const out: SearchHit[] = [];
+      for (const h of symbolHits.slice(0, limit) as Array<{
+        symbolId: number;
+        name: string;
+        kind: SymbolKind;
+        signature: string | null;
+        file: string;
+        range: { start: number; end: number };
+        exported: boolean;
+      }>) {
+        const chunk = yield* fetchChunkBySymbol(db, h.symbolId, branch);
+        out.push(
+          symbolHitToSearchHit(h, chunk?.content ?? `${h.kind} ${h.name}`),
+        );
+      }
+      return out as ReadonlyArray<SearchHit>;
+    }
+
+    // Tier 2 / Tier 3 — gather candidates, fuse via RRF.
+    const fanout = 30;
+    const rankings: ReadonlyArray<{ chunkId: number }>[] = [];
+
+    if (wantsBm25) {
+      const hits = yield* bm25Search(db, input.query, branch, fanout).pipe(
+        Effect.catchAll(() => Effect.succeed([])),
+      );
+      rankings.push(hits);
+    }
+    if (wantsVector && isVectorAvailable(db)) {
+      const provider = getEmbeddingProvider();
+      if (provider.id !== "null") {
+        const [vec] = yield* Effect.tryPromise({
+          try: () => provider.embed([input.query]),
+          catch: () => new Error("embed failed"),
+        }).pipe(Effect.catchAll(() => Effect.succeed([new Float32Array(0)])));
+        if (vec && vec.length > 0) {
+          const hits = yield* vectorSearch(db, vec, branch, fanout).pipe(
+            Effect.catchAll(() => Effect.succeed([])),
+          );
+          rankings.push(hits);
+        }
+      }
+    }
+    if (wantsSymbol && symbolHits.length > 0) {
+      rankings.push(
+        symbolHits.map((h) => ({
+          chunkId: -1 - (h as { symbolId: number }).symbolId,
+        })),
+      );
+    }
+
+    const fused = reciprocalRankFusion(rankings).slice(0, limit);
+    const out: SearchHit[] = [];
+    for (const { chunkId, score } of fused) {
+      if (chunkId < 0) {
+        // Symbol-derived placeholder id. Convert back, fetch its chunk.
+        const symbolId = -1 - chunkId;
+        const sh = (symbolHits as Array<{
+          symbolId: number;
+          name: string;
+          kind: SymbolKind;
+          signature: string | null;
+          file: string;
+          range: { start: number; end: number };
+          exported: boolean;
+        }>).find((h) => h.symbolId === symbolId);
+        if (!sh) continue;
+        const chunk = yield* fetchChunkBySymbol(db, symbolId, branch);
+        out.push({
+          ...symbolHitToSearchHit(sh, chunk?.content ?? `${sh.kind} ${sh.name}`),
+          chunkId: chunk?.chunkId ?? -1,
+          score,
+          source: "fused",
+        });
+      } else {
+        const row = yield* Effect.try({
+          try: () =>
+            db
+              .prepare(
+                `SELECT c.id, c.start_line, c.end_line, c.content, c.symbol_id, m.file_path
+                 FROM chunks c
+                 JOIN manifests m ON m.blob_id = c.blob_id AND m.branch = ?
+                 WHERE c.id = ?`,
+              )
+              .get(branch, chunkId) as
+              | {
+                  id: number;
+                  start_line: number;
+                  end_line: number;
+                  content: string;
+                  symbol_id: number | null;
+                  file_path: string;
+                }
+              | undefined,
+          catch: () => new Error("fetch chunk failed"),
+        }).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+        if (!row) continue;
+        out.push({
+          chunkId: row.id,
+          file: row.file_path,
+          range: { start: row.start_line, end: row.end_line },
+          symbol: null,
+          content: row.content,
+          score,
+          source: "fused",
+        });
+      }
+    }
+    return out as ReadonlyArray<SearchHit>;
   });
