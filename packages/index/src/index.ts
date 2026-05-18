@@ -60,6 +60,12 @@ export {
   listManifest,
   branchExists,
 } from "./manifest/manifest.ts";
+export {
+  diffManifest,
+  swapBranchManifest,
+  type ManifestDiff,
+} from "./manifest/swap.ts";
+export { forgetFile, reindexFile } from "./incremental.ts";
 export { bm25Search, type Bm25Hit } from "./retrieval/bm25.ts";
 export { reciprocalRankFusion } from "./retrieval/rrf.ts";
 export { route, type Tier } from "./retrieval/router.ts";
