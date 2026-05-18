@@ -1,4 +1,4 @@
-import { ArrowUpCircle, CheckCircle2, X } from "lucide-react";
+import { AlertTriangle, ArrowUpCircle, CheckCircle2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -41,8 +41,10 @@ export function UpdateBanner() {
   }, []);
 
   // Re-surface a fresh "available" even if the user dismissed the previous one.
+  // Also re-show on `error` so a silent stall or failed download isn't
+  // invisible — the user needs to see it to retry.
   useEffect(() => {
-    if (status.kind === "available") {
+    if (status.kind === "available" || status.kind === "error") {
       installModeRef.current = null;
       setDismissed(false);
     }
@@ -59,8 +61,7 @@ export function UpdateBanner() {
     dismissed ||
     status.kind === "idle" ||
     status.kind === "checking" ||
-    status.kind === "not-available" ||
-    status.kind === "error"
+    status.kind === "not-available"
   ) {
     return null;
   }
@@ -85,6 +86,10 @@ export function UpdateBanner() {
   const onRestartNow = () => {
     void window.memoize?.updates?.installNow();
   };
+  const onRetry = () => {
+    installModeRef.current = null;
+    void window.memoize?.updates?.check();
+  };
 
   // Portal to document.body so the toast escapes any ancestor that creates a
   // containing block — `<main>` uses `backdrop-blur-3xl`, and any
@@ -100,6 +105,8 @@ export function UpdateBanner() {
         <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
           {status.kind === "ready" ? (
             <CheckCircle2 className="size-4" />
+          ) : status.kind === "error" ? (
+            <AlertTriangle className="size-4" />
           ) : (
             <ArrowUpCircle className="size-4" />
           )}
@@ -109,6 +116,7 @@ export function UpdateBanner() {
             {status.kind === "available" && "Update available"}
             {status.kind === "downloading" && "Downloading update…"}
             {status.kind === "ready" && "Update ready"}
+            {status.kind === "error" && "Update failed"}
           </span>
           <span className="text-[12px] leading-snug text-muted-foreground">
             {status.kind === "available" &&
@@ -121,6 +129,7 @@ export function UpdateBanner() {
               }`}
             {status.kind === "ready" &&
               `Restart to finish installing memoize ${status.version}.`}
+            {status.kind === "error" && status.message}
           </span>
         </div>
         <button
@@ -186,6 +195,28 @@ export function UpdateBanner() {
           >
             Restart now
           </Button>
+        </div>
+      )}
+
+      {status.kind === "error" && (
+        <div className="flex items-center justify-end gap-1.5">
+          <Button
+            size="xs"
+            variant="ghost"
+            onClick={onLater}
+            className="rounded-full text-[11px]"
+          >
+            Dismiss
+          </Button>
+          {status.retryable !== false && (
+            <Button
+              size="xs"
+              onClick={onRetry}
+              className="rounded-full text-[11px]"
+            >
+              Try again
+            </Button>
+          )}
         </div>
       )}
     </div>,

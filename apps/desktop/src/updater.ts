@@ -21,18 +21,102 @@ import {
 // pushed mid-week without requiring a manual restart-to-check.
 const UPDATE_POLL_MS = 6 * 60 * 60 * 1000;
 
+// If no `download-progress` event fires for this long while in the
+// `downloading` state, treat the download as stalled. electron-updater itself
+// doesn't fire any "stuck" event — the underlying request just hangs — so
+// the toast and menu would otherwise sit forever showing the last percent.
+const DOWNLOAD_STALL_MS = 60_000;
+
 let lastStatus: UpdateStatus = { kind: "idle" };
 let started = false;
 
-export function startAutoUpdater(window: BrowserWindow): void {
+const statusListeners = new Set<(status: UpdateStatus) => void>();
+
+let stallTimer: NodeJS.Timeout | null = null;
+// We auto-retry the *first* stall in a session to absorb transient network
+// flakes (laptop lid, hotel wifi), then surface the error so we don't loop
+// forever on a permanent failure.
+let stallRetried = false;
+
+function clearStallTimer(): void {
+  if (stallTimer !== null) {
+    clearTimeout(stallTimer);
+    stallTimer = null;
+  }
+}
+
+function armStallTimer(): void {
+  clearStallTimer();
+  stallTimer = setTimeout(() => {
+    stallTimer = null;
+    if (lastStatus.kind !== "downloading") return;
+    if (!stallRetried) {
+      stallRetried = true;
+      console.warn("[memoize:updater] download stalled — retrying once");
+      autoUpdater.downloadUpdate().catch((err) => {
+        console.error("[memoize:updater] stall retry failed", err);
+        emit({
+          kind: "error",
+          message: "Download stalled. Check your connection and try again.",
+          retryable: true,
+        });
+      });
+      return;
+    }
+    emit({
+      kind: "error",
+      message: "Download stalled. Check your connection and try again.",
+      retryable: true,
+    });
+  }, DOWNLOAD_STALL_MS);
+}
+
+function emit(status: UpdateStatus): void {
+  lastStatus = status;
+  for (const listener of statusListeners) {
+    try {
+      listener(status);
+    } catch (err) {
+      console.error("[memoize:updater] listener threw", err);
+    }
+  }
+}
+
+/**
+ * Snapshot of the latest update status. Menu rebuilds read this; everyone
+ * else should subscribe via `onStatusChange` instead of polling.
+ */
+export function getLastStatus(): UpdateStatus {
+  return lastStatus;
+}
+
+/**
+ * Subscribe to status transitions. Returns an unsubscribe function. The
+ * native menu uses this to rebuild itself so the "Check for Updates…" item
+ * label tracks the live state even when the renderer toast is dismissed.
+ */
+export function onStatusChange(
+  listener: (status: UpdateStatus) => void,
+): () => void {
+  statusListeners.add(listener);
+  return () => {
+    statusListeners.delete(listener);
+  };
+}
+
+function attachRenderer(window: BrowserWindow): void {
   // Always re-broadcast the most recent status to a (re)attached window so a
   // dev hot-reload or future window-recreate doesn't lose state.
-  const send = (status: UpdateStatus) => {
-    lastStatus = status;
+  const sendToRenderer = (status: UpdateStatus) => {
     if (window.isDestroyed()) return;
     window.webContents.send(UPDATE_STATUS_CHANNEL, status);
   };
-  window.webContents.on("did-finish-load", () => send(lastStatus));
+  statusListeners.add(sendToRenderer);
+  window.webContents.on("did-finish-load", () => sendToRenderer(lastStatus));
+}
+
+export function startAutoUpdater(window: BrowserWindow): void {
+  attachRenderer(window);
 
   if (started) return;
   started = true;
@@ -50,30 +134,40 @@ export function startAutoUpdater(window: BrowserWindow): void {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
 
-  autoUpdater.on("checking-for-update", () => send({ kind: "checking" }));
-  autoUpdater.on("update-available", (info: UpdateInfo) =>
-    send({
+  autoUpdater.on("checking-for-update", () => {
+    clearStallTimer();
+    emit({ kind: "checking" });
+  });
+  autoUpdater.on("update-available", (info: UpdateInfo) => {
+    clearStallTimer();
+    emit({
       kind: "available",
       version: info.version,
       releaseNotes:
         typeof info.releaseNotes === "string" ? info.releaseNotes : undefined,
       releaseDate: info.releaseDate,
-    }),
-  );
-  autoUpdater.on("update-not-available", () => send({ kind: "not-available" }));
-  autoUpdater.on("download-progress", (p: ProgressInfo) =>
-    send({
+    });
+  });
+  autoUpdater.on("update-not-available", () => {
+    clearStallTimer();
+    emit({ kind: "not-available" });
+  });
+  autoUpdater.on("download-progress", (p: ProgressInfo) => {
+    armStallTimer();
+    emit({
       kind: "downloading",
       percent: p.percent,
       bytesPerSecond: p.bytesPerSecond,
-    }),
-  );
-  autoUpdater.on("update-downloaded", (info: UpdateInfo) =>
-    send({ kind: "ready", version: info.version }),
-  );
-  autoUpdater.on("error", (err: Error) =>
-    send({ kind: "error", message: err.message }),
-  );
+    });
+  });
+  autoUpdater.on("update-downloaded", (info: UpdateInfo) => {
+    clearStallTimer();
+    emit({ kind: "ready", version: info.version });
+  });
+  autoUpdater.on("error", (err: Error) => {
+    clearStallTimer();
+    emit({ kind: "error", message: err.message, retryable: true });
+  });
 
   ipcMain.handle(UPDATE_CHECK_CHANNEL, async () => {
     await autoUpdater.checkForUpdates().catch((err) => {
@@ -101,6 +195,29 @@ export function startAutoUpdater(window: BrowserWindow): void {
 }
 
 /**
+ * Imperative entrypoints for the native menu. These bypass the renderer-bound
+ * IPC bridge (`window.memoize.updates.*`) because menu clicks run in main —
+ * routing through IPC would just bounce back to the same `autoUpdater` calls.
+ */
+export function triggerUpdateCheck(): void {
+  autoUpdater.checkForUpdates().catch((err) => {
+    console.error("[memoize:updater] check failed", err);
+  });
+}
+
+export function triggerUpdateDownload(): void {
+  // Reset the stall retry budget so a manual retry gets a fresh chance.
+  stallRetried = false;
+  autoUpdater.downloadUpdate().catch((err) => {
+    console.error("[memoize:updater] download failed", err);
+  });
+}
+
+export function triggerUpdateInstall(): void {
+  autoUpdater.quitAndInstall();
+}
+
+/**
  * Dev-only IPC bridge for previewing the update banner without cutting a real
  * release. `window.__memoizeUpdateDemo.set(status)` in the renderer round-trips
  * through `memoize:update-demo-set`, which re-broadcasts on the same channel
@@ -109,12 +226,15 @@ export function startAutoUpdater(window: BrowserWindow): void {
  * Call from `main.ts` only when `isDevelopment`. No-op in packaged builds.
  */
 export function registerUpdaterDemo(window: BrowserWindow): void {
+  // Plumb the renderer so demo-pushed statuses reach the banner.
+  attachRenderer(window);
   ipcMain.handle(
     "memoize:update-demo-set",
     (_event, status: UpdateStatus) => {
       if (window.isDestroyed()) return;
-      lastStatus = status;
-      window.webContents.send(UPDATE_STATUS_CHANNEL, status);
+      // Push through `emit` so the menu listener and any other subscribers
+      // see demo events the same way they'd see real ones.
+      emit(status);
     },
   );
 }

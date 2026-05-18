@@ -35,7 +35,12 @@ import {
   type MenuAccelerators,
   type MenuCommand,
 } from "./menu.ts";
-import { registerUpdaterDemo, startAutoUpdater } from "./updater.ts";
+import {
+  getLastStatus,
+  onStatusChange,
+  registerUpdaterDemo,
+  startAutoUpdater,
+} from "./updater.ts";
 
 /**
  * Privileged scheme registration. Must run before `app.whenReady()` —
@@ -302,13 +307,43 @@ const sanitizeAccelerators = (raw: unknown): MenuAccelerators => {
 // the menu with these accelerators." Renderer owns the defaults + override
 // resolution since its keybindings store is the live mirror of the JSON
 // config file.
+// Latest values for the two independent inputs that drive the menu shape.
+// `menu:setAccelerators` and the auto-updater status listener both rebuild
+// the menu, but each only knows about its own input — without remembering
+// the other, a status flip would blow away custom keybindings (and vice
+// versa).
+let lastAccelerators: MenuAccelerators = DEFAULT_MENU_ACCELERATORS;
+
 ipcMain.on("menu:setAccelerators", (_event, payload: unknown) => {
-  installAppMenu(() => mainWindow, sanitizeAccelerators(payload));
+  lastAccelerators = sanitizeAccelerators(payload);
+  installAppMenu(() => mainWindow, lastAccelerators, getLastStatus());
 });
 
 void app.whenReady().then(() => {
   registerMemoizeProtocol();
-  installAppMenu(() => mainWindow);
+
+  // Populate the native About panel so "About memoize" shows the current
+  // version + copyright. Without this, Electron's default panel only shows
+  // the app name. macOS reads these once at panel-open time, so it's safe
+  // to call once on startup.
+  app.setAboutPanelOptions({
+    applicationName: "memoize",
+    applicationVersion: app.getVersion(),
+    version: app.getVersion(),
+    copyright: "© Swaraj Bachu",
+    website: "https://github.com/swarajbachu/memoize",
+  });
+
+  // Rebuild the menu whenever the updater status changes so the
+  // "Check for Updates…" item label/enabled state stays live — this is the
+  // user's fallback path when the in-app toast is dismissed or a download
+  // stalls mid-way. The subscription is set up once; the listener runs on
+  // every status flip.
+  onStatusChange((status) => {
+    installAppMenu(() => mainWindow, lastAccelerators, status);
+  });
+
+  installAppMenu(() => mainWindow, lastAccelerators, getLastStatus());
   createMainWindow();
   if (mainWindow !== null) {
     if (isDevelopment) {
