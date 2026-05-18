@@ -98,5 +98,17 @@ across workspaces sharing a repo.
 
 ## Status
 
-📐 **Spec** — ready for ADR review and implementation. Phase A starts after
-ADRs 0013–0015 land.
+🚧 **Implementation in progress** — phases A–F shipped on PR #86
+(`swarajbachu/mvp-0.04-impl`). The MVP retrieval surface (Tier-1 symbol
+lookup + BM25 + RRF + cross-encoder rerank with BYOK providers) is live
+end-to-end through the bundled agent; auto-reindex on workspace open is
+wired; the renderer shows a progress chip while indexing.
+
+The remaining work — wiring the watcher into the registry, real local
+embedding + rerank providers (the semantic tier is currently disabled),
+HTTP transport on the MCP server, the real LLM eval harness, and the
+`Cmd+P` search modal — is catalogued in **[followups.md](./followups.md)**,
+prioritized by what unblocks the most user value per hour of work.
+
+Roadmap phase status is annotated inline in
+[`roadmap.md`](./roadmap.md).

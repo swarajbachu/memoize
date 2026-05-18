@@ -40,6 +40,8 @@ import {
   type OpencodeSessionHandle,
 } from "../drivers/opencode.ts";
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
+import { buildIndexTools } from "../../code-index/claude-tools.ts";
+import { IndexRegistry } from "../../code-index/services/index-registry.ts";
 import { CredentialsService } from "../services/credentials-service.ts";
 import { PermissionService } from "../services/permission-service.ts";
 import { ProviderService } from "../services/provider-service.ts";
@@ -79,6 +81,7 @@ export const ProviderServiceLive = Layer.effect(
     const workspace = yield* WorkspaceService;
     const permissions = yield* PermissionService;
     const attachmentService = yield* AttachmentService;
+    const indexRegistry = yield* IndexRegistry;
     const runtime = yield* Effect.runtime<never>();
     const sessions = yield* Ref.make<Map<AgentSessionId, SessionEntry>>(
       new Map(),
@@ -277,6 +280,14 @@ export const ProviderServiceLive = Layer.effect(
                 }),
               );
             }
+            // Phase B: resolve the per-workspace IndexService and bind the
+            // five Tier-1 tools (code_search, symbol_lookup, find_references,
+            // read_chunk, list_module) so the Claude SDK sees them alongside
+            // ask_user_question. Branch defaults to "HEAD" — the manifest
+            // resolves it; Phase E adds a real git-checkout subscription.
+            const indexHandle = yield* indexRegistry.getHandle(cwd, "HEAD");
+            const indexTools = buildIndexTools(indexHandle);
+
             handle = yield* startClaudeSession(
               input,
               cwd,
@@ -286,6 +297,7 @@ export const ProviderServiceLive = Layer.effect(
               buildRequestPermission(input.folderId),
               runtimeModeGetter,
               resumeCursor,
+              indexTools,
             ).pipe(Effect.provideService(AttachmentService, attachmentService));
           } else {
             // Same story as Claude: we don't ship the SDK's bundled native

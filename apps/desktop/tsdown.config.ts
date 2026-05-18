@@ -10,7 +10,14 @@ const shared = {
   // `fix-path` is ESM-only ("type": "module"). Electron 33 ships Node 20.x
   // where `require()` of an ESM module throws ERR_REQUIRE_ESM. Bundling it
   // inline transpiles it to CJS so the main bundle can call it directly.
-  deps: { alwaysBundle: ["@memoize/wire", "@memoize/server", "fix-path"] },
+  deps: {
+    alwaysBundle: [
+      "@memoize/wire",
+      "@memoize/server",
+      "@memoize/index",
+      "fix-path",
+    ],
+  },
   // Native modules whose loader uses `__dirname` / `module.parent.filename`
   // to locate a `.node` file at runtime — bundling their JS relocates those
   // anchors and the lookup fails. Keep them external so each is require()'d
@@ -31,6 +38,14 @@ const shared = {
     "bindings",
     "keytar",
     "electron-updater",
+    // Tree-sitter parsers. Each uses node-gyp-build, which resolves its
+    // .node file relative to the calling package's __dirname. Bundling
+    // them inline rebinds __dirname to dist-electron/ and the lookup
+    // explodes with "No native build was found for runtime=electron".
+    "tree-sitter",
+    "tree-sitter-typescript",
+    "tree-sitter-javascript",
+    "tree-sitter-json",
   ],
 };
 

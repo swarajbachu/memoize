@@ -6,6 +6,7 @@ import { MemoizeRpcs } from "@memoize/wire";
 
 import { AppPaths } from "./app-paths.ts";
 import { AttachmentServiceLive } from "./attachment/layers/attachment-service.ts";
+import { IndexRegistryLive } from "./code-index/layers/index-registry.ts";
 import { ConfigStoreServiceLive } from "./config-store/layers/config-store-service.ts";
 import { FsServiceLive } from "./fs/layers/fs-service.ts";
 import { GitServiceLive } from "./git/layers/git-service.ts";
@@ -75,9 +76,17 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(AppPathsLayer),
   );
 
+  // IndexRegistry must be available to WorkspaceService so that
+  // `workspace.setSelected` / `workspace.add` can fire-and-forget an
+  // `ensureIndexed()` the moment the user opens a project. Declared
+  // before WorkspaceLayer because it's a dependency, not the other way
+  // around — there is no upstream from IndexRegistry into Workspace.
+  const IndexLayer = IndexRegistryLive;
+
   const WorkspaceLayer = WorkspaceServiceLive.pipe(
     Layer.provide(MigratedSqlite),
     Layer.provide(ImportShim),
+    Layer.provide(IndexLayer),
     Layer.provide(NodeContext.layer),
   );
 
@@ -157,6 +166,7 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(WorkspaceLayer),
     Layer.provide(PermissionLayer),
     Layer.provide(AttachmentLayer),
+    Layer.provide(IndexLayer),
     Layer.provide(NodeContext.layer),
   );
 
@@ -205,6 +215,7 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(PermissionLayer),
     Layer.provide(AttachmentLayer),
     Layer.provide(SkillBridgeLayer),
+    Layer.provide(IndexLayer),
     Layer.provide(FolderPickerLayer),
     // `agent.opencodeInventory` calls `resolveCliPath("opencode")` directly
     // (it spins up a short-lived `opencode serve` to read the user's

@@ -12,6 +12,16 @@ import {
   AgentStartRpc,
 } from "./agent.ts";
 import { AttachmentTouchRpc, AttachmentUploadRpc } from "./attachment.ts";
+import {
+  IndexFindReferencesRpc,
+  IndexListModuleRpc,
+  IndexReadChunkRpc,
+  IndexReindexRpc,
+  IndexSearchRpc,
+  IndexStatusRpc,
+  IndexStatusStreamRpc,
+  IndexSymbolLookupRpc,
+} from "./code-index.ts";
 import { FsReadFileRpc, FsTreeRpc, FsWriteFileRpc } from "./fs.ts";
 import {
   GitChangesRpc,
@@ -195,6 +205,14 @@ export const MemoizeRpcs = RpcGroup.make(
   KeybindingsReplaceRpc,
   KeybindingsStreamRpc,
   SessionSetWorktreeRpc,
+  IndexStatusRpc,
+  IndexStatusStreamRpc,
+  IndexReindexRpc,
+  IndexSearchRpc,
+  IndexSymbolLookupRpc,
+  IndexFindReferencesRpc,
+  IndexReadChunkRpc,
+  IndexListModuleRpc,
 );
 export type MemoizeRpcs = typeof MemoizeRpcs;
 

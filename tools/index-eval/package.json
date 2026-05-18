@@ -1,0 +1,19 @@
+{
+  "name": "@memoize/index-eval",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "eval": "bun src/run.ts",
+    "eval:tier1": "bun src/run.ts --tier 1",
+    "eval:baseline": "bun src/run.ts --tier 0"
+  },
+  "dependencies": {
+    "@memoize/index": "*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:"
+  }
+}

@@ -7,7 +7,23 @@ Phases ordered by ROI. Each phase ends with a measurable result. Phases B
 and C have explicit gating experiments — if the numbers don't materialize,
 we reconsider before continuing.
 
-## Phase A — Foundation (~1 week)
+**Status as of 2026-05-19** — Phases A–F all shipped on PR #86
+(`swarajbachu/mvp-0.04-impl`). The MVP retrieval surface (Tier-1 symbol
+lookup + BM25 + RRF + cross-encoder rerank) is live, end-to-end through
+the bundled agent. Auto-reindex on workspace open + the renderer status
+chip are in. Tasks left for the 0.04 release proper are catalogued in
+[`followups.md`](./followups.md); the headline open items are:
+
+- Semantic tier is **disabled** today (NullProvider) — needs a real local
+  embedding provider before `code_search` semantic queries become useful
+- File watcher exists in `@memoize/index` but isn't wired into
+  `IndexRegistry`, so edits don't trigger incremental reindex yet
+- MCP server ships stdio only — HTTP transport + `bun build --compile`
+  packaging both still pending
+- Real LLM eval harness is stubbed; the acceptance numbers below haven't
+  been measured against a real agent yet
+
+## Phase A — Foundation (~1 week) ✅ shipped
 
 Tree-sitter chunker, symbol extractor, SQLite schema, content-addressed
 blob store, manifest model. **No retrieval yet.**
@@ -25,7 +41,7 @@ blob store, manifest model. **No retrieval yet.**
 repo produces > 5,000 chunks and > 2,000 symbols; switching `main` ↔ a
 branch with one changed file results in exactly one new blob row.
 
-## Phase B — Symbol-search MVP + experiment (~3 days)
+## Phase B — Symbol-search MVP + experiment (~3 days) ✅ shipped (eval pending)
 
 **Tier 1 only**, no embeddings. Wired into the bundled Claude agent. Run
 the experiment that justifies the rest of the work.
@@ -40,7 +56,7 @@ the experiment that justifies the rest of the work.
 If we miss this bar, **stop and reconsider** before building Tier 3.
 Numbers logged to `specs/0.04-MVP/eval/phase-b.md`.
 
-## Phase C — BM25 + embeddings + RRF (~1 week)
+## Phase C — BM25 + embeddings + RRF (~1 week) ✅ shipped (semantic tier disabled until Phase D' below)
 
 Tier 2 + Tier 3 retrieval. **No rerank yet** — this phase isolates the
 fusion lift from the rerank lift.
@@ -57,7 +73,7 @@ fusion lift from the rerank lift.
 **Acceptance:** Hybrid agent (no rerank) uses ≤ 35% baseline tokens on
 ≥ 80% of tasks. Vector + BM25 alone shows clear lift over Tier 1.
 
-## Phase D — Reranker (~3 days)
+## Phase D — Reranker (~3 days) ✅ shipped (BYOK providers; local transformers.js model deferred — see followups)
 
 Cross-encoder rerank for Tier 3.
 
@@ -69,7 +85,7 @@ Cross-encoder rerank for Tier 3.
 **Acceptance:** NDCG@5 on the eval set up ≥ 20% over Phase C; tokens-per-task
 budget down further (target ≤ 25% baseline).
 
-## Phase E — Watcher + branch model (~4 days)
+## Phase E — Watcher + branch model (~4 days) ◐ engine landed, registry wiring pending
 
 Incremental updates and fast branch switches.
 
@@ -82,7 +98,7 @@ Incremental updates and fast branch switches.
 re-indexes only the changed file in < 50ms; running 5 Conductor workspaces
 on the same repo uses one shared blob store (deduped).
 
-## Phase F — `apps/mcp-server` packaging (~1 week)
+## Phase F — `apps/mcp-server` packaging (~1 week) ◐ stdio only; HTTP + compile pending
 
 Standalone MCP binary, npm-distributable, Bun-compiled.
 
