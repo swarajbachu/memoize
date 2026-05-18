@@ -71,11 +71,23 @@ let runtimeFiber: Fiber.RuntimeFiber<void, never> | null = null;
 
 // Electron's dialog is the only host-shell API the server reaches for. Wrap
 // it here so apps/server stays free of any UI-toolkit imports — see ADR 0007.
+//
+// `showHiddenFiles` is critical on macOS: NSOpenPanel hides dotfile dirs
+// (`~/.claude`, `~/.config`, `~/.ssh`, …) by default, so without it the user
+// literally cannot navigate into anything under a hidden parent — they
+// appear stuck in whatever folder the dialog opens in. `defaultPath: home`
+// puts the dialog in a sensible starting place (the user's home dir) instead
+// of the Electron process's cwd, which on a packaged build is the app bundle.
 const folderPicker = {
   pick: () =>
     Effect.promise(() =>
       dialog.showOpenDialog({
-        properties: ["openDirectory", "createDirectory"],
+        defaultPath: app.getPath("home"),
+        properties: [
+          "openDirectory",
+          "createDirectory",
+          "showHiddenFiles",
+        ],
       }),
     ).pipe(
       Effect.map((result) =>
