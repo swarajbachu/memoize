@@ -101,6 +101,11 @@ export interface SearchInput {
   readonly branch?: string;
   readonly kind?: "auto" | "symbol" | "text" | "semantic";
   readonly limit?: number;
+  /**
+   * SQLite GLOB pattern applied to `manifests.file_path` to scope results
+   * (e.g. `"apps/**"` or `"packages/index/**"`). Empty/undefined = no scoping.
+   */
+  readonly pathGlob?: string;
 }
 
 export interface SearchHit {
@@ -115,6 +120,14 @@ export interface SearchHit {
 
 export interface SymbolHit {
   readonly symbolId: number;
+  /**
+   * Id of the chunk that contains this symbol's body, or `null` for symbols
+   * with no enclosing chunk (most type aliases, properties). Hand this
+   * directly to `readChunk` — feeding a `symbolId` to `readChunk` returns
+   * a different table's row and is the namespace-collision footgun this
+   * field exists to prevent.
+   */
+  readonly chunkId: number | null;
   readonly name: string;
   readonly kind: SymbolKind;
   readonly signature: string | null;

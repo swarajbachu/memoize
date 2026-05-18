@@ -44,12 +44,14 @@ export interface IndexServiceShape {
     readonly kind?: string;
     readonly branch?: string;
     readonly limit?: number;
+    readonly pathGlob?: string;
   }) => Effect.Effect<ReadonlyArray<SymbolHit>, IndexError>;
 
   readonly findReferences: (input: {
     readonly symbol: string;
     readonly branch?: string;
     readonly limit?: number;
+    readonly pathGlob?: string;
   }) => Effect.Effect<ReadonlyArray<RefHit>, IndexError>;
 
   readonly readChunk: (input: {

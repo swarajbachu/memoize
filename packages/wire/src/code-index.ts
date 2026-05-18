@@ -64,6 +64,7 @@ const SearchHit = Schema.Struct({
 
 const SymbolHit = Schema.Struct({
   symbolId: Schema.Number,
+  chunkId: Schema.NullOr(Schema.Number),
   name: Schema.String,
   kind: SymbolKind,
   signature: Schema.NullOr(Schema.String),
@@ -118,6 +119,7 @@ export const IndexSearchRpc = Rpc.make("index.search", {
     query: Schema.String,
     kind: Schema.optional(SearchKind),
     limit: Schema.optional(Schema.Number),
+    pathGlob: Schema.optional(Schema.String),
   }),
   success: Schema.Array(SearchHit),
 });
@@ -128,6 +130,7 @@ export const IndexSymbolLookupRpc = Rpc.make("index.symbolLookup", {
     name: Schema.String,
     kind: Schema.optional(Schema.String),
     limit: Schema.optional(Schema.Number),
+    pathGlob: Schema.optional(Schema.String),
   }),
   success: Schema.Array(SymbolHit),
 });
@@ -137,6 +140,7 @@ export const IndexFindReferencesRpc = Rpc.make("index.findReferences", {
     folderId: FolderId,
     symbol: Schema.String,
     limit: Schema.optional(Schema.Number),
+    pathGlob: Schema.optional(Schema.String),
   }),
   success: Schema.Array(RefHit),
 });

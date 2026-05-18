@@ -155,14 +155,14 @@ export const IndexRegistryLive = Layer.scoped(
         ensureIndexed,
         status: () => callP((svc) => svc.status) as Promise<IndexStatus>,
         reindex: () => callP((svc) => svc.reindex()) as Promise<IndexStatus>,
-        symbolLookup: ({ name, kind, limit }) =>
-          callP((svc) => svc.symbolLookup({ name, kind, limit })) as Promise<
-            ReadonlyArray<SymbolHit>
-          >,
-        findReferences: ({ symbol, limit }) =>
-          callP((svc) => svc.findReferences({ symbol, limit })) as Promise<
-            ReadonlyArray<RefHit>
-          >,
+        symbolLookup: ({ name, kind, limit, pathGlob }) =>
+          callP((svc) =>
+            svc.symbolLookup({ name, kind, limit, pathGlob }),
+          ) as Promise<ReadonlyArray<SymbolHit>>,
+        findReferences: ({ symbol, limit, pathGlob }) =>
+          callP((svc) =>
+            svc.findReferences({ symbol, limit, pathGlob }),
+          ) as Promise<ReadonlyArray<RefHit>>,
         readChunk: ({ chunkId }) =>
           callP((svc) => svc.readChunk({ chunkId })) as Promise<
             ChunkContent | null
@@ -171,10 +171,10 @@ export const IndexRegistryLive = Layer.scoped(
           callP((svc) => svc.listModule({ path })) as Promise<
             ReadonlyArray<SymbolSummary>
           >,
-        search: ({ query, kind, limit }) =>
-          callP((svc) => svc.search({ query, kind, limit })) as Promise<
-            ReadonlyArray<SearchHit>
-          >,
+        search: ({ query, kind, limit, pathGlob }) =>
+          callP((svc) =>
+            svc.search({ query, kind, limit, pathGlob }),
+          ) as Promise<ReadonlyArray<SearchHit>>,
       };
 
       return {

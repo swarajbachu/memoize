@@ -24,7 +24,7 @@ import {
   type IndexStatus,
   type SearchHit,
   type SearchInput,
-  type SymbolKind,
+  type SymbolHit,
 } from "./types.ts";
 
 /**
@@ -170,10 +170,10 @@ export const IndexServiceLive = Layer.scoped(
       status: computeStatus(),
       statusStream,
       reindex: (opts) => doReindex(branchOr(opts?.branch)),
-      symbolLookup: ({ name, kind, branch, limit }) =>
-        lookupSymbol(db, name, branchOr(branch), kind, limit ?? 10),
-      findReferences: ({ symbol, branch, limit }) =>
-        findReferencesByName(db, symbol, branchOr(branch), limit ?? 20),
+      symbolLookup: ({ name, kind, branch, limit, pathGlob }) =>
+        lookupSymbol(db, name, branchOr(branch), kind, limit ?? 10, pathGlob),
+      findReferences: ({ symbol, branch, limit, pathGlob }) =>
+        findReferencesByName(db, symbol, branchOr(branch), limit ?? 20, pathGlob),
       readChunk: ({ chunkId, branch }) =>
         fetchChunk(db, chunkId, branchOr(branch)),
       listModule: ({ path, branch }) =>
@@ -223,6 +223,7 @@ const runSearch = (
   Effect.gen(function* () {
     const branch = input.branch ?? defaultBranch;
     const limit = input.limit ?? 5;
+    const pathGlob = input.pathGlob;
     const tiers = route(input.query, input.kind);
 
     const wantsSymbol = tiers.includes("symbol");
@@ -231,7 +232,7 @@ const runSearch = (
 
     // Tier 1 — symbol lookup. Single-source path returns directly.
     const symbolHits = wantsSymbol
-      ? yield* lookupSymbol(db, input.query, branch, undefined, 20).pipe(
+      ? yield* lookupSymbol(db, input.query, branch, undefined, 20, pathGlob).pipe(
           Effect.catchAll(() =>
             Effect.succeed([] as ReadonlyArray<ReturnType<typeof Object>>),
           ),
@@ -240,15 +241,7 @@ const runSearch = (
 
     if (tiers.length === 1 && wantsSymbol) {
       const out: SearchHit[] = [];
-      for (const h of symbolHits.slice(0, limit) as Array<{
-        symbolId: number;
-        name: string;
-        kind: SymbolKind;
-        signature: string | null;
-        file: string;
-        range: { start: number; end: number };
-        exported: boolean;
-      }>) {
+      for (const h of symbolHits.slice(0, limit) as ReadonlyArray<SymbolHit>) {
         const chunk = yield* fetchChunkBySymbol(db, h.symbolId, branch);
         out.push(
           symbolHitToSearchHit(h, chunk?.content ?? `${h.kind} ${h.name}`),
@@ -262,7 +255,7 @@ const runSearch = (
     const rankings: ReadonlyArray<{ chunkId: number }>[] = [];
 
     if (wantsBm25) {
-      const hits = yield* bm25Search(db, input.query, branch, fanout).pipe(
+      const hits = yield* bm25Search(db, input.query, branch, fanout, pathGlob).pipe(
         Effect.catchAll(() => Effect.succeed([])),
       );
       rankings.push(hits);
@@ -275,7 +268,7 @@ const runSearch = (
           catch: () => new Error("embed failed"),
         }).pipe(Effect.catchAll(() => Effect.succeed([new Float32Array(0)])));
         if (vec && vec.length > 0) {
-          const hits = yield* vectorSearch(db, vec, branch, fanout).pipe(
+          const hits = yield* vectorSearch(db, vec, branch, fanout, pathGlob).pipe(
             Effect.catchAll(() => Effect.succeed([])),
           );
           rankings.push(hits);
@@ -298,15 +291,9 @@ const runSearch = (
       if (chunkId < 0) {
         // Symbol-derived placeholder id. Convert back, fetch its chunk.
         const symbolId = -1 - chunkId;
-        const sh = (symbolHits as Array<{
-          symbolId: number;
-          name: string;
-          kind: SymbolKind;
-          signature: string | null;
-          file: string;
-          range: { start: number; end: number };
-          exported: boolean;
-        }>).find((h) => h.symbolId === symbolId);
+        const sh = (symbolHits as ReadonlyArray<SymbolHit>).find(
+          (h) => h.symbolId === symbolId,
+        );
         if (!sh) continue;
         const chunk = yield* fetchChunkBySymbol(db, symbolId, branch);
         out.push({

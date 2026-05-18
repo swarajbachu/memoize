@@ -27,12 +27,17 @@ interface SymbolRow {
   end_line: number;
   exported: number;
   file_path: string;
+  chunk_id: number | null;
 }
 
 /**
  * Tier-1 symbol lookup. Exact match first, then a LIKE-prefix sweep. Sorted
  * with `exported DESC` then shortest name first — the cheapest tie-breaker
  * that mirrors what a developer would visually pick.
+ *
+ * Returns the `chunkId` of the symbol's enclosing chunk when one exists, so
+ * callers can hand it straight to `readChunk` without having to remember the
+ * symbolId/chunkId namespace distinction.
  */
 export const lookupSymbol = (
   db: IndexDb,
@@ -40,6 +45,7 @@ export const lookupSymbol = (
   branch: string,
   kind: string | undefined,
   limit: number,
+  pathGlob?: string,
 ): Effect.Effect<ReadonlyArray<SymbolHit>, IndexDbError> =>
   wrap("lookupSymbol", () => {
     const params: unknown[] = [branch];
@@ -54,10 +60,17 @@ export const lookupSymbol = (
       where += " AND s.kind = ?";
       params.push(kind);
     }
+    if (pathGlob && pathGlob.length > 0) {
+      where += " AND m.file_path GLOB ?";
+      params.push(pathGlob);
+    }
     const rows = db
       .prepare(
         `SELECT s.id, s.blob_id, s.name, s.kind, s.signature,
-                s.start_line, s.end_line, s.exported, m.file_path
+                s.start_line, s.end_line, s.exported, m.file_path,
+                (SELECT c.id FROM chunks c
+                  WHERE c.symbol_id = s.id
+                  ORDER BY c.id ASC LIMIT 1) AS chunk_id
          FROM symbols s
          JOIN manifests m ON m.blob_id = s.blob_id
          ${where}
@@ -70,6 +83,7 @@ export const lookupSymbol = (
       .all(...params, name, limit) as SymbolRow[];
     return rows.map((r) => ({
       symbolId: r.id,
+      chunkId: r.chunk_id,
       name: r.name,
       kind: r.kind as SymbolKind,
       signature: r.signature,
@@ -104,18 +118,26 @@ export const findReferencesByName = (
   symbol: string,
   branch: string,
   limit: number,
+  pathGlob?: string,
 ): Effect.Effect<ReadonlyArray<RefHit>, IndexDbError> =>
   wrap("findReferences", () => {
+    const params: unknown[] = [branch, symbol];
+    let extraWhere = "";
+    if (pathGlob && pathGlob.length > 0) {
+      extraWhere = " AND m.file_path GLOB ?";
+      params.push(pathGlob);
+    }
+    params.push(limit);
     const rows = db
       .prepare(
         `SELECT r.id, r.start_line, r.end_line, r.context, m.file_path
          FROM refs r
          JOIN symbols s ON s.id = r.symbol_id
          JOIN manifests m ON m.blob_id = r.blob_id AND m.branch = ?
-         WHERE s.name = ?
+         WHERE s.name = ?${extraWhere}
          LIMIT ?`,
       )
-      .all(branch, symbol, limit) as Array<{
+      .all(...params) as Array<{
       id: number;
       start_line: number;
       end_line: number;

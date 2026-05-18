@@ -56,9 +56,16 @@ export const vectorSearch = (
   embedding: Float32Array,
   branch: string,
   limit: number,
+  pathGlob?: string,
 ): Effect.Effect<ReadonlyArray<VectorHit>, IndexDbError> =>
   wrap("vectorSearch", () => {
     if (!vecAvailable(db)) return [];
+    const params: unknown[] = [branch, float32ToBlob(embedding), limit];
+    let extraWhere = "";
+    if (pathGlob && pathGlob.length > 0) {
+      extraWhere = " AND m.file_path GLOB ?";
+      params.push(pathGlob);
+    }
     const rows = db
       .prepare(
         `SELECT c.id AS chunk_id,
@@ -69,10 +76,10 @@ export const vectorSearch = (
          JOIN chunks c ON c.id = v.chunk_id
          JOIN manifests m ON m.blob_id = c.blob_id AND m.branch = ?
          WHERE v.embedding MATCH ?
-           AND k = ?
+           AND k = ?${extraWhere}
          ORDER BY distance ASC`,
       )
-      .all(branch, float32ToBlob(embedding), limit) as Array<{
+      .all(...params) as Array<{
       chunk_id: number;
       rank: number;
       start_line: number;

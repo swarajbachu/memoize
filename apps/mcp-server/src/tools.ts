@@ -31,13 +31,17 @@ export const buildTools = (handle: ServerHandle): ReadonlyArray<McpToolDef> => [
   {
     name: "code_search",
     description:
-      "Search the indexed codebase by symbol, code substring, or natural-language query. Prefer over Bash(rg) — typed-symbol queries return in <5ms with the enclosing function/class chunk.",
+      "Multi-tier search across the indexed codebase. Best for conceptual / multi-file queries. For a known identifier, prefer `symbol_lookup`. For a literal string, prefer Bash(rg) with a path filter. `kind: \"semantic\"` currently degrades to BM25.",
     inputSchema: {
       type: "object",
       properties: {
         query: { type: "string" },
         kind: { type: "string", enum: ["auto", "symbol", "text", "semantic"] },
         limit: { type: "integer", minimum: 1, maximum: 20 },
+        pathGlob: {
+          type: "string",
+          description: "SQLite GLOB to scope results, e.g. apps/**.",
+        },
       },
       required: ["query"],
     },
@@ -45,13 +49,20 @@ export const buildTools = (handle: ServerHandle): ReadonlyArray<McpToolDef> => [
       query: z.string(),
       kind: z.enum(["auto", "symbol", "text", "semantic"]).optional(),
       limit: z.number().int().positive().max(20).optional(),
+      pathGlob: z.string().optional(),
     }),
     handler: async (raw) => {
-      const args = (raw ?? {}) as { query: string; kind?: string; limit?: number };
+      const args = (raw ?? {}) as {
+        query: string;
+        kind?: string;
+        limit?: number;
+        pathGlob?: string;
+      };
       // Symbol-first: matches the in-process default in apps/server.
       const hits = await handle.symbolLookup({
         name: args.query,
         limit: args.limit ?? 5,
+        pathGlob: args.pathGlob,
       });
       return asTool({ hits });
     },
@@ -59,13 +70,14 @@ export const buildTools = (handle: ServerHandle): ReadonlyArray<McpToolDef> => [
   {
     name: "symbol_lookup",
     description:
-      "Look up a symbol by exact or prefix name. Returns file paths + line ranges + signatures.",
+      "Look up a known identifier by exact or prefix name. Returns symbolId, chunkId, file, range, and signature. Feed `chunkId` to `read_chunk` to get the body — *not* the `symbolId` (separate namespace).",
     inputSchema: {
       type: "object",
       properties: {
         name: { type: "string" },
         kind: { type: "string" },
         limit: { type: "integer", minimum: 1, maximum: 50 },
+        pathGlob: { type: "string" },
       },
       required: ["name"],
     },
@@ -73,9 +85,15 @@ export const buildTools = (handle: ServerHandle): ReadonlyArray<McpToolDef> => [
       name: z.string(),
       kind: z.string().optional(),
       limit: z.number().int().positive().max(50).optional(),
+      pathGlob: z.string().optional(),
     }),
     handler: async (raw) => {
-      const args = raw as { name: string; kind?: string; limit?: number };
+      const args = raw as {
+        name: string;
+        kind?: string;
+        limit?: number;
+        pathGlob?: string;
+      };
       const hits = await handle.symbolLookup(args);
       return asTool({ hits });
     },
@@ -83,21 +101,27 @@ export const buildTools = (handle: ServerHandle): ReadonlyArray<McpToolDef> => [
   {
     name: "find_references",
     description:
-      "Find every place a named symbol is referenced. Returns paths + line ranges + a one-line context.",
+      "Find every place a named symbol is referenced. Returns paths + line ranges + a one-line context. (Refs extraction is currently phase-gated and may return []; fall back to Bash(rg).)",
     inputSchema: {
       type: "object",
       properties: {
         symbol: { type: "string" },
         limit: { type: "integer", minimum: 1, maximum: 100 },
+        pathGlob: { type: "string" },
       },
       required: ["symbol"],
     },
     validator: z.object({
       symbol: z.string(),
       limit: z.number().int().positive().max(100).optional(),
+      pathGlob: z.string().optional(),
     }),
     handler: async (raw) => {
-      const args = raw as { symbol: string; limit?: number };
+      const args = raw as {
+        symbol: string;
+        limit?: number;
+        pathGlob?: string;
+      };
       const refs = await handle.findReferences(args);
       return asTool({ refs });
     },

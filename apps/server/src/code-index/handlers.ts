@@ -67,31 +67,33 @@ const Reindex = MemoizeRpcs.toLayerHandler("index.reindex", ({ folderId }) =>
 
 const Search = MemoizeRpcs.toLayerHandler(
   "index.search",
-  ({ folderId, query, kind, limit }) =>
+  ({ folderId, query, kind, limit, pathGlob }) =>
     Effect.gen(function* () {
       const handle = yield* resolveHandle(folderId);
-      return yield* Effect.promise(() => handle.search({ query, kind, limit }));
+      return yield* Effect.promise(() =>
+        handle.search({ query, kind, limit, pathGlob }),
+      );
     }),
 );
 
 const SymbolLookup = MemoizeRpcs.toLayerHandler(
   "index.symbolLookup",
-  ({ folderId, name, kind, limit }) =>
+  ({ folderId, name, kind, limit, pathGlob }) =>
     Effect.gen(function* () {
       const handle = yield* resolveHandle(folderId);
       return yield* Effect.promise(() =>
-        handle.symbolLookup({ name, kind, limit }),
+        handle.symbolLookup({ name, kind, limit, pathGlob }),
       );
     }),
 );
 
 const FindReferences = MemoizeRpcs.toLayerHandler(
   "index.findReferences",
-  ({ folderId, symbol, limit }) =>
+  ({ folderId, symbol, limit, pathGlob }) =>
     Effect.gen(function* () {
       const handle = yield* resolveHandle(folderId);
       return yield* Effect.promise(() =>
-        handle.findReferences({ symbol, limit }),
+        handle.findReferences({ symbol, limit, pathGlob }),
       );
     }),
 );

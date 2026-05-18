@@ -45,10 +45,18 @@ export const bm25Search = (
   query: string,
   branch: string,
   limit: number,
+  pathGlob?: string,
 ): Effect.Effect<ReadonlyArray<Bm25Hit>, IndexDbError> =>
   wrap("bm25Search", () => {
     const fts = sanitize(query);
     if (fts.length === 0) return [];
+    const params: unknown[] = [branch, fts];
+    let extraWhere = "";
+    if (pathGlob && pathGlob.length > 0) {
+      extraWhere = " AND m.file_path GLOB ?";
+      params.push(pathGlob);
+    }
+    params.push(limit);
     const rows = db
       .prepare(
         `SELECT c.id AS chunk_id,
@@ -58,11 +66,11 @@ export const bm25Search = (
          FROM chunks_fts
          JOIN chunks c ON c.id = chunks_fts.rowid
          JOIN manifests m ON m.blob_id = c.blob_id AND m.branch = ?
-         WHERE chunks_fts MATCH ?
+         WHERE chunks_fts MATCH ?${extraWhere}
          ORDER BY rank
          LIMIT ?`,
       )
-      .all(branch, fts, limit) as Array<{
+      .all(...params) as Array<{
       chunk_id: number;
       rank: number;
       start_line: number;

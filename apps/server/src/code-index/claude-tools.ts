@@ -64,11 +64,17 @@ const guard = async <T>(
 export const buildIndexTools = (handle: IndexHandle) => [
   tool(
     "code_search",
-    "Search the indexed codebase by symbol name, code substring, or natural-language query. Prefer this over Bash(rg) — typed-symbol queries return in <5ms with the enclosing function/class chunk, not just a grep line. Use `kind: \"symbol\"` for exact names, `kind: \"semantic\"` for English-language queries.",
+    "Multi-tier search across the indexed codebase. Use for conceptual / multi-file queries where you don't have a specific identifier (e.g. \"http retry logic\", \"feature flag plumbing\"). For a known identifier, prefer `symbol_lookup` — it's exact and returns the enclosing chunk in one call. For a literal string with no symbol semantics (config values, error messages), prefer `Bash(rg)` with a path filter. Note: `kind: \"semantic\"` currently degrades to BM25 — embeddings aren't wired up yet.",
     {
       query: z.string().min(1),
       kind: z.enum(["auto", "symbol", "text", "semantic"]).optional(),
       limit: z.number().int().positive().max(20).optional(),
+      pathGlob: z
+        .string()
+        .optional()
+        .describe(
+          "SQLite GLOB to scope results, e.g. `apps/**` or `packages/index/**`. Recommended on monorepos to exclude worktrees and unrelated subtrees.",
+        ),
     },
     async (args) =>
       guard(handle, async () => {
@@ -76,6 +82,7 @@ export const buildIndexTools = (handle: IndexHandle) => [
           query: args.query,
           kind: args.kind,
           limit: args.limit,
+          pathGlob: args.pathGlob,
         });
         return { hits };
       }),
@@ -83,11 +90,17 @@ export const buildIndexTools = (handle: IndexHandle) => [
 
   tool(
     "symbol_lookup",
-    "Look up a symbol (function, class, type, const) by exact or prefix name. Returns file paths + line ranges + signatures. Faster than grep for known identifiers and avoids false positives in comments and strings.",
+    "Look up a known identifier (function, class, type, const) by exact or prefix name. Returns `{ symbolId, chunkId, name, kind, signature, file, range, exported }` per hit — hand `chunkId` directly to `read_chunk` to fetch the body. Strictly better than `Bash(rg \"function foo\")` for known names: no false positives in comments/strings, returns the enclosing range, and includes a chunkId you can read without scanning. Use this *first* when you have an identifier in mind.",
     {
       name: z.string().min(1),
       kind: z.string().optional(),
       limit: z.number().int().positive().max(50).optional(),
+      pathGlob: z
+        .string()
+        .optional()
+        .describe(
+          "SQLite GLOB to scope results, e.g. `apps/**`. Useful on worktree-heavy repos where the same symbol appears once per worktree copy.",
+        ),
     },
     async (args) =>
       guard(handle, async () => {
@@ -95,6 +108,7 @@ export const buildIndexTools = (handle: IndexHandle) => [
           name: args.name,
           kind: args.kind,
           limit: args.limit,
+          pathGlob: args.pathGlob,
         });
         return { hits };
       }),
@@ -102,16 +116,18 @@ export const buildIndexTools = (handle: IndexHandle) => [
 
   tool(
     "find_references",
-    "Find every place a named symbol is referenced in the indexed codebase. Returns file paths + line ranges + a one-line context. Use for impact analysis before renaming or modifying an exported function.",
+    "Find every place a named symbol is referenced in the indexed codebase. Returns file paths + line ranges + a one-line context. Use for impact analysis before renaming or modifying an exported function. Note: refs extraction is still phase-gated — this currently returns `[]`. For cross-file usage right now, fall back to `Bash(rg <symbol>)` with `pathGlob` excluded.",
     {
       symbol: z.string().min(1),
       limit: z.number().int().positive().max(100).optional(),
+      pathGlob: z.string().optional(),
     },
     async (args) =>
       guard(handle, async () => {
         const refs = await handle.findReferences({
           symbol: args.symbol,
           limit: args.limit,
+          pathGlob: args.pathGlob,
         });
         return { refs };
       }),
@@ -119,7 +135,7 @@ export const buildIndexTools = (handle: IndexHandle) => [
 
   tool(
     "read_chunk",
-    "Read the full content of an indexed chunk by its id. Use after `code_search` or `symbol_lookup` returned a chunk id and you need the body — cheaper than `Read(file_path)` because it's bounded to the chunk's lines (one function, one class, one heading section).",
+    "Read the full content of an indexed chunk by its id. IMPORTANT: `chunkId` is the value from a `code_search` hit's `chunkId` field OR a `symbol_lookup` hit's `chunkId` field — *not* the `symbolId`. Feeding a symbolId here returns an unrelated chunk (separate auto-increment namespaces). Cheaper than `Read(file_path)` because it's bounded to the chunk's lines (one function / class / heading section).",
     {
       chunkId: z.number().int().nonnegative(),
     },
@@ -132,7 +148,7 @@ export const buildIndexTools = (handle: IndexHandle) => [
 
   tool(
     "list_module",
-    "List every named symbol declared inside one file. Use to understand a module's surface without reading the body — returns name, kind, signature, and start line per symbol.",
+    "List every named symbol declared inside one file. Use to map a module's surface without reading the body — returns name, kind, signature, and start line per symbol. Strictly better than `Read(file)` when you just want \"what's defined in here.\"",
     {
       path: z.string().min(1),
     },

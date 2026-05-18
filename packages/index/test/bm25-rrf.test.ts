@@ -19,9 +19,11 @@ describe("Phase C — BM25 + RRF + router", () => {
     expect(route("IndexService")).toEqual(["symbol"]);
     expect(route("addUser")).toEqual(["symbol"]);
     expect(route("const x = () => {}")).toEqual(["symbol", "bm25"]);
+    // Vector tier is dropped under the default NullProvider — see router.ts
+    // for the kill-switch rationale. When a real embedding provider lands
+    // this assertion should become ["bm25", "vector"].
     expect(route("where does the pty service stream output")).toEqual([
       "bm25",
-      "vector",
     ]);
   });
 

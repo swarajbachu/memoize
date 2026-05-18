@@ -57,10 +57,12 @@ export interface IndexHandle {
     name: string;
     kind?: string;
     limit?: number;
+    pathGlob?: string;
   }) => Promise<ReadonlyArray<SymbolHit>>;
   readonly findReferences: (input: {
     symbol: string;
     limit?: number;
+    pathGlob?: string;
   }) => Promise<ReadonlyArray<RefHit>>;
   readonly readChunk: (input: { chunkId: number }) => Promise<ChunkContent | null>;
   readonly listModule: (input: {
@@ -70,6 +72,7 @@ export interface IndexHandle {
     query: string;
     kind?: "auto" | "symbol" | "text" | "semantic";
     limit?: number;
+    pathGlob?: string;
   }) => Promise<ReadonlyArray<SearchHit>>;
 }
 

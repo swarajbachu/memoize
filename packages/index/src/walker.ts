@@ -9,6 +9,7 @@ const DEFAULT_IGNORES = [
   ".git",
   "node_modules",
   ".memoize",
+  ".forkzero",
   "dist",
   "build",
   "out",
@@ -16,6 +17,8 @@ const DEFAULT_IGNORES = [
   ".turbo",
   "coverage",
   ".cache",
+  "target",
+  "vendor",
   ".DS_Store",
 ];
 

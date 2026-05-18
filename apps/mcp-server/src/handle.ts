@@ -41,15 +41,18 @@ export interface ServerHandle {
     readonly query: string;
     readonly kind?: "auto" | "symbol" | "text" | "semantic";
     readonly limit?: number;
+    readonly pathGlob?: string;
   }) => Promise<unknown>;
   readonly symbolLookup: (input: {
     readonly name: string;
     readonly kind?: string;
     readonly limit?: number;
+    readonly pathGlob?: string;
   }) => Promise<unknown>;
   readonly findReferences: (input: {
     readonly symbol: string;
     readonly limit?: number;
+    readonly pathGlob?: string;
   }) => Promise<unknown>;
   readonly readChunk: (input: {
     readonly chunkId: number;
@@ -95,10 +98,10 @@ export const startServerHandle = async (
       // semantic search from the MCP side.
       return [];
     },
-    symbolLookup: ({ name, kind, limit }) =>
-      runP(lookupSymbol(db, name, branch, kind, limit ?? 10)),
-    findReferences: ({ symbol, limit }) =>
-      runP(findReferencesByName(db, symbol, branch, limit ?? 20)),
+    symbolLookup: ({ name, kind, limit, pathGlob }) =>
+      runP(lookupSymbol(db, name, branch, kind, limit ?? 10, pathGlob)),
+    findReferences: ({ symbol, limit, pathGlob }) =>
+      runP(findReferencesByName(db, symbol, branch, limit ?? 20, pathGlob)),
     readChunk: ({ chunkId }) => runP(fetchChunk(db, chunkId, branch)),
     listModule: ({ path }) => runP(listFileSymbols(db, path, branch)),
     close: async () => {

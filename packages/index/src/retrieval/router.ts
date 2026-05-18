@@ -1,3 +1,5 @@
+import { getEmbeddingProvider } from "../embedding/provider.ts";
+
 export type Tier = "symbol" | "bm25" | "vector";
 
 const SYMBOLISH = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -47,6 +49,18 @@ const looksLikeCode = (q: string): boolean => CODE_TOKENS.test(q);
  *   anything else             → [symbol, bm25, vector]  — fan-out
  */
 export const route = (query: string, override?: string): ReadonlyArray<Tier> => {
+  const tiers = routeRaw(query, override);
+  // Drop the vector tier when no real embedding provider is configured.
+  // NullProvider returns zero vectors, which makes sqlite-vec MATCH return
+  // arbitrary chunks and poison the RRF fusion. Until a real local provider
+  // ships (transformers.js, task #10), the honest behavior is BM25-only.
+  if (getEmbeddingProvider().id === "null") {
+    return tiers.filter((t) => t !== "vector");
+  }
+  return tiers;
+};
+
+const routeRaw = (query: string, override?: string): ReadonlyArray<Tier> => {
   if (override === "symbol") return ["symbol"];
   if (override === "text") return ["bm25"];
   if (override === "semantic") return ["bm25", "vector"];
