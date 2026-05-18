@@ -5,6 +5,18 @@ All notable changes to memoize will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1]
+
+### Added
+- "Check for Updates…" menu item that reflects all 7 `electron-updater` states (idle / checking / available / downloading / ready / error / not-available), giving users a way back into the update flow after dismissing the toast. Sits in the macOS app menu and the top of Help on Windows/Linux. About panel gets version + copyright; Help menu gains "View Changelog" and "Report an Issue"; DevTools / Force Reload move into a `Developer ▸` submenu that only appears in dev builds. (#84)
+- One-click Cursor sign-in. New `agent.startLogin` streaming RPC spawns `cursor-agent login`, extracts the OAuth URL, and emits `LoginEvent`s; the renderer card replaces the old copy-and-run flow with a button that opens the URL via `shell.openExternal`, shows progress, and refreshes availability on success. (#83)
+
+### Fixed
+- Auto-update downloads that stalled mid-way were silent — `electron-updater` fires no "stuck" event. Added a 60s download-stall watchdog with one-shot auto-retry that then surfaces a retryable `error` state; the update banner now renders the `error` state with a "Try again" button and un-dismisses itself when status flips to error. (#84)
+- Cursor authentication detection was trusting the existence of `~/.local/share/cursor-agent/` as proof of login, but that directory is created on install and just holds the CLI bundle — so every fresh install was flagged as signed in. Now probes `cursor-agent status` and parses the output. The blanket "Requires Cursor Pro" badge was dropped since the CLI has no whoami; the ACP server enforces the real plan check at session start. ACP auth waterfall in the cursor driver now throws a clear "not signed in" error instead of silently retrying `cursor_login` and timing out. (#83)
+- Folder picker hid every dotfile directory (`~/.claude`, `~/.config`, `~/.ssh`, …) on macOS because the Electron open dialog was missing `showHiddenFiles`, making any folder under a hidden parent unreachable. The picker also now defaults to the user's home directory instead of the process cwd, so it opens somewhere useful on first launch. (#82)
+- Broken `github.com/forkzero/memoize` repository URL in the native menu. (#84)
+
 ## [0.2.0]
 
 ### Added
