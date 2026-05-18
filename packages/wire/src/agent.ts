@@ -987,3 +987,28 @@ export const AgentOpencodeInventoryRpc = Rpc.make("agent.opencodeInventory", {
   // the same shape the renderer already knows how to surface.
   error: AgentSessionStartError,
 });
+
+// ---------------------------------------------------------------------------
+// One-click sign-in flow. The renderer subscribes to `agent.startLogin`,
+// which spawns the provider's `login` subcommand server-side, extracts the
+// OAuth URL the CLI prints, and reports progress back as a stream of
+// `LoginEvent`s. Today only `cursor` has a real handler; other providers
+// resolve to an immediate `done(ok=false)`.
+// ---------------------------------------------------------------------------
+
+export const LoginEvent = Schema.Union(
+  Schema.TaggedStruct("url", { url: Schema.String }),
+  Schema.TaggedStruct("log", { text: Schema.String }),
+  Schema.TaggedStruct("done", {
+    ok: Schema.Boolean,
+    reason: Schema.optional(Schema.String),
+  }),
+);
+export type LoginEvent = typeof LoginEvent.Type;
+
+export const AgentStartLoginRpc = Rpc.make("agent.startLogin", {
+  payload: Schema.Struct({ providerId: ProviderId }),
+  success: LoginEvent,
+  error: AgentSessionStartError,
+  stream: true,
+});

@@ -1,15 +1,19 @@
-import { ChevronDown, Copy, ExternalLink } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Effect, Fiber, Stream } from "effect";
+import { ChevronDown, Copy, ExternalLink, Loader2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   MODELS_BY_PROVIDER,
   type AgentAvailability,
+  type LoginEvent,
   type ProviderId,
 } from "@memoize/wire";
 
 import { ApiKeyRow } from "~/components/api-key-row";
 import { ProviderIcon } from "~/components/provider-icons";
 import { Button } from "~/components/ui/button";
+import { getRpcClient } from "~/lib/rpc-client";
+import { useProvidersStore } from "~/store/providers";
 import {
   Select,
   SelectItem,
@@ -203,9 +207,12 @@ export function ProviderCard({
             <CodeRow label="Install" command={INSTALL_HINT[providerId]} />
           )}
           {availability?.cliInstalled &&
-            availability.authStatus === "unauthenticated" && (
+            availability.authStatus === "unauthenticated" &&
+            (providerId === "cursor" ? (
+              <CursorSignInRow />
+            ) : (
               <CodeRow label="Sign in" command={LOGIN_HINT[providerId]} />
-            )}
+            ))}
           <SubscriptionRow
             providerId={providerId}
             availability={availability}
@@ -353,6 +360,184 @@ function BlurredEmail({ email }: { email: string }) {
     >
       {email}
     </button>
+  );
+}
+
+/**
+ * One-click sign-in for Cursor. Click → subscribe to `agent.startLogin`,
+ * which spawns `cursor-agent login` server-side and streams progress. The
+ * first `url` event opens the OAuth page in the OS browser; the terminal
+ * `done` event triggers an availability refresh and (on success) collapses
+ * the row. Cancel interrupts the stream, which closes the server-side
+ * scope and SIGTERMs the child process.
+ */
+function CursorSignInRow() {
+  const refresh = useProvidersStore((s) => s.refresh);
+  const [state, setState] = useState<
+    | { kind: "idle" }
+    | { kind: "waiting"; url: string | null }
+    | { kind: "success" }
+    | { kind: "failed"; reason: string }
+  >({ kind: "idle" });
+  const fiberRef = useRef<Fiber.RuntimeFiber<unknown, unknown> | null>(null);
+
+  useEffect(
+    () => () => {
+      const fiber = fiberRef.current;
+      if (fiber !== null) void Effect.runPromise(Fiber.interrupt(fiber));
+    },
+    [],
+  );
+
+  const cancel = () => {
+    const fiber = fiberRef.current;
+    if (fiber !== null) {
+      void Effect.runPromise(Fiber.interrupt(fiber));
+      fiberRef.current = null;
+    }
+    setState({ kind: "idle" });
+  };
+
+  const start = async () => {
+    setState({ kind: "waiting", url: null });
+    const client = await getRpcClient();
+    const fiber = Effect.runFork(
+      Stream.runForEach(
+        client.agent.startLogin({ providerId: "cursor" }),
+        (event: LoginEvent) =>
+          Effect.sync(() => {
+            if (event._tag === "url") {
+              openExternal(event.url);
+              setState({ kind: "waiting", url: event.url });
+            } else if (event._tag === "done") {
+              fiberRef.current = null;
+              if (event.ok) {
+                setState({ kind: "success" });
+                void refresh();
+              } else {
+                setState({
+                  kind: "failed",
+                  reason: event.reason ?? "Sign-in failed.",
+                });
+              }
+            }
+            // "log" events are diagnostic-only; ignored in the UI.
+          }),
+      ).pipe(
+        Effect.catchAll((err) =>
+          Effect.sync(() => {
+            fiberRef.current = null;
+            setState({
+              kind: "failed",
+              reason: err instanceof Error ? err.message : String(err),
+            });
+          }),
+        ),
+      ),
+    );
+    fiberRef.current = fiber;
+  };
+
+  if (state.kind === "success") {
+    return (
+      <div className="flex items-center gap-2 rounded-md border border-emerald-400/30 bg-emerald-500/[0.06] px-3 py-2 text-[11px] text-emerald-200">
+        <span>Signed in. Refreshing…</span>
+      </div>
+    );
+  }
+
+  if (state.kind === "waiting") {
+    return (
+      <div className="flex flex-col gap-2 rounded-md border border-border/50 bg-muted/30 px-3 py-2.5 text-[11px]">
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Loader2 className="size-3.5 animate-spin" aria-hidden />
+          <span>
+            {state.url === null
+              ? "Starting cursor-agent login…"
+              : "Waiting for browser sign-in…"}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          {state.url !== null && (
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              onClick={(e) => {
+                e.stopPropagation();
+                openExternal(state.url!);
+              }}
+              className="h-6 px-2 text-[11px]"
+            >
+              <ExternalLink className="mr-1 size-3" aria-hidden />
+              Open browser again
+            </Button>
+          )}
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            onClick={(e) => {
+              e.stopPropagation();
+              cancel();
+            }}
+            className="h-6 px-2 text-[11px]"
+          >
+            Cancel
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (state.kind === "failed") {
+    return (
+      <div className="flex flex-col gap-2">
+        <div className="rounded-md border border-rose-400/30 bg-rose-500/[0.06] px-3 py-2 text-[11px] text-rose-200">
+          {state.reason}
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
+            onClick={(e) => {
+              e.stopPropagation();
+              void start();
+            }}
+            className="h-6 px-2 text-[11px]"
+          >
+            Try again
+          </Button>
+        </div>
+        <CodeRow label="Or run manually" command={LOGIN_HINT.cursor} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-[11px] font-medium text-muted-foreground">
+        Sign in
+      </span>
+      <div className="flex items-center gap-2">
+        <Button
+          type="button"
+          size="xs"
+          variant="default"
+          onClick={(e) => {
+            e.stopPropagation();
+            void start();
+          }}
+          className="h-7 px-3 text-[11px]"
+        >
+          Sign in to Cursor
+        </Button>
+        <span className="text-[10px] text-muted-foreground">
+          or run <code className="font-mono">$ {LOGIN_HINT.cursor}</code>
+        </span>
+      </div>
+    </div>
   );
 }
 

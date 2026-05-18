@@ -514,33 +514,74 @@ const probeGeminiAccount: Effect.Effect<AccountInfo, never, FileSystem.FileSyste
       : ({ authStatus: "unauthenticated" } satisfies AccountInfo);
   });
 
-// Cursor Agent stores OAuth credentials under `~/.local/share/cursor-agent/`
-// after `cursor-agent login`. The directory is also created on first install
-// regardless of auth state, so its mere presence isn't a perfect proxy — but
-// it's the best we have without driving the ACP probe. The renderer also
-// flips to "ready" via `hasApiKey` once a key lands in the keychain.
+// Strip ANSI escape sequences (cursor-positioning, colors, etc). The
+// cursor-agent CLI emits a TUI-style status frame before its final answer,
+// e.g. ` Starting login process...\n[2K[1A[2K[G\n Not logged in`. We only
+// want to read the final human-readable line.
+const ANSI_PATTERN = /\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
+const stripAnsi = (raw: string): string => raw.replace(ANSI_PATTERN, "");
+
+// `cursor-agent status` is the CLI's own auth signal. It prints either
+// "Not logged in" or a positive line — `Logged in as <email>` on newer
+// builds, `Login successful!` on older ones. The directory at
+// `~/.local/share/cursor-agent/` is created on install regardless of
+// login state, so we never trust it.
 //
-// Like Grok, we can't verify the user's plan from the CLI alone — driving
-// agent sessions through `cursor-agent acp` requires an active Cursor Pro
-// (or higher) subscription, but the OAuth artifact alone doesn't tell us
-// whether that plan is active. Carry the requirement in `authLabel` so the
-// card surfaces "Requires Cursor Pro subscription" + a subscribe CTA, and
-// the user finds out before they hit a session-runtime 403.
-const probeCursorAccount: Effect.Effect<AccountInfo, never, FileSystem.FileSystem> =
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const path = join(homedir(), ".local", "share", "cursor-agent");
-    const exists = yield* fs
-      .exists(path)
-      .pipe(Effect.catchAll(() => Effect.succeed(false)));
-    return exists
-      ? ({
-          authStatus: "authenticated",
-          authType: "cli",
-          authLabel: "Requires Cursor Pro",
-        } satisfies AccountInfo)
-      : ({ authStatus: "unauthenticated" } satisfies AccountInfo);
-  });
+// We don't set the "Requires Cursor Pro" gating label, even though the
+// ACP runtime does need a paid plan: cursor-agent has no `whoami`/`me`
+// subcommand, so once a user is signed in we have no way to tell Pro
+// from non-Pro. Falsely labelling every signed-in user as gated nags
+// people who already pay. The ACP server enforces the real check at
+// session start and surfaces a clear error there if the plan is missing.
+const CURSOR_EMAIL_PATTERN = /[\w.+-]+@[\w.-]+\.\w+/;
+
+const parseCursorStatusOutput = (raw: string): AccountInfo => {
+  const cleanedRaw = stripAnsi(raw);
+  const cleaned = cleanedRaw.toLowerCase();
+  if (cleaned.includes("not logged in") || cleaned.includes("not signed in")) {
+    return { authStatus: "unauthenticated" };
+  }
+  const emailMatch = cleanedRaw.match(CURSOR_EMAIL_PATTERN);
+  if (
+    cleaned.includes("logged in as") ||
+    cleaned.includes("signed in as") ||
+    cleaned.includes("login successful") ||
+    cleaned.includes("authenticated") ||
+    emailMatch !== null
+  ) {
+    return {
+      authStatus: "authenticated",
+      authType: "cli",
+      ...(emailMatch !== null ? { authEmail: emailMatch[0] } : {}),
+    } satisfies AccountInfo;
+  }
+  return { authStatus: "unknown" };
+};
+
+const probeCursorAccount: Effect.Effect<
+  AccountInfo,
+  never,
+  CommandExecutor.CommandExecutor
+> = Effect.gen(function* () {
+  const executor = yield* CommandExecutor.CommandExecutor;
+  const result = yield* Effect.gen(function* () {
+    const proc = yield* executor.start(Command.make("cursor-agent", "status"));
+    const stdout = yield* collectText(proc.stdout);
+    const stderr = yield* collectText(proc.stderr);
+    const exitCode = yield* proc.exitCode;
+    return { stdout, stderr, exitCode };
+  }).pipe(
+    Effect.scoped,
+    Effect.timeoutOption(PROBE_TIMEOUT),
+    Effect.catchAll(() => Effect.succeedNone),
+  );
+  if (result._tag !== "Some") {
+    return { authStatus: "unknown" } satisfies AccountInfo;
+  }
+  // Exit code is not a reliable signal — the CLI returns 0 even when not
+  // logged in. Parse the text instead.
+  return parseCursorStatusOutput(`${result.value.stdout}\n${result.value.stderr}`);
+});
 
 // OpenCode stores per-provider credentials in `~/.local/share/opencode/auth.json`
 // after `opencode auth login <provider>`. Each top-level key is a provider id
