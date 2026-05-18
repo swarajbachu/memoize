@@ -733,6 +733,15 @@ const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
   "BashOutput",
   "TodoWrite",
   ASK_USER_QUESTION_FQN,
+  // Memoize code-index tools. All five are strict reads against the
+  // workspace-local SQLite — they can't mutate anything, so prompting on
+  // every call (and failing to dedupe because the per-input JSON ends up
+  // in the kindKey) is pure noise. Auto-allow them like Grep/Glob.
+  `mcp__${MEMOIZE_MCP_NAME}__code_search`,
+  `mcp__${MEMOIZE_MCP_NAME}__symbol_lookup`,
+  `mcp__${MEMOIZE_MCP_NAME}__find_references`,
+  `mcp__${MEMOIZE_MCP_NAME}__read_chunk`,
+  `mcp__${MEMOIZE_MCP_NAME}__list_module`,
 ]);
 
 /**
