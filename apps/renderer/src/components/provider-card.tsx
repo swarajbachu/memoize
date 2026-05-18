@@ -69,6 +69,10 @@ const SUBSCRIPTION_INFO: Partial<
 > = {
   grok: { plan: "SuperGrok Heavy", url: "https://grok.com/#subscribe" },
   cursor: { plan: "Cursor Pro", url: "https://cursor.com/pricing" },
+  claude: {
+    plan: "Claude Pro",
+    url: "https://www.anthropic.com/pricing#claude-code",
+  },
 };
 
 export function ProviderCard({

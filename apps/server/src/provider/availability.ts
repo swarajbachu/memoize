@@ -308,7 +308,11 @@ const probeCodexAccount = (codexPath: string): Effect.Effect<AccountInfo> =>
 const CLAUDE_SUB_LABEL: Record<string, string> = {
   max: "Claude Max Subscription",
   pro: "Claude Pro Subscription",
-  free: "Free",
+  // Claude Code agent usage requires a paid plan. Free / unknown tiers
+  // surface as "Requires …" so the renderer's existing subscription-gate
+  // rail (matches authLabel.includes("require")) disables the toggle and
+  // shows the Subscribe CTA, same as Grok/Cursor.
+  free: "Requires Claude Pro",
 };
 
 interface ClaudeCredentialBlob {
@@ -330,14 +334,16 @@ const parseClaudeCredentials = (raw: string): AccountInfo => {
   if (!oauth) return { authStatus: "authenticated" };
   const sub = oauth.subscriptionType?.toLowerCase();
   const email = oauth.emailAddress ?? oauth.email;
+  // Missing or unrecognised subscription tier → treat as needing Claude Pro,
+  // matching the explicit `free` branch in CLAUDE_SUB_LABEL.
+  const authLabel =
+    sub && CLAUDE_SUB_LABEL[sub]
+      ? CLAUDE_SUB_LABEL[sub]
+      : "Requires Claude Pro";
   return {
     authStatus: "authenticated",
     authType: "oauth",
-    ...(sub && CLAUDE_SUB_LABEL[sub]
-      ? { authLabel: CLAUDE_SUB_LABEL[sub] }
-      : sub
-        ? { authLabel: `Claude ${sub[0]!.toUpperCase()}${sub.slice(1)}` }
-        : {}),
+    authLabel,
     ...(email ? { authEmail: email } : {}),
   };
 };
