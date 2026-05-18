@@ -18,14 +18,15 @@ export function WelcomeStep() {
       </div>
 
       <ul className="flex flex-col gap-0.5 text-sm">
-        <Row title="Bring your own agent">
-          Claude Code and Codex, using your existing CLI credentials.
+        <Row title="No new logins">
+          We reuse your local CLI auth (claude, codex, gemini, grok, cursor).
+          Just pick your default and go — no API keys, no re-auth.
         </Row>
         <Row title="One worktree per chat">
           Experiments stay isolated, branches stay tidy.
         </Row>
-        <Row title="Three quick steps">
-          Pick a provider, add a project, choose your defaults.
+        <Row title="Two quick picks">
+          Choose your default agent, add a project — you&apos;re in.
         </Row>
       </ul>
     </div>
