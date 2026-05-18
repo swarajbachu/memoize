@@ -376,20 +376,19 @@ export const startCursorSession = (
         // Cursor advertises `cursor_login` for OAuth-style credentials and
         // `cached_token` once a prior `cursor-agent login` has stored one.
         // When an API key is set we prefer `cursor_login` (the CLI handles
-        // the key/token translation server-side); otherwise fall back to
-        // the cached token. If neither is available, fail with a clear
-        // message so the user knows what to run.
+        // the key/token translation server-side); otherwise use the cached
+        // token. We don't fall back to `cursor_login` without an API key —
+        // that silently sends the user into an OAuth dance the ACP child
+        // can't complete, masking "not signed in" behind a vague error.
         const methodId =
           apiKey !== null && authIds.has("cursor_login")
             ? "cursor_login"
             : authIds.has("cached_token")
               ? "cached_token"
-              : authIds.has("cursor_login")
-                ? "cursor_login"
-                : null;
+              : null;
         if (methodId === null) {
           throw new Error(
-            "Cursor ACP offered no usable auth method. Run `cursor-agent login`, or set CURSOR_API_KEY.",
+            'Cursor is not signed in. Click "Sign in" on the Cursor provider card, run `cursor-agent login` in a terminal, or paste a Cursor API key.',
           );
         }
         await request("authenticate", {
