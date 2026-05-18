@@ -43,7 +43,7 @@ export type {
 export { blakeOf, hexOf } from "./blob/hash.ts";
 export { detectLanguage } from "./chunker/language.ts";
 export { chunkSource } from "./chunker/index.ts";
-export { openIndexDb, closeIndexDb } from "./db/sqlite.ts";
+export { openIndexDb, closeIndexDb, type IndexDb, type IndexStmt } from "./db/sqlite.ts";
 export { runMigrations } from "./schema/migrations.ts";
 export { indexRepo } from "./indexer.ts";
 export { walkRepo } from "./walker.ts";
