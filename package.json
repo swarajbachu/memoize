@@ -25,7 +25,8 @@
   "workspaces": {
     "packages": [
       "apps/*",
-      "packages/*"
+      "packages/*",
+      "tools/*"
     ],
     "catalog": {
       "@effect/platform": "^0.96.0",

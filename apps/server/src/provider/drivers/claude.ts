@@ -940,6 +940,15 @@ export const startClaudeSession = (
   requestPermission: RequestPermission,
   getRuntimeMode: GetRuntimeMode,
   resumeCursor: string | null = null,
+  // Extra MCP tools to register inside the in-process memoize MCP server.
+  // Phase B uses this to expose `code_search`, `symbol_lookup`,
+  // `find_references`, `read_chunk`, `list_module` from `@memoize/index`.
+  // Tools arrive already bound to the session's workspace handle, so the
+  // driver itself stays workspace-agnostic. Typed loosely because the SDK's
+  // `SdkMcpToolDefinition` is parameterized by each tool's zod schema and
+  // doesn't compose across distinct shapes in an array.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  extraTools: ReadonlyArray<any> = [],
 ): Effect.Effect<ClaudeSessionHandle, AgentSessionStartError, AttachmentService> =>
   Effect.gen(function* () {
     const attachments = yield* AttachmentService;
@@ -1134,7 +1143,8 @@ export const startClaudeSession = (
 
     const memoizeMcpServer = createSdkMcpServer({
       name: MEMOIZE_MCP_NAME,
-      tools: [askUserQuestionToolDefinition],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      tools: [askUserQuestionToolDefinition, ...extraTools] as any,
       alwaysLoad: !(input.toolSearch ?? false),
     });
 

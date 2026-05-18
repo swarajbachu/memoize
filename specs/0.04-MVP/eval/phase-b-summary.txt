@@ -1,0 +1,8 @@
+$ bun src/run.ts
+Indexing repo …
+Running Tier 1 …
+
+success=90.0% (18/20)
+tier1 tokens / baseline tokens = 4.4%
+tasks where tier1 uses ≤50% baseline tokens: 20/20 (100.0%)
+GATE: PASS (≥70% of tasks under 50% baseline)

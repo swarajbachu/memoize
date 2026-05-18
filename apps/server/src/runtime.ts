@@ -6,6 +6,7 @@ import { MemoizeRpcs } from "@memoize/wire";
 
 import { AppPaths } from "./app-paths.ts";
 import { AttachmentServiceLive } from "./attachment/layers/attachment-service.ts";
+import { IndexRegistryLive } from "./code-index/layers/index-registry.ts";
 import { ConfigStoreServiceLive } from "./config-store/layers/config-store-service.ts";
 import { FsServiceLive } from "./fs/layers/fs-service.ts";
 import { GitServiceLive } from "./git/layers/git-service.ts";
@@ -148,6 +149,11 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(NodeContext.layer),
   );
 
+  // IndexRegistry: per-workspace `@memoize/index` handles, lazily
+  // constructed on first session. ADR 0013: engine is a package, registry
+  // is the server's per-process composition.
+  const IndexLayer = IndexRegistryLive;
+
   // ProviderService probes installed CLIs via CommandExecutor, consults
   // CredentialsService for SDK keys, resolves folderId → cwd via
   // WorkspaceService, and forwards the SDK's tool-permission callback to
@@ -157,6 +163,7 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(WorkspaceLayer),
     Layer.provide(PermissionLayer),
     Layer.provide(AttachmentLayer),
+    Layer.provide(IndexLayer),
     Layer.provide(NodeContext.layer),
   );
 

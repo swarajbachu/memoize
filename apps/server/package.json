@@ -30,6 +30,7 @@
     "@effect/sql": "catalog:",
     "@effect/sql-sqlite-node": "catalog:",
     "better-sqlite3": "^12.9.0",
+    "@memoize/index": "*",
     "@memoize/wire": "*",
     "effect": "catalog:",
     "fuzzysort": "catalog:",
