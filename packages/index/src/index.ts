@@ -76,3 +76,12 @@ export {
   type EmbeddingProvider,
 } from "./embedding/provider.ts";
 export { drainAll, drainEmbedQueue } from "./embedding/worker.ts";
+export {
+  CohereRerankProvider,
+  NullRerankProvider,
+  VoyageRerankProvider,
+  applyRerank,
+  getRerankProvider,
+  setRerankProvider,
+  type RerankProvider,
+} from "./rerank/index.ts";

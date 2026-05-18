@@ -19,6 +19,7 @@ import {
   symbolHitToSearchHit,
 } from "./retrieval/symbol-lookup.ts";
 import { isVectorAvailable, vectorSearch } from "./retrieval/vector.ts";
+import { applyRerank } from "./rerank/index.ts";
 import {
   type IndexStatus,
   type SearchHit,
@@ -257,7 +258,9 @@ const runSearch = (
       );
     }
 
-    const fused = reciprocalRankFusion(rankings).slice(0, limit);
+    // Over-fetch into RRF; we'll narrow with rerank before returning.
+    const fanForRerank = Math.max(20, limit * 4);
+    const fused = reciprocalRankFusion(rankings).slice(0, fanForRerank);
     const out: SearchHit[] = [];
     for (const { chunkId, score } of fused) {
       if (chunkId < 0) {
@@ -314,5 +317,12 @@ const runSearch = (
         });
       }
     }
-    return out as ReadonlyArray<SearchHit>;
+    // Phase D: rerank the over-fetched fused candidates and trim to `limit`.
+    // No-op when the active provider is NullRerankProvider (default), so
+    // local installs without a paid backend still get the RRF ordering.
+    const reranked = yield* Effect.tryPromise({
+      try: () => applyRerank(input.query, out, limit),
+      catch: () => new Error("rerank failed"),
+    }).pipe(Effect.catchAll(() => Effect.succeed(out.slice(0, limit))));
+    return reranked as ReadonlyArray<SearchHit>;
   });
