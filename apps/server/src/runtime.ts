@@ -76,9 +76,17 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(AppPathsLayer),
   );
 
+  // IndexRegistry must be available to WorkspaceService so that
+  // `workspace.setSelected` / `workspace.add` can fire-and-forget an
+  // `ensureIndexed()` the moment the user opens a project. Declared
+  // before WorkspaceLayer because it's a dependency, not the other way
+  // around — there is no upstream from IndexRegistry into Workspace.
+  const IndexLayer = IndexRegistryLive;
+
   const WorkspaceLayer = WorkspaceServiceLive.pipe(
     Layer.provide(MigratedSqlite),
     Layer.provide(ImportShim),
+    Layer.provide(IndexLayer),
     Layer.provide(NodeContext.layer),
   );
 
@@ -149,11 +157,6 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(NodeContext.layer),
   );
 
-  // IndexRegistry: per-workspace `@memoize/index` handles, lazily
-  // constructed on first session. ADR 0013: engine is a package, registry
-  // is the server's per-process composition.
-  const IndexLayer = IndexRegistryLive;
-
   // ProviderService probes installed CLIs via CommandExecutor, consults
   // CredentialsService for SDK keys, resolves folderId → cwd via
   // WorkspaceService, and forwards the SDK's tool-permission callback to
@@ -212,6 +215,7 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(PermissionLayer),
     Layer.provide(AttachmentLayer),
     Layer.provide(SkillBridgeLayer),
+    Layer.provide(IndexLayer),
     Layer.provide(FolderPickerLayer),
     // `agent.opencodeInventory` calls `resolveCliPath("opencode")` directly
     // (it spins up a short-lived `opencode serve` to read the user's

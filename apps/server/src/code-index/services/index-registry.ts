@@ -1,6 +1,13 @@
-import { Context, type Effect } from "effect";
+import { Context, type Effect, type Stream } from "effect";
 
-import { type IndexStatus } from "@memoize/index";
+import type {
+  ChunkContent,
+  IndexStatus,
+  RefHit,
+  SearchHit,
+  SymbolHit,
+  SymbolSummary,
+} from "@memoize/index";
 
 /**
  * Per-process registry of `IndexService` instances, keyed by absolute
@@ -10,12 +17,13 @@ import { type IndexStatus } from "@memoize/index";
  *
  * Construction is lazy — opening a workspace doesn't index it; the first
  * call to `getHandle(...)` opens the DB and runs migrations, and
- * `reindex(...)` is the explicit trigger that walks the tree.
+ * `ensureIndexed()` is the explicit trigger that walks the tree (idempotent;
+ * `setSelected` in WorkspaceService calls it on every workspace switch).
  */
 export interface IndexRegistryShape {
   /**
    * Resolve a session's `(cwd, branch)` to an active handle. Returns a
-   * thin object with the four read methods + a `reindex` trigger; the
+   * thin object with the read methods + a `reindex` trigger; the
    * underlying service is cached so subsequent calls reuse the same DB.
    */
   readonly getHandle: (
@@ -25,24 +33,44 @@ export interface IndexRegistryShape {
 }
 
 export interface IndexHandle {
+  /**
+   * Synchronous read of the current state — used by Claude-SDK tools to
+   * short-circuit with the "indexing in progress" payload without having
+   * to await an async status() round-trip on every tool call.
+   */
+  readonly state: () => IndexStatus["state"];
+  /**
+   * Live stream of status snapshots — the first emit is the current value
+   * so a fresh subscriber doesn't race the first transition.
+   */
+  readonly statusStream: () => Stream.Stream<IndexStatus>;
+  /**
+   * Kick off an indexing pass if one isn't running and the DB isn't already
+   * populated. Idempotent: re-calling while indexing returns the in-flight
+   * Promise; calling when `state === "ready"` no-ops. Returns after the
+   * pass settles (success or error).
+   */
+  readonly ensureIndexed: () => Promise<void>;
   readonly status: () => Promise<IndexStatus>;
   readonly reindex: () => Promise<IndexStatus>;
   readonly symbolLookup: (input: {
     name: string;
     kind?: string;
     limit?: number;
-  }) => Promise<unknown>;
+  }) => Promise<ReadonlyArray<SymbolHit>>;
   readonly findReferences: (input: {
     symbol: string;
     limit?: number;
-  }) => Promise<unknown>;
-  readonly readChunk: (input: { chunkId: number }) => Promise<unknown>;
-  readonly listModule: (input: { path: string }) => Promise<unknown>;
+  }) => Promise<ReadonlyArray<RefHit>>;
+  readonly readChunk: (input: { chunkId: number }) => Promise<ChunkContent | null>;
+  readonly listModule: (input: {
+    path: string;
+  }) => Promise<ReadonlyArray<SymbolSummary>>;
   readonly search: (input: {
     query: string;
     kind?: "auto" | "symbol" | "text" | "semantic";
     limit?: number;
-  }) => Promise<unknown>;
+  }) => Promise<ReadonlyArray<SearchHit>>;
 }
 
 export class IndexRegistry extends Context.Tag("memoize/IndexRegistry")<

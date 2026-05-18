@@ -12,7 +12,55 @@ import { type IndexHandle } from "./services/index-registry.ts";
  * Phase B: `code_search` routes to symbol lookup. Phase C extends it to
  * BM25 + vector + RRF without changing the tool's externally-visible
  * input/output schema.
+ *
+ * Every tool short-circuits with a structured "indexing in progress"
+ * payload when the handle isn't ready yet. We don't want the agent to
+ * see an empty hits array and conclude the symbol doesn't exist — better
+ * to nudge it toward `Bash(rg)` until the background reindex completes.
  */
+
+interface IndexingPayload {
+  readonly status: "indexing" | "error";
+  readonly progress: { readonly processed: number; readonly total: number } | null;
+  readonly message: string;
+}
+
+const guard = async <T>(
+  handle: IndexHandle,
+  ready: () => Promise<T>,
+): Promise<{ content: Array<{ type: "text"; text: string }> }> => {
+  const state = handle.state();
+  if (state === "indexing" || state === "idle") {
+    // Fetch the latest progress for an informative message. `status()` is a
+    // cheap read of the cached snapshot for an already-open DB.
+    const snapshot = await handle.status().catch(() => null);
+    const payload: IndexingPayload = {
+      status: "indexing",
+      progress: snapshot?.progress ?? null,
+      message:
+        "The code index is being built for this workspace. For now, use Bash(rg ...) or Read to navigate; results will become fast once indexing finishes (~30-60s for a typical repo).",
+    };
+    return {
+      content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+    };
+  }
+  if (state === "error") {
+    const payload: IndexingPayload = {
+      status: "error",
+      progress: null,
+      message:
+        "The code index failed to build for this workspace. Fall back to Bash(rg ...) or Read for now — see the server logs for the underlying error.",
+    };
+    return {
+      content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+    };
+  }
+  const value = await ready();
+  return {
+    content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
+  };
+};
+
 export const buildIndexTools = (handle: IndexHandle) => [
   tool(
     "code_search",
@@ -22,21 +70,15 @@ export const buildIndexTools = (handle: IndexHandle) => [
       kind: z.enum(["auto", "symbol", "text", "semantic"]).optional(),
       limit: z.number().int().positive().max(20).optional(),
     },
-    async (args) => {
-      const hits = await handle.search({
-        query: args.query,
-        kind: args.kind,
-        limit: args.limit,
-      });
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({ hits }, null, 2),
-          },
-        ],
-      };
-    },
+    async (args) =>
+      guard(handle, async () => {
+        const hits = await handle.search({
+          query: args.query,
+          kind: args.kind,
+          limit: args.limit,
+        });
+        return { hits };
+      }),
   ),
 
   tool(
@@ -47,16 +89,15 @@ export const buildIndexTools = (handle: IndexHandle) => [
       kind: z.string().optional(),
       limit: z.number().int().positive().max(50).optional(),
     },
-    async (args) => {
-      const hits = await handle.symbolLookup({
-        name: args.name,
-        kind: args.kind,
-        limit: args.limit,
-      });
-      return {
-        content: [{ type: "text", text: JSON.stringify({ hits }, null, 2) }],
-      };
-    },
+    async (args) =>
+      guard(handle, async () => {
+        const hits = await handle.symbolLookup({
+          name: args.name,
+          kind: args.kind,
+          limit: args.limit,
+        });
+        return { hits };
+      }),
   ),
 
   tool(
@@ -66,15 +107,14 @@ export const buildIndexTools = (handle: IndexHandle) => [
       symbol: z.string().min(1),
       limit: z.number().int().positive().max(100).optional(),
     },
-    async (args) => {
-      const refs = await handle.findReferences({
-        symbol: args.symbol,
-        limit: args.limit,
-      });
-      return {
-        content: [{ type: "text", text: JSON.stringify({ refs }, null, 2) }],
-      };
-    },
+    async (args) =>
+      guard(handle, async () => {
+        const refs = await handle.findReferences({
+          symbol: args.symbol,
+          limit: args.limit,
+        });
+        return { refs };
+      }),
   ),
 
   tool(
@@ -83,12 +123,11 @@ export const buildIndexTools = (handle: IndexHandle) => [
     {
       chunkId: z.number().int().nonnegative(),
     },
-    async (args) => {
-      const chunk = await handle.readChunk({ chunkId: args.chunkId });
-      return {
-        content: [{ type: "text", text: JSON.stringify({ chunk }, null, 2) }],
-      };
-    },
+    async (args) =>
+      guard(handle, async () => {
+        const chunk = await handle.readChunk({ chunkId: args.chunkId });
+        return { chunk };
+      }),
   ),
 
   tool(
@@ -97,13 +136,10 @@ export const buildIndexTools = (handle: IndexHandle) => [
     {
       path: z.string().min(1),
     },
-    async (args) => {
-      const symbols = await handle.listModule({ path: args.path });
-      return {
-        content: [
-          { type: "text", text: JSON.stringify({ symbols }, null, 2) },
-        ],
-      };
-    },
+    async (args) =>
+      guard(handle, async () => {
+        const symbols = await handle.listModule({ path: args.path });
+        return { symbols };
+      }),
   ),
 ];

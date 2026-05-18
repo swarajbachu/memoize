@@ -1,4 +1,4 @@
-import { Context, type Effect } from "effect";
+import { Context, type Effect, type Stream } from "effect";
 
 import {
   type ChunkContent,
@@ -22,6 +22,13 @@ import { type IndexError } from "./errors.ts";
  */
 export interface IndexServiceShape {
   readonly status: Effect.Effect<IndexStatus, IndexError>;
+
+  /**
+   * Stream of status snapshots published every time the service's internal
+   * progress/state Ref changes. The first emit is the current value, so a
+   * fresh subscriber doesn't race the first transition.
+   */
+  readonly statusStream: Stream.Stream<IndexStatus>;
 
   readonly reindex: (opts?: {
     readonly branch?: string;

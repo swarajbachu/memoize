@@ -65,6 +65,7 @@ export {
   swapBranchManifest,
   type ManifestDiff,
 } from "./manifest/swap.ts";
+export { countAll, type IndexStats } from "./blob/store.ts";
 export { forgetFile, reindexFile } from "./incremental.ts";
 export { bm25Search, type Bm25Hit } from "./retrieval/bm25.ts";
 export { reciprocalRankFusion } from "./retrieval/rrf.ts";

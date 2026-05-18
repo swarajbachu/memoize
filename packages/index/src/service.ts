@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Ref } from "effect";
+import { Context, Effect, Layer, Mailbox, Ref, Stream } from "effect";
 import { join } from "node:path";
 
 import { closeIndexDb, openIndexDb, type IndexDb } from "./db/sqlite.ts";
@@ -79,6 +79,14 @@ export const IndexServiceLive = Layer.scoped(
       progress: null,
     });
 
+    // Fan-out for status updates. Each call to `statusStream` registers a
+    // fresh per-subscriber mailbox; on every state transition we re-snapshot
+    // and `unsafeOffer` into all live subscribers. A subscriber receives the
+    // current value on subscribe so there's no race with the first transition.
+    const subscribers = yield* Ref.make<
+      ReadonlyArray<Mailbox.Mailbox<IndexStatus>>
+    >([]);
+
     const branchOr = (b?: string): string => b ?? config.branch;
 
     const computeStatus = (): Effect.Effect<IndexStatus> =>
@@ -109,18 +117,41 @@ export const IndexServiceLive = Layer.scoped(
         ),
       );
 
+    const publishCurrent: Effect.Effect<void> = Effect.gen(function* () {
+      const snapshot = yield* computeStatus();
+      const subs = yield* Ref.get(subscribers);
+      for (const m of subs) m.unsafeOffer(snapshot);
+    });
+
+    const setState = (next: InternalState): Effect.Effect<void> =>
+      Ref.set(stateRef, next).pipe(Effect.zipRight(publishCurrent));
+
+    const statusStream: Stream.Stream<IndexStatus> = Stream.unwrapScoped(
+      Effect.gen(function* () {
+        const mailbox = yield* Mailbox.make<IndexStatus>();
+        yield* Effect.addFinalizer(() =>
+          Ref.update(subscribers, (xs) => xs.filter((m) => m !== mailbox)),
+        );
+        yield* Ref.update(subscribers, (xs) => [...xs, mailbox]);
+        // Seed with the current snapshot so a fresh subscriber doesn't race.
+        const snapshot = yield* computeStatus();
+        mailbox.unsafeOffer(snapshot);
+        return Mailbox.toStream(mailbox);
+      }),
+    );
+
     const doReindex = (branch: string): Effect.Effect<IndexStatus, never> =>
       Effect.gen(function* () {
-        yield* Ref.set(stateRef, { state: "indexing", progress: null });
+        yield* setState({ state: "indexing", progress: null });
         const result = yield* indexRepo(db, config.root, branch, (p) =>
           Effect.runSync(
-            Ref.set(stateRef, {
+            setState({
               state: "indexing",
               progress: { processed: p.processed, total: p.total },
             }),
           ),
         );
-        yield* Ref.set(stateRef, {
+        yield* setState({
           state: "ready",
           progress: { processed: result.processed, total: result.total },
         });
@@ -129,7 +160,7 @@ export const IndexServiceLive = Layer.scoped(
         Effect.catchAll((err) =>
           Effect.gen(function* () {
             yield* Effect.logError("index reindex failed", err);
-            yield* Ref.set(stateRef, { state: "error", progress: null });
+            yield* setState({ state: "error", progress: null });
             return yield* computeStatus();
           }),
         ),
@@ -137,6 +168,7 @@ export const IndexServiceLive = Layer.scoped(
 
     return IndexService.of({
       status: computeStatus(),
+      statusStream,
       reindex: (opts) => doReindex(branchOr(opts?.branch)),
       symbolLookup: ({ name, kind, branch, limit }) =>
         lookupSymbol(db, name, branchOr(branch), kind, limit ?? 10),
