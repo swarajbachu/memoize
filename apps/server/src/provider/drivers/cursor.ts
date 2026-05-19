@@ -328,9 +328,19 @@ export const startCursorSession = (
       process.stderr.write(`[cursor.stderr] ${chunk}`);
     });
 
-    child.on("error", (err) => {
-      if (closed) return;
-      events.unsafeOffer({ _tag: "Error", message: err.message });
+    // Reject pending requests on spawn-time errors (ENOENT/EACCES) so the
+    // initialize handshake fails cleanly instead of waiting for a timeout
+    // that never resolves. Mirrors the codex client fix.
+    child.once("error", (err) => {
+      const message = err instanceof Error ? err.message : String(err);
+      for (const { reject, timer } of pending.values()) {
+        clearTimeout(timer);
+        reject(new Error(message));
+      }
+      pending.clear();
+      if (!closed) {
+        events.unsafeOffer({ _tag: "Error", message });
+      }
     });
 
     child.on("close", (code, signal) => {
@@ -353,35 +363,54 @@ export const startCursorSession = (
     // === ACP handshake — synchronous, fails the start() RPC on error. ===
     const handshake = Effect.tryPromise({
       try: async () => {
-        const init = (await request("initialize", {
-          protocolVersion: 1,
-          clientCapabilities: {
-            fs: {
-              readTextFile: true,
-              writeTextFile: true,
-              readDirectory: true,
-              createDirectory: true,
-              deleteFile: true,
-              moveFile: true,
+        // Short timeout on the first request: a real ACP server replies in
+        // <100ms. When the binary is too old to support `acp`, cursor-agent
+        // silently treats it as a chat prompt and sits on stdin forever —
+        // a 30s wait there is just bad UX. Detect that within 5s and
+        // surface an actionable upgrade message instead.
+        let init: { authMethods?: ReadonlyArray<{ id?: unknown }> };
+        try {
+          init = (await request(
+            "initialize",
+            {
+              protocolVersion: 1,
+              clientCapabilities: {
+                fs: {
+                  readTextFile: true,
+                  writeTextFile: true,
+                  readDirectory: true,
+                  createDirectory: true,
+                  deleteFile: true,
+                  moveFile: true,
+                },
+                terminal: true,
+                _meta: { parameterizedModelPicker: true },
+              },
             },
-            terminal: true,
-          },
-        })) as { authMethods?: ReadonlyArray<{ id?: unknown }> };
+            5_000,
+          )) as { authMethods?: ReadonlyArray<{ id?: unknown }> };
+        } catch (cause) {
+          const reason = cause instanceof Error ? cause.message : String(cause);
+          if (/timed out/i.test(reason)) {
+            throw new Error(
+              "Cursor Agent is too old (no ACP support). Run `cursor-agent update` (need ≥ 2025.11) and try again.",
+            );
+          }
+          throw cause;
+        }
 
         const authIds = new Set(
           (init.authMethods ?? [])
             .map((m) => (typeof m?.id === "string" ? m.id : null))
             .filter((id): id is string => id !== null),
         );
-        // Cursor advertises `cursor_login` for OAuth-style credentials and
-        // `cached_token` once a prior `cursor-agent login` has stored one.
-        // When an API key is set we prefer `cursor_login` (the CLI handles
-        // the key/token translation server-side); otherwise use the cached
-        // token. We don't fall back to `cursor_login` without an API key —
-        // that silently sends the user into an OAuth dance the ACP child
-        // can't complete, masking "not signed in" behind a vague error.
+        // Cursor advertises `cursor_login` for stored credentials (OAuth
+        // or API key — the CLI loads whichever is set). `cached_token`
+        // appears on older builds. Prefer `cursor_login` whenever it's
+        // offered; the API key (if any) is forwarded via the
+        // CURSOR_API_KEY env above so the CLI side picks it up.
         const methodId =
-          apiKey !== null && authIds.has("cursor_login")
+          authIds.has("cursor_login")
             ? "cursor_login"
             : authIds.has("cached_token")
               ? "cached_token"
@@ -433,6 +462,28 @@ export const startCursorSession = (
       );
     }
 
+    // Apply the requested model via ACP `session/set_config_option`. This is
+    // the only path cursor-agent honors for model selection; the old
+    // `_meta.model` slot in `session/prompt` was a no-op. Fire-and-forget:
+    // when the server doesn't recognise the slug it logs but the session
+    // still works on the default model.
+    if (input.model !== undefined && input.model.length > 0) {
+      void request(
+        "session/set_config_option",
+        {
+          sessionId: acpSessionId,
+          configId: "model",
+          value: input.model,
+        },
+        5_000,
+      ).catch((err) => {
+        const reason = err instanceof Error ? err.message : String(err);
+        process.stderr.write(
+          `[cursor] set_config_option model=${input.model} failed: ${reason}\n`,
+        );
+      });
+    }
+
     // If the session was created in plan mode, inform the ACP server via
     // native `session/setMode`. Cursor exposes plan/architect modes
     // natively, so this is real plan mode — not the dev-instructions
@@ -458,10 +509,7 @@ export const startCursorSession = (
               {
                 sessionId: sid,
                 prompt: [{ type: "text", text }],
-                _meta: {
-                  permissionMode: currentMode,
-                  ...(input.model !== undefined ? { model: input.model } : {}),
-                },
+                _meta: { permissionMode: currentMode },
               },
               5 * 60_000,
               (id) => {

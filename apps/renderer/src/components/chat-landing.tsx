@@ -1,4 +1,4 @@
-import { Check, ChevronDown, FolderClosed, FolderPlus, Send } from "lucide-react";
+import { Check, ChevronDown, FolderClosed, FolderPlus, Send, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 
 import type { FolderId } from "@memoize/wire";
@@ -64,6 +64,7 @@ export function ChatLanding() {
   );
 
   const [text, setText] = useState("");
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const selectedFolder = useMemo(
@@ -88,15 +89,23 @@ export function ChatLanding() {
   const canSend =
     text.trim().length > 0 && selectedFolderId !== null && !creating;
 
-  const submit = (): void => {
+  const submit = async (): Promise<void> => {
     if (!canSend || selectedFolderId === null) return;
     const trimmed = text.trim();
     const model = defaultModelByProvider[defaultProviderId];
     setText("");
-    void create(selectedFolderId, defaultProviderId, model, {
+    setSubmitError(null);
+    const result = await create(selectedFolderId, defaultProviderId, model, {
       initialPrompt: trimmed,
       runtimeMode: defaultRuntimeMode,
     });
+    if (result === null) {
+      const reason =
+        useChatsStore.getState().error ??
+        `Couldn't start ${defaultProviderId}. Check that its CLI is installed and signed in.`;
+      setSubmitError(reason);
+      setText(trimmed);
+    }
   };
 
   const onSuggest = (prompt: string) => {
@@ -118,17 +127,35 @@ export function ChatLanding() {
           {headline}
         </h1>
 
+        {submitError !== null && (
+          <div className="flex items-start gap-2 rounded-lg border border-rose-400/30 bg-rose-500/[0.08] px-3 py-2 text-[12px] text-rose-200">
+            <span className="mt-px shrink-0">⚠</span>
+            <span className="flex-1 leading-snug">{submitError}</span>
+            <button
+              type="button"
+              onClick={() => setSubmitError(null)}
+              aria-label="Dismiss error"
+              className="-mr-1 shrink-0 rounded p-0.5 text-rose-200/80 hover:bg-rose-500/[0.12] hover:text-rose-100"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+        )}
+
         <Frame>
           <Card className="rounded-xl border-border/50">
             <CardPanel className="relative flex flex-col gap-2 px-3 py-2">
               <textarea
                 ref={textareaRef}
                 value={text}
-                onChange={(e) => setText(e.target.value)}
+                onChange={(e) => {
+                  setText(e.target.value);
+                  if (submitError !== null) setSubmitError(null);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
-                    submit();
+                    void submit();
                   }
                 }}
                 placeholder={
@@ -146,7 +173,7 @@ export function ChatLanding() {
                       <Button
                         variant="default"
                         size="icon-sm"
-                        onClick={submit}
+                        onClick={() => void submit()}
                         disabled={!canSend}
                         aria-label="Send"
                       >

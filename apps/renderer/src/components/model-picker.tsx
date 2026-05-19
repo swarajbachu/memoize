@@ -133,6 +133,13 @@ export function ModelPicker(props: ModelPickerProps) {
   const [expandedGroup, setExpandedGroup] = useState<ProviderId | null>(
     providerId,
   );
+  // Inline feedback for failed picks. The session-mode handlers
+  // (createSession / setSessionProvider / setSessionModel) used to fire-
+  // and-forget, so a failed switch (cursor-agent not installed, ACP
+  // handshake timeout, etc.) just closed the popover with no clue why.
+  // We now await them and surface the reason here.
+  const [pickError, setPickError] = useState<string | null>(null);
+  const [picking, setPicking] = useState(false);
   const popupRef = useRef<HTMLDivElement | null>(null);
 
   // Forward open state to parent so ChatComposer can block Enter submit
@@ -148,6 +155,8 @@ export function ModelPicker(props: ModelPickerProps) {
       setEvents(readModelPickerEvents());
       setScope("all");
       setExpandedGroup(providerId);
+      setPickError(null);
+      setPicking(false);
     }
   }, [open, providerId]);
 
@@ -241,7 +250,7 @@ export function ModelPicker(props: ModelPickerProps) {
       .filter((g) => g.models.length > 0);
   }, [scope, query, allModels, pickableProviders, providerId]);
 
-  const handlePick = (pid: ProviderId, modelId: string) => {
+  const handlePick = async (pid: ProviderId, modelId: string) => {
     if (isDefault) {
       setDefaultProvider(pid);
       setDefaultModel(pid, modelId);
@@ -255,15 +264,41 @@ export function ModelPicker(props: ModelPickerProps) {
     const runtimeMode = (props as any).runtimeMode as RuntimeMode | undefined;
 
     const isCross = pid !== providerId;
-    if (isCross && !isFresh && chatId !== undefined) {
-      void createSession(chatId, pid, modelId, { runtimeMode });
-    } else if (isCross) {
-      void setSessionProvider(sessionId, pid, modelId);
-    } else if (modelId !== currentModel) {
-      void setSessionModel(sessionId, modelId);
+    // Await whatever store call we kick off so we can keep the popover
+    // open + show the reason if it fails. Previously these were `void`-d
+    // and the popover always closed, swallowing SessionStartError from
+    // a missing/broken CLI behind a silent close.
+    setPickError(null);
+    setPicking(true);
+    try {
+      if (isCross && !isFresh && chatId !== undefined) {
+        const newId = await createSession(chatId, pid, modelId, { runtimeMode });
+        if (newId === null) {
+          const reason =
+            useSessionsStore.getState().error ??
+            `Couldn't start ${pid}. Check that its CLI is installed and signed in.`;
+          setPickError(reason);
+          return;
+        }
+      } else if (isCross) {
+        const result = await setSessionProvider(sessionId, pid, modelId);
+        if (!result.ok) {
+          setPickError(result.reason);
+          return;
+        }
+      } else if (modelId !== currentModel) {
+        await setSessionModel(sessionId, modelId);
+        const reason = useSessionsStore.getState().error;
+        if (reason !== null) {
+          setPickError(reason);
+          return;
+        }
+      }
+      pushModelPickerEvent({ providerId: pid, modelId });
+      setOpen(false);
+    } finally {
+      setPicking(false);
     }
-    pushModelPickerEvent({ providerId: pid, modelId });
-    setOpen(false);
   };
 
   const currentLabel =
@@ -325,7 +360,7 @@ export function ModelPicker(props: ModelPickerProps) {
       if (target === undefined) return;
       e.preventDefault();
       e.stopPropagation();
-      handlePickRef.current(target.providerId, target.modelId);
+      void handlePickRef.current(target.providerId, target.modelId);
     };
     document.addEventListener("keydown", onKeyDown, true);
     return () => document.removeEventListener("keydown", onKeyDown, true);
@@ -398,7 +433,19 @@ export function ModelPicker(props: ModelPickerProps) {
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto px-2 pb-2">
+            {pickError !== null && (
+              <div className="mx-2.5 mb-1.5 flex items-start gap-2 rounded-md border border-rose-400/30 bg-rose-500/[0.08] px-2.5 py-2 text-[11px] text-rose-200">
+                <span className="mt-px shrink-0">⚠</span>
+                <span className="leading-snug">{pickError}</span>
+              </div>
+            )}
+
+            <div
+              className={cn(
+                "flex-1 overflow-y-auto px-2 pb-2",
+                picking && "pointer-events-none opacity-60",
+              )}
+            >
               {showEmpty && (
                 <div className="px-3 py-6 text-center text-muted-foreground text-xs">
                   No models match.
