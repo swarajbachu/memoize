@@ -101,8 +101,9 @@ export function ModelPicker(props: ModelPickerProps) {
   const setSessionModel = useSessionsStore((s) => s.setModel);
   const setSessionProvider = useSessionsStore((s) => s.setProvider);
   const createSession = useSessionsStore((s) => s.create);
-  const setDefaultProvider = useSettingsStore((s) => s.setDefaultProvider);
-  const setDefaultModel = useSettingsStore((s) => s.setDefaultModel);
+  const setDefaultProviderAndModel = useSettingsStore(
+    (s) => s.setDefaultProviderAndModel,
+  );
 
   const availability = useProvidersStore((s) => s.availability);
   const opencodeInventory = useOpencodeInventory((s) => s.inventory);
@@ -243,8 +244,7 @@ export function ModelPicker(props: ModelPickerProps) {
 
   const handlePick = (pid: ProviderId, modelId: string) => {
     if (isDefault) {
-      setDefaultProvider(pid);
-      setDefaultModel(pid, modelId);
+      setDefaultProviderAndModel(pid, modelId);
       pushModelPickerEvent({ providerId: pid, modelId });
       setOpen(false);
       return;
