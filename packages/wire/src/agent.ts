@@ -723,21 +723,20 @@ export const MODELS_BY_PROVIDER: Record<ProviderId, ReadonlyArray<ModelOption>> 
       supportsWebSearch: "queryOnly",
     },
   ],
-  // Cursor's CLI exposes models via the ACP session config-option picker;
-  // these are the slugs `cursor-agent --model` advertises today. Like grok,
-  // the picker accepts any model the agent knows, so a custom slug typed by
-  // the user still works — this list is the default shown in the picker.
-  // Cursor has native plan mode via ACP `setSessionMode("plan")`.
+  // Cursor's CLI exposes its full catalog through `cursor-agent models`
+  // (113 entries as of 2026-05). We surface a curated shortlist here; custom
+  // slugs typed in the picker still work because this is just the default
+  // seed, not a whitelist. Selection is applied at session start via ACP
+  // `session/set_config_option { configId: "model" }`. Plan mode lands
+  // natively via `setSessionMode("plan")`.
   cursor: [
-    { id: "gpt-5", label: "GPT-5", supportsPlanMode: true },
-    { id: "sonnet-4", label: "Claude Sonnet 4", supportsPlanMode: true },
-    {
-      id: "sonnet-4-thinking",
-      label: "Claude Sonnet 4 (Thinking)",
-      optionDescriptors: [reasoningSelectDescriptor("medium")],
-      supportsPlanMode: true,
-    },
-    { id: "opus-4.1", label: "Claude Opus 4.1", supportsPlanMode: true },
+    { id: "composer-2-fast", label: "Composer 2 Fast", supportsPlanMode: true },
+    { id: "composer-2", label: "Composer 2", supportsPlanMode: true },
+    { id: "gpt-5.5-medium", label: "GPT-5.5", supportsPlanMode: true },
+    { id: "gpt-5.5-high", label: "GPT-5.5 High", supportsPlanMode: true },
+    { id: "gpt-5.3-codex", label: "Codex 5.3", supportsPlanMode: true },
+    { id: "gemini-3.1-pro", label: "Gemini 3.1 Pro", supportsPlanMode: true },
+    { id: "auto", label: "Auto", supportsPlanMode: true },
   ],
   // OpenCode is a meta-provider: it spawns a local `opencode serve` and
   // forwards prompts to whichever underlying provider (anthropic, openai,
@@ -803,7 +802,16 @@ export const MODEL_ALIASES_BY_PROVIDER: Record<ProviderId, Record<string, string
     "gemini-3-pro": "gemini-3-pro-preview",
     "gemini-3.1-pro-preview": "gemini-3-pro-preview",
   },
-  cursor: {},
+  // Cursor retired the old `gpt-5` / `sonnet-4*` / `opus-4.x` slugs sometime
+  // around 2025-11. Existing user settings persisted by earlier builds get
+  // re-aliased to current cursor catalogue entries so re-opening the app
+  // doesn't send the agent a slug it'll silently ignore.
+  cursor: {
+    "gpt-5": "composer-2-fast",
+    "sonnet-4": "composer-2-fast",
+    "sonnet-4-thinking": "composer-2-fast",
+    "opus-4.1": "composer-2-fast",
+  },
   opencode: {},
 };
 
