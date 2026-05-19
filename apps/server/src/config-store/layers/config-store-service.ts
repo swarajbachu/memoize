@@ -1,4 +1,5 @@
 import * as fsSync from "node:fs";
+import { randomBytes } from "node:crypto";
 
 import { FileSystem, Path } from "@effect/platform";
 import { Effect, Layer, PubSub, Ref, Stream } from "effect";
@@ -233,18 +234,42 @@ export const ConfigStoreServiceLive = Layer.scoped(
         }
       });
 
+    // One semaphore per path. Concurrent writes to the same file (e.g. the
+    // model-picker firing `defaultProviderId` and `defaultModelByProvider`
+    // back-to-back; or migrateLocalStorage racing the first updateSettings)
+    // would otherwise both pick the same `<path>.tmp` and the second
+    // rename ENOENTs because the first already renamed the tmp away.
+    const writeLocks = new Map<string, Effect.Semaphore>();
+    const lockFor = (
+      absPath: string,
+    ): Effect.Effect<Effect.Semaphore> =>
+      Effect.gen(function* () {
+        const existing = writeLocks.get(absPath);
+        if (existing) return existing;
+        const sem = yield* Effect.makeSemaphore(1);
+        writeLocks.set(absPath, sem);
+        return sem;
+      });
+
     /**
-     * Atomic write — write the contents to `<absPath>.tmp` and rename over
-     * the target so a crash during write never leaves a partial file.
+     * Atomic write — write the contents to a unique `<absPath>.<rand>.tmp`
+     * and rename over the target so a crash during write never leaves a
+     * partial file. Serialised per-path so concurrent callers don't race
+     * on the tmp filename.
      */
     const writeAtomically = (
       absPath: string,
       contents: string,
     ): Effect.Effect<void> =>
       Effect.gen(function* () {
-        const tmp = `${absPath}.tmp`;
-        yield* fs.writeFileString(tmp, contents).pipe(Effect.orDie);
-        yield* fs.rename(tmp, absPath).pipe(Effect.orDie);
+        const sem = yield* lockFor(absPath);
+        yield* sem.withPermits(1)(
+          Effect.gen(function* () {
+            const tmp = `${absPath}.${randomBytes(6).toString("hex")}.tmp`;
+            yield* fs.writeFileString(tmp, contents).pipe(Effect.orDie);
+            yield* fs.rename(tmp, absPath).pipe(Effect.orDie);
+          }),
+        );
       });
 
     const initialSettingsRaw = yield* readJsonOrNull(settingsPath);

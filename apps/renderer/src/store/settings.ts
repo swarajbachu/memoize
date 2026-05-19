@@ -100,6 +100,15 @@ type SettingsState = SettingsSlice & {
   readonly hydrate: () => Promise<void>;
   readonly setDefaultProvider: (providerId: ProviderId) => void;
   readonly setDefaultModel: (providerId: ProviderId, model: string) => void;
+  /**
+   * Set both the default provider and that provider's default model in one
+   * patch. The model picker treats picking a model as a single user action;
+   * sending two separate RPCs raced on the server's atomic-write tmp file.
+   */
+  readonly setDefaultProviderAndModel: (
+    providerId: ProviderId,
+    model: string,
+  ) => void;
   readonly setDefaultRuntimeMode: (mode: RuntimeMode) => void;
   readonly setDefaultAutoCreateWorktree: (value: boolean) => void;
   readonly setOnboardingCompleted: (value: boolean) => void;
@@ -187,6 +196,21 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const client = await getRpcClient();
       await Effect.runPromise(
         client.settings.update({ patch: { defaultModelByProvider: next } }),
+      );
+    })();
+  },
+  setDefaultProviderAndModel: (providerId, model) => {
+    const next = { ...get().defaultModelByProvider, [providerId]: model };
+    set({ defaultProviderId: providerId, defaultModelByProvider: next });
+    void (async () => {
+      const client = await getRpcClient();
+      await Effect.runPromise(
+        client.settings.update({
+          patch: {
+            defaultProviderId: providerId,
+            defaultModelByProvider: next,
+          },
+        }),
       );
     })();
   },
