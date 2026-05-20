@@ -553,8 +553,21 @@ export const createAcpTranslator = (provider: AcpProviderTag): AcpTranslator => 
     //    text. This is the fix for the "Thinking The user is asking if I can..."
     //    word-by-word explosion the user reported with Grok.
     if (isThinkingChunk(kind)) {
-      const text = asText(u["content"]);
+      let text = asText(u["content"]);
       if (text === null || text.length === 0) return [];
+      // Grok often starts its first thinking chunk by literally echoing the
+      // user prompt ("The user says: \"...\" First, the user's query...").
+      // We aggressively strip this meta-reasoning prefix so the Thinking row
+      // shows the agent's actual work instead of the prompt copy.
+      if (provider === "grok" && thinkingBuffer.length === 0) {
+        const cleaned = text
+          .replace(/^the user (says|asked|wants|is asking)[^"]*"\s*/i, "")
+          .replace(/^first, the user's query[^—-]*[-—]\s*/i, "")
+          .trim();
+        if (cleaned.length > 10) {
+          text = cleaned;
+        }
+      }
       if (thinkingItemId === null) thinkingItemId = nextItemId();
       thinkingBuffer += text;
       trace(provider, `buffer thinking chunk len=${text.length} totalLen=${thinkingBuffer.length}`);

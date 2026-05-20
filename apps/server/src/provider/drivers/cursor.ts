@@ -15,6 +15,8 @@ import {
 
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
 import { createAcpTranslator } from "./acp/translate.ts";
+import { handleFsRequest } from "./acp/fs.ts";
+import { handleTerminalRequest } from "./acp/terminal.ts";
 
 /**
  * Live-only handle for one Cursor Agent conversation. Mirrors Grok's
@@ -299,18 +301,46 @@ export const startCursorSession = (
             );
           }
           if (isFs) {
-            writeMessage({
-              jsonrpc: "2.0",
-              id: msg.id,
-              error: {
-                code: -32601,
-                message: `Method not implemented by memoize ACP client: ${msg.method}`,
-              },
-            });
+            handleFsRequest(msg.method, msg.params, { cwd })
+              .then((result) => {
+                writeMessage({ jsonrpc: "2.0", id: msg.id, result });
+              })
+              .catch((err) => {
+                const message = err instanceof Error ? err.message : String(err);
+                writeMessage({
+                  jsonrpc: "2.0",
+                  id: msg.id,
+                  error: { code: -32603, message },
+                });
+              });
             return;
           }
+
+          if (msg.method.startsWith("terminal/")) {
+            handleTerminalRequest(msg.method, msg.params, { cwd })
+              .then((result) => {
+                writeMessage({ jsonrpc: "2.0", id: msg.id, result });
+              })
+              .catch((err) => {
+                const message = err instanceof Error ? err.message : String(err);
+                writeMessage({
+                  jsonrpc: "2.0",
+                  id: msg.id,
+                  error: { code: -32603, message },
+                });
+              });
+            return;
+          }
+          writeMessage({
+            jsonrpc: "2.0",
+            id: msg.id,
+            error: {
+              code: -32601,
+              message: `Method not supported by memoize ACP client: ${msg.method}`,
+            },
+          });
           console.warn(
-            `[cursor.rpc] unhandled server→client request method=${msg.method} id=${msg.id}`,
+            `[cursor.rpc] replied to unhandled server→client request method=${msg.method} id=${msg.id}`,
           );
           return;
         }
@@ -347,7 +377,7 @@ export const startCursorSession = (
 
     // Reject pending requests on spawn-time errors (ENOENT/EACCES) so the
     // initialize handshake fails cleanly instead of waiting for a timeout
-    // that never resolves. Mirrors the codex client fix.
+    // that never resolves. Also end the event stream for clean shutdown.
     child.once("error", (err) => {
       const message = err instanceof Error ? err.message : String(err);
       for (const { reject, timer } of pending.values()) {
@@ -357,6 +387,7 @@ export const startCursorSession = (
       pending.clear();
       if (!closed) {
         events.unsafeOffer({ _tag: "Error", message });
+        void Effect.runPromise(events.end).catch(() => {});
       }
     });
 
@@ -375,6 +406,7 @@ export const startCursorSession = (
         events.unsafeOffer({ _tag: "Error", message: exitDetail });
         events.unsafeOffer({ _tag: "Status", status: "idle" });
       }
+      void Effect.runPromise(events.end).catch(() => {});
     });
 
     // === ACP handshake — synchronous, fails the start() RPC on error. ===

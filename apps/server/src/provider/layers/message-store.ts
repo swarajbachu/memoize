@@ -411,6 +411,14 @@ export const MessageStoreLive = Layer.scoped(
       SessionId,
       { agents: Readonly<Record<string, AgentDefinition>>; enableSubagents: boolean }
     >();
+
+    /**
+     * Tracks consecutive times a Grok session died because the internal
+     * agent worker rejected the `cached_token` from `grok login`.
+     * Used to stop hammering restarts when local auth is having issues
+     * with the full coding agent.
+     */
+    const grokAuthWorkerDeathCount = new Map<SessionId, number>();
     const ndjsonAppend = (
       sessionId: SessionId,
       message: Message,
@@ -1589,6 +1597,38 @@ export const MessageStoreLive = Layer.scoped(
             }),
           );
         if (sendResult !== "ok") {
+          const isGrok = session.providerId === "grok";
+          const looksLikeGrokAuthWorkerDeath =
+            isGrok &&
+            /Grok's agent worker rejected the session.*AuthorizationRequired/i.test(
+              sendResult.reason,
+            );
+
+          if (looksLikeGrokAuthWorkerDeath) {
+            const count = (grokAuthWorkerDeathCount.get(sessionId) ?? 0) + 1;
+            grokAuthWorkerDeathCount.set(sessionId, count);
+
+            if (count >= 2) {
+              // Stop auto-restarting. The user is hitting the known
+              // local `grok login` + agent worker auth limitation.
+              const message =
+                `Grok's coding agent worker is repeatedly rejecting the session with AuthorizationRequired, even though your local login appears valid.\n\n` +
+                `This is a known current limitation when using \`grok login\` (cached_token) with the full agent.\n\n` +
+                `You can try:\n` +
+                `• Running \`grok login\` again\n` +
+                `• Temporarily setting an XAI API key in the Grok provider settings\n\n` +
+                `Further automatic restarts have been disabled for this session to avoid spam.`;
+              const persistedError = yield* persistMessage(sessionId, {
+                _tag: "error",
+                message,
+              });
+              yield* broadcastMessage(sessionId, persistedError);
+              yield* ndjsonAppend(sessionId, persistedError);
+              yield* setStatus(sessionId, "idle");
+              return;
+            }
+          }
+
           console.log(
             `[message-store.sendMessage] provider.send failed; restarting provider session for ${sessionId}`,
           );

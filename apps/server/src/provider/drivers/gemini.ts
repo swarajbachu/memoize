@@ -19,6 +19,8 @@ import {
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
 import { createAcpTranslator } from "./acp/translate.ts";
 import { applyPlanModePrefix } from "./planMode.ts";
+import { handleFsRequest } from "./acp/fs.ts";
+import { handleTerminalRequest } from "./acp/terminal.ts";
 
 /**
  * Live-only handle for one Gemini conversation. Mirrors the Grok/Codex/Claude
@@ -404,18 +406,46 @@ export const startGeminiSession = (
             );
           }
           if (isFs) {
-            writeMessage({
-              jsonrpc: "2.0",
-              id: msg.id,
-              error: {
-                code: -32601,
-                message: `Method not implemented by memoize ACP client: ${msg.method}`,
-              },
-            });
+            handleFsRequest(msg.method, msg.params, { cwd })
+              .then((result) => {
+                writeMessage({ jsonrpc: "2.0", id: msg.id, result });
+              })
+              .catch((err) => {
+                const message = err instanceof Error ? err.message : String(err);
+                writeMessage({
+                  jsonrpc: "2.0",
+                  id: msg.id,
+                  error: { code: -32603, message },
+                });
+              });
             return;
           }
+
+          if (msg.method.startsWith("terminal/")) {
+            handleTerminalRequest(msg.method, msg.params, { cwd })
+              .then((result) => {
+                writeMessage({ jsonrpc: "2.0", id: msg.id, result });
+              })
+              .catch((err) => {
+                const message = err instanceof Error ? err.message : String(err);
+                writeMessage({
+                  jsonrpc: "2.0",
+                  id: msg.id,
+                  error: { code: -32603, message },
+                });
+              });
+            return;
+          }
+          writeMessage({
+            jsonrpc: "2.0",
+            id: msg.id,
+            error: {
+              code: -32601,
+              message: `Method not supported by memoize ACP client: ${msg.method}`,
+            },
+          });
           console.warn(
-            `[gemini.rpc] unhandled server→client request method=${msg.method} id=${msg.id}`,
+            `[gemini.rpc] replied to unhandled server→client request method=${msg.method} id=${msg.id}`,
           );
           return;
         }
@@ -455,6 +485,7 @@ export const startGeminiSession = (
     child.on("error", (err) => {
       if (closed) return;
       events.unsafeOffer({ _tag: "Error", message: err.message });
+      void Effect.runPromise(events.end).catch(() => {});
     });
 
     child.on("close", (code, signal) => {
@@ -472,6 +503,7 @@ export const startGeminiSession = (
         events.unsafeOffer({ _tag: "Error", message: exitDetail });
         events.unsafeOffer({ _tag: "Status", status: "idle" });
       }
+      void Effect.runPromise(events.end).catch(() => {});
     });
 
     // === ACP handshake — synchronous, fails the start() RPC on error. ===
