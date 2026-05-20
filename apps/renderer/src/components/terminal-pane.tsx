@@ -3,37 +3,45 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Effect, Fiber, Stream } from "effect";
 
-import type { Folder, PtyId } from "@memoize/wire";
+import type { FolderId, PtyId } from "@memoize/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
-import { useActiveWorkspaceRoot } from "../store/active-workspace.ts";
-import { useWorkspaceStore } from "../store/workspace.ts";
+import { useActiveContext } from "../store/active-workspace.ts";
 
 export function TerminalPane() {
-  const folders = useWorkspaceStore((s) => s.folders);
-  const selectedFolderId = useWorkspaceStore((s) => s.selectedFolderId);
-  const selected = selectedFolderId
-    ? (folders.find((f) => f.id === selectedFolderId) ?? null)
-    : null;
-  const activeRoot = useActiveWorkspaceRoot(
-    selectedFolderId ?? ("" as Folder["id"]),
-  );
+  const ctx = useActiveContext();
 
-  if (selected === null) {
+  if (ctx.status === "loading") {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-background text-sm text-muted-foreground">
+        Loading workspace…
+      </div>
+    );
+  }
+  if (ctx.status === "empty") {
     return (
       <div className="flex h-full w-full items-center justify-center bg-background text-sm text-muted-foreground">
         No folder selected. Add or pick a folder on the left.
       </div>
     );
   }
+  if (ctx.worktreePending) {
+    // Session is bound to a worktree whose row hasn't arrived yet. Opening
+    // a PTY here would pin it to the folder path — the wrong place — for
+    // the rest of the session's life. Wait instead.
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-background text-sm text-muted-foreground">
+        Preparing worktree…
+      </div>
+    );
+  }
 
-  // `key` includes the resolved cwd so toggling a session's worktree
-  // re-mounts the pane with a fresh PTY rooted in the new path. Live cwd
-  // migration of an existing PTY is out of scope.
-  const cwd = activeRoot ?? selected.path;
-  return (
-    <PtyTerminal key={`${selected.id}:${cwd}`} folder={selected} cwd={cwd} />
-  );
+  // `key` includes worktreeId + rootPath so a worktree swap re-mounts with
+  // a fresh PTY rooted in the new path. `folderId` alone wouldn't catch
+  // worktree toggles within the same project. Live cwd migration of an
+  // existing PTY is out of scope.
+  const key = `${ctx.folderId}:${ctx.worktreeId ?? "main"}:${ctx.rootPath}`;
+  return <PtyTerminal key={key} folderId={ctx.folderId} cwd={ctx.rootPath} />;
 }
 
 // xterm's canvas/webgl renderer takes literal color strings, not CSS vars,
@@ -50,7 +58,7 @@ function readToken(el: HTMLElement, cssVar: string, fallback: string): string {
   return computed || fallback;
 }
 
-function PtyTerminal({ folder, cwd }: { folder: Folder; cwd: string }) {
+function PtyTerminal({ folderId, cwd }: { folderId: FolderId; cwd: string }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -195,7 +203,7 @@ function PtyTerminal({ folder, cwd }: { folder: Folder; cwd: string }) {
       }
       term.dispose();
     };
-  }, [folder.id, cwd]);
+  }, [folderId, cwd]);
 
   return (
     <div ref={containerRef} className="h-full w-full bg-background p-2" />

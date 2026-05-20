@@ -31,6 +31,7 @@ import {
   type SessionId,
 } from "@memoize/wire";
 import { ModelPicker } from "./model-picker.tsx";
+import { ActiveLocationChip } from "./active-location-chip.tsx";
 
 import { Card, CardPanel } from "~/components/ui/card";
 import { Frame, FrameFooter } from "~/components/ui/frame";
@@ -578,6 +579,7 @@ export function ChatComposer({ session }: { session: Session }) {
         aria-hidden={showCard || undefined}
       >
         <div className="mx-auto">
+          <ActiveLocationChip />
           <Frame>
             <Card
               className={cn(

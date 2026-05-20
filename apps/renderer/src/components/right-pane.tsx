@@ -1,9 +1,7 @@
 import { FolderClosed, GitBranch } from "lucide-react";
 
-import type { FolderId } from "@memoize/wire";
-
 import { formatShortcut } from "../lib/shortcuts.ts";
-import { useActiveWorktreeId } from "../store/active-workspace.ts";
+import { useActiveContext } from "../store/active-workspace.ts";
 import { gitStatusKey, useGitStatusStore } from "../store/git-status.ts";
 import { prDetailsKey, usePrDetailsStore } from "../store/pr-details.ts";
 import { prStateKey, usePrStateStore } from "../store/pr-state.ts";
@@ -24,12 +22,13 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip.tsx";
  * scrollback, file-tree expansion, and any in-flight PR fetch.
  */
 export function RightPane() {
+  const ctx = useActiveContext();
   const folders = useWorkspaceStore((s) => s.folders);
-  const selectedFolderId = useWorkspaceStore((s) => s.selectedFolderId);
+  const selectedFolderId = ctx.status === "ready" ? ctx.folderId : null;
+  const worktreeId = ctx.status === "ready" ? ctx.worktreeId : null;
   const selected = selectedFolderId
     ? (folders.find((f) => f.id === selectedFolderId) ?? null)
     : null;
-  const worktreeId = useActiveWorktreeId(selectedFolderId);
   const status = useGitStatusStore((s) =>
     selectedFolderId
       ? (s.byKey[gitStatusKey(selectedFolderId, worktreeId)] ?? null)
@@ -91,7 +90,7 @@ export function RightPane() {
               hidden={tab !== "files"}
               className="flex min-h-0 flex-1 flex-col"
             >
-              <ActiveWorkspaceChip folderId={selected.id} />
+              <ActiveWorkspaceChip />
               <div className="min-h-0 flex-1 overflow-y-auto">
                 <FileTree key={selected.id} folderId={selected.id} />
               </div>
@@ -117,26 +116,30 @@ export function RightPane() {
  * in the project's main checkout or in a worktree. Read-only label — pick a
  * worktree from the chat composer's workspace picker; this chip just makes
  * the active root visible so users don't get confused by what they're
- * looking at.
+ * looking at. Reads the canonical active context so it can never disagree
+ * with the terminal, top-bar branch, or composer chip.
  */
-function ActiveWorkspaceChip({ folderId }: { folderId: FolderId }) {
-  const worktreeId = useActiveWorktreeId(folderId);
+function ActiveWorkspaceChip() {
+  const ctx = useActiveContext();
   const worktree = useWorktreesStore((s) => {
-    if (worktreeId === null) return null;
-    const list = s.byProject[folderId] ?? EMPTY_WORKTREES;
-    return list.find((w) => w.id === worktreeId) ?? null;
+    if (ctx.status !== "ready" || ctx.worktreeId === null) return null;
+    const list = s.byProject[ctx.folderId] ?? EMPTY_WORKTREES;
+    return list.find((w) => w.id === ctx.worktreeId) ?? null;
   });
-  const Icon = worktreeId === null ? FolderClosed : GitBranch;
-  const label =
-    worktreeId === null ? "Main checkout" : (worktree?.name ?? "Worktree");
-  const sub =
-    worktreeId === null ? null : (worktree?.branch ?? null);
+  if (ctx.status !== "ready") return null;
+  const onWorktree = ctx.rootKind === "worktree";
+  const Icon = onWorktree ? GitBranch : FolderClosed;
+  const label = onWorktree ? (worktree?.name ?? "Worktree") : "Main checkout";
+  const sub = onWorktree ? worktree?.branch ?? null : null;
   return (
     <div className="flex shrink-0 items-center gap-1.5 border-b border-border/40 px-3 py-1.5 text-[11px] text-muted-foreground">
       <Icon className="size-3.5 shrink-0 opacity-70" />
       <span className="truncate font-medium text-foreground/80">{label}</span>
       {sub !== null ? (
         <span className="truncate font-mono opacity-70">· {sub}</span>
+      ) : null}
+      {ctx.worktreePending ? (
+        <span className="shrink-0 text-amber-300">syncing…</span>
       ) : null}
     </div>
   );
