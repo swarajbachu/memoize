@@ -618,29 +618,45 @@ const LOGIN_HINT: Record<ProviderId, string> = {
  * button + the Cmd+N menu shortcut) don't need prop drilling.
  */
 export async function createNewSession(projectId: FolderId): Promise<void> {
-  await useProvidersStore.getState().refresh();
-  const settings = useSettingsStore.getState();
-  const defaultProviderId = settings.defaultProviderId;
-  const model =
-    settings.defaultModelByProvider[defaultProviderId] ??
-    defaultModelFor(defaultProviderId);
-  const repoSettings = await useRepositorySettingsStore
-    .getState()
-    .refresh(projectId);
-  const shouldAutoCreate =
-    repoSettings?.autoCreateWorktree === true ||
-    settings.defaultAutoCreateWorktree === true;
-  let worktreeId = null;
-  if (shouldAutoCreate) {
-    const wt = await useWorktreesStore.getState().create(projectId);
-    if (wt !== null) worktreeId = wt.id;
+  // Flip the creating flag synchronously so the step-progress panel shows
+  // up on the next React render — without this the user stares at the
+  // current chat for 1-3s while providers/repo-settings/worktree RPCs run
+  // before `useChatsStore.create` even gets called. Cleared either by
+  // `useChatsStore.create` (success/failure) or by the catch below if
+  // anything upstream throws.
+  useChatsStore.setState((s) => ({
+    creatingByProject: { ...s.creatingByProject, [projectId]: true },
+  }));
+  try {
+    await useProvidersStore.getState().refresh();
+    const settings = useSettingsStore.getState();
+    const defaultProviderId = settings.defaultProviderId;
+    const model =
+      settings.defaultModelByProvider[defaultProviderId] ??
+      defaultModelFor(defaultProviderId);
+    const repoSettings = await useRepositorySettingsStore
+      .getState()
+      .refresh(projectId);
+    const shouldAutoCreate =
+      repoSettings?.autoCreateWorktree === true ||
+      settings.defaultAutoCreateWorktree === true;
+    let worktreeId = null;
+    if (shouldAutoCreate) {
+      const wt = await useWorktreesStore.getState().create(projectId);
+      if (wt !== null) worktreeId = wt.id;
+    }
+    void useChatsStore
+      .getState()
+      .create(projectId, defaultProviderId, model, {
+        runtimeMode: settings.defaultRuntimeMode,
+        worktreeId,
+      });
+  } catch (err) {
+    useChatsStore.setState((s) => ({
+      creatingByProject: { ...s.creatingByProject, [projectId]: false },
+      error: err instanceof Error ? err.message : String(err),
+    }));
   }
-  void useChatsStore
-    .getState()
-    .create(projectId, defaultProviderId, model, {
-      runtimeMode: settings.defaultRuntimeMode,
-      worktreeId,
-    });
 }
 
 function NewChatButton({ projectId }: { projectId: FolderId }) {

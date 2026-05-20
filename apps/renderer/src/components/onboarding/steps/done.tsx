@@ -22,7 +22,7 @@ export function DoneStep({ onFinish }: { onFinish: () => void }) {
         </p>
       </div>
       <Button size="default" onClick={onFinish} className="rounded-full px-6">
-        Open Nuuk
+        Open Memoize
       </Button>
     </div>
   );

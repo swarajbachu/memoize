@@ -375,8 +375,8 @@ function WorktreeSection({
         <Card>
           {sorted.length === 0 ? (
             <p className="px-4 py-8 text-center text-xs text-muted-foreground">
-              No worktrees yet. Nuuk creates one for you when you start a new
-              chat.
+              No worktrees yet. Memoize creates one for you when you start a
+              new chat.
             </p>
           ) : (
             <ul className="flex flex-col divide-y divide-border/40">
@@ -448,7 +448,7 @@ function WorktreeSection({
           ) : (
             <p className="text-xs leading-relaxed text-muted-foreground">
               Git worktrees for this repo. Each lives under
-              .nuuk/repo-worktree/ on disk.
+              ~/.memoize/&lt;repo&gt;/&lt;name&gt;/ on disk.
             </p>
           )}
         </FrameFooter>

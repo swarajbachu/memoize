@@ -22,6 +22,7 @@ import {
 import { useChatsStore } from "~/store/chats";
 import { useSettingsStore } from "~/store/settings";
 import { useWorkspaceStore } from "~/store/workspace";
+import { ChatCreatingPanel } from "./chat-creating-panel.tsx";
 import { ModelPicker } from "./model-picker.tsx";
 
 const SUGGESTIONS: ReadonlyArray<{ label: string }> = [
@@ -57,6 +58,9 @@ export function ChatLanding() {
     (s) => s.defaultModelByProvider,
   );
   const defaultRuntimeMode = useSettingsStore((s) => s.defaultRuntimeMode);
+  const defaultAutoCreateWorktree = useSettingsStore(
+    (s) => s.defaultAutoCreateWorktree,
+  );
 
   const create = useChatsStore((s) => s.create);
   const creating = useChatsStore((s) =>
@@ -65,6 +69,10 @@ export function ChatLanding() {
 
   const [text, setText] = useState("");
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Snapshot of the prompt the user just submitted. Drives the
+  // ChatCreatingPanel preview so the form can be hidden during the RPC
+  // without the user losing visual continuity with what they sent.
+  const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const selectedFolder = useMemo(
@@ -93,8 +101,8 @@ export function ChatLanding() {
     if (!canSend || selectedFolderId === null) return;
     const trimmed = text.trim();
     const model = defaultModelByProvider[defaultProviderId];
-    setText("");
     setSubmitError(null);
+    setPendingPrompt(trimmed);
     const result = await create(selectedFolderId, defaultProviderId, model, {
       initialPrompt: trimmed,
       runtimeMode: defaultRuntimeMode,
@@ -104,8 +112,12 @@ export function ChatLanding() {
         useChatsStore.getState().error ??
         `Couldn't start ${defaultProviderId}. Check that its CLI is installed and signed in.`;
       setSubmitError(reason);
-      setText(trimmed);
+      setPendingPrompt(null);
+      return;
     }
+    setText("");
+    // Don't clear pendingPrompt — the parent will unmount us when the
+    // view swaps to ChatView, so the panel keeps animating until then.
   };
 
   const onSuggest = (prompt: string) => {
@@ -142,80 +154,92 @@ export function ChatLanding() {
           </div>
         )}
 
-        <Frame>
-          <Card className="rounded-xl border-border/50">
-            <CardPanel className="relative flex flex-col gap-2 px-3 py-2">
-              <textarea
-                ref={textareaRef}
-                value={text}
-                onChange={(e) => {
-                  setText(e.target.value);
-                  if (submitError !== null) setSubmitError(null);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    void submit();
-                  }
-                }}
-                placeholder={
-                  selectedFolder
-                    ? "Ask anything. Press Enter to start a new session."
-                    : "Pick a project below, then ask anything."
-                }
-                style={{ minHeight: MIN_HEIGHT, maxHeight: MAX_HEIGHT }}
-                className="w-full resize-none bg-transparent text-sm leading-relaxed text-foreground outline-none placeholder:text-muted-foreground"
-              />
-              <div className="flex items-center justify-end">
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        variant="default"
-                        size="icon-sm"
-                        onClick={() => void submit()}
-                        disabled={!canSend}
-                        aria-label="Send"
-                      >
-                        <Send className="size-3.5" />
-                      </Button>
-                    }
-                  />
-                  <TooltipPopup>
-                    {selectedFolderId === null
-                      ? "Pick a project to start"
-                      : "Send (Enter)"}
-                  </TooltipPopup>
-                </Tooltip>
-              </div>
-            </CardPanel>
-          </Card>
-          <FrameFooter className="flex items-center gap-2 px-2 py-1.5 text-[11px] text-muted-foreground">
-            <ProjectPicker
-              folders={folders}
-              selectedFolderId={selectedFolderId}
-              selectedName={selectedFolder?.name ?? null}
-              onPick={onPick}
-              onAdd={onAdd}
+        {creating && pendingPrompt !== null ? (
+          <div className="px-1">
+            <ChatCreatingPanel
+              providerId={defaultProviderId}
+              willCreateWorktree={defaultAutoCreateWorktree}
+              prompt={pendingPrompt}
             />
-            <ModelPicker mode="default" />
-          </FrameFooter>
-        </Frame>
+          </div>
+        ) : (
+          <>
+            <Frame>
+              <Card className="rounded-xl border-border/50">
+                <CardPanel className="relative flex flex-col gap-2 px-3 py-2">
+                  <textarea
+                    ref={textareaRef}
+                    value={text}
+                    onChange={(e) => {
+                      setText(e.target.value);
+                      if (submitError !== null) setSubmitError(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        void submit();
+                      }
+                    }}
+                    placeholder={
+                      selectedFolder
+                        ? "Ask anything. Press Enter to start a new session."
+                        : "Pick a project below, then ask anything."
+                    }
+                    style={{ minHeight: MIN_HEIGHT, maxHeight: MAX_HEIGHT }}
+                    className="w-full resize-none bg-transparent text-sm leading-relaxed text-foreground outline-none placeholder:text-muted-foreground"
+                  />
+                  <div className="flex items-center justify-end">
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <Button
+                            variant="default"
+                            size="icon-sm"
+                            onClick={() => void submit()}
+                            disabled={!canSend}
+                            aria-label="Send"
+                          >
+                            <Send className="size-3.5" />
+                          </Button>
+                        }
+                      />
+                      <TooltipPopup>
+                        {selectedFolderId === null
+                          ? "Pick a project to start"
+                          : "Send (Enter)"}
+                      </TooltipPopup>
+                    </Tooltip>
+                  </div>
+                </CardPanel>
+              </Card>
+              <FrameFooter className="flex items-center gap-2 px-2 py-1.5 text-[11px] text-muted-foreground">
+                <ProjectPicker
+                  folders={folders}
+                  selectedFolderId={selectedFolderId}
+                  selectedName={selectedFolder?.name ?? null}
+                  onPick={onPick}
+                  onAdd={onAdd}
+                />
+                <ModelPicker mode="default" />
+              </FrameFooter>
+            </Frame>
 
-        <ul className="flex flex-col divide-y divide-border/30 overflow-hidden rounded-xl border border-border/30 bg-background/40">
-          {SUGGESTIONS.map((s) => (
-            <li key={s.label}>
-              <button
-                type="button"
-                onClick={() => onSuggest(s.label)}
-                className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs text-foreground/80 hover:bg-muted/40"
-              >
-                <span className="text-muted-foreground">›</span>
-                <span className="truncate">{s.label}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
+            <ul className="flex flex-col divide-y divide-border/30 overflow-hidden rounded-xl border border-border/30 bg-background/40">
+              {SUGGESTIONS.map((s) => (
+                <li key={s.label}>
+                  <button
+                    type="button"
+                    onClick={() => onSuggest(s.label)}
+                    className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs text-foreground/80 hover:bg-muted/40"
+                  >
+                    <span className="text-muted-foreground">›</span>
+                    <span className="truncate">{s.label}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
       </div>
     </div>
   );

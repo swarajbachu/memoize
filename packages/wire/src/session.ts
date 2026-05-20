@@ -488,6 +488,10 @@ export const ChatGetRpc = Rpc.make("chat.get", {
  * both so the renderer can land on the new session immediately without a
  * follow-up round-trip. The chat's `activeSessionId` is set to the new
  * session id.
+ *
+ * When `initialPrompt` is supplied, `initialMessage` is the persisted user
+ * message — the renderer seeds it into its messages store so the chat view
+ * never flashes the empty state while the live stream is connecting.
  */
 export const ChatCreateRpc = Rpc.make("chat.create", {
   payload: Schema.Struct({
@@ -505,7 +509,11 @@ export const ChatCreateRpc = Rpc.make("chat.create", {
     permissionMode: Schema.optional(PermissionMode),
     toolSearch: Schema.optional(Schema.Boolean),
   }),
-  success: Schema.Struct({ chat: Chat, initialSession: Session }),
+  success: Schema.Struct({
+    chat: Chat,
+    initialSession: Session,
+    initialMessage: Schema.NullOr(Message),
+  }),
   error: SessionStartError,
 });
 

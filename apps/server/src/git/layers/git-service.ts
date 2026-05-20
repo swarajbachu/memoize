@@ -872,8 +872,7 @@ export const GitServiceLive = Layer.effect(
      * the run ID is parsed from each entry's `detailsUrl` (the
      * `/actions/runs/<id>/...` segment). For each unique run we shell to
      * `gh run view <id> --log-failed`, concatenate with a header, and write
-     * a single artifact. `.memoize/` is already excluded from git via the
-     * worktree layer + repo .gitignore, so the file won't pollute status.
+     * a single artifact.
      */
     const fixFailingChecks: GitService["Type"]["fixFailingChecks"] = (
       folderId,

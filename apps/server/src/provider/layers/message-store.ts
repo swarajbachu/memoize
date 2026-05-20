@@ -1225,7 +1225,29 @@ export const MessageStoreLive = Layer.scoped(
           ),
         );
         const chat = yield* lookupChat(chatId).pipe(Effect.orDie);
-        return { chat, initialSession };
+        // Fetch the initial user message (if any) so the renderer can seed
+        // its messages store and skip the empty-state flash while the live
+        // message stream is connecting. `createSession` writes the row
+        // synchronously when `initialPrompt` is supplied, so by here it
+        // exists in the table.
+        const hasInitial =
+          input.initialPrompt !== undefined &&
+          input.initialPrompt.trim().length > 0;
+        const initialMessage = hasInitial
+          ? yield* sql<MessageRow>`
+              SELECT id, session_id, role, kind, content_json, parent_item_id, created_at
+              FROM messages
+              WHERE session_id = ${initialSession.id} AND role = 'user'
+              ORDER BY created_at ASC
+              LIMIT 1
+            `.pipe(
+              Effect.orDie,
+              Effect.map((rows) =>
+                rows.length > 0 ? messageFromRow(rows[0]!) : null,
+              ),
+            )
+          : null;
+        return { chat, initialSession, initialMessage };
       });
 
     const renameChat: MessageStoreShape["renameChat"] = (chatId, title) =>

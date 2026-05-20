@@ -8,8 +8,9 @@ import { IndexIoError } from "./errors.ts";
 const DEFAULT_IGNORES = [
   ".git",
   "node_modules",
+  // The code-index sqlite lives at <root>/.memoize/index.sqlite; skip the
+  // dir so we never try to index our own database file.
   ".memoize",
-  ".forkzero",
   "dist",
   "build",
   "out",
