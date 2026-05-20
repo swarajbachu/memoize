@@ -34,6 +34,7 @@ import { hydrateSubagentsStore } from "./store/subagents.ts";
 import { useIndexStore } from "./store/code-index.ts";
 import { useUiStore } from "./store/ui.ts";
 import { useWorkspaceStore } from "./store/workspace.ts";
+import { useWorktreesStore } from "./store/worktrees.ts";
 
 const PANEL_GROUP_ID = "memoize.shell.v3";
 const PANEL_IDS = ["projects", "main", "files"];
@@ -183,6 +184,16 @@ function MainShell() {
     void hydrateIndex(selectedFolderId);
   }, [selectedFolderId, hydrateIndex]);
 
+  // Eagerly hydrate worktrees on project select so the active context can
+  // resolve worktree paths without waiting for the chat composer to mount.
+  // Without this, terminal/file-tree/branch label stay in "preparing
+  // worktree" until the user opens the chat tab.
+  const refreshWorktrees = useWorktreesStore((s) => s.refresh);
+  useEffect(() => {
+    if (selectedFolderId === null) return;
+    void refreshWorktrees(selectedFolderId);
+  }, [selectedFolderId, refreshWorktrees]);
+
   // Cmd+W in the menu dispatches `menu:close-tab` over IPC; the renderer
   // owns the close-tab logic because it knows which chat tab is active.
   useEffect(() => {
@@ -256,7 +267,7 @@ function MainShell() {
         <Separator className="w-px bg-border transition-colors hover:bg-foreground/20 active:bg-foreground/30" />
         <Panel id="main" minSize="30%">
           <main className="flex h-full min-h-0 min-w-0 flex-col bg-background/70 backdrop-blur-3xl">
-            <TopBarMain folderId={selectedFolderId} />
+            <TopBarMain />
             <UpdateBanner />
             <IndexProgressBanner />
             <MainTabs
@@ -305,7 +316,7 @@ function MainShell() {
           }}
         >
           <div className="flex h-full min-h-0 flex-col bg-sidebar/40 backdrop-blur-3xl">
-            <TopBarRight folderId={selectedFolderId} />
+            <TopBarRight />
             <div className="flex min-h-0 flex-1 flex-col">
               <RightPane />
             </div>

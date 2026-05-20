@@ -24,7 +24,7 @@ import {
   type GlassTone,
 } from "./glass-action.tsx";
 import { TooltipShortcut } from "./projects-sidebar.tsx";
-import { useActiveWorktreeId } from "../store/active-workspace.ts";
+import { useActiveContext } from "../store/active-workspace.ts";
 import { useComposerBridge } from "../store/composer-bridge.ts";
 import { gitStatusKey, useGitStatusStore } from "../store/git-status.ts";
 import { prStateKey, usePrStateStore } from "../store/pr-state.ts";
@@ -89,11 +89,13 @@ export function TopBarLeft() {
  * open/close toggle (always visible — the user expects to find it here
  * regardless of which way the files panel is currently leaning).
  */
-export function TopBarMain({ folderId }: { folderId: FolderId | null }) {
-  // The branch label follows the active session's worktree so users see the
-  // worktree's branch (e.g. happy-otter-42) when they're chatting against it,
-  // not the main checkout's branch.
-  const worktreeId = useActiveWorktreeId(folderId);
+export function TopBarMain() {
+  // Pull folderId + worktreeId from the canonical active context so the
+  // branch label can never disagree with the terminal cwd, file tree root,
+  // or composer chip — they all read from the same hook.
+  const ctx = useActiveContext();
+  const folderId = ctx.status === "ready" ? ctx.folderId : null;
+  const worktreeId = ctx.status === "ready" ? ctx.worktreeId : null;
   const status = useGitStatusStore((s) =>
     folderId
       ? (s.byKey[gitStatusKey(folderId, worktreeId)] ?? null)
@@ -116,6 +118,10 @@ export function TopBarMain({ folderId }: { folderId: FolderId | null }) {
     return () => window.clearInterval(id);
   }, [folderId, refresh, worktreeId]);
 
+  // After a worktree/project switch the status row in `byKey` is keyed by
+  // the *new* (folderId, worktreeId), so reading `status` returns null
+  // until the first refresh lands — which is the correct behavior. No
+  // stale-branch flash during the swap.
   const branchLabel = status?.branch ?? null;
   const showLeftToggle = !leftSidebarOpen;
   // When the left panel is open its own header carries the traffic-light
@@ -265,8 +271,10 @@ const deriveWorkflow = (
  * Draft / checks-pending stages need new fields on `GitPrInfo` and are
  * deferred — the layout already reserves the space.
  */
-export function TopBarRight({ folderId }: { folderId: FolderId | null }) {
-  const worktreeId = useActiveWorktreeId(folderId);
+export function TopBarRight() {
+  const ctx = useActiveContext();
+  const folderId = ctx.status === "ready" ? ctx.folderId : null;
+  const worktreeId = ctx.status === "ready" ? ctx.worktreeId : null;
   const status = useGitStatusStore((s) =>
     folderId
       ? (s.byKey[gitStatusKey(folderId, worktreeId)] ?? null)
