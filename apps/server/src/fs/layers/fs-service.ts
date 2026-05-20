@@ -21,7 +21,7 @@ import { FsService } from "../services/fs-service.ts";
 // Skip directories that are large, irrelevant, or just noise in a code-tree
 // view. Match by basename. Hidden dotfiles other than `.git` still show up —
 // users often want to see `.env`, `.github/`, `.vscode/`, etc.
-const SKIP_DIRS = new Set([".git", "node_modules", ".DS_Store"]);
+const SKIP_DIRS = new Set([".git", "node_modules", ".memoize", ".DS_Store"]);
 
 // Cap how much we'll ship across the RPC for a single file. Anything larger
 // surfaces as `FsTooLargeError` so the editor can render a placeholder

@@ -1,6 +1,7 @@
 import { Command, CommandExecutor, FileSystem } from "@effect/platform";
 import { SqlClient } from "@effect/sql";
 import { Effect, Layer, Stream } from "effect";
+import * as os from "node:os";
 import * as Path from "node:path";
 
 import {
@@ -37,8 +38,6 @@ const rowToWorktree = (row: WorktreeRow): Worktree =>
     baseBranch: row.base_branch,
     createdAt: new Date(row.created_at),
   });
-
-const EXCLUDE_LINE = ".memoize/";
 
 export const WorktreeServiceLive = Layer.effect(
   WorktreeService,
@@ -91,39 +90,6 @@ export const WorktreeServiceLive = Layer.effect(
         }),
       );
 
-    /**
-     * Append `.memoize/` to the repo's `.git/info/exclude` if it isn't
-     * already there. Idempotent. We patch this on first worktree create so
-     * the in-repo `.memoize/` tree doesn't show up as untracked, without
-     * touching the user's `.gitignore`.
-     */
-    const ensureExclude = (repoPath: string) =>
-      Effect.gen(function* () {
-        const excludePath = Path.join(repoPath, ".git", "info", "exclude");
-        const exists = yield* fs
-          .exists(excludePath)
-          .pipe(Effect.catchAll(() => Effect.succeed(false)));
-        const current = exists
-          ? yield* fs
-              .readFileString(excludePath)
-              .pipe(Effect.catchAll(() => Effect.succeed("")))
-          : "";
-        if (current.split("\n").some((l) => l.trim() === EXCLUDE_LINE)) {
-          return;
-        }
-        const dir = Path.dirname(excludePath);
-        yield* fs
-          .makeDirectory(dir, { recursive: true })
-          .pipe(Effect.catchAll(() => Effect.void));
-        const next =
-          current.length === 0 || current.endsWith("\n")
-            ? `${current}${EXCLUDE_LINE}\n`
-            : `${current}\n${EXCLUDE_LINE}\n`;
-        yield* fs
-          .writeFileString(excludePath, next)
-          .pipe(Effect.catchAll(() => Effect.void));
-      });
-
     const list: WorktreeService["Type"]["list"] = (projectId) =>
       Effect.gen(function* () {
         const rows = yield* sql<WorktreeRow>`
@@ -158,12 +124,17 @@ export const WorktreeServiceLive = Layer.effect(
           );
         }
         const repoPath = folder.path;
-        // Layout: <repo>/.memoize/<repo-name>/<branch>/. Grouping by repo
-        // name keeps `ls .memoize/` legible when a project hosts many
-        // worktrees ("branches of pangyo") instead of a generic bucket.
-        const baseDir = Path.join(repoPath, ".memoize", folder.name);
+        // Layout: ~/.memoize/<repo-name>-<projectId-short>/<branch>/. Living
+        // in the user's home dir (next to Downloads, Developer, etc.) keeps
+        // the repo itself untouched — `git status`, file pickers, and any
+        // tree walker stay clean. The projectId suffix disambiguates two
+        // registered projects that happen to share a folder name.
+        const baseDir = Path.join(
+          os.homedir(),
+          ".memoize",
+          `${folder.name}-${folder.id.slice(0, 8)}`,
+        );
 
-        yield* ensureExclude(repoPath);
         yield* fs
           .makeDirectory(baseDir, { recursive: true })
           .pipe(

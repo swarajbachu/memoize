@@ -208,7 +208,15 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
     await stopLiveFiber();
     liveSessionId = sessionId;
     set((s) => ({
-      messagesBySession: { ...s.messagesBySession, [sessionId]: [] },
+      // Preserve any pre-seeded messages (e.g. the initial user message
+      // that `chats.create` stuffed in optimistically) so the chat view
+      // never flashes the empty state while the live stream connects.
+      // The live subscription's id-set dedupe (~line 221) prevents the
+      // backfill from double-emitting these rows.
+      messagesBySession: {
+        ...s.messagesBySession,
+        [sessionId]: s.messagesBySession[sessionId] ?? [],
+      },
       errorBySession: { ...s.errorBySession, [sessionId]: null },
     }));
     try {

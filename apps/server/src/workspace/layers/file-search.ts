@@ -21,6 +21,9 @@ import { WorkspaceService } from "../services/workspace-service.ts";
 const SKIP_DIRS = new Set([
   ".git",
   "node_modules",
+  // Memoize's per-project artifacts (code-index sqlite, etc.) live under
+  // <root>/.memoize/. Pickers shouldn't surface them.
+  ".memoize",
   "dist",
   "build",
   ".turbo",

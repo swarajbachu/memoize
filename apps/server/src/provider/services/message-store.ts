@@ -202,12 +202,19 @@ export interface MessageStoreShape {
 
   /**
    * Creates the chat row AND its initial session in one transaction.
-   * Returns both so the renderer lands directly on the new session.
+   * Returns both so the renderer lands directly on the new session, plus
+   * the persisted initial user message (when `initialPrompt` was supplied)
+   * so the renderer can seed its messages store and skip the empty-state
+   * flash while the live stream connects.
    */
   readonly createChat: (
     input: CreateChatInput,
   ) => Effect.Effect<
-    { readonly chat: Chat; readonly initialSession: Session },
+    {
+      readonly chat: Chat;
+      readonly initialSession: Session;
+      readonly initialMessage: Message | null;
+    },
     SessionStartError
   >;
 

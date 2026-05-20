@@ -56,7 +56,7 @@ export function TopBarLeft() {
       className={`${SECTION_CLASS} pr-1 ${isFullScreen ? "pl-3" : "pl-20"}`}
     >
       <span className="truncate font-semibold tracking-tight text-foreground">
-        Nuuk
+        Memoize
       </span>
       <span className="flex-1" />
       <Tooltip>

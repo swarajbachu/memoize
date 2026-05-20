@@ -9,6 +9,7 @@ import {
 } from "react-resizable-panels";
 
 import { ChatComposer } from "./components/chat-composer";
+import { ChatCreatingPanel } from "./components/chat-creating-panel.tsx";
 import { ChatLanding } from "./components/chat-landing.tsx";
 import { CliUpgradeBanner } from "./components/cli-upgrade-banner.tsx";
 import { IndexProgressBanner } from "./components/index-progress-banner.tsx";
@@ -28,6 +29,7 @@ import { useMenuShortcuts } from "./hooks/use-menu-shortcuts.ts";
 import { getRpcClient } from "./lib/rpc-client.ts";
 import { useKeybindingsStore } from "./store/keybindings.ts";
 import { usePermissionsStore } from "./store/permissions.ts";
+import { useChatsStore } from "./store/chats.ts";
 import { useSessionsStore } from "./store/sessions.ts";
 import { useSettingsStore } from "./store/settings.ts";
 import { hydrateSubagentsStore } from "./store/subagents.ts";
@@ -154,6 +156,19 @@ function MainShell() {
   const selectedFolder = selectedFolderId
     ? (folders.find((f) => f.id === selectedFolderId) ?? null)
     : null;
+  // Chat-creation in flight for the selected project — drives the
+  // step-progress overlay so both the sidebar "+" button and the
+  // ChatLanding submit get the same multi-second feedback panel instead
+  // of a stale chat view + a tiny spinner on the + icon.
+  const creatingChat = useChatsStore((s) =>
+    selectedFolderId !== null
+      ? s.creatingByProject[selectedFolderId] === true
+      : false,
+  );
+  const defaultProviderId = useSettingsStore((s) => s.defaultProviderId);
+  const defaultAutoCreateWorktree = useSettingsStore(
+    (s) => s.defaultAutoCreateWorktree,
+  );
 
   const activeMainTab = useUiStore((s) => s.activeMainTab);
   const openFile = useUiStore((s) => s.openFile);
@@ -267,7 +282,20 @@ function MainShell() {
               hidden={activeMainTab !== "chat"}
               className="flex min-h-0 flex-1 flex-col"
             >
-              {selectedSessionId !== null && selectedSession !== null ? (
+              {creatingChat ? (
+                <div className="flex min-h-0 flex-1 flex-col px-8 py-6">
+                  <p className="mb-4 text-[13px] leading-snug text-foreground/85">
+                    {selectedFolder
+                      ? <>You're starting a new chat in <code className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[12px] text-foreground/90">{selectedFolder.name}</code></>
+                      : "You're starting a new chat"}
+                  </p>
+                  <ChatCreatingPanel
+                    providerId={defaultProviderId}
+                    willCreateWorktree={defaultAutoCreateWorktree}
+                    prompt=""
+                  />
+                </div>
+              ) : selectedSessionId !== null && selectedSession !== null ? (
                 <>
                   <ChatView sessionId={selectedSessionId} />
                   <CostFooter sessionId={selectedSessionId} />

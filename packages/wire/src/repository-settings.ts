@@ -24,8 +24,8 @@ export class RepositorySettings extends Schema.Class<RepositorySettings>(
    */
   autoCreateWorktree: Schema.Boolean,
   /**
-   * Optional override for the worktree base dir. `null` means
-   * `<repoPath>/.memoize/repo-worktree/`.
+   * Optional override for the worktree base dir. `null` means the global
+   * default: `~/.memoize/<repo-name>-<projectId-short>/`.
    */
   worktreeBaseDir: Schema.NullOr(Schema.String),
 }) {}

@@ -43,6 +43,11 @@ const basename = (p: string): string => {
   return i === -1 ? p : p.slice(i + 1);
 };
 
+const dirname = (p: string): string | null => {
+  const i = p.lastIndexOf("/");
+  return i === -1 ? null : p.slice(0, i);
+};
+
 export function FileTagPopover({
   trigger,
   view,
@@ -154,6 +159,7 @@ export function FileTagPopover({
       {visible.map((hit, i) => {
         const active = i === highlight;
         const name = basename(hit.relPath);
+        const parent = dirname(hit.relPath);
         const iconUrl =
           hit.kind === "directory"
             ? getFolderIconUrl(name, false)
@@ -177,9 +183,14 @@ export function FileTagPopover({
               <Folder className="size-3.5 shrink-0 opacity-80" />
             )}
             <span className="truncate font-medium">{name}</span>
-            <span className="ml-auto truncate text-xs text-muted-foreground">
-              {hit.relPath}
-            </span>
+            {parent !== null && (
+              <span
+                className="ml-auto truncate text-xs text-muted-foreground"
+                title={hit.relPath}
+              >
+                {parent}
+              </span>
+            )}
           </button>
         );
       })}

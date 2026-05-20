@@ -16,6 +16,7 @@ import type {
 
 import { getRpcClient } from "../lib/rpc-client.ts";
 import { formatError } from "../lib/format-error.ts";
+import { useMessagesStore } from "./messages.ts";
 import { useSessionsStore } from "./sessions.ts";
 import { useWorkspaceStore } from "./workspace.ts";
 
@@ -135,7 +136,20 @@ export const useChatsStore = create<ChatsState>((set, get) => ({
           toolSearch: opts?.toolSearch,
         }),
       );
-      const { chat, initialSession } = result;
+      const { chat, initialSession, initialMessage } = result;
+      // Seed the messages store FIRST so the chat view, when it mounts on
+      // the next render, finds the initial user message already in place —
+      // no empty-state flash, no waiting on the live stream to backfill.
+      // `useMessagesStore.hydrate` will dedupe against this id when the
+      // backfill arrives, so there's no double-render.
+      if (initialMessage !== null) {
+        useMessagesStore.setState((s) => ({
+          messagesBySession: {
+            ...s.messagesBySession,
+            [initialSession.id]: [initialMessage],
+          },
+        }));
+      }
       // Land the new chat in front of the project's existing list and
       // mark it active so the renderer immediately swaps to it.
       set((s) => {

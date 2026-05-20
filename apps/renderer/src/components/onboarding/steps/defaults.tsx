@@ -91,7 +91,7 @@ export function DefaultsStep() {
               New worktree per chat
             </span>
             <span className="text-[11px] leading-snug text-muted-foreground">
-              Each chat runs on its own branch under <code>.nuuk/repo-worktree/</code>.
+              Each chat runs on its own branch under <code>~/.memoize/</code>.
             </span>
           </span>
           <Switch

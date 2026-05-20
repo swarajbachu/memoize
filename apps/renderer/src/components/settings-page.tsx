@@ -480,7 +480,7 @@ function ProvidersPane() {
         </Card>
         <FrameFooter className="px-2 py-1 w-full">
           <p className="text-xs leading-relaxed text-muted-foreground">
-            Nuuk uses your existing CLI credentials — Claude Code, Codex,
+            Memoize uses your existing CLI credentials — Claude Code, Codex,
             Grok, Gemini, Cursor, and OpenCode all sign in through their own
             login flows.
           </p>
@@ -549,7 +549,7 @@ function WorkspacePane() {
           onCheckedChange={setDefaultAutoCreateWorktree}
         />
       }
-      description="When on, each new chat runs in its own git worktree under .nuuk/repo-worktree/, branched off the project's HEAD. Per-repo settings can override this default."
+      description="When on, each new chat runs in its own git worktree under ~/.memoize/<repo>/<name>/, branched off the project's HEAD. Per-repo settings can override this default."
     />
   );
 }
