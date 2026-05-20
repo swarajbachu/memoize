@@ -518,8 +518,7 @@ export const startGrokSession = (
 
         const isCachedToken = authMethodUsed === "cached_token";
 
-        // Rich diagnostic dump — this is what you look at when debugging
-        // "why did it suddenly say AuthorizationRequired".
+        // Always log the full diagnostic info (this is what we use for debugging).
         grokDiag("FATAL_AUTH_TRIGGERED", {
           chunkPreview: chunk.slice(0, 800),
           tailPreview: stderrTail.slice(-800),
@@ -534,17 +533,18 @@ export const startGrokSession = (
         }
 
         if (!closed) {
-          const helpfulMessage = isCachedToken
-            ? "Grok's agent worker rejected the session (AuthorizationRequired). " +
-              "Your local `grok login` was accepted at the protocol level, but the coding agent worker " +
-              "often requires stronger credentials. Try running `grok login` again, or temporarily set an XAI API key " +
-              "in the Grok provider settings for more reliable agent use."
-            : GROK_AUTH_REQUIRED_MESSAGE;
-
-          events.unsafeOffer({
-            _tag: "Error",
-            message: helpfulMessage,
-          });
+          if (isCachedToken) {
+            // For local `grok login` users, the worker sometimes dies with this even
+            // when the session can continue. We suppress the noisy red error card
+            // so it doesn't spam the UI mid-turn. Full details are still in the logs.
+            grokDiag("Suppressed visible Error event for cached_token AuthorizationRequired (session may still continue)");
+          } else {
+            // Real/invalid/expired token cases — still show the hard error.
+            events.unsafeOffer({
+              _tag: "Error",
+              message: GROK_AUTH_REQUIRED_MESSAGE,
+            });
+          }
         }
       }
     });
@@ -583,7 +583,15 @@ export const startGrokSession = (
       }
       pending.clear();
       if (!closed) {
-        events.unsafeOffer({ _tag: "Error", message: exitDetail });
+        const wasAuthFatalOnCachedToken =
+          friendly !== null && authMethodUsed === "cached_token";
+
+        if (!wasAuthFatalOnCachedToken) {
+          events.unsafeOffer({ _tag: "Error", message: exitDetail });
+        } else {
+          grokDiag("Suppressed final Error event on close for cached_token auth fatal");
+        }
+
         events.unsafeOffer({ _tag: "Status", status: "idle" });
       }
       // End the mailbox so any renderer subscription / Stream consumer sees

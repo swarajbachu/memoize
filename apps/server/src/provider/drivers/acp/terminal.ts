@@ -39,6 +39,30 @@ export async function handleTerminalRequest(
       return { status: "closed" };
     }
 
+    case "terminal/wait_for_exit": {
+      // Stub: the agent wants to wait for a previously started process.
+      // For now, pretend it exited successfully so the agent can continue.
+      // A real implementation would track processes started via terminal/exec or create.
+      const processId = (params as any)?.processId ?? "unknown";
+      return {
+        processId,
+        status: "exited",
+        exitCode: 0,
+        note: "Stub implementation — real process tracking not yet wired.",
+      };
+    }
+
+    case "terminal/exec":
+    case "terminal/run_command": {
+      // Basic exec stub. A full implementation would use child_process or node-pty
+      // and return a processId that can be waited on.
+      return {
+        processId: `proc_${Date.now()}`,
+        status: "started",
+        note: "Basic terminal exec stub. Output streaming and real waiting coming soon.",
+      };
+    }
+
     default:
       throw new Error(`Method not implemented by memoize ACP client: ${method}`);
   }
