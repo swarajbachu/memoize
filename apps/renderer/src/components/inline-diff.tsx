@@ -168,7 +168,7 @@ export function DiffBody({
     );
   }
   return (
-    <div className="overflow-x-auto text-[11px]">
+    <div className="fz-diff overflow-x-auto text-[11px]">
       {showHeader ? (
         <div className="border-b border-border/40 bg-muted/40 px-2 py-1 font-mono text-muted-foreground">
           {edit.mode === "create" ? "create" : "edit"} · {edit.path}

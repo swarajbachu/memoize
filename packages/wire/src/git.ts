@@ -300,6 +300,38 @@ export const GitChangesRpc = Rpc.make("git.changes", {
   error: GitErrors,
 });
 
+/**
+ * Diff modes returned by `git.diff`. `worktree` is the common case
+ * (tracked file with edits); `untracked` is a synthetic /dev/null diff
+ * for new files; `deleted` means the file is gone from the working
+ * tree but still in HEAD; `binary` and `unchanged` carry no patch text.
+ */
+export const GitDiffMode = Schema.Literal(
+  "worktree",
+  "untracked",
+  "deleted",
+  "binary",
+  "unchanged",
+);
+export type GitDiffMode = typeof GitDiffMode.Type;
+
+export class GitDiffResult extends Schema.Class<GitDiffResult>("GitDiffResult")({
+  mode: GitDiffMode,
+  patch: Schema.String,
+  truncated: Schema.Boolean,
+  bytes: Schema.Number,
+}) {}
+
+export const GitDiffRpc = Rpc.make("git.diff", {
+  payload: Schema.Struct({
+    folderId: FolderId,
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
+    path: Schema.String,
+  }),
+  success: GitDiffResult,
+  error: GitErrors,
+});
+
 export const GitCommitRpc = Rpc.make("git.commit", {
   payload: Schema.Struct({
     folderId: FolderId,

@@ -14,6 +14,7 @@ import {
   GitChange,
   GitCommandError,
   GitCommit,
+  GitDiffResult,
   GitFailingChecksArtifact,
   GitFolderNotFoundError,
   GitNotARepoError,
@@ -28,6 +29,7 @@ import {
   GitStatusSummary,
   type FolderId,
   type GitChangeKind,
+  type GitDiffMode,
   type GitPrCheckRunConclusion,
   type GitPrCheckRunStatus,
   type GitPrReviewState,
@@ -812,6 +814,142 @@ export const GitServiceLive = Layer.effect(
       );
 
     /**
+     * Working-tree-vs-HEAD diff for a single path. The renderer feeds the
+     * returned `patch` directly into `@pierre/diffs` `PatchDiff`. Modes:
+     *   - worktree : tracked + modified (or modified + deleted)
+     *   - deleted  : tracked but missing on disk
+     *   - untracked: not in HEAD — synthesize a /dev/null→file diff so new
+     *                files render the same as edits
+     *   - binary   : git classifies the file as binary (no patch returned)
+     *   - unchanged: clean vs HEAD (empty patch)
+     * Patches over 2 MiB are sliced so the renderer never has to handle a
+     * tens-of-megabytes diff string.
+     */
+    const diff: GitService["Type"]["diff"] = (folderId, p, worktreeId) =>
+      Effect.flatMap(resolvePathForWorktree(folderId, worktreeId), (cwd) =>
+        Effect.gen(function* () {
+          const rel = path.isAbsolute(p) ? path.relative(cwd, p) : p;
+          const MAX_BYTES = 2_000_000;
+
+          const finish = (
+            mode: GitDiffMode,
+            patch: string,
+          ): GitDiffResult => {
+            const bytes = patch.length;
+            const truncated = bytes > MAX_BYTES;
+            return new GitDiffResult({
+              mode,
+              patch: truncated ? patch.slice(0, MAX_BYTES) : patch,
+              truncated,
+              bytes,
+            });
+          };
+
+          // Tracked vs untracked. `ls-files --error-unmatch` exits 1 when the
+          // path isn't in the index — we catch that as "untracked".
+          const tracked = yield* run(folderId, cwd, [
+            "ls-files",
+            "--error-unmatch",
+            "--",
+            rel,
+          ]).pipe(
+            Effect.map(() => true),
+            Effect.catchTag("GitCommandError", () => Effect.succeed(false)),
+          );
+
+          if (!tracked) {
+            // Untracked: build a synthetic /dev/null → file diff so the
+            // renderer treats new files identically to modifications.
+            const exists = yield* fs.exists(path.resolve(cwd, rel)).pipe(
+              Effect.catchAll(() => Effect.succeed(false)),
+            );
+            if (!exists) {
+              return finish("unchanged", "");
+            }
+            const content = yield* fs
+              .readFileString(path.resolve(cwd, rel))
+              .pipe(
+                Effect.catchAll((err) =>
+                  Effect.fail(
+                    new GitCommandError({
+                      folderId,
+                      reason: `read ${rel}: ${String(err)}`,
+                    }),
+                  ),
+                ),
+            );
+            if (content.length === 0) {
+              const header =
+                `diff --git a/${rel} b/${rel}\n` +
+                `new file mode 100644\n` +
+                `--- /dev/null\n` +
+                `+++ b/${rel}\n`;
+              return finish("untracked", header);
+            }
+            const lines = content.split("\n");
+            // A trailing newline yields a final empty element — that line
+            // doesn't get a `+` marker; git emits "\ No newline at end of
+            // file" if it's missing, and nothing if present.
+            const hasTrailingNewline = content.endsWith("\n");
+            const bodyLines = hasTrailingNewline
+              ? lines.slice(0, -1)
+              : lines;
+            const newCount = bodyLines.length;
+            const body = bodyLines.map((l) => `+${l}`).join("\n");
+            const noNewline = hasTrailingNewline
+              ? ""
+              : "\n\\ No newline at end of file";
+            const patch =
+              `diff --git a/${rel} b/${rel}\n` +
+              `new file mode 100644\n` +
+              `--- /dev/null\n` +
+              `+++ b/${rel}\n` +
+              `@@ -0,0 +1,${newCount} @@\n` +
+              body +
+              noNewline +
+              "\n";
+            return finish("untracked", patch);
+          }
+
+          // Tracked. Use numstat to detect binary + unchanged cheaply.
+          const numstat = (yield* run(folderId, cwd, [
+            "diff",
+            "--numstat",
+            "HEAD",
+            "--",
+            rel,
+          ])).trim();
+
+          if (numstat.length === 0) {
+            return finish("unchanged", "");
+          }
+          // Format: "<added>\t<deleted>\t<path>". Binary files report "-\t-".
+          const firstTab = numstat.indexOf("\t");
+          if (firstTab > 0 && numstat.startsWith("-\t-")) {
+            return finish("binary", "");
+          }
+
+          const patch = yield* run(folderId, cwd, [
+            "diff",
+            "--no-color",
+            "--no-ext-diff",
+            "HEAD",
+            "--",
+            rel,
+          ]);
+
+          // Deleted: tracked file missing from working tree. The patch still
+          // reads correctly; we just label the mode so the renderer can show
+          // "(deleted)" context.
+          const stillExists = yield* fs
+            .exists(path.resolve(cwd, rel))
+            .pipe(Effect.catchAll(() => Effect.succeed(false)));
+          const mode: GitDiffMode = stillExists ? "worktree" : "deleted";
+          return finish(mode, patch);
+        }),
+      );
+
+    /**
      * Auto-stage everything tracked + untracked, then create a single commit
      * with the user's message. Mirrors what the user would do in a basic
      * "commit all" UI; matches the GitHub Desktop "Commit Tracked + Untracked"
@@ -1043,6 +1181,7 @@ export const GitServiceLive = Layer.effect(
       prState,
       prDetails,
       changes,
+      diff,
       commit,
       push,
       fixFailingChecks,
