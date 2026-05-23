@@ -1,6 +1,10 @@
+import { PatchDiff } from "@pierre/diffs/react";
 import { Effect } from "effect";
 import { useEffect, useRef, useState } from "react";
 
+import type { GitDiffResult } from "@memoize/wire";
+
+import { cn } from "~/lib/utils";
 import { getRpcClient } from "../lib/rpc-client.ts";
 import {
   createEditor,
@@ -9,7 +13,11 @@ import {
 } from "../lib/codemirror/setup.ts";
 import { languageForFile } from "../lib/codemirror/languages.ts";
 import { useKeybindingsStore } from "../store/keybindings.ts";
-import { useUiStore, type OpenFile } from "../store/ui.ts";
+import {
+  useUiStore,
+  type FileView,
+  type OpenFile,
+} from "../store/ui.ts";
 
 import type { EditorView } from "@codemirror/view";
 
@@ -32,11 +40,50 @@ const tagOf = (err: unknown): string | null =>
     ? String((err as { _tag: unknown })._tag)
     : null;
 
+/**
+ * Top-level shell for the file tab in the main pane. Renders a Toolbar with
+ * the Diff | Edit segmented control and delegates the body to either a
+ * CodeMirror editor or a side-by-side `@pierre/diffs` patch view. Both
+ * bodies stay mounted across toggles so unsaved CodeMirror edits survive
+ * a quick peek at the diff.
+ */
 export function FileEditor() {
   const openFile = useUiStore((s) => s.openFile);
-  const setFileDirty = useUiStore((s) => s.setFileDirty);
   const closeFileTab = useUiStore((s) => s.closeFileTab);
+  const view = openFile?.view ?? "edit";
 
+  if (openFile === null) {
+    return <Placeholder>No file open.</Placeholder>;
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <Toolbar path={openFile.path} view={view} />
+      <CodeMirrorBody
+        openFile={openFile}
+        hidden={view !== "edit"}
+        onClose={closeFileTab}
+      />
+      {view === "diff" ? <DiffViewBody openFile={openFile} /> : null}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// CodeMirror body — loads a file via fs.readFile, mounts the editor once,
+// swaps documents on file change. Cmd+S saves via fs.writeFile.
+// ---------------------------------------------------------------------------
+
+function CodeMirrorBody({
+  openFile,
+  hidden,
+  onClose,
+}: {
+  openFile: OpenFile;
+  hidden: boolean;
+  onClose: () => void;
+}) {
+  const setFileDirty = useUiStore((s) => s.setFileDirty);
   const [state, setState] = useState<EditorState>({ status: "loading" });
   const [conflict, setConflict] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -51,10 +98,9 @@ export function FileEditor() {
   const baselineRef = useRef("");
   const mtimeRef = useRef("");
   const savingRef = useRef(false);
-  const fileRef = useRef<OpenFile | null>(null);
+  const fileRef = useRef<OpenFile | null>(openFile);
   fileRef.current = openFile;
 
-  // ---- save: bound to Cmd+S in the editor keymap -------------------------
   const save = async () => {
     const file = fileRef.current;
     if (file === null) return;
@@ -94,9 +140,6 @@ export function FileEditor() {
   const saveRef = useRef(save);
   saveRef.current = save;
 
-  // ---- editor lifecycle: build once, swap doc on file change -------------
-  // The CodeMirror view stays mounted across file swaps; opening a different
-  // file dispatches a single transaction. No DOM teardown, no re-mount cost.
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -113,9 +156,6 @@ export function FileEditor() {
     });
     viewRef.current = view;
 
-    // Live-reconfigure the editor keymap when the user edits keybindings —
-    // `editor.save` (and any future editor.* commands) take effect without
-    // unmounting the view or losing the open document.
     const unsubKeybindings = useKeybindingsStore.subscribe(() => {
       reconfigureEditorKeymap(view, onSave);
     });
@@ -127,9 +167,7 @@ export function FileEditor() {
     };
   }, []);
 
-  // ---- load on file change (or explicit reload) --------------------------
   useEffect(() => {
-    if (openFile === null) return;
     let cancelled = false;
     setState({ status: "loading" });
     setFileDirty(false);
@@ -179,12 +217,12 @@ export function FileEditor() {
     };
   }, [openFile, reloadCount, setFileDirty]);
 
-  if (openFile === null) {
-    return <Placeholder>No file open.</Placeholder>;
-  }
-
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div
+      className="flex min-h-0 flex-1 flex-col"
+      hidden={hidden}
+      aria-hidden={hidden}
+    >
       {(conflict || saveError) && (
         <Banner
           message={conflict ?? saveError ?? ""}
@@ -196,7 +234,7 @@ export function FileEditor() {
           }}
         />
       )}
-      <Toolbar path={openFile.path} saving={saving} />
+      <SavingIndicator saving={saving} />
       <div
         ref={containerRef}
         className="min-h-0 flex-1 overflow-hidden"
@@ -214,7 +252,7 @@ export function FileEditor() {
           <span className="text-destructive">{state.reason}</span>
           <button
             type="button"
-            onClick={closeFileTab}
+            onClick={onClose}
             className="rounded bg-muted px-2 py-1 text-xs hover:bg-muted/70"
           >
             Close
@@ -225,8 +263,93 @@ export function FileEditor() {
   );
 }
 
-function Toolbar({ path, saving }: { path: string; saving: boolean }) {
+// ---------------------------------------------------------------------------
+// Diff body — fetches `git.diff` for the current file and feeds the unified
+// patch string to `@pierre/diffs` `PatchDiff`. Handles untracked/deleted/
+// binary/unchanged states with placeholders so empty diffs don't surprise.
+// ---------------------------------------------------------------------------
+
+type DiffState =
+  | { status: "loading" }
+  | { status: "ready"; result: GitDiffResult }
+  | { status: "error"; reason: string };
+
+function DiffViewBody({ openFile }: { openFile: OpenFile }) {
+  const [state, setState] = useState<DiffState>({ status: "loading" });
+
+  useEffect(() => {
+    let cancelled = false;
+    setState({ status: "loading" });
+    void (async () => {
+      try {
+        const client = await getRpcClient();
+        const result = await Effect.runPromise(
+          client.git.diff({
+            folderId: openFile.folderId,
+            worktreeId: openFile.worktreeId,
+            path: openFile.path,
+          }),
+        );
+        if (cancelled) return;
+        setState({ status: "ready", result });
+      } catch (err) {
+        if (cancelled) return;
+        setState({ status: "error", reason: formatError(err) });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [openFile.folderId, openFile.worktreeId, openFile.path]);
+
+  if (state.status === "loading") {
+    return <Placeholder>Loading diff…</Placeholder>;
+  }
+  if (state.status === "error") {
+    return (
+      <Placeholder>
+        <span className="text-destructive">{state.reason}</span>
+      </Placeholder>
+    );
+  }
+
+  const { mode, patch, truncated } = state.result;
+  if (mode === "unchanged") {
+    return <Placeholder>No changes vs HEAD.</Placeholder>;
+  }
+  if (mode === "binary") {
+    return <Placeholder>Binary file — diff preview not supported.</Placeholder>;
+  }
+  if (patch.length === 0) {
+    return <Placeholder>No diff content.</Placeholder>;
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      {truncated ? (
+        <Banner
+          message="Diff truncated — file too large to render in full."
+          actionLabel={null}
+          onAction={() => {}}
+          onDismiss={() => {}}
+        />
+      ) : null}
+      <div className="fz-diff min-h-0 flex-1 overflow-auto">
+        <PatchDiff patch={patch} disableWorkerPool />
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Toolbar — path + dirty/saving on the left, Diff/Edit segmented toggle on
+// the right. The saving indicator lives inside CodeMirrorBody so it tracks
+// the actual save call; the toolbar just shows path + dirty + the toggle.
+// ---------------------------------------------------------------------------
+
+function Toolbar({ path, view }: { path: string; view: FileView }) {
   const dirty = useUiStore((s) => s.fileDirty);
+  const setOpenFileView = useUiStore((s) => s.setOpenFileView);
   return (
     <div className="flex shrink-0 items-center gap-3 border-b border-border px-3 py-1 text-[11px] text-muted-foreground">
       <span className="truncate" title={path}>
@@ -238,9 +361,73 @@ function Toolbar({ path, saving }: { path: string; saving: boolean }) {
             <span className="text-warning">●</span> modified
           </span>
         ) : null}
-        {saving ? <span>saving…</span> : null}
-        <span className="opacity-60">⌘S to save</span>
+        {view === "edit" ? (
+          <span className="opacity-60">⌘S to save</span>
+        ) : null}
+        <ViewToggle value={view} onChange={setOpenFileView} />
       </span>
+    </div>
+  );
+}
+
+function ViewToggle({
+  value,
+  onChange,
+}: {
+  value: FileView;
+  onChange: (v: FileView) => void;
+}) {
+  return (
+    <div
+      role="tablist"
+      className="flex items-center gap-px rounded-sm border border-border bg-background/60 p-px"
+    >
+      <ToggleButton
+        active={value === "diff"}
+        onClick={() => onChange("diff")}
+        label="Diff"
+      />
+      <ToggleButton
+        active={value === "edit"}
+        onClick={() => onChange("edit")}
+        label="Edit"
+      />
+    </div>
+  );
+}
+
+function ToggleButton({
+  active,
+  onClick,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={cn(
+        "rounded-[3px] px-1.5 py-[1px] text-[10px] font-medium tracking-wide transition-colors",
+        active
+          ? "bg-foreground/10 text-foreground"
+          : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
+      )}
+    >
+      {label}
+    </button>
+  );
+}
+
+function SavingIndicator({ saving }: { saving: boolean }) {
+  if (!saving) return null;
+  return (
+    <div className="shrink-0 px-3 py-0.5 text-right text-[10px] text-muted-foreground">
+      saving…
     </div>
   );
 }

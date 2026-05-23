@@ -255,7 +255,13 @@ function FileRow({
       <button
         type="button"
         onClick={() =>
-          openFileInTab({ folderId, worktreeId, path, name: basename(path) })
+          openFileInTab({
+            folderId,
+            worktreeId,
+            path,
+            name: basename(path),
+            view: "diff",
+          })
         }
         className="-mx-1 flex w-[calc(100%+0.5rem)] items-center justify-between gap-2 rounded-sm px-1 py-0.5 text-left transition-colors hover:bg-foreground/5"
         title={tooltip}

@@ -49,6 +49,14 @@ const Changes = MemoizeRpcs.toLayerHandler(
     ),
 );
 
+const Diff = MemoizeRpcs.toLayerHandler(
+  "git.diff",
+  ({ folderId, worktreeId, path }) =>
+    Effect.flatMap(GitService, (svc) =>
+      svc.diff(folderId, path, worktreeId ?? null),
+    ),
+);
+
 const Commit = MemoizeRpcs.toLayerHandler(
   "git.commit",
   ({ folderId, worktreeId, message }) =>
@@ -79,6 +87,7 @@ export const GitHandlersLayer = Layer.mergeAll(
   PrState,
   PrDetails,
   Changes,
+  Diff,
   Commit,
   Push,
   FixFailingChecks,

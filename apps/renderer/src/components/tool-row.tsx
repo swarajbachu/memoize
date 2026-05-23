@@ -481,7 +481,7 @@ const buildToolView = (
         trailing:
           path !== null ? (
             <span className="flex items-center gap-2 tabular-nums">
-              <FileBadge path={path} />
+              <FileBadge path={path} view="diff" />
               {stats !== null && stats.added > 0 ? (
                 <span className="text-emerald-400">+{stats.added}</span>
               ) : null}

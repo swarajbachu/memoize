@@ -34,6 +34,14 @@ export type MainTab = "chat" | "file";
  */
 export type RightTab = "files" | "terminal" | "changes" | "pr";
 
+/**
+ * Which body the file viewer is showing. `edit` is the CodeMirror editor;
+ * `diff` is the side-by-side patch view (working tree vs HEAD) — wired up
+ * for clicks from the Changes panel and from Edit/Write/MultiEdit tool
+ * rows. Toggled in the toolbar; defaults set per entry point.
+ */
+export type FileView = "edit" | "diff";
+
 export type OpenFile = {
   readonly folderId: FolderId;
   readonly path: string;
@@ -44,6 +52,7 @@ export type OpenFile = {
    * while the file is open. `null` means main checkout.
    */
   readonly worktreeId: WorktreeId | null;
+  readonly view: FileView;
 };
 
 type UiState = {
@@ -62,7 +71,10 @@ type UiState = {
   readonly isFullScreen: boolean;
   readonly activeRightTab: RightTab;
   readonly setActiveMainTab: (tab: MainTab) => void;
-  readonly openFileInTab: (file: OpenFile) => void;
+  readonly openFileInTab: (
+    file: Omit<OpenFile, "view"> & { view?: FileView },
+  ) => void;
+  readonly setOpenFileView: (view: FileView) => void;
   readonly closeFileTab: () => void;
   readonly setFileDirty: (dirty: boolean) => void;
   readonly setLeftSidebarOpen: (open: boolean) => void;
@@ -86,7 +98,13 @@ export const useUiStore = create<UiState>((set) => ({
   activeRightTab: "files",
   setActiveMainTab: (tab) => set({ activeMainTab: tab }),
   openFileInTab: (file) =>
-    set({ openFile: file, activeMainTab: "file", fileDirty: false }),
+    set({
+      openFile: { ...file, view: file.view ?? "edit" },
+      activeMainTab: "file",
+      fileDirty: false,
+    }),
+  setOpenFileView: (view) =>
+    set((s) => (s.openFile === null ? s : { openFile: { ...s.openFile, view } })),
   closeFileTab: () =>
     set({ openFile: null, activeMainTab: "chat", fileDirty: false }),
   setFileDirty: (dirty) => set({ fileDirty: dirty }),
