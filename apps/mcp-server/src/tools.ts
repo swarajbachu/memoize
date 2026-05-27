@@ -31,7 +31,7 @@ export const buildTools = (handle: ServerHandle): ReadonlyArray<McpToolDef> => [
   {
     name: "code_search",
     description:
-      "Multi-tier search across the indexed codebase. Best for conceptual / multi-file queries. For a known identifier, prefer `symbol_lookup`. For a literal string, prefer Bash(rg) with a path filter. `kind: \"semantic\"` currently degrades to BM25.",
+      "Multi-tier search (symbol + BM25 + vector + RRF + optional rerank) across the indexed codebase. Use for conceptual or multi-file queries. For a known identifier prefer `symbol_lookup`. For a raw string literal prefer Bash(rg) with a path filter. The router automatically picks the right tiers based on the query shape.",
     inputSchema: {
       type: "object",
       properties: {
@@ -54,14 +54,14 @@ export const buildTools = (handle: ServerHandle): ReadonlyArray<McpToolDef> => [
     handler: async (raw) => {
       const args = (raw ?? {}) as {
         query: string;
-        kind?: string;
+        kind?: "auto" | "symbol" | "text" | "semantic";
         limit?: number;
         pathGlob?: string;
       };
-      // Symbol-first: matches the in-process default in apps/server.
-      const hits = await handle.symbolLookup({
-        name: args.query,
-        limit: args.limit ?? 5,
+      const hits = await handle.search({
+        query: args.query,
+        kind: args.kind,
+        limit: args.limit,
         pathGlob: args.pathGlob,
       });
       return asTool({ hits });
@@ -164,9 +164,17 @@ export const buildTools = (handle: ServerHandle): ReadonlyArray<McpToolDef> => [
   {
     name: "index_status",
     description:
-      "Return the workspace + branch + db path the server is serving. Use to verify the right index is mounted.",
+      "Return workspace, branch, dbPath, populated flag, and basic stats. Call this first — if populated=false the index is empty and you should call `reindex` (or launch the binary with --reindex).",
     inputSchema: { type: "object", properties: {} },
     validator: z.object({}),
     handler: async () => asTool(await handle.status()),
+  },
+  {
+    name: "reindex",
+    description:
+      "Trigger a full (re)index of the workspace. Blocks until the pass completes (30-90 s typical). Use when index_status shows populated=false or after large changes. The CLI flag --reindex is usually more convenient for first launch.",
+    inputSchema: { type: "object", properties: {} },
+    validator: z.object({}),
+    handler: async () => asTool(await handle.reindex()),
   },
 ];
