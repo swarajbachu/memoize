@@ -70,6 +70,7 @@ export { forgetFile, reindexFile } from "./incremental.ts";
 export { bm25Search, type Bm25Hit } from "./retrieval/bm25.ts";
 export { reciprocalRankFusion } from "./retrieval/rrf.ts";
 export { route, type Tier } from "./retrieval/router.ts";
+export { search } from "./retrieval/search.ts";
 export {
   isVectorAvailable,
   vectorSearch,
