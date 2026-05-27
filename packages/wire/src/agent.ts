@@ -729,14 +729,21 @@ export const MODELS_BY_PROVIDER: Record<ProviderId, ReadonlyArray<ModelOption>> 
   // seed, not a whitelist. Selection is applied at session start via ACP
   // `session/set_config_option { configId: "model" }`. Plan mode lands
   // natively via `setSessionMode("plan")`.
+  // Cursor's ACP server validates model slugs against its OWN list which
+  // differs from `cursor-agent --list-models`. The valid set lives in the
+  // `models.availableModels` block returned by `session/new` — slugs like
+  // `composer-2-fast` (the CLI default) are rejected by ACP with -32602.
+  // The seed below uses ACP-valid IDs only. The `default` slug means
+  // "Auto" (cursor picks). Custom slugs typed in the picker still work.
   cursor: [
-    { id: "composer-2-fast", label: "Composer 2 Fast", supportsPlanMode: true },
+    { id: "default", label: "Auto", supportsPlanMode: true },
     { id: "composer-2", label: "Composer 2", supportsPlanMode: true },
-    { id: "gpt-5.5-medium", label: "GPT-5.5", supportsPlanMode: true },
-    { id: "gpt-5.5-high", label: "GPT-5.5 High", supportsPlanMode: true },
+    { id: "composer-2.5", label: "Composer 2.5", supportsPlanMode: true },
+    { id: "gpt-5.5", label: "GPT-5.5", supportsPlanMode: true },
     { id: "gpt-5.3-codex", label: "Codex 5.3", supportsPlanMode: true },
+    { id: "claude-sonnet-4-6", label: "Sonnet 4.6", supportsPlanMode: true },
+    { id: "claude-opus-4-7", label: "Opus 4.7", supportsPlanMode: true },
     { id: "gemini-3.1-pro", label: "Gemini 3.1 Pro", supportsPlanMode: true },
-    { id: "auto", label: "Auto", supportsPlanMode: true },
   ],
   // OpenCode is a meta-provider: it spawns a local `opencode serve` and
   // forwards prompts to whichever underlying provider (anthropic, openai,
@@ -807,10 +814,31 @@ export const MODEL_ALIASES_BY_PROVIDER: Record<ProviderId, Record<string, string
   // re-aliased to current cursor catalogue entries so re-opening the app
   // doesn't send the agent a slug it'll silently ignore.
   cursor: {
-    "gpt-5": "composer-2-fast",
-    "sonnet-4": "composer-2-fast",
-    "sonnet-4-thinking": "composer-2-fast",
-    "opus-4.1": "composer-2-fast",
+    // Legacy slugs from earlier builds (pre-2025.11 cursor-agent CLI list).
+    "gpt-5": "composer-2",
+    "sonnet-4": "claude-sonnet-4-6",
+    "sonnet-4-thinking": "claude-sonnet-4-6",
+    "opus-4.1": "claude-opus-4-7",
+    // CLI slugs (from `cursor-agent --list-models`) that the ACP server
+    // rejects with -32602: it has its own narrower set. Re-route to the
+    // closest ACP-valid neighbour so a previously persisted user choice
+    // doesn't crash on session start.
+    "composer-2-fast": "composer-2",
+    "composer-2.5-fast": "composer-2.5",
+    "gpt-5.5-medium": "gpt-5.5",
+    "gpt-5.5-medium-fast": "gpt-5.5",
+    "gpt-5.5-high": "gpt-5.5",
+    "gpt-5.5-high-fast": "gpt-5.5",
+    "gpt-5.5-low": "gpt-5.5",
+    "gpt-5.5-low-fast": "gpt-5.5",
+    "gpt-5.5-extra-high": "gpt-5.5",
+    "gpt-5.5-extra-high-fast": "gpt-5.5",
+    "gpt-5.5-none": "gpt-5.5",
+    "gpt-5.5-none-fast": "gpt-5.5",
+    "gpt-5.4-high": "gpt-5.4",
+    "gpt-5.4-high-fast": "gpt-5.4",
+    "gpt-5.3-codex-fast": "gpt-5.3-codex",
+    "auto": "default",
   },
   opencode: {},
 };
