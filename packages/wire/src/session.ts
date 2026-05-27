@@ -37,12 +37,17 @@ export type SessionId = AgentSessionId;
 
 /**
  * Persisted lifecycle state of a session. Mirrors the `sessions.status` column.
+ * `booting`  — row exists; provider boot (CLI spawn + SDK handshake) is in
+ *              flight on a background fiber. Transitions to `idle`/`running`
+ *              on success, `error` on failure. Stale `booting` rows from a
+ *              crashed daemon are cleaned up at boot.
  * `idle`     — row exists but no provider session is currently driving it.
  * `running`  — provider session is alive; `agent.events` is being consumed.
  * `closed`   — turn ended normally or session was closed by the user.
  * `error`    — provider terminated the session with an error.
  */
 export const SessionStatus = Schema.Literal(
+  "booting",
   "idle",
   "running",
   "closed",

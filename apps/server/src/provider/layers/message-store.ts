@@ -707,6 +707,12 @@ export const MessageStoreLive = Layer.scoped(
     yield* sql`
       UPDATE sessions SET status = 'idle' WHERE status = 'running'
     `.pipe(Effect.orDie);
+    // Sessions left in `booting` from a crashed daemon never finished the
+    // provider handshake — surface them as failed starts so the renderer
+    // shows a closable tab instead of a stuck spinner.
+    yield* sql`
+      UPDATE sessions SET status = 'error' WHERE status = 'booting'
+    `.pipe(Effect.orDie);
 
     const listSessions: MessageStoreShape["listSessions"] = (
       projectId,
@@ -802,16 +808,15 @@ export const MessageStoreLive = Layer.scoped(
           chatRow.worktree_id === null
             ? null
             : (chatRow.worktree_id as unknown as WorktreeId);
-        // Provider mints the canonical session id; we mirror it into the row
-        // so the in-memory map and the persisted row stay in lockstep. New
-        // sessions always start at the default runtime mode — `canUseTool`
-        // can't fire until provider.start returns, so resolving sessionId
-        // through a closure is safe.
-        let mintedSessionId: SessionId | null = null;
+        // Mint the session id up-front so the row + caches exist BEFORE
+        // `provider.start` runs. Background-mode callers (`session.create`)
+        // can then return immediately and let the slow CLI boot flip the
+        // status out of `"booting"` from a daemon fiber.
+        const sessionId = SessionId.make(
+          `s_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+        );
         const newSessionRuntimeMode: GetRuntimeMode = () =>
-          mintedSessionId === null
-            ? DEFAULT_RUNTIME_MODE
-            : getRuntimeModeFor(mintedSessionId);
+          getRuntimeModeFor(sessionId);
         const effectiveEnableSubagents =
           input.enableSubagents ??
           (input.agents !== undefined && Object.keys(input.agents).length > 0);
@@ -819,12 +824,136 @@ export const MessageStoreLive = Layer.scoped(
         const initialPermissionMode =
           input.permissionMode ?? DEFAULT_PERMISSION_MODE;
         const initialToolSearch = input.toolSearch ?? false;
-        const started = yield* provider
+        const initialRuntimeMode = input.runtimeMode ?? DEFAULT_RUNTIME_MODE;
+        runtimeModeBySession.set(sessionId, initialRuntimeMode);
+        permissionModeBySession.set(sessionId, initialPermissionMode);
+        if (input.agents !== undefined && Object.keys(input.agents).length > 0) {
+          agentsBySession.set(sessionId, {
+            agents: input.agents,
+            enableSubagents: effectiveEnableSubagents,
+          });
+        }
+        const now = new Date();
+        const nowIso = now.toISOString();
+        const title = input.title?.trim() || titleFromInitial(input.initialPrompt);
+        const agentsJson =
+          input.agents !== undefined && Object.keys(input.agents).length > 0
+            ? JSON.stringify({
+                agents: input.agents,
+                enableSubagents: effectiveEnableSubagents,
+              })
+            : null;
+        const hasInitial =
+          input.initialPrompt !== undefined &&
+          input.initialPrompt.trim().length > 0;
+        const background = input.background === true;
+        const postBootStatus: Session["status"] = hasInitial
+          ? "running"
+          : "idle";
+        // Synchronous mode (chat.create) inserts with the final post-boot
+        // status because it waits for `provider.start` below — the row is
+        // never visible to the renderer in `booting`. Background mode
+        // (session.create) inserts as `booting`; the daemon flips it.
+        const rowStatus: Session["status"] = background
+          ? "booting"
+          : postBootStatus;
+        if (background) {
+          yield* sql`
+            INSERT INTO sessions
+              (id, project_id, title, provider_id, model, status, runtime_mode,
+               agents_json, worktree_id, chat_id, permission_mode,
+               tool_search, created_at, updated_at)
+            VALUES
+              (${sessionId}, ${projectId}, ${title}, ${input.providerId},
+               ${input.model}, ${rowStatus}, ${initialRuntimeMode},
+               ${agentsJson}, ${worktreeId}, ${input.chatId},
+               ${initialPermissionMode}, ${initialToolSearch ? 1 : 0},
+               ${nowIso}, ${nowIso})
+          `.pipe(Effect.orDie);
+          yield* sql`
+            UPDATE chats
+            SET active_session_id = ${sessionId}, updated_at = ${nowIso}
+            WHERE id = ${input.chatId}
+          `.pipe(Effect.asVoid, Effect.orDie);
+          if (hasInitial) {
+            yield* persistMessage(sessionId, {
+              _tag: "user",
+              text: input.initialPrompt!,
+            });
+          }
+          // Detach the boot so the RPC reply happens immediately. The status
+          // pubsub fans the eventual transition out to the renderer via
+          // `session.streamStatus`; on failure we mark `error` and log so
+          // the user sees a closable failed tab instead of a stuck spinner.
+          yield* Effect.forkDaemon(
+            provider
+              .start(
+                {
+                  folderId: projectId,
+                  providerId: input.providerId,
+                  mode: "sdk",
+                  sessionId,
+                  initialPrompt: input.initialPrompt,
+                  model: input.model,
+                  agents: input.agents,
+                  enableSubagents: effectiveEnableSubagents,
+                  cwdOverride,
+                  permissionMode: initialPermissionMode,
+                  toolSearch: initialToolSearch,
+                },
+                null,
+                newSessionRuntimeMode,
+              )
+              .pipe(
+                Effect.flatMap(() =>
+                  Effect.gen(function* () {
+                    yield* setStatus(sessionId, postBootStatus);
+                    yield* startSubscription(sessionId);
+                  }),
+                ),
+                Effect.catchAll((err) =>
+                  Effect.gen(function* () {
+                    yield* Effect.logWarning(
+                      `[MessageStore] provider.start failed for session ${sessionId} (${input.providerId}): ${err.reason}`,
+                    );
+                    yield* setStatus(sessionId, "error");
+                  }),
+                ),
+              ),
+          );
+          return Session.make({
+            id: sessionId,
+            projectId,
+            title,
+            providerId: input.providerId,
+            model: input.model,
+            status: "booting",
+            archivedAt: null,
+            cursor: null,
+            resumeStrategy: "none",
+            runtimeMode: initialRuntimeMode,
+            worktreeId,
+            chatId: input.chatId,
+            forkedFromSessionId: null,
+            forkedFromMessageId: null,
+            permissionMode: initialPermissionMode,
+            toolSearch: initialToolSearch,
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+        // Synchronous boot — used by `chat.create` so its existing staged
+        // loading panel (which animates over the full ~60s wait) stays in
+        // lockstep with the actual provider handshake. Boot failures bubble
+        // back as `SessionStartError`; the caller (`createChat`) rolls back
+        // the chat row in that case.
+        yield* provider
           .start(
             {
               folderId: projectId,
               providerId: input.providerId,
               mode: "sdk",
+              sessionId,
               initialPrompt: input.initialPrompt,
               model: input.model,
               agents: input.agents,
@@ -849,34 +978,6 @@ export const MessageStoreLive = Layer.scoped(
                   }),
             ),
           );
-        const sessionId = started.sessionId;
-        mintedSessionId = sessionId;
-        const initialRuntimeMode = input.runtimeMode ?? DEFAULT_RUNTIME_MODE;
-        runtimeModeBySession.set(sessionId, initialRuntimeMode);
-        permissionModeBySession.set(sessionId, initialPermissionMode);
-        if (input.agents !== undefined && Object.keys(input.agents).length > 0) {
-          agentsBySession.set(sessionId, {
-            agents: input.agents,
-            enableSubagents: effectiveEnableSubagents,
-          });
-        }
-        const now = new Date();
-        const nowIso = now.toISOString();
-        const title = input.title?.trim() || titleFromInitial(input.initialPrompt);
-        const agentsJson =
-          input.agents !== undefined && Object.keys(input.agents).length > 0
-            ? JSON.stringify({
-                agents: input.agents,
-                enableSubagents: effectiveEnableSubagents,
-              })
-            : null;
-        // A fresh session is only "running" if the caller handed in an initial
-        // prompt — otherwise the provider has spun up but no turn is in flight,
-        // so the renderer should see `idle` and show Send (not Interrupt).
-        const hasInitial =
-          input.initialPrompt !== undefined &&
-          input.initialPrompt.trim().length > 0;
-        const initialStatus: Session["status"] = hasInitial ? "running" : "idle";
         yield* sql`
           INSERT INTO sessions
             (id, project_id, title, provider_id, model, status, runtime_mode,
@@ -884,13 +985,11 @@ export const MessageStoreLive = Layer.scoped(
              tool_search, created_at, updated_at)
           VALUES
             (${sessionId}, ${projectId}, ${title}, ${input.providerId},
-             ${input.model}, ${initialStatus}, ${initialRuntimeMode},
+             ${input.model}, ${rowStatus}, ${initialRuntimeMode},
              ${agentsJson}, ${worktreeId}, ${input.chatId},
              ${initialPermissionMode}, ${initialToolSearch ? 1 : 0},
              ${nowIso}, ${nowIso})
         `.pipe(Effect.orDie);
-        // Mark this session as the chat's last-active tab so the next
-        // sidebar click lands on it.
         yield* sql`
           UPDATE chats
           SET active_session_id = ${sessionId}, updated_at = ${nowIso}
@@ -909,7 +1008,7 @@ export const MessageStoreLive = Layer.scoped(
           title,
           providerId: input.providerId,
           model: input.model,
-          status: initialStatus,
+          status: postBootStatus,
           archivedAt: null,
           cursor: null,
           resumeStrategy: "none",
