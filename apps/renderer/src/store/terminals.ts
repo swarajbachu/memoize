@@ -1,0 +1,97 @@
+import { create } from "zustand";
+
+import type { FolderId, WorktreeId } from "@memoize/wire";
+
+/**
+ * Renderer-side terminal instances. The PTY itself lives on the server and
+ * is opened lazily by the `PtyTerminal` component when its container mounts
+ * — this store only tracks the list of slots the user wants to see and which
+ * one is focused. PTYs die with the renderer (no rehydration across reloads).
+ *
+ * Keyed by `(folderId, worktreeId)` so each workspace gets its own list and
+ * switching projects/worktrees doesn't shuffle terminals between them.
+ */
+export type TerminalInstance = {
+  readonly id: string;
+  readonly title: string;
+  readonly cwd: string;
+};
+
+type TerminalsState = {
+  readonly byKey: Readonly<Record<string, ReadonlyArray<TerminalInstance>>>;
+  readonly activeByKey: Readonly<Record<string, string | null>>;
+  readonly ensureSeed: (key: string, cwd: string) => void;
+  readonly add: (key: string, cwd: string) => string;
+  readonly remove: (key: string, id: string) => void;
+  readonly setActive: (key: string, id: string) => void;
+};
+
+export const terminalsKey = (
+  folderId: FolderId,
+  worktreeId: WorktreeId | null,
+): string => `${folderId}:${worktreeId ?? "main"}`;
+
+const newId = (): string =>
+  globalThis.crypto?.randomUUID?.() ??
+  `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+const nextTitle = (existing: ReadonlyArray<TerminalInstance>): string => {
+  if (existing.length === 0) return "zsh";
+  // "zsh", "zsh 2", "zsh 3" — skip numbers already in use so closing the
+  // middle one and adding again reuses the gap rather than racing past it.
+  const used = new Set(existing.map((t) => t.title));
+  for (let n = 2; n < 1000; n++) {
+    const candidate = `zsh ${n}`;
+    if (!used.has(candidate)) return candidate;
+  }
+  return `zsh ${existing.length + 1}`;
+};
+
+export const useTerminalsStore = create<TerminalsState>((set) => ({
+  byKey: {},
+  activeByKey: {},
+  ensureSeed: (key, cwd) =>
+    set((state) => {
+      if ((state.byKey[key]?.length ?? 0) > 0) return state;
+      const instance: TerminalInstance = { id: newId(), title: "zsh", cwd };
+      return {
+        byKey: { ...state.byKey, [key]: [instance] },
+        activeByKey: { ...state.activeByKey, [key]: instance.id },
+      };
+    }),
+  add: (key, cwd) => {
+    const id = newId();
+    set((state) => {
+      const list = state.byKey[key] ?? [];
+      const instance: TerminalInstance = { id, title: nextTitle(list), cwd };
+      return {
+        byKey: { ...state.byKey, [key]: [...list, instance] },
+        activeByKey: { ...state.activeByKey, [key]: id },
+      };
+    });
+    return id;
+  },
+  remove: (key, id) =>
+    set((state) => {
+      const list = state.byKey[key] ?? [];
+      const idx = list.findIndex((t) => t.id === id);
+      if (idx === -1) return state;
+      const next = list.filter((t) => t.id !== id);
+      const wasActive = state.activeByKey[key] === id;
+      // Pick the previous instance when closing the active one; if that
+      // doesn't exist, fall back to whatever now sits in the same slot.
+      const fallback = wasActive
+        ? (next[Math.max(0, idx - 1)]?.id ?? null)
+        : (state.activeByKey[key] ?? null);
+      return {
+        byKey: { ...state.byKey, [key]: next },
+        activeByKey: { ...state.activeByKey, [key]: fallback },
+      };
+    }),
+  setActive: (key, id) =>
+    set((state) => ({
+      activeByKey: { ...state.activeByKey, [key]: id },
+    })),
+}));
+
+export const EMPTY_TERMINALS: ReadonlyArray<TerminalInstance> = [];

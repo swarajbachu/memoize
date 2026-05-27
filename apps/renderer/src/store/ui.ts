@@ -32,7 +32,7 @@ export type MainTab = "chat" | "file";
  * Tabs in the right-hand workspace pane. Lifted from `RightPane`'s local
  * state so the native menu (Cmd+J → Toggle Terminal) can drive it.
  */
-export type RightTab = "files" | "terminal" | "changes" | "pr";
+export type RightTab = "files" | "terminal" | "changes" | "pr" | "browser";
 
 /**
  * Which body the file viewer is showing. `edit` is the CodeMirror editor;

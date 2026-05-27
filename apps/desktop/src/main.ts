@@ -135,6 +135,10 @@ function createMainWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // Enables the `<webview>` tag the in-app Browser tab uses. The webview
+      // itself still runs with `nodeIntegration: false` in its own process,
+      // so this only unlocks the element, not Node access inside it.
+      webviewTag: true,
     },
   });
 
