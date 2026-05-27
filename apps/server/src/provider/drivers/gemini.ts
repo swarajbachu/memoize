@@ -436,6 +436,30 @@ export const startGeminiSession = (
               });
             return;
           }
+
+          // User question support for Gemini ACP (similar namespaced methods).
+          const isQuestionMethod =
+            msg.method?.includes("ask_user_question") ||
+            msg.method?.includes("user_question") ||
+            msg.method?.startsWith("_x.ai/") ||
+            msg.method?.startsWith("_google/");
+
+          if (isQuestionMethod) {
+            if (process.env.MEMOIZE_DEBUG_GEMINI) {
+              process.stderr.write(
+                `[gemini.rpc] auto-acking question method=${msg.method} id=${msg.id} params=${JSON.stringify(msg.params ?? {})}\n`,
+              );
+            }
+            // Gemini ACP may use a similar shape; provide `outcome` to avoid
+            // "missing field `outcome`" errors on the agent side.
+            writeMessage({
+              jsonrpc: "2.0",
+              id: msg.id,
+              result: { outcome: "approved" },
+            });
+            return;
+          }
+
           writeMessage({
             jsonrpc: "2.0",
             id: msg.id,
