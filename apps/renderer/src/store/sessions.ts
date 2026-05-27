@@ -44,6 +44,15 @@ type SessionsState = {
   readonly selectedSessionByProject: Record<string, SessionId | null>;
   readonly showArchivedByProject: Record<string, boolean>;
   readonly loadingByProject: Record<string, boolean>;
+  /**
+   * Per-chat in-flight flag for `create()`. Drives the tab-strip "+"
+   * button's icon + disabled state and the loading panel that takes over
+   * the chat surface while a new tab is booting. Cleared when the RPC
+   * resolves (success or failure) — note the server-side boot continues
+   * after the RPC returns; the chat surface keeps showing the panel via
+   * `Session.status === "booting"` until the provider handshake completes.
+   */
+  readonly creatingByChat: Record<string, boolean>;
   readonly error: string | null;
   readonly hydrate: (projectId: FolderId) => Promise<void>;
   readonly create: (
@@ -57,6 +66,16 @@ type SessionsState = {
       toolSearch?: boolean;
     },
   ) => Promise<SessionId | null>;
+  /**
+   * Patch the cached `Session.status` for a session. Called by the
+   * `session.streamStatus` subscription so the renderer's view of
+   * `Session.status` reflects post-boot transitions
+   * (`booting` → `idle` / `running` / `error`).
+   */
+  readonly setSessionStatus: (
+    sessionId: SessionId,
+    status: Session["status"],
+  ) => void;
   readonly rename: (sessionId: SessionId, title: string) => Promise<void>;
   readonly setModel: (sessionId: SessionId, model: string) => Promise<void>;
   readonly setRuntimeMode: (
@@ -117,6 +136,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   selectedSessionByProject: {},
   showArchivedByProject: {},
   loadingByProject: {},
+  creatingByChat: {},
   error: null,
   hydrate: async (projectId) => {
     set((s) => ({
@@ -142,7 +162,10 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     }
   },
   create: async (chatId, providerId, model, opts) => {
-    set({ error: null });
+    set((s) => ({
+      error: null,
+      creatingByChat: { ...s.creatingByChat, [chatId]: true },
+    }));
     try {
       const client = await getRpcClient();
       // Sub-agent presets are Claude-only this PR — Codex sessions ship
@@ -178,13 +201,37 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
             ...s.selectedSessionByProject,
             [projectId]: session.id,
           },
+          creatingByChat: { ...s.creatingByChat, [chatId]: false },
         };
       });
       return session.id;
     } catch (err) {
-      set({ error: formatError(err) });
+      set((s) => ({
+        error: formatError(err),
+        creatingByChat: { ...s.creatingByChat, [chatId]: false },
+      }));
       return null;
     }
+  },
+  setSessionStatus: (sessionId, status) => {
+    set((s) => {
+      const projectId = findSessionProject(s.sessionsByProject, sessionId);
+      if (projectId === null) return s;
+      const list = s.sessionsByProject[projectId] ?? [];
+      let changed = false;
+      const next = list.map((row) => {
+        if (row.id !== sessionId || row.status === status) return row;
+        changed = true;
+        return { ...row, status } as Session;
+      });
+      if (!changed) return s;
+      return {
+        sessionsByProject: {
+          ...s.sessionsByProject,
+          [projectId]: next,
+        },
+      };
+    });
   },
   rename: async (sessionId, title) => {
     set({ error: null });

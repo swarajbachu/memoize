@@ -75,6 +75,16 @@ export interface CreateSessionInput {
    * the flag is here so 0.04's code-index MCP servers can ride on it.
    */
   readonly toolSearch?: boolean;
+  /**
+   * Defer `provider.start` to a background fiber and return as soon as the
+   * row is inserted. The returned `Session` has `status = "booting"`; a
+   * status pubsub event fires when boot finishes (`idle`/`running`) or
+   * fails (`error`). Used by the `session.create` RPC so a new in-chat tab
+   * appears in ~hundreds of ms instead of ~60s. `chat.create` keeps the
+   * default synchronous behavior so its existing staged loading panel
+   * timing is preserved.
+   */
+  readonly background?: boolean;
 }
 
 export interface CreateChatInput {

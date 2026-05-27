@@ -134,6 +134,11 @@ const SessionCreate = MemoizeRpcs.toLayerHandler("session.create", (input) =>
       enableSubagents: input.enableSubagents,
       permissionMode: input.permissionMode,
       toolSearch: input.toolSearch,
+      // Detach `provider.start` so the new in-chat tab appears in
+      // ~hundreds of ms; the booting status flips when the CLI handshake
+      // finishes (or fails). Chat-create stays synchronous to preserve
+      // its existing staged loading panel timing.
+      background: true,
     }),
   ),
 );

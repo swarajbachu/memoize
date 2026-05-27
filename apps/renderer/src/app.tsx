@@ -166,10 +166,32 @@ function MainShell() {
       ? s.creatingByProject[selectedFolderId] === true
       : false,
   );
+  // Active chat = the chat owning the selected session (if any), else the
+  // sidebar's selected chat. Mirrors `MainTabs.activeChatId` so the
+  // booting-session loading panel and the tab strip stay in lockstep when
+  // the chats store is mid-transition.
+  const selectedChatId = useChatsStore((s) => s.selectedChatId);
+  const activeChatId =
+    selectedSession?.chatId ?? selectedChatId ?? null;
+  // Mirror `NewChatTabButton.creating` so the chat surface flips to the
+  // loading panel the moment the user clicks "+", even before the
+  // optimistic session row lands (~200ms RPC). Once the new row is
+  // inserted with status="booting", `creatingForActiveChat` clears and
+  // the booting check below carries the panel through the provider boot.
+  const creatingForActiveChat = useSessionsStore((s) =>
+    activeChatId !== null ? s.creatingByChat[activeChatId] === true : false,
+  );
+  const selectedSessionBooting = selectedSession?.status === "booting";
+  const showSessionBootingPanel =
+    !creatingChat && (selectedSessionBooting || creatingForActiveChat);
   const defaultProviderId = useSettingsStore((s) => s.defaultProviderId);
   const defaultAutoCreateWorktree = useSettingsStore(
     (s) => s.defaultAutoCreateWorktree,
   );
+  // Provider label for the session-boot panel — falls back to the user's
+  // default when no session is selected yet (the brief click → RPC window).
+  const bootingProviderId =
+    selectedSession?.providerId ?? defaultProviderId;
 
   const activeMainTab = useUiStore((s) => s.activeMainTab);
   const openFile = useUiStore((s) => s.openFile);
@@ -303,6 +325,17 @@ function MainShell() {
                   <ChatCreatingPanel
                     providerId={defaultProviderId}
                     willCreateWorktree={defaultAutoCreateWorktree}
+                    prompt=""
+                  />
+                </div>
+              ) : showSessionBootingPanel ? (
+                <div className="flex min-h-0 flex-1 flex-col px-8 py-6">
+                  <p className="mb-4 text-[13px] leading-snug text-foreground/85">
+                    Starting a new tab in this chat
+                  </p>
+                  <ChatCreatingPanel
+                    providerId={bootingProviderId}
+                    willCreateWorktree={false}
                     prompt=""
                   />
                 </div>
