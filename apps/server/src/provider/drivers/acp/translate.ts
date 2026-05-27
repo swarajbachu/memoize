@@ -219,34 +219,70 @@ const buildCanonicalInput = (
 ): unknown => {
   const title = typeof u["title"] === "string" ? (u["title"] as string) : null;
 
+  // Cursor stuffs the tool arguments under `rawInput` instead of `input` /
+  // `arguments` / `locations` — merge it into the lookup so the per-tool
+  // cases below can find `file_path`/`path`/`command`/etc the same way as
+  // for other providers.
+  const rawInput =
+    u["rawInput"] !== null &&
+    typeof u["rawInput"] === "object" &&
+    Object.keys(u["rawInput"] as Record<string, unknown>).length > 0
+      ? (u["rawInput"] as Record<string, unknown>)
+      : null;
+
+  const pathFrom = (src: Record<string, unknown>): string | null => {
+    const v =
+      typeof src["file_path"] === "string"
+        ? (src["file_path"] as string)
+        : typeof src["filePath"] === "string"
+          ? (src["filePath"] as string)
+          : typeof src["path"] === "string"
+            ? (src["path"] as string)
+            : null;
+    return v !== null && v.length > 0 ? v : null;
+  };
+
   switch (toolName) {
     case "Edit":
     case "MultiEdit": {
       const diff = extractDiffBlock(u["content"]);
       if (diff !== null) {
         return {
-          file_path: diff.path ?? firstLocationPath(u) ?? "",
+          file_path:
+            diff.path ??
+            firstLocationPath(u) ??
+            (rawInput !== null ? pathFrom(rawInput) : null) ??
+            "",
           old_string: diff.oldText,
           new_string: diff.newText,
         };
       }
-      const file_path = firstLocationPath(u);
+      const file_path =
+        firstLocationPath(u) ??
+        (rawInput !== null ? pathFrom(rawInput) : null);
       if (file_path !== null) return { file_path };
       break;
     }
     case "Write": {
-      const file_path = firstLocationPath(u);
+      const file_path =
+        firstLocationPath(u) ??
+        (rawInput !== null ? pathFrom(rawInput) : null);
       const content =
         typeof u["content"] === "string"
           ? (u["content"] as string)
-          : extractMessageText(u["content"]);
+          : extractMessageText(u["content"]) ??
+            (rawInput !== null && typeof rawInput["content"] === "string"
+              ? (rawInput["content"] as string)
+              : null);
       const out: Record<string, unknown> = {};
       if (file_path !== null) out["file_path"] = file_path;
       if (content !== null) out["content"] = content;
       return Object.keys(out).length > 0 ? out : null;
     }
     case "Read": {
-      const file_path = firstLocationPath(u);
+      const file_path =
+        firstLocationPath(u) ??
+        (rawInput !== null ? pathFrom(rawInput) : null);
       if (file_path !== null) {
         const out: Record<string, unknown> = { file_path };
         if (typeof u["offset"] === "number") out["offset"] = u["offset"];
@@ -261,7 +297,9 @@ const buildCanonicalInput = (
           ? (u["command"] as string)
           : typeof u["cmd"] === "string"
             ? (u["cmd"] as string)
-            : null;
+            : rawInput !== null && typeof rawInput["command"] === "string"
+              ? (rawInput["command"] as string)
+              : null;
       if (command !== null) {
         const out: Record<string, unknown> = { command };
         if (title !== null) out["description"] = title;
@@ -272,9 +310,10 @@ const buildCanonicalInput = (
     case "Grep":
     case "Glob": {
       const out: Record<string, unknown> = {};
-      if (typeof u["pattern"] === "string") out["pattern"] = u["pattern"];
-      if (typeof u["path"] === "string") out["path"] = u["path"];
-      if (typeof u["glob"] === "string") out["glob"] = u["glob"];
+      const src = rawInput ?? u;
+      if (typeof src["pattern"] === "string") out["pattern"] = src["pattern"];
+      if (typeof src["path"] === "string") out["path"] = src["path"];
+      if (typeof src["glob"] === "string") out["glob"] = src["glob"];
       if (Object.keys(out).length > 0) return out;
       break;
     }
@@ -363,6 +402,15 @@ const extractToolName = (u: Record<string, unknown>): string => {
 const extractOutput = (u: Record<string, unknown>): unknown => {
   if (u["output"] !== undefined) {
     const o = u["output"];
+    if (o !== null && typeof o === "object" && "content" in o) {
+      return (o as Record<string, unknown>)["content"] ?? o;
+    }
+    return o;
+  }
+  // Cursor's spelling: `rawOutput.content` carries the actual result payload
+  // (file contents for Read, command stdout for Bash, etc).
+  if (u["rawOutput"] !== undefined) {
+    const o = u["rawOutput"];
     if (o !== null && typeof o === "object" && "content" in o) {
       return (o as Record<string, unknown>)["content"] ?? o;
     }
@@ -460,6 +508,13 @@ interface ToolCallState {
   resultEmitted: boolean;
   /** True once we've emitted a `ToolUse` for this call. */
   useEmitted: boolean;
+  /**
+   * Canonical tool name (e.g. "Read", "Edit") captured from the FIRST
+   * frame for this call. Cursor's `tool_call_update` frames carry no
+   * `kind` field, so without this we'd fall back to the generic "tool"
+   * label on every update and lose the input mapping (diff blocks etc).
+   */
+  toolName: string | null;
 }
 
 /**
@@ -532,7 +587,12 @@ export const createAcpTranslator = (provider: AcpProviderTag): AcpTranslator => 
   const getOrInitToolState = (id: string): ToolCallState => {
     let s = toolStates.get(id);
     if (s === undefined) {
-      s = { lastInputJson: null, resultEmitted: false, useEmitted: false };
+      s = {
+        lastInputJson: null,
+        resultEmitted: false,
+        useEmitted: false,
+        toolName: null,
+      };
       toolStates.set(id, s);
     }
     return s;
@@ -617,6 +677,10 @@ export const createAcpTranslator = (provider: AcpProviderTag): AcpTranslator => 
           const input = buildCanonicalInput(toolName, u);
           const inputJson = safeStringify({ input });
           const state = getOrInitToolState(callId);
+          // Pin the canonical tool name on first sight so later update
+          // frames (which omit `kind` for Cursor) still resolve to the
+          // right Edit/Read/Write/Bash branch in buildCanonicalInput.
+          if (state.toolName === null) state.toolName = toolName;
           // Dedupe: if we already emitted ToolUse with this exact input,
           // skip. Happens when an ACP server sends the same `tool_call`
           // twice (some implementations do for pending/in_progress).
@@ -656,10 +720,19 @@ export const createAcpTranslator = (provider: AcpProviderTag): AcpTranslator => 
             typeof u["kind"] === "string" ? (u["kind"] as string) : null;
           if (provider === "gemini" && rawKind === "think") return [];
           const callId = extractCallId(u);
-          const toolName = extractToolName(u);
+          const state = getOrInitToolState(callId);
+          // Prefer the tool name we captured from the original tool_call —
+          // cursor's update frames carry no `kind`, so re-extracting would
+          // collapse to the generic "tool" label and break the Edit/Read/…
+          // input mapping in buildCanonicalInput.
+          const updateToolName = extractToolName(u);
+          const toolName =
+            state.toolName !== null && state.toolName !== "tool"
+              ? state.toolName
+              : updateToolName;
+          if (state.toolName === null) state.toolName = toolName;
           logUnknownToolIfNeeded(provider, u, toolName, "tool_call_update");
           const input = buildCanonicalInput(toolName, u);
-          const state = getOrInitToolState(callId);
           const events: AgentEvent[] = [];
 
           // Re-emit ToolUse only when input changed substantively —

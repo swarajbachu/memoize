@@ -32,6 +32,7 @@ import {
   type GeminiSessionHandle,
 } from "../drivers/gemini.ts";
 import {
+  prewarmCursor,
   startCursorSession,
   type CursorSessionHandle,
 } from "../drivers/cursor.ts";
@@ -85,6 +86,25 @@ export const ProviderServiceLive = Layer.effect(
     const runtime = yield* Effect.runtime<never>();
     const sessions = yield* Ref.make<Map<AgentSessionId, SessionEntry>>(
       new Map(),
+    );
+
+    // Prewarm a cursor-agent child at layer boot if cursor is installed.
+    // The ACP authenticate step is the slowest part of cold start (~8s);
+    // having one warm child standing by means the user's first cursor
+    // session skips straight to `session/new`. Fire-and-forget — layer
+    // construction does not depend on it.
+    yield* Effect.forkDaemon(
+      Effect.gen(function* () {
+        const cursorPath = yield* resolveCliPath("cursor-agent").pipe(
+          Effect.provideService(CommandExecutor.CommandExecutor, executor),
+          Effect.catchAll(() => Effect.succeed<string | null>(null)),
+        );
+        if (cursorPath === null) return;
+        const apiKey = yield* credentials
+          .get("cursor")
+          .pipe(Effect.catchAll(() => Effect.succeed<string | null>(null)));
+        yield* Effect.sync(() => prewarmCursor(cursorPath, apiKey));
+      }),
     );
 
     // The Claude SDK's `canUseTool` callback returns a Promise; here we

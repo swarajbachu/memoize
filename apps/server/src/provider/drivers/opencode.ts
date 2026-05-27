@@ -65,9 +65,9 @@ export interface OpencodeSessionHandle {
   ) => Effect.Effect<void>;
 }
 
-// Default on — opencode is new and the failure modes (server boot, SSE,
-// auth) are quiet by design. Set MEMOIZE_DEBUG_OPENCODE=0 to silence.
-const OPENCODE_DEBUG = process.env.MEMOIZE_DEBUG_OPENCODE !== "0";
+// Default off — set MEMOIZE_DEBUG_OPENCODE=1 to re-enable when debugging
+// opencode server boot, SSE, or auth issues.
+const OPENCODE_DEBUG = process.env.MEMOIZE_DEBUG_OPENCODE === "1";
 
 // Tee all debug to a file so bun's dev-server stdout multiplexing
 // doesn't swallow the trace. Path is logged at startup.
