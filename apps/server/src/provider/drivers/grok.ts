@@ -446,10 +446,43 @@ export const startGrokSession = (
               });
             return;
           }
-          // For everything else (permission prompts, terminal requests,
-          // collab callbacks, etc.) we still reply with a clean error so the
-          // agent never hangs forever waiting for a response that will never
-          // come. This is a common cause of mysterious mid-turn "stops".
+
+          // User question / interactive prompts from the Grok agent
+          // (e.g. _x.ai/ask_user_question or similar namespaced methods).
+          // These are used by the agent when it wants to ask the human for
+          // input (dummy edits, confirmations, plan decisions, etc.).
+          // For now we auto-ack so the agent's tool call doesn't hang/fail.
+          // Full round-trip (emit UserQuestionEvent + route answers back)
+          // can be added later once we have the exact param shape.
+          const isQuestionMethod =
+            msg.method?.includes("ask_user_question") ||
+            msg.method?.includes("user_question") ||
+            msg.method?.startsWith("_x.ai/");
+
+          if (isQuestionMethod) {
+            grokDiag("auto-acking user question method from agent", {
+              method: msg.method,
+              params: msg.params,
+            });
+            if (GROK_RPC_TRACE) {
+              process.stderr.write(
+                `[grok.rpc] auto-acking question method=${msg.method} id=${msg.id} params=${JSON.stringify(msg.params ?? {})}\n`,
+              );
+            }
+            // The Grok ACP expects at minimum an `outcome` field in the
+            // result for ask_user_question responses. We auto-approve for
+            // dummy flows so the agent can keep making edits without hanging.
+            writeMessage({
+              jsonrpc: "2.0",
+              id: msg.id,
+              result: { outcome: "approved" },
+            });
+            return;
+          }
+
+          // For everything else (permission prompts, collab callbacks, etc.)
+          // we still reply with a clean error so the agent never hangs forever
+          // waiting for a response that will never come.
           writeMessage({
             jsonrpc: "2.0",
             id: msg.id,

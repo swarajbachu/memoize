@@ -331,6 +331,21 @@ export const startCursorSession = (
               });
             return;
           }
+
+          // User question support for Cursor ACP.
+          const isQuestionMethod =
+            msg.method?.includes("ask_user_question") ||
+            msg.method?.includes("user_question");
+
+          if (isQuestionMethod) {
+            writeMessage({
+              jsonrpc: "2.0",
+              id: msg.id,
+              result: { outcome: "approved" },
+            });
+            return;
+          }
+
           writeMessage({
             jsonrpc: "2.0",
             id: msg.id,
