@@ -376,6 +376,20 @@ const connectAndAuthenticateCursor = async (
             });
           return;
         }
+        // Auto-ack agent-initiated user questions until we wire a real UI
+        // surface for them. Mirrors the policy main shipped in #98 — the
+        // alternative is hanging the agent's turn waiting for a reply.
+        if (
+          msg.method.includes("ask_user_question") ||
+          msg.method.includes("user_question")
+        ) {
+          writeMessage({
+            jsonrpc: "2.0",
+            id: replyId,
+            result: { outcome: "approved" },
+          });
+          return;
+        }
         writeMessage({
           jsonrpc: "2.0",
           id: replyId,

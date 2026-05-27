@@ -3,7 +3,9 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import {
+  branchExists,
   closeIndexDb,
+  countAll,
   fetchChunk,
   findReferencesByName,
   indexRepo,
@@ -12,7 +14,10 @@ import {
   openIndexDb,
   reindexFile,
   runMigrations,
+  search,
   type IndexDb,
+  type SearchHit,
+  type SearchInput,
 } from "@memoize/index";
 
 const runP = <A>(eff: Effect.Effect<A, unknown>): Promise<A> =>
@@ -32,17 +37,14 @@ export interface ServerHandle {
     readonly workspace: string;
     readonly branch: string;
     readonly dbPath: string;
+    readonly populated: boolean;
+    readonly stats: { blobs: number; chunks: number; symbols: number; refs: number };
   }>;
   readonly reindex: () => Promise<{ readonly processed: number }>;
   readonly reindexFile: (
     path: string,
   ) => Promise<{ readonly blobId: number; readonly parsed: boolean }>;
-  readonly search: (input: {
-    readonly query: string;
-    readonly kind?: "auto" | "symbol" | "text" | "semantic";
-    readonly limit?: number;
-    readonly pathGlob?: string;
-  }) => Promise<unknown>;
+  readonly search: (input: SearchInput) => Promise<ReadonlyArray<SearchHit>>;
   readonly symbolLookup: (input: {
     readonly name: string;
     readonly kind?: string;
@@ -85,19 +87,15 @@ export const startServerHandle = async (
     db,
     workspace,
     branch,
-    status: async () => ({ workspace, branch, dbPath }),
+    status: async () => {
+      const populated = await runP(branchExists(db, branch));
+      const stats = await runP(countAll(db));
+      return { workspace, branch, dbPath, populated, stats };
+    },
     reindex: async () => runP(indexRepo(db, workspace, branch)),
     reindexFile: async (path: string) =>
       runP(reindexFile(db, workspace, path, branch)),
-    search: async () => {
-      // The standalone MCP exposes the same search semantics as the
-      // in-process consumer; we run the symbol-only path directly for
-      // now and let downstream tools call BM25 via `code_search` when
-      // the agent picks the `text` kind. Phase G can plug the full
-      // IndexService.search Effect runtime in if we ever want HTTP
-      // semantic search from the MCP side.
-      return [];
-    },
+    search: (input) => runP(search(db, branch, input)),
     symbolLookup: ({ name, kind, limit, pathGlob }) =>
       runP(lookupSymbol(db, name, branch, kind, limit ?? 10, pathGlob)),
     findReferences: ({ symbol, limit, pathGlob }) =>

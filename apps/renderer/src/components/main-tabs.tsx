@@ -18,7 +18,7 @@ import { useSettingsStore } from "../store/settings.ts";
 import { useUiStore } from "../store/ui.ts";
 import { FileIcon } from "./file-icon.tsx";
 import { ProviderIcon } from "./provider-icons.tsx";
-import { Beacon } from "./ui/loaders";
+import { Beacon, Diffusion } from "./ui/loaders";
 
 type Props = {
   readonly projectId: FolderId | null;
@@ -334,6 +334,9 @@ function ChatTabButton({
 function NewChatTabButton({ chatId }: { chatId: import("@memoize/wire").ChatId }) {
   const refresh = useProvidersStore((s) => s.refresh);
   const create = useSessionsStore((s) => s.create);
+  const creating = useSessionsStore(
+    (s) => s.creatingByChat[chatId] === true,
+  );
   const defaultProviderId = useSettingsStore((s) => s.defaultProviderId);
   const defaultModelByProvider = useSettingsStore(
     (s) => s.defaultModelByProvider,
@@ -341,9 +344,14 @@ function NewChatTabButton({ chatId }: { chatId: import("@memoize/wire").ChatId }
   const defaultRuntimeMode = useSettingsStore((s) => s.defaultRuntimeMode);
 
   // Creates a new session inside the active chat. Worktree is inherited
-  // from the chat row server-side.
+  // from the chat row server-side. Skip the awaited provider refresh when
+  // we already have a default model cached — saves 100–500ms per click on
+  // the warm path; cold cache still pays for the round-trip.
   const onClick = async () => {
-    await refresh();
+    if (creating) return;
+    if (defaultModelByProvider[defaultProviderId] === undefined) {
+      await refresh();
+    }
     const model =
       defaultModelByProvider[defaultProviderId] ??
       defaultModelFor(defaultProviderId);
@@ -356,11 +364,18 @@ function NewChatTabButton({ chatId }: { chatId: import("@memoize/wire").ChatId }
     <button
       type="button"
       onClick={() => void onClick()}
+      disabled={creating}
       title="New tab in this chat"
       aria-label="New tab in this chat"
-      className="relative flex items-center justify-center rounded px-2 text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground"
+      className="relative flex items-center justify-center rounded px-2 text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
     >
-      <Plus className="size-3.5" />
+      {creating ? (
+        <span className="inline-flex size-3.5 items-center justify-center">
+          <Diffusion dotSize={3} cellPadding={1} />
+        </span>
+      ) : (
+        <Plus className="size-3.5" />
+      )}
     </button>
   );
 }

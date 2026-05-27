@@ -130,6 +130,12 @@ function useSessionRunningSubscriptions(
                       [id]: event.status === "running",
                     },
                   }));
+                  // Mirror the full status into the session row so the
+                  // chat surface can branch on `booting` (loading panel)
+                  // vs `idle` (composer ready) without a second stream.
+                  useSessionsStore
+                    .getState()
+                    .setSessionStatus(id, event.status);
                 }),
             ),
           );

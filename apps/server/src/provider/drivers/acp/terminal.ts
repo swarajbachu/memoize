@@ -4,10 +4,20 @@
  * Full terminal emulation is complex. For now we provide a stub that at least
  * prevents hard "Method not supported" errors and lets the agent know the
  * capability is partially available.
+ *
+ * The context is kept compatible with FsHandleContext so drivers can pass
+ * the same object; permission wiring for exec will be added in Phase 2.
  */
 
 export interface TerminalHandleContext {
   readonly cwd: string;
+  readonly sessionId?: import("@memoize/wire").AgentSessionId;
+  readonly projectId?: import("@memoize/wire").FolderId;
+  readonly requestPermission?: (
+    kind: import("@memoize/wire").PermissionKind,
+    options: { readonly forcePrompt: boolean },
+  ) => Promise<import("@memoize/wire").PermissionDecision>;
+  readonly getRuntimeMode?: () => import("@memoize/wire").RuntimeMode;
 }
 
 export async function handleTerminalRequest(

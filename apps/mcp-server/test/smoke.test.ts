@@ -6,8 +6,8 @@ import { tmpdir } from "node:os";
 import { startServerHandle } from "../src/handle.ts";
 import { buildTools } from "../src/tools.ts";
 
-describe("Phase F — MCP server smoke", () => {
-  it("constructs a handle and exposes 6 tools", async () => {
+describe("MCP server smoke (standalone index for external agents)", () => {
+  it("constructs a handle and exposes the full tool surface (including hybrid code_search)", async () => {
     const root = mkdtempSync(join(tmpdir(), "mz-mcp-"));
     try {
       writeFileSync(
@@ -29,6 +29,7 @@ describe("Phase F — MCP server smoke", () => {
         "index_status",
         "list_module",
         "read_chunk",
+        "reindex",
         "symbol_lookup",
       ]);
 
@@ -45,9 +46,23 @@ describe("Phase F — MCP server smoke", () => {
       const statusPayload = JSON.parse(statusOut.content[0]!.text) as {
         workspace: string;
         branch: string;
+        populated: boolean;
+        stats: { blobs: number };
       };
       expect(statusPayload.workspace).toBe(root);
       expect(statusPayload.branch).toBe("test");
+      expect(statusPayload.populated).toBe(true);
+      expect(statusPayload.stats.blobs).toBeGreaterThan(0);
+
+      // Exercise the newly-wired hybrid search path (non-symbol query → BM25)
+      const cs = tools.find((t) => t.name === "code_search")!;
+      const csValidated = cs.validator.parse({ query: "thing", kind: "text", limit: 3 });
+      const csOut = await cs.handler(csValidated);
+      expect(csOut.isError).toBeFalsy();
+      const csPayload = JSON.parse(csOut.content[0]!.text) as { hits: unknown[] };
+      expect(Array.isArray(csPayload.hits)).toBe(true);
+      // The tiny file contains the identifier, so we should get at least one hit
+      expect(csPayload.hits.length).toBeGreaterThan(0);
 
       await handle.close();
     } finally {
