@@ -66,6 +66,12 @@ export const iconForTool = (tool: string): IconHandle => {
       return Folder01Icon;
     case "Task":
     case "Agent":
+    case "SpawnAgent":
+    case "CollabSpawnAgent":
+    case "CollabSendInput":
+    case "CollabResumeAgent":
+    case "CollabCloseAgent":
+    case "CollabWait":
       return Robot01Icon;
     case "WebFetch":
     case "WebSearch":
@@ -475,7 +481,7 @@ const buildToolView = (
         trailing:
           path !== null ? (
             <span className="flex items-center gap-2 tabular-nums">
-              <FileBadge path={path} />
+              <FileBadge path={path} view="diff" />
               {stats !== null && stats.added > 0 ? (
                 <span className="text-emerald-400">+{stats.added}</span>
               ) : null}
@@ -703,6 +709,54 @@ const buildToolView = (
           ) : (
             <PreBlock text={stringifyJson(input)} />
           ),
+      };
+    }
+
+    case "SpawnAgent":
+    case "CollabSpawnAgent": {
+      const receivers = Array.isArray(obj.receiverThreadIds)
+        ? (obj.receiverThreadIds as string[])
+        : [];
+      const promptText = asString(obj.prompt) ?? "";
+      const model = asString(obj.model);
+      const states = (obj.agentsStates ?? {}) as Record<string, unknown>;
+      const n = receivers.length || Object.keys(states).length || 1;
+
+      return {
+        icon: Robot01Icon,
+        label: `Spawn ${n} agent${n === 1 ? "" : "s"}`,
+        trailing: model ? <InlineTextHint value={model} /> : undefined,
+        fallbackBody: (
+          <div className="space-y-1.5 text-[12px]">
+            {model && (
+              <div className="text-muted-foreground">
+                Model: <span className="font-mono">{model}</span>
+              </div>
+            )}
+            {promptText && (
+              <div className="rounded border bg-muted/30 p-1.5 font-mono text-[11px] leading-snug">
+                {promptText.length > 280 ? promptText.slice(0, 277) + "…" : promptText}
+              </div>
+            )}
+            {receivers.length > 0 && (
+              <div className="text-[10px] text-muted-foreground">
+                Threads: {receivers.slice(0, 4).join(", ")}
+                {receivers.length > 4 ? ` +${receivers.length - 4}` : ""}
+              </div>
+            )}
+            {Object.keys(states).length > 0 && (
+              <div className="text-[10px] text-muted-foreground">
+                Live states: {Object.keys(states).length} tracked
+              </div>
+            )}
+          </div>
+        ),
+        resultPanel: (result) => (
+          <PreBlock
+            text={toResultText(result.output) || stringifyJson(obj.agentsStates)}
+            isError={result.isError}
+          />
+        ),
       };
     }
 

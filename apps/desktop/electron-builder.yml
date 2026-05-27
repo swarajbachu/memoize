@@ -1,5 +1,5 @@
 appId: app.memoize.desktop
-productName: memoize
+productName: memoize Alpha
 copyright: © ${author}
 
 # Output the .dmg + latest-mac.yml + blockmap to repo-root/dist so all

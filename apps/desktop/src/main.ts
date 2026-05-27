@@ -65,7 +65,7 @@ protocol.registerSchemesAsPrivileged([
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL?.trim() || "";
 const isDevelopment = Boolean(DEV_SERVER_URL);
 
-const APP_NAME = isDevelopment ? "memoize (Dev)" : "memoize";
+const APP_NAME = isDevelopment ? "memoize Alpha (Dev)" : "memoize Alpha";
 
 app.setName(APP_NAME);
 
@@ -135,6 +135,10 @@ function createMainWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // Enables the `<webview>` tag the in-app Browser tab uses. The webview
+      // itself still runs with `nodeIntegration: false` in its own process,
+      // so this only unlocks the element, not Node access inside it.
+      webviewTag: true,
     },
   });
 
@@ -339,7 +343,7 @@ void app.whenReady().then(() => {
   // the app name. macOS reads these once at panel-open time, so it's safe
   // to call once on startup.
   app.setAboutPanelOptions({
-    applicationName: "memoize",
+    applicationName: "memoize Alpha",
     applicationVersion: app.getVersion(),
     version: app.getVersion(),
     copyright: "© Swaraj Bachu",

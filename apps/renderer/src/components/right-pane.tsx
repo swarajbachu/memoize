@@ -8,6 +8,7 @@ import { prStateKey, usePrStateStore } from "../store/pr-state.ts";
 import { useUiStore } from "../store/ui.ts";
 import { useWorkspaceStore } from "../store/workspace.ts";
 import { EMPTY_WORKTREES, useWorktreesStore } from "../store/worktrees.ts";
+import { BrowserPane } from "./browser-pane.tsx";
 import { DiffPane } from "./diff-pane.tsx";
 import { FileTree } from "./file-tree.tsx";
 import { PrPane } from "./pr-pane.tsx";
@@ -78,6 +79,12 @@ export function RightPane() {
           tooltip="Pull request title, reviews, comments, and CI"
           badge={renderPrBadge(pr, details)}
         />
+        <TabButton
+          active={tab === "browser"}
+          onClick={() => setTab("browser")}
+          label="Browser"
+          tooltip="In-app browser for dev servers and references"
+        />
       </div>
       <div className="flex min-h-0 flex-1 flex-col">
         {selected === null ? (
@@ -103,6 +110,9 @@ export function RightPane() {
             </div>
             <div hidden={tab !== "pr"} className="min-h-0 flex-1">
               <PrPane folderId={selected.id} worktreeId={worktreeId} />
+            </div>
+            <div hidden={tab !== "browser"} className="min-h-0 flex-1">
+              <BrowserPane />
             </div>
           </>
         )}

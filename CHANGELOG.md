@@ -5,6 +5,26 @@ All notable changes to memoize will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0]
+
+### Changed
+- **App renamed to "memoize Alpha"** to signal that this build is pre-1.0 and may contain bugs. The bundle identifier (`app.memoize.desktop`) is unchanged, so existing installs auto-update to the renamed app in place. Dock title, About panel, and macOS app menu now read "memoize Alpha"; the in-app brand and CLI / URL scheme stay as `memoize`.
+
+### Added
+- Full-pane diff view in the file viewer with a Diff / Edit toggle, so reviewing a tool's edits no longer requires scrolling between two side-by-side columns. (#93)
+- Worktree UX overhaul: new worktrees are created outside the repo root (no more accidental nesting in `git status`), get Pokémon-themed names instead of UUIDs, and the new-chat panel opens instantly instead of waiting for the worktree to materialize. (#92)
+- Local code index (MVP 0.04) — phases A–F land together with auto-reindex on file change, giving the agent a fast structural view of the repo without re-walking the tree on every query. (#86)
+
+### Changed
+- Renderer now has a single source of truth for the active directory and branch, replacing the previous fan-out of duplicated state across panels. (#91)
+
+### Fixed
+- Grok agent reliability on local login — the driver now uses the cached OAuth token instead of re-prompting on every session start. (#78)
+- Cursor driver: ACP now fails fast on auth errors instead of silently retrying, OAuth flow is wired end-to-end, the model list is refreshed on each session, and provider errors surface in the UI instead of being swallowed. (#90)
+- Settings writes occasionally raised `ENOENT` mid-rename when two writes raced. Writes through the config store are now serialized. (#89)
+- Provider boot crashes: codex no longer crashes when spawned without a TTY, missing cursor binaries surface a clear error, and claude/opencode gate correctly on availability. (#88)
+- Onboarding provider step tightened — copy now makes it clear that you pick a provider and go; no extra setup required. (#87)
+
 ## [0.2.1]
 
 ### Added

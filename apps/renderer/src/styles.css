@@ -395,6 +395,62 @@ body,
   }
 }
 
+/* `@pierre/diffs` ships with stock GitHub-style fire-engine red / spring
+   green and pure white/black surfaces. That reads as a separate widget
+   bolted onto the app. Override the public CSS variables so the diff
+   inherits the app's stone-warm + slate-cool neutrals and uses softer,
+   teal-leaning add / rose-leaning delete colors. The custom properties
+   cascade into the shadow DOM Pierre renders into. */
+@layer components {
+  .fz-diff {
+    /* Surfaces — drop the diff onto the same neutral the pane uses so it
+       reads as part of the app, not a bolted-on widget. Pierre computes
+       its buffer / context / gutter tints from `--diffs-bg` mixed with a
+       `--diffs-mixer` (`#fff` in dark), which pushes toward zinc. We
+       override the computed values directly to keep everything anchored
+       on the app's `--background`. */
+    --diffs-light-bg: var(--background);
+    --diffs-dark-bg: var(--background);
+    --diffs-light: var(--foreground);
+    --diffs-dark: var(--foreground);
+    --diffs-bg-buffer-override: var(--background);
+    --diffs-bg-context-override: var(--background);
+    --diffs-bg-context-gutter-override: var(--bg-subtle);
+    --diffs-bg-separator-override: var(--border);
+
+    /* Add leans hard on the app's lime --primary — true yellow-chartreuse,
+       not teal. Delete stays warm rose so a glance still tells add from
+       delete. The text colors land on the marker / line text; the
+       backgrounds are a faint wash of the same hue against the app bg so
+       a + row reads as "a hint of lime" rather than "a green band." */
+    --diffs-added-light: oklch(0.55 0.2 108);
+    --diffs-added-dark: oklch(0.88 0.2 115);
+    --diffs-deleted-light: oklch(0.55 0.2 22);
+    --diffs-deleted-dark: oklch(0.78 0.15 20);
+    --diffs-modified-light: oklch(0.7 0.13 80);
+    --diffs-modified-dark: oklch(0.82 0.11 82);
+
+    --diffs-bg-addition-override:
+      color-mix(in oklab, var(--diffs-added-dark) 10%, var(--background));
+    --diffs-bg-addition-emphasis-override:
+      color-mix(in oklab, var(--diffs-added-dark) 20%, var(--background));
+    --diffs-bg-addition-number-override:
+      color-mix(in oklab, var(--diffs-added-dark) 14%, var(--bg-subtle));
+    --diffs-bg-deletion-override:
+      color-mix(in oklab, var(--diffs-deleted-dark) 10%, var(--background));
+    --diffs-bg-deletion-emphasis-override:
+      color-mix(in oklab, var(--diffs-deleted-dark) 20%, var(--background));
+    --diffs-bg-deletion-number-override:
+      color-mix(in oklab, var(--diffs-deleted-dark) 14%, var(--bg-subtle));
+
+    /* Typography — same monospace token as the rest of the app, slightly
+       smaller than Pierre's default so a diff doesn't dwarf the chat. */
+    --diffs-font-family: var(--font-mono);
+    --diffs-font-size: 12px;
+    --diffs-line-height: 18px;
+  }
+}
+
 /* Assistant message prose. Tuned for long-read comfort: body sits a touch
    below `--foreground`, headings sharper, code in a contained surface, and
    typographic rhythm (margins, line-height, list indents) calmed down so a

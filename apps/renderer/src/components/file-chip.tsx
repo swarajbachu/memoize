@@ -3,7 +3,7 @@ import { createContext, useContext } from "react";
 import type { FolderId, WorktreeId } from "@memoize/wire";
 
 import { cn } from "~/lib/utils";
-import { useUiStore } from "~/store/ui";
+import { useUiStore, type FileView } from "~/store/ui";
 import { FileIcon } from "./file-icon.tsx";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip.tsx";
 
@@ -54,6 +54,7 @@ export function FileChip({
   relPath,
   absPath,
   kind = "file",
+  view,
   className,
 }: {
   /** Path shown in the tooltip + used as the chip label (basename only). */
@@ -65,6 +66,12 @@ export function FileChip({
    */
   readonly absPath?: string;
   readonly kind?: "file" | "directory";
+  /**
+   * Which body the file viewer should open with. Tool rows for Edit/Write/
+   * MultiEdit pass `"diff"` so clicking the file goes straight to the
+   * side-by-side diff; everything else defaults to the CodeMirror editor.
+   */
+  readonly view?: FileView;
   readonly className?: string;
 }) {
   const { folderId, worktreeId } = useFileChipContext();
@@ -84,6 +91,7 @@ export function FileChip({
       path: absPath ?? relPath,
       name,
       worktreeId,
+      view,
     });
   };
 

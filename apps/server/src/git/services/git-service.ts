@@ -5,6 +5,7 @@ import {
   type GitChange,
   type GitCommandError,
   type GitCommit,
+  type GitDiffResult,
   type GitFailingChecksArtifact,
   type GitFolderNotFoundError,
   type GitNotARepoError,
@@ -49,6 +50,11 @@ export interface GitServiceShape {
     folderId: FolderId,
     worktreeId?: WorktreeId | null,
   ) => Effect.Effect<ReadonlyArray<GitChange>, GitFailure>;
+  readonly diff: (
+    folderId: FolderId,
+    path: string,
+    worktreeId?: WorktreeId | null,
+  ) => Effect.Effect<GitDiffResult, GitFailure>;
   readonly commit: (
     folderId: FolderId,
     message: string,

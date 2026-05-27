@@ -18,6 +18,8 @@ import {
 } from "@memoize/wire";
 
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
+import { handleFsRequest } from "./acp/fs.ts";
+import { handleTerminalRequest } from "./acp/terminal.ts";
 import { createAcpTranslator } from "./acp/translate.ts";
 
 /**
@@ -209,6 +211,12 @@ interface CursorReadyTransport {
   setCloseHandler(h: (detail: string) => void): void;
   /** Swap in a handler for spawn-time errors. */
   setSpawnErrorHandler(h: (message: string) => void): void;
+  /**
+   * Set the working directory used for sandboxing client-side fs/terminal
+   * requests. Defaults to $HOME during prewarm; `startCursorSession` swaps
+   * in the project cwd as soon as it takes ownership.
+   */
+  setSessionCwd(cwd: string): void;
 }
 
 /**
@@ -256,6 +264,9 @@ const connectAndAuthenticateCursor = async (
   let stderrHandler: (chunk: string) => void = () => {};
   let closeHandler: (detail: string) => void = () => {};
   let spawnErrorHandler: (message: string) => void = () => {};
+  // Sandbox root for client-side fs/terminal requests. Defaults to $HOME
+  // until startCursorSession swaps in the project cwd.
+  let sessionCwd: string = process.env.HOME ?? process.cwd();
 
   const writeMessage = (msg: Record<string, unknown>): void => {
     if (!child.stdin.writable) return;
@@ -311,26 +322,70 @@ const connectAndAuthenticateCursor = async (
         if (update !== undefined) sessionUpdateHandler(update);
         return;
       }
+
+      // `item/*` and `thread/*` server→client notifications are an
+      // experimental ACP variant cursor (and forkzero/main grok) emit
+      // alongside the standard `session/update`. Forward them through the
+      // same session-update handler so the translator sees them.
+      if (msg.method.startsWith("item/") || msg.method.startsWith("thread/")) {
+        if (CURSOR_RPC_TRACE) {
+          writeCursorLog(
+            `[cursor.rpc] ${msg.method} params=${JSON.stringify(msg.params ?? {})}\n`,
+          );
+        }
+        if (msg.params !== undefined) sessionUpdateHandler(msg.params);
+        return;
+      }
+
       if (msg.id !== undefined) {
         const isFs = msg.method.startsWith("fs/");
-        if (CURSOR_RPC_TRACE || isFs) {
+        const isTerminal = msg.method.startsWith("terminal/");
+        if (CURSOR_RPC_TRACE || isFs || isTerminal) {
           writeCursorLog(
             `[cursor.rpc] server→client request method=${msg.method} id=${msg.id} params=${JSON.stringify(msg.params ?? {})}\n`,
           );
         }
+        const replyId = msg.id;
         if (isFs) {
-          writeMessage({
-            jsonrpc: "2.0",
-            id: msg.id,
-            error: {
-              code: -32601,
-              message: `Method not implemented by memoize ACP client: ${msg.method}`,
-            },
-          });
+          handleFsRequest(msg.method, msg.params, { cwd: sessionCwd })
+            .then((result) => {
+              writeMessage({ jsonrpc: "2.0", id: replyId, result });
+            })
+            .catch((err) => {
+              const message = err instanceof Error ? err.message : String(err);
+              writeMessage({
+                jsonrpc: "2.0",
+                id: replyId,
+                error: { code: -32603, message },
+              });
+            });
           return;
         }
+        if (isTerminal) {
+          handleTerminalRequest(msg.method, msg.params, { cwd: sessionCwd })
+            .then((result) => {
+              writeMessage({ jsonrpc: "2.0", id: replyId, result });
+            })
+            .catch((err) => {
+              const message = err instanceof Error ? err.message : String(err);
+              writeMessage({
+                jsonrpc: "2.0",
+                id: replyId,
+                error: { code: -32603, message },
+              });
+            });
+          return;
+        }
+        writeMessage({
+          jsonrpc: "2.0",
+          id: replyId,
+          error: {
+            code: -32601,
+            message: `Method not supported by memoize ACP client: ${msg.method}`,
+          },
+        });
         console.warn(
-          `[cursor.rpc] unhandled server→client request method=${msg.method} id=${msg.id}`,
+          `[cursor.rpc] replied to unhandled server→client request method=${msg.method} id=${msg.id}`,
         );
         return;
       }
@@ -414,6 +469,8 @@ const connectAndAuthenticateCursor = async (
           },
           terminal: true,
           _meta: { parameterizedModelPicker: true },
+          // Opt into experimental (collab/swarming) for future parity with Grok.
+          experimentalApi: true,
         },
       },
       5_000,
@@ -475,6 +532,9 @@ const connectAndAuthenticateCursor = async (
     },
     setSpawnErrorHandler(h) {
       spawnErrorHandler = h;
+    },
+    setSessionCwd(next) {
+      sessionCwd = next;
     },
   };
 };
@@ -640,6 +700,11 @@ export const startCursorSession = (
     });
     const { child, rl, pending, request, notify, getStderrTail } =
       transportResult;
+
+    // The transport (possibly prewarmed in $HOME) needs to know the real
+    // project cwd before cursor's fs/* and terminal/* server→client
+    // requests start flowing — handleFsRequest sandboxes paths under this.
+    transportResult.setSessionCwd(cwd);
 
     // === Wire session-level handlers onto the (possibly prewarmed) transport.
     transportResult.setSessionUpdateHandler((update) => {
