@@ -101,16 +101,21 @@ export function ComposerChipOverlay({
     const onClick = (e: MouseEvent) => {
       const chip = findChip(e.target);
       if (chip === null) return;
-      const absPath = chip.dataset.absPath;
       const relPath = chip.dataset.relPath;
       const entryKind = chip.dataset.entryKind;
-      if (absPath === undefined || relPath === undefined) return;
+      if (relPath === undefined) return;
       if (entryKind === "directory") return;
       e.preventDefault();
       e.stopPropagation();
+      // The chip's dataset.relPath is already project-root-relative — that's
+      // the shape `fs.readFile` expects. Passing absPath would round-trip
+      // through `resolveInsideFolder` and reject with FsPathOutsideError
+      // when the workspace happens to live under a different root than the
+      // composer suggested.
       openFileInTab({
+        kind: "text",
         folderId: projectId,
-        path: absPath,
+        path: relPath,
         name: basename(relPath),
         worktreeId,
       });

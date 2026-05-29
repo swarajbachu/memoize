@@ -1398,6 +1398,23 @@ export const MessageStoreLive = Layer.scoped(
           UPDATE sessions SET worktree_id = ${worktreeId}, updated_at = ${nowIso}
           WHERE chat_id = ${chatId}
         `.pipe(Effect.asVoid, Effect.orDie);
+        // Background-booted sessions (chat.create → session.create with
+        // background=true) already spawned a provider CLI in the OLD cwd
+        // before the user got a chance to pick a worktree. Kill those so
+        // the next `sendMessage` lazy-restarts via `restartProviderSession`,
+        // which reads the now-updated `session.worktreeId` and resolves
+        // `cwdForWorktree` to the new path. Without this teardown the
+        // first user message would land in the wrong working tree.
+        const memberSessions = yield* sql<{ readonly id: string }>`
+          SELECT id FROM sessions
+          WHERE chat_id = ${chatId} AND archived_at IS NULL
+        `.pipe(Effect.orDie);
+        for (const row of memberSessions) {
+          const sid = row.id as SessionId;
+          yield* provider.close(sid).pipe(Effect.catchAll(() => Effect.void));
+          yield* interruptProviderFiber(sid);
+          yield* setStatus(sid, "idle");
+        }
         return yield* lookupChat(chatId);
       });
 

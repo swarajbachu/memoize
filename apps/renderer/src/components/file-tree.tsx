@@ -129,6 +129,7 @@ export function FileTree({ folderId }: { folderId: FolderId }) {
         return;
       }
       openFileInTab({
+        kind: "text",
         folderId,
         path: entry.path,
         name: entry.name,
