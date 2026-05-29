@@ -5,6 +5,24 @@ All notable changes to memoize will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1]
+
+### Added
+- Multi-terminal sub-sidebar in the right pane: the Terminal tab now lists every terminal for the workspace with a `+` to spawn more, click-to-switch, and hover-X to close. All instances stay mounted so xterm scrollback and PTY connections survive switches, and closing the last terminal re-seeds a fresh one. (#95)
+- In-app Browser tab driven by an Electron `<webview>` with back/forward/refresh and a URL bar, sandboxed in its own process. Bare hosts default to `https://`, except `localhost`/`127.0.0.1` which default to `http://` for dev servers. (#95)
+- Standalone MCP server now wires up the full hybrid `code_search` pipeline (symbol + BM25 + vector + RRF + rerank) instead of the symbol-only stub, shared with `IndexService` via a single `search()` module. `index_status` reports populated blob/chunk/symbol/ref counts, and a new `reindex` tool exposes a full pass to agents. (#97)
+- ACP file-system handlers for `create_directory`, `delete_file`, and `move_file`, plus method aliases (`writeTextFile`, `mkdir`, `unlink`, `rename`, …) and flexible write payloads (`dataBase64` / `content` / `text` / `data`). (#98)
+
+### Changed
+- Creating a new chat session no longer freezes the UI for ~60s. The `+` on the tab strip now opens an instant tab backed by a loading panel while the provider CLI boots on a background daemon; sessions start in a `booting` state and flip to `idle`/`running` (or `error`) once the handshake completes. (#99)
+- Single source of truth for sensitive-path detection and FS-operation policy (read / write / create / delete / move), honoring runtime and permission modes, with every ACP mutation routed through it. (#98)
+
+### Fixed
+- Grok agent reliability: a 4s startup grace window swallows transient `Auth(AuthorizationRequired)` stderr during cached-token refresh so the first message no longer shows a red error card; the worker now transparently respawns on death instead of asking you to close the chat; and MCP-style tool output is flattened so `read_file` results render as code instead of raw JSON. (#101)
+- Cursor driver: `cursor-agent` is prewarmed at boot (time-to-first-token 18s → 5.8s), the model picker uses ACP-valid slugs with aliases for old persisted settings, `session/load` resumes sessions (falling back to `session/new`), and tool-call frames are logged to `~/.cache/memoize/cursor.log` with arguments and tool names preserved across updates. (#96)
+- UX cluster: external links now open in the system browser instead of inside the app, switching a chat's worktree restarts member sessions in the new cwd, out-of-workspace file chips are flagged non-clickable with a tooltip, image attachments open inline in a tab, and Cmd+W closes the active file tab before falling through to archiving the chat tab. (#102)
+- Auto-acknowledge `ask_user_question` and `_x.ai` / `_google` namespaced ACP methods in the grok, gemini, and cursor drivers so interactive prompts no longer hang the agent turn. (#98)
+
 ## [0.3.0]
 
 ### Changed
