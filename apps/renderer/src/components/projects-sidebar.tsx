@@ -8,7 +8,6 @@ import {
   EyeOff,
   MoreHorizontal,
   Pencil,
-  Plus,
   Settings,
   Shield,
   SquarePen,
@@ -45,6 +44,7 @@ import { useUiStore } from "../store/ui.ts";
 import { useWorkspaceStore } from "../store/workspace.ts";
 import { BranchIcon, type BranchState } from "./branch-icon.tsx";
 import { PermissionsInspector } from "./permissions-inspector.tsx";
+import { ProjectAddMenu } from "./project-add-menu.tsx";
 import { Beacon, Diffusion } from "./ui/loaders";
 
 const initialsOf = (name: string): string => {
@@ -165,7 +165,6 @@ export function ProjectsSidebar() {
   const error = useWorkspaceStore((s) => s.error);
   const loading = useWorkspaceStore((s) => s.loading);
   const load = useWorkspaceStore((s) => s.load);
-  const add = useWorkspaceStore((s) => s.add);
   const remove = useWorkspaceStore((s) => s.remove);
   const select = useWorkspaceStore((s) => s.select);
 
@@ -264,7 +263,6 @@ export function ProjectsSidebar() {
   }, [folders, sessionsByProject]);
   useSessionRunningSubscriptions(allSessionIds);
 
-  const onAddProject = () => void add();
   const onToggleExpanded = (id: FolderId) =>
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
 
@@ -272,26 +270,7 @@ export function ProjectsSidebar() {
     <aside className="flex h-full min-h-0 w-full flex-col backdrop-blur-3xl text-sidebar-foreground">
       <div className="flex items-center justify-between px-3 py-2 text-xs text-muted-foreground">
         <span>Projects</span>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                onClick={onAddProject}
-                className="rounded p-1 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                aria-label="Add project"
-              >
-                <Plus className="size-3.5" />
-              </button>
-            }
-          />
-          <TooltipPopup>
-            <TooltipShortcut
-              label="Add project"
-              shortcut={formatShortcut("open-project")}
-            />
-          </TooltipPopup>
-        </Tooltip>
+        <ProjectAddMenu />
       </div>
 
       {(error ?? chatsError ?? sessionsError) !== null && (

@@ -98,7 +98,11 @@ import {
 import { SkillListRpc, SkillStreamRpc } from "./skill.ts";
 import {
   WorkspaceAddRpc,
+  WorkspaceCloneRepoRpc,
+  WorkspaceCreateProjectRpc,
   WorkspaceGetSelectedRpc,
+  WorkspaceGhAuthStatusRpc,
+  WorkspaceListGithubReposRpc,
   WorkspaceListRpc,
   WorkspacePickFolderRpc,
   WorkspaceRemoveRpc,
@@ -127,6 +131,10 @@ export const MemoizeRpcs = RpcGroup.make(
   WorkspaceGetSelectedRpc,
   WorkspaceSetSelectedRpc,
   WorkspaceSearchFilesRpc,
+  WorkspaceCloneRepoRpc,
+  WorkspaceCreateProjectRpc,
+  WorkspaceListGithubReposRpc,
+  WorkspaceGhAuthStatusRpc,
   PtyOpenRpc,
   PtyWriteRpc,
   PtyResizeRpc,
