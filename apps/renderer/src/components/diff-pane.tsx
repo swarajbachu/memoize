@@ -256,6 +256,7 @@ function FileRow({
         type="button"
         onClick={() =>
           openFileInTab({
+            kind: "text",
             folderId,
             worktreeId,
             path,

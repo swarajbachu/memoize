@@ -176,6 +176,34 @@ function createMainWindow() {
     void shell.openExternal(parsed.toString());
   });
 
+  // Backstops so any stray http(s) link click in the shell webContents
+  // (markdown anchors without an onClick, target="_blank" forms, etc.)
+  // punts to the OS default browser instead of opening a child Electron
+  // window or navigating the SPA away. The in-app Browser tab uses a
+  // `<webview>` which runs in its own webContents and isn't affected.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+        void shell.openExternal(parsed.toString());
+      }
+    } catch {
+      // not a parseable URL — drop silently
+    }
+    return { action: "deny" };
+  });
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+        event.preventDefault();
+        void shell.openExternal(parsed.toString());
+      }
+    } catch {
+      // file:// (renderer index) and other internal schemes fall through
+    }
+  });
+
   // Boot the Effect runtime once the window's webContents exists. The RPC
   // server protocol is bound to this webContents, so a window restart means
   // a fresh runtime — the only Effect.runFork in the main process.

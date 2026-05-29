@@ -4,6 +4,8 @@ import type { FolderId, WorktreeId } from "@memoize/wire";
 
 import { cn } from "~/lib/utils";
 import { useUiStore, type FileView } from "~/store/ui";
+import { useWorkspaceStore } from "~/store/workspace";
+import { useWorktreesStore } from "~/store/worktrees";
 import { FileIcon } from "./file-icon.tsx";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip.tsx";
 
@@ -76,19 +78,55 @@ export function FileChip({
 }) {
   const { folderId, worktreeId } = useFileChipContext();
   const openFileInTab = useUiStore((s) => s.openFileInTab);
+  const folderPath = useWorkspaceStore((s) => {
+    if (folderId === null) return null;
+    return s.folders.find((f) => f.id === folderId)?.path ?? null;
+  });
+  const worktreePath = useWorktreesStore((s) => {
+    if (folderId === null || worktreeId === null) return null;
+    const list = s.byProject[folderId] ?? [];
+    return list.find((w) => w.id === worktreeId)?.path ?? null;
+  });
 
   const name = basename(relPath);
+
+  // Resolve the chip's effective root + workspace-relative path. Tool rows
+  // sometimes carry an absolute path from another workspace (Conductor
+  // side-checkouts, sibling repos); opening those would trigger
+  // `FsPathOutsideError` on the server. Detect early, surface as a
+  // non-clickable chip with an explanatory tooltip.
+  const rootPath = worktreePath ?? folderPath;
+  const looksAbsolute = absPath !== undefined || relPath.startsWith("/");
+  const resolvedAbs = absPath ?? (relPath.startsWith("/") ? relPath : null);
+  const insideWorkspace =
+    rootPath !== null &&
+    resolvedAbs !== null &&
+    (resolvedAbs === rootPath || resolvedAbs.startsWith(`${rootPath}/`));
+  const workspaceRelPath =
+    insideWorkspace && resolvedAbs !== null && rootPath !== null
+      ? resolvedAbs.slice(rootPath.length + 1)
+      : !looksAbsolute
+        ? relPath
+        : null;
+
   const canOpen =
-    kind === "file" && folderId !== null && (absPath !== undefined || relPath.startsWith("/"));
+    kind === "file" && folderId !== null && workspaceRelPath !== null;
 
   const tooltip =
-    kind === "directory" ? `View ${relPath}` : canOpen ? `Open ${relPath}` : relPath;
+    kind === "directory"
+      ? `View ${relPath}`
+      : canOpen
+        ? `Open ${relPath}`
+        : looksAbsolute && !insideWorkspace
+          ? `${relPath} — outside this workspace`
+          : relPath;
 
   const onClick = () => {
-    if (!canOpen || folderId === null) return;
+    if (!canOpen || folderId === null || workspaceRelPath === null) return;
     openFileInTab({
+      kind: "text",
       folderId,
-      path: absPath ?? relPath,
+      path: workspaceRelPath,
       name,
       worktreeId,
       view,

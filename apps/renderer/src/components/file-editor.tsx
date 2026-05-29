@@ -28,10 +28,21 @@ type EditorState =
   | { status: "error"; reason: string };
 
 const formatError = (err: unknown): string => {
-  if (err instanceof Error) return err.message;
   if (typeof err === "object" && err !== null && "_tag" in err) {
-    return String((err as { _tag: unknown })._tag);
+    const tag = String((err as { _tag: unknown })._tag);
+    if (tag === "FsPathOutsideError") {
+      const p =
+        "path" in (err as Record<string, unknown>)
+          ? String((err as { path: unknown }).path)
+          : null;
+      return p === null
+        ? "This file is outside the current project."
+        : `This file is outside the current project (${p}).`;
+    }
+    if (err instanceof Error) return err.message;
+    return tag;
   }
+  if (err instanceof Error) return err.message;
   return String(err);
 };
 
@@ -50,11 +61,16 @@ const tagOf = (err: unknown): string | null =>
 export function FileEditor() {
   const openFile = useUiStore((s) => s.openFile);
   const closeFileTab = useUiStore((s) => s.closeFileTab);
-  const view = openFile?.view ?? "edit";
 
   if (openFile === null) {
     return <Placeholder>No file open.</Placeholder>;
   }
+
+  if (openFile.kind === "image") {
+    return <ImageBody src={openFile.src} name={openFile.name} />;
+  }
+
+  const view = openFile.view;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -69,6 +85,25 @@ export function FileEditor() {
   );
 }
 
+/**
+ * Inline image preview — used for attachment screenshots so clicking the
+ * thumbnail keeps the user inside the app rather than punting to the OS
+ * handler. No toolbar, no read RPC; the privileged `memoize://` scheme
+ * (see `apps/desktop/src/main.ts`) lets the renderer fetch the bytes
+ * directly.
+ */
+function ImageBody({ src, name }: { src: string; name: string }) {
+  return (
+    <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-black/40 p-4">
+      <img
+        src={src}
+        alt={name}
+        className="max-h-full max-w-full object-contain"
+      />
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // CodeMirror body — loads a file via fs.readFile, mounts the editor once,
 // swaps documents on file change. Cmd+S saves via fs.writeFile.
@@ -79,7 +114,7 @@ function CodeMirrorBody({
   hidden,
   onClose,
 }: {
-  openFile: OpenFile;
+  openFile: Extract<OpenFile, { kind: "text" }>;
   hidden: boolean;
   onClose: () => void;
 }) {
@@ -98,7 +133,7 @@ function CodeMirrorBody({
   const baselineRef = useRef("");
   const mtimeRef = useRef("");
   const savingRef = useRef(false);
-  const fileRef = useRef<OpenFile | null>(openFile);
+  const fileRef = useRef<Extract<OpenFile, { kind: "text" }> | null>(openFile);
   fileRef.current = openFile;
 
   const save = async () => {
@@ -274,7 +309,11 @@ type DiffState =
   | { status: "ready"; result: GitDiffResult }
   | { status: "error"; reason: string };
 
-function DiffViewBody({ openFile }: { openFile: OpenFile }) {
+function DiffViewBody({
+  openFile,
+}: {
+  openFile: Extract<OpenFile, { kind: "text" }>;
+}) {
   const [state, setState] = useState<DiffState>({ status: "loading" });
 
   useEffect(() => {

@@ -9,9 +9,6 @@ import {
   Settings,
 } from "lucide-react";
 import { useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-
 import type {
   AgentItemId,
   AttachmentRef,
@@ -29,6 +26,7 @@ import { useMessagesStore, type ChatError } from "~/store/messages";
 import { useUiStore } from "~/store/ui";
 
 import { FileChip } from "./file-chip.tsx";
+import { MarkdownBody } from "./markdown-body.tsx";
 import {
   ExitPlanModeRow,
   ThinkingRow,
@@ -200,18 +198,14 @@ function UserBubble({
             {(attachments ?? []).map((a) => {
               const isImage = a.mimeType.startsWith("image/");
               const iconUrl = isImage ? null : getFileIconUrl(a.originalName);
-              return (
-                <a
-                  key={a.id}
-                  href={`memoize://attachments/${a.id}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  title={a.originalName}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted/60"
-                >
+              const src = `memoize://attachments/${a.id}`;
+              const className =
+                "inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted/60";
+              const inner = (
+                <>
                   {isImage ? (
                     <img
-                      src={`memoize://attachments/${a.id}`}
+                      src={src}
                       alt=""
                       className="size-4 rounded object-cover"
                     />
@@ -219,6 +213,37 @@ function UserBubble({
                     <img src={iconUrl} alt="" className="size-4" />
                   ) : null}
                   <span className="truncate">{truncate(a.originalName)}</span>
+                </>
+              );
+              if (isImage) {
+                return (
+                  <button
+                    key={a.id}
+                    type="button"
+                    title={a.originalName}
+                    className={className}
+                    onClick={() =>
+                      useUiStore.getState().openFileInTab({
+                        kind: "image",
+                        src,
+                        name: a.originalName,
+                      })
+                    }
+                  >
+                    {inner}
+                  </button>
+                );
+              }
+              return (
+                <a
+                  key={a.id}
+                  href={src}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={a.originalName}
+                  className={className}
+                >
+                  {inner}
                 </a>
               );
             })}
@@ -251,8 +276,8 @@ function UserBubble({
 function AssistantBubble({ text }: { text: string }) {
   return (
     <div className="px-4 py-2">
-      <div className="fz-prose max-w-[88%]">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+      <div className="max-w-[88%]">
+        <MarkdownBody>{text}</MarkdownBody>
       </div>
     </div>
   );

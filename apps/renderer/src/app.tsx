@@ -232,11 +232,18 @@ function MainShell() {
   }, [selectedFolderId, refreshWorktrees]);
 
   // Cmd+W in the menu dispatches `menu:close-tab` over IPC; the renderer
-  // owns the close-tab logic because it knows which chat tab is active.
+  // owns the close-tab logic because it knows which surface is active. If
+  // the file tab is foregrounded we close that; otherwise we fall through
+  // to the chat-tab archive path.
   useEffect(() => {
     const menu = window.memoize?.menu;
     if (menu === undefined) return;
     return menu.onCloseTab(() => {
+      const { activeMainTab, closeFileTab, openFile } = useUiStore.getState();
+      if (activeMainTab === "file" && openFile !== null) {
+        closeFileTab();
+        return;
+      }
       void closeActiveChatTab();
     });
   }, []);
