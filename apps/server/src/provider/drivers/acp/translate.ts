@@ -399,25 +399,57 @@ const extractToolName = (u: Record<string, unknown>): string => {
   return "tool";
 };
 
-const extractOutput = (u: Record<string, unknown>): unknown => {
-  if (u["output"] !== undefined) {
-    const o = u["output"];
-    if (o !== null && typeof o === "object" && "content" in o) {
-      return (o as Record<string, unknown>)["content"] ?? o;
+// Grok (and some MCP servers) emit tool results as an array of content blocks
+// where the actual text is buried two levels deep:
+//   [{ type: "content", content: { type: "text", text: "..." } }]
+// We flatten that into a single string so the renderer can show the file
+// contents directly instead of a stringified JSON blob.
+const flattenMcpContent = (val: unknown): string | null => {
+  if (!Array.isArray(val) || val.length === 0) return null;
+  const parts: string[] = [];
+  for (const block of val) {
+    if (block === null || typeof block !== "object") return null;
+    const b = block as Record<string, unknown>;
+    if (typeof b["text"] === "string") {
+      parts.push(b["text"] as string);
+      continue;
     }
-    return o;
+    const inner = b["content"];
+    if (inner !== null && typeof inner === "object") {
+      const it = (inner as Record<string, unknown>)["text"];
+      if (typeof it === "string") {
+        parts.push(it);
+        continue;
+      }
+    }
+    // Unknown block shape — bail out so the caller falls back to raw value.
+    return null;
   }
+  return parts.join("");
+};
+
+const unwrap = (o: unknown): unknown => {
+  const flat = flattenMcpContent(o);
+  if (flat !== null) return flat;
+  if (o !== null && typeof o === "object" && "content" in o) {
+    const nested = (o as Record<string, unknown>)["content"];
+    const flatNested = flattenMcpContent(nested);
+    if (flatNested !== null) return flatNested;
+    return nested ?? o;
+  }
+  return o;
+};
+
+const extractOutput = (u: Record<string, unknown>): unknown => {
+  if (u["output"] !== undefined) return unwrap(u["output"]);
   // Cursor's spelling: `rawOutput.content` carries the actual result payload
   // (file contents for Read, command stdout for Bash, etc).
-  if (u["rawOutput"] !== undefined) {
-    const o = u["rawOutput"];
-    if (o !== null && typeof o === "object" && "content" in o) {
-      return (o as Record<string, unknown>)["content"] ?? o;
-    }
-    return o;
+  if (u["rawOutput"] !== undefined) return unwrap(u["rawOutput"]);
+  if (u["content"] !== undefined) {
+    const flat = flattenMcpContent(u["content"]);
+    return flat !== null ? flat : u["content"];
   }
-  if (u["content"] !== undefined) return u["content"];
-  if (u["result"] !== undefined) return u["result"];
+  if (u["result"] !== undefined) return unwrap(u["result"]);
   return null;
 };
 
