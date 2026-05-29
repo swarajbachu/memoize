@@ -135,9 +135,26 @@ const toResultText = (output: unknown): string => {
     for (const block of output) {
       if (block === null || typeof block !== "object") continue;
       const b = block as Record<string, unknown>;
-      if (typeof b.text === "string") parts.push(b.text);
+      // Direct {type: "text", text: "..."}
+      if (typeof b.text === "string") {
+        parts.push(b.text);
+        continue;
+      }
+      // MCP-wrapped {type: "content", content: {type: "text", text: "..."}}
+      const inner = b.content;
+      if (inner !== null && typeof inner === "object") {
+        const it = (inner as Record<string, unknown>).text;
+        if (typeof it === "string") parts.push(it);
+      }
     }
-    if (parts.length > 0) return parts.join("\n");
+    if (parts.length > 0) return parts.join("");
+  }
+  if (output !== null && typeof output === "object") {
+    const o = output as Record<string, unknown>;
+    if (typeof o.text === "string") return o.text;
+    const inner = o.content;
+    if (typeof inner === "string") return inner;
+    if (Array.isArray(inner)) return toResultText(inner);
   }
   return stringifyJson(output);
 };

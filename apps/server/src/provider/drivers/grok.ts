@@ -129,16 +129,23 @@ const grokDiag = (label: string, data?: unknown): void => {
  */
 const isFatalAuthError = (text: string): boolean => {
   const t = text.toLowerCase();
-  // Be very strict. The grok binary sometimes logs auth state, "waiting",
-  // "transport channel" etc. during normal operation or token refresh.
-  // Only treat as fatal when we see the actual worker-abort messages that
-  // indicate the agent session is dead because of AuthorizationRequired.
+  // Be very strict. The grok binary routinely logs auth state, "waiting",
+  // bare `Auth(AuthorizationRequired)`, etc. during normal cached-token
+  // refresh on startup — those are NOT fatal. Only treat as fatal when we
+  // see one of the "the worker actually died" signals.
   return (
     (t.includes("worker quit with fatal") && t.includes("authorizationrequired")) ||
-    (t.includes("transport channel closed") && t.includes("authorizationrequired")) ||
-    t.includes("auth(authorizationrequired)")
+    (t.includes("transport channel closed") && t.includes("authorizationrequired"))
   );
 };
+
+/**
+ * How long after spawn we treat fatal-auth stderr signals as transient noise.
+ * The handshake (initialize → authenticate → session/new) finishes in ~1–2s;
+ * a 4s window absorbs the cached-token refresh chatter that otherwise lights
+ * up a red error card on the user's very first message.
+ */
+const GROK_STARTUP_GRACE_MS = 4_000;
 
 /**
  * Turn a raw stderr snippet (from the grok binary) into a user-friendly
@@ -265,7 +272,21 @@ export const startGrokSession = (
     const translator = createAcpTranslator("grok");
 
     let child: ChildProcessWithoutNullStreams;
-    try {
+    let rl: readline.Interface;
+    /**
+     * Wall-clock ms when the *current* child was spawned. Used to absorb
+     * benign `Auth(AuthorizationRequired)` stderr chatter the grok binary
+     * prints during cached-token refresh — see [[GROK_STARTUP_GRACE_MS]].
+     */
+    let spawnedAt = 0;
+    /** Re-spawn the grok child and re-run the ACP handshake. Used both for
+     *  the initial start() path and for transparent recovery after the
+     *  worker dies (auth refresh races, the SuperGrok Heavy worker quitting
+     *  mid-session, etc). On success: child/rl/acpSessionId/authMethodUsed
+     *  are populated, dead=false, listeners attached. On failure the
+     *  returned promise rejects and the caller decides whether to surface
+     *  the error or just bubble it. */
+    const connectChild = async (): Promise<string> => {
       child = spawn(grokPath, ["agent", "stdio"], {
         cwd,
         env: {
@@ -274,19 +295,14 @@ export const startGrokSession = (
         },
         stdio: ["pipe", "pipe", "pipe"],
       });
-    } catch (cause) {
-      yield* events.end;
-      return yield* Effect.fail(
-        new AgentSessionStartError({
-          providerId: "grok",
-          reason: cause instanceof Error ? cause.message : String(cause),
-        }),
-      );
-    }
-
-    child.stdout.setEncoding("utf-8");
-    child.stderr.setEncoding("utf-8");
-    const rl = readline.createInterface({ input: child.stdout });
+      spawnedAt = Date.now();
+      stderrTail = "";
+      child.stdout.setEncoding("utf-8");
+      child.stderr.setEncoding("utf-8");
+      rl = readline.createInterface({ input: child.stdout });
+      attachListeners();
+      return await runHandshake();
+    };
 
     const writeMessage = (msg: Record<string, unknown>): void => {
       if (!child.stdin.writable) return;
@@ -351,6 +367,7 @@ export const startGrokSession = (
       resolver.reject(new Error(reason));
     };
 
+    const attachListeners = (): void => {
     rl.on("line", (line: string) => {
       if (line.trim().length === 0) return;
       if (GROK_RPC_TRACE) process.stderr.write(`[grok.rpc.recv] ${line}\n`);
@@ -547,6 +564,21 @@ export const startGrokSession = (
       // user meant by "not auto stopping".
       const sawFatal = isFatalAuthError(chunk) || isFatalAuthError(stderrTail);
       if (sawFatal) {
+        // Startup grace window: the grok binary routinely prints
+        // Auth(AuthorizationRequired) lines during cached-token refresh
+        // *before* the worker actually dies. Treat anything inside the
+        // grace window as noise — if the worker really is dead the
+        // `close` event will fire and we'll surface that instead.
+        const sinceSpawn = Date.now() - spawnedAt;
+        if (sinceSpawn < GROK_STARTUP_GRACE_MS) {
+          grokDiag("Suppressed fatal-auth stderr inside startup grace window", {
+            sinceSpawnMs: sinceSpawn,
+            graceMs: GROK_STARTUP_GRACE_MS,
+            chunkPreview: chunk.slice(0, 400),
+          });
+          return;
+        }
+
         dead = true;
 
         const isCachedToken = authMethodUsed === "cached_token";
@@ -585,8 +617,10 @@ export const startGrokSession = (
     child.on("error", (err) => {
       if (closed) return;
       dead = true;
-      events.unsafeOffer({ _tag: "Error", message: err.message });
-      void Effect.runPromise(events.end).catch(() => {});
+      grokDiag("child process error event", { message: err.message });
+      // Don't end the mailbox — child errors are almost always followed by a
+      // `close` event, and the next send() will trigger a transparent respawn.
+      // We still want the diagnostic in the logs.
     });
 
     child.on("close", (code, signal) => {
@@ -616,95 +650,100 @@ export const startGrokSession = (
       }
       pending.clear();
       if (!closed) {
-        const wasAuthFatalOnCachedToken =
-          friendly !== null && authMethodUsed === "cached_token";
-
-        if (!wasAuthFatalOnCachedToken) {
-          events.unsafeOffer({ _tag: "Error", message: exitDetail });
-        } else {
-          grokDiag("Suppressed final Error event on close for cached_token auth fatal");
-        }
-
+        // Park in idle and keep the mailbox alive — the next send() will
+        // transparently respawn the child + redo the handshake (see
+        // [[enqueuePrompt]]). The user no longer has to "close this chat
+        // and start a new one" after a single worker death.
         events.unsafeOffer({ _tag: "Status", status: "idle" });
+        grokDiag("child closed — keeping mailbox alive for transparent respawn on next send", {
+          friendly: friendly ?? null,
+        });
+        return;
       }
-      // End the mailbox so any renderer subscription / Stream consumer sees
-      // completion instead of hanging forever on a dead session. This prevents
-      // the "stops" symptom where the UI shows the last error but never
-      // transitions to a clean terminal state.
+      // User-initiated close — end the mailbox so Stream consumers terminate.
       void Effect.runPromise(events.end).catch(() => {});
     });
+    }; // end attachListeners
 
-    // === ACP handshake — synchronous, fails the start() RPC on error. ===
-    const handshake = Effect.tryPromise({
-      try: async () => {
-        const init = (await request("initialize", {
-          protocolVersion: 1,
-          clientCapabilities: {
-            fs: {
-              readTextFile: true,
-              writeTextFile: true,
-              readDirectory: true,
-              createDirectory: true,
-              deleteFile: true,
-              moveFile: true,
-            },
-            terminal: true,
-            // Opt into experimental features (collab agents / swarming, richer
-            // thread/item notifications, etc.) so Grok Build will emit the full
-            // collabAgentToolCall stream for 10+ agent swarms.
-            experimentalApi: true,
+    // === ACP handshake. Used both by the initial start() path and by the
+    // transparent respawn path inside enqueuePrompt. Resets `dead` on
+    // success so the next prompt can proceed. ===
+    const runHandshake = async (): Promise<string> => {
+      const init = (await request("initialize", {
+        protocolVersion: 1,
+        clientCapabilities: {
+          fs: {
+            readTextFile: true,
+            writeTextFile: true,
+            readDirectory: true,
+            createDirectory: true,
+            deleteFile: true,
+            moveFile: true,
           },
-        })) as { authMethods?: ReadonlyArray<{ id?: unknown }> };
+          terminal: true,
+          // Opt into experimental features (collab agents / swarming, richer
+          // thread/item notifications, etc.) so Grok Build will emit the full
+          // collabAgentToolCall stream for 10+ agent swarms.
+          experimentalApi: true,
+        },
+      })) as { authMethods?: ReadonlyArray<{ id?: unknown }> };
 
-        const authIds = new Set(
-          (init.authMethods ?? [])
-            .map((m) => (typeof m?.id === "string" ? m.id : null))
-            .filter((id): id is string => id !== null),
+      const authIds = new Set(
+        (init.authMethods ?? [])
+          .map((m) => (typeof m?.id === "string" ? m.id : null))
+          .filter((id): id is string => id !== null),
+      );
+      grokDiag("handshake initialize returned authMethods", [...authIds]);
+
+      const methodId =
+        apiKey !== null && authIds.has("xai.api_key")
+          ? "xai.api_key"
+          : authIds.has("cached_token")
+            ? "cached_token"
+            : null;
+      if (methodId === null) {
+        throw new Error(
+          "Grok ACP offered no usable auth method. Run `grok login`, or set GROK_CODE_XAI_API_KEY.",
         );
-        grokDiag("handshake initialize returned authMethods", [...authIds]);
+      }
+      authMethodUsed = methodId;
+      grokDiag("choosing auth method", { methodId, hasApiKey: apiKey !== null });
 
-        const methodId =
-          apiKey !== null && authIds.has("xai.api_key")
-            ? "xai.api_key"
-            : authIds.has("cached_token")
-              ? "cached_token"
-              : null;
-        if (methodId === null) {
-          throw new Error(
-            "Grok ACP offered no usable auth method. Run `grok login`, or set GROK_CODE_XAI_API_KEY.",
-          );
-        }
-        authMethodUsed = methodId;
-        grokDiag("choosing auth method", { methodId, hasApiKey: apiKey !== null });
+      const authResult = await request("authenticate", {
+        methodId,
+        _meta: { headless: true },
+      });
+      grokDiag("authenticate succeeded", { methodId, authMethodUsed, result: authResult });
 
-        const authResult = await request("authenticate", {
-          methodId,
-          _meta: { headless: true },
-        });
-        grokDiag("authenticate succeeded", { methodId, authMethodUsed, result: authResult });
+      const sessionResult = (await request("session/new", {
+        cwd,
+        mcpServers: [],
+      })) as { sessionId?: unknown };
 
-        const sessionResult = (await request("session/new", {
-          cwd,
-          mcpServers: [],
-        })) as { sessionId?: unknown };
+      if (typeof sessionResult.sessionId !== "string") {
+        throw new Error("Grok ACP session/new returned no sessionId.");
+      }
+      grokDiag("session/new succeeded", { sessionId: sessionResult.sessionId, authMethodUsed });
+      acpSessionId = sessionResult.sessionId;
+      dead = false;
+      return sessionResult.sessionId;
+    };
 
-        if (typeof sessionResult.sessionId !== "string") {
-          throw new Error("Grok ACP session/new returned no sessionId.");
-        }
-        grokDiag("session/new succeeded", { sessionId: sessionResult.sessionId, authMethodUsed });
-        return sessionResult.sessionId;
-      },
+    acpSessionId = yield* Effect.tryPromise({
+      try: () => connectChild(),
       catch: (cause) =>
         new AgentSessionStartError({
           providerId: "grok",
           reason: cause instanceof Error ? cause.message : String(cause),
         }),
-    });
-
-    acpSessionId = yield* handshake.pipe(
+    }).pipe(
       Effect.tapError(() =>
         Effect.sync(() => {
-          child.kill("SIGTERM");
+          try {
+            child?.kill("SIGTERM");
+          } catch {
+            // ignore — child may not be alive
+          }
         }),
       ),
     );
@@ -726,25 +765,41 @@ export const startGrokSession = (
     }
 
     const enqueuePrompt = (text: string): void => {
-      const sid = acpSessionId;
-      if (sid === null || dead) {
-        // Fast fail so the user doesn't wait for a 5-minute RPC timeout on a dead child.
-        events.unsafeOffer({
-          _tag: "Error",
-          message:
-            "Grok session has ended (authentication failure or process exit). " +
-            "Close this chat and start a new one to continue with Grok.",
-        });
-        events.unsafeOffer({ _tag: "Status", status: "idle" });
-        void Effect.runPromise(events.end).catch(() => {});
-        return;
-      }
       // Plan-mode emulation: grok ACP has no native read-only switch, so
       // prepend a developer-instructions block while plan mode is active.
       const promptText = applyPlanModePrefix(currentMode, text);
       inflight = inflight
         .then(async () => {
-          if (closed || dead) return;
+          if (closed) return;
+          // If the previous child died (worker crash, auth fatal, etc.),
+          // transparently respawn before sending. The new session starts a
+          // fresh server-side context — ACP doesn't yet expose session/load,
+          // so we cannot rejoin the old conversation. Better than the old
+          // "close this chat and start a new one" dead-end.
+          if (dead) {
+            grokDiag("respawning grok child before send (previous child died)");
+            try {
+              await connectChild();
+              events.unsafeOffer({
+                _tag: "SessionCursor",
+                cursor: acpSessionId!,
+                strategy: "grok-session-id",
+              });
+            } catch (cause) {
+              const reason = cause instanceof Error ? cause.message : String(cause);
+              grokDiag("respawn failed", { reason });
+              if (!closed) {
+                events.unsafeOffer({
+                  _tag: "Error",
+                  message: `Grok respawn failed: ${reason}`,
+                });
+                events.unsafeOffer({ _tag: "Status", status: "idle" });
+              }
+              return;
+            }
+          }
+          const sid = acpSessionId;
+          if (sid === null) return;
           if (GROK_RPC_TRACE || GROK_DIAG) {
             process.stderr.write(
               `[grok.prompt] enqueue len=${promptText.length} mode=${currentMode}\n`,
@@ -806,7 +861,7 @@ export const startGrokSession = (
     };
 
     if (input.initialPrompt !== undefined && input.initialPrompt.length > 0) {
-      if (!dead) enqueuePrompt(input.initialPrompt);
+      enqueuePrompt(input.initialPrompt);
     }
 
     const handle: GrokSessionHandle = {
