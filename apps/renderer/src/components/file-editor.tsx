@@ -5,7 +5,9 @@ import { useEffect, useRef, useState } from "react";
 import type { GitDiffResult } from "@memoize/wire";
 
 import { cn } from "~/lib/utils";
+import { classifyGit } from "../lib/git-rpc.ts";
 import { getRpcClient } from "../lib/rpc-client.ts";
+import { GitInitCta } from "./git-init-cta.tsx";
 import {
   createEditor,
   languageCompartment,
@@ -71,16 +73,21 @@ export function FileEditor() {
   }
 
   const view = openFile.view;
+  // External files have no git/folder context, so they're edit-only — no diff.
+  const isExternal = openFile.kind === "external";
+  const path = isExternal ? openFile.absPath : openFile.path;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <Toolbar path={openFile.path} view={view} />
+      <Toolbar path={path} view={view} showViewToggle={!isExternal} />
       <CodeMirrorBody
         openFile={openFile}
         hidden={view !== "edit"}
         onClose={closeFileTab}
       />
-      {view === "diff" ? <DiffViewBody openFile={openFile} /> : null}
+      {openFile.kind === "text" && view === "diff" ? (
+        <DiffViewBody openFile={openFile} />
+      ) : null}
     </div>
   );
 }
@@ -109,12 +116,14 @@ function ImageBody({ src, name }: { src: string; name: string }) {
 // swaps documents on file change. Cmd+S saves via fs.writeFile.
 // ---------------------------------------------------------------------------
 
+type EditableFile = Extract<OpenFile, { kind: "text" | "external" }>;
+
 function CodeMirrorBody({
   openFile,
   hidden,
   onClose,
 }: {
-  openFile: Extract<OpenFile, { kind: "text" }>;
+  openFile: EditableFile;
   hidden: boolean;
   onClose: () => void;
 }) {
@@ -133,7 +142,7 @@ function CodeMirrorBody({
   const baselineRef = useRef("");
   const mtimeRef = useRef("");
   const savingRef = useRef(false);
-  const fileRef = useRef<Extract<OpenFile, { kind: "text" }> | null>(openFile);
+  const fileRef = useRef<EditableFile | null>(openFile);
   fileRef.current = openFile;
 
   const save = async () => {
@@ -146,21 +155,31 @@ function CodeMirrorBody({
     setSaveError(null);
     try {
       const client = await getRpcClient();
-      const result = await Effect.runPromise(
-        client.fs.writeFile({
-          folderId: file.folderId,
-          path: file.path,
-          content: docRef.current,
-          expectedMtime: mtimeRef.current,
-          worktreeId: file.worktreeId,
-        }),
-      );
+      const result =
+        file.kind === "external"
+          ? await Effect.runPromise(
+              client.fs.writeExternalFile({
+                path: file.absPath,
+                content: docRef.current,
+                expectedMtime: mtimeRef.current,
+              }),
+            )
+          : await Effect.runPromise(
+              client.fs.writeFile({
+                folderId: file.folderId,
+                path: file.path,
+                content: docRef.current,
+                expectedMtime: mtimeRef.current,
+                worktreeId: file.worktreeId,
+              }),
+            );
       mtimeRef.current = result.mtime;
       baselineRef.current = docRef.current;
       setFileDirty(false);
       setConflict(null);
     } catch (err) {
-      if (tagOf(err) === "FsConflictError") {
+      const tag = tagOf(err);
+      if (tag === "FsConflictError" || tag === "FsExternalConflictError") {
         setConflict(
           "File changed on disk. Reload to discard your changes, or keep editing.",
         );
@@ -211,13 +230,18 @@ function CodeMirrorBody({
     void (async () => {
       try {
         const client = await getRpcClient();
-        const result = await Effect.runPromise(
-          client.fs.readFile({
-            folderId: openFile.folderId,
-            path: openFile.path,
-            worktreeId: openFile.worktreeId,
-          }),
-        );
+        const result =
+          openFile.kind === "external"
+            ? await Effect.runPromise(
+                client.fs.readExternalFile({ path: openFile.absPath }),
+              )
+            : await Effect.runPromise(
+                client.fs.readFile({
+                  folderId: openFile.folderId,
+                  path: openFile.path,
+                  worktreeId: openFile.worktreeId,
+                }),
+              );
         if (cancelled) return;
         if (result.kind === "binary") {
           setState({ status: "binary", size: result.size });
@@ -307,7 +331,7 @@ function CodeMirrorBody({
 type DiffState =
   | { status: "loading" }
   | { status: "ready"; result: GitDiffResult }
-  | { status: "error"; reason: string };
+  | { status: "error"; reason: string; noRepo: boolean };
 
 function DiffViewBody({
   openFile,
@@ -320,20 +344,23 @@ function DiffViewBody({
     let cancelled = false;
     setState({ status: "loading" });
     void (async () => {
-      try {
-        const client = await getRpcClient();
-        const result = await Effect.runPromise(
-          client.git.diff({
-            folderId: openFile.folderId,
-            worktreeId: openFile.worktreeId,
-            path: openFile.path,
-          }),
-        );
-        if (cancelled) return;
-        setState({ status: "ready", result });
-      } catch (err) {
-        if (cancelled) return;
-        setState({ status: "error", reason: formatError(err) });
+      const client = await getRpcClient();
+      const result = await classifyGit(
+        client.git.diff({
+          folderId: openFile.folderId,
+          worktreeId: openFile.worktreeId,
+          path: openFile.path,
+        }),
+      );
+      if (cancelled) return;
+      if (result.ok) {
+        setState({ status: "ready", result: result.value });
+      } else {
+        setState({
+          status: "error",
+          reason: result.message,
+          noRepo: result.tag === "GitNotARepoError",
+        });
       }
     })();
     return () => {
@@ -345,6 +372,17 @@ function DiffViewBody({
     return <Placeholder>Loading diff…</Placeholder>;
   }
   if (state.status === "error") {
+    if (state.noRepo) {
+      return (
+        <Placeholder>
+          <GitInitCta
+            compact
+            folderId={openFile.folderId}
+            worktreeId={openFile.worktreeId}
+          />
+        </Placeholder>
+      );
+    }
     return (
       <Placeholder>
         <span className="text-destructive">{state.reason}</span>
@@ -386,7 +424,15 @@ function DiffViewBody({
 // the actual save call; the toolbar just shows path + dirty + the toggle.
 // ---------------------------------------------------------------------------
 
-function Toolbar({ path, view }: { path: string; view: FileView }) {
+function Toolbar({
+  path,
+  view,
+  showViewToggle = true,
+}: {
+  path: string;
+  view: FileView;
+  showViewToggle?: boolean;
+}) {
   const dirty = useUiStore((s) => s.fileDirty);
   const setOpenFileView = useUiStore((s) => s.setOpenFileView);
   return (
@@ -403,7 +449,9 @@ function Toolbar({ path, view }: { path: string; view: FileView }) {
         {view === "edit" ? (
           <span className="opacity-60">⌘S to save</span>
         ) : null}
-        <ViewToggle value={view} onChange={setOpenFileView} />
+        {showViewToggle ? (
+          <ViewToggle value={view} onChange={setOpenFileView} />
+        ) : null}
       </span>
     </div>
   );

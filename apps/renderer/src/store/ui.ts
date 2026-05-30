@@ -66,6 +66,18 @@ export type OpenFile =
       readonly kind: "image";
       readonly src: string;
       readonly name: string;
+    }
+  | {
+      /**
+       * A file outside any project folder (e.g. a plan or markdown file the
+       * agent wrote elsewhere on disk). Read/written by absolute path via the
+       * `fs.*ExternalFile` RPCs, which deliberately skip the workspace
+       * sandbox. Edit-only — there's no git/folder context for a diff.
+       */
+      readonly kind: "external";
+      readonly absPath: string;
+      readonly name: string;
+      readonly view: FileView;
     };
 
 type UiState = {
@@ -87,6 +99,9 @@ type UiState = {
   readonly openFileInTab: (
     file:
       | (Omit<Extract<OpenFile, { kind: "text" }>, "view"> & {
+          view?: FileView;
+        })
+      | (Omit<Extract<OpenFile, { kind: "external" }>, "view"> & {
           view?: FileView;
         })
       | Extract<OpenFile, { kind: "image" }>,

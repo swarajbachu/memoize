@@ -4,6 +4,9 @@ import {
   type FolderId,
   type FsConflictError,
   type FsEntry,
+  type FsExternalConflictError,
+  type FsExternalReadError,
+  type FsExternalTooLargeError,
   type FsFileContent,
   type FsFolderNotFoundError,
   type FsPathOutsideError,
@@ -15,6 +18,8 @@ import {
 type TreeFailure = FsFolderNotFoundError | FsPathOutsideError | FsReadError;
 type ReadFileFailure = TreeFailure | FsTooLargeError;
 type WriteFileFailure = ReadFileFailure | FsConflictError;
+type ReadExternalFailure = FsExternalReadError | FsExternalTooLargeError;
+type WriteExternalFailure = ReadExternalFailure | FsExternalConflictError;
 
 export interface FsServiceShape {
   readonly tree: (
@@ -34,6 +39,14 @@ export interface FsServiceShape {
     expectedMtime: string,
     worktreeId?: WorktreeId | null,
   ) => Effect.Effect<{ readonly mtime: string }, WriteFileFailure>;
+  readonly readExternal: (
+    absPath: string,
+  ) => Effect.Effect<typeof FsFileContent.Type, ReadExternalFailure>;
+  readonly writeExternal: (
+    absPath: string,
+    content: string,
+    expectedMtime: string,
+  ) => Effect.Effect<{ readonly mtime: string }, WriteExternalFailure>;
 }
 
 export class FsService extends Context.Tag("memoize/FsService")<

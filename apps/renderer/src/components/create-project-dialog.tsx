@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { ProjectTemplate } from "@memoize/wire";
 
 import { Button } from "~/components/ui/button";
-import { Checkbox } from "~/components/ui/checkbox";
+import { CheckboxInput } from "~/components/ui/checkbox-input";
 import {
   Dialog,
   DialogClose,
@@ -238,11 +238,9 @@ export function CreateProjectDialog({
                 : "text-muted-foreground/60",
             )}
           >
-            <Checkbox
+            <CheckboxInput
               checked={alsoCreateGithubRepo}
-              onCheckedChange={(checked) =>
-                setAlsoCreateGithubRepo(checked === true)
-              }
+              onChange={(checked) => setAlsoCreateGithubRepo(checked)}
               disabled={ghAuthenticated !== true}
             />
             Also create a private GitHub repo
