@@ -19,10 +19,17 @@ export function GitInitCta({
   folderId,
   worktreeId,
   compact = false,
+  onInitialized,
 }: {
   folderId: FolderId;
   worktreeId: WorktreeId | null;
   compact?: boolean;
+  /**
+   * Fired after `git init` succeeds. Surfaces for callers (e.g. the Diff
+   * view) that fetch their own data in a local effect and need to re-run it —
+   * the store-backed tabs update reactively and don't need this.
+   */
+  onInitialized?: () => void;
 }) {
   const initRepo = useGitChangesStore((s) => s.initRepo);
   const [busy, setBusy] = useState(false);
@@ -34,6 +41,7 @@ export function GitInitCta({
     setError(null);
     try {
       await initRepo(folderId, worktreeId);
+      onInitialized?.();
     } catch (err) {
       setError(formatError(err));
     } finally {

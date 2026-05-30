@@ -339,6 +339,9 @@ function DiffViewBody({
   openFile: Extract<OpenFile, { kind: "text" }>;
 }) {
   const [state, setState] = useState<DiffState>({ status: "loading" });
+  // Bumped after an in-place `git init` from the no-repo CTA so the diff
+  // re-fetches without the user toggling Edit/Diff to force a remount.
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -366,7 +369,7 @@ function DiffViewBody({
     return () => {
       cancelled = true;
     };
-  }, [openFile.folderId, openFile.worktreeId, openFile.path]);
+  }, [openFile.folderId, openFile.worktreeId, openFile.path, reload]);
 
   if (state.status === "loading") {
     return <Placeholder>Loading diff…</Placeholder>;
@@ -379,6 +382,7 @@ function DiffViewBody({
             compact
             folderId={openFile.folderId}
             worktreeId={openFile.worktreeId}
+            onInitialized={() => setReload((n) => n + 1)}
           />
         </Placeholder>
       );
