@@ -64,6 +64,9 @@ export interface GitServiceShape {
     folderId: FolderId,
     worktreeId?: WorktreeId | null,
   ) => Effect.Effect<{ readonly output: string }, GitFailure>;
+  readonly init: (
+    folderId: FolderId,
+  ) => Effect.Effect<{ readonly branch: string }, GitFailure>;
   readonly fixFailingChecks: (
     folderId: FolderId,
     worktreeId?: WorktreeId | null,

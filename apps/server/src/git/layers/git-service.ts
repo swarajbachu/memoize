@@ -1001,6 +1001,19 @@ export const GitServiceLive = Layer.effect(
       );
 
     /**
+     * Initialize a fresh git repo in a folder that has none — backs the
+     * Changes tab's "not a Git repository" CTA. Defaults the initial branch to
+     * `main` so it matches the rest of the app's expectations (commit composer,
+     * push). Returns the branch name for the UI to confirm.
+     */
+    const init: GitService["Type"]["init"] = (folderId) =>
+      Effect.flatMap(resolvePath(folderId), (cwd) =>
+        run(folderId, cwd, ["init", "-b", "main"]).pipe(
+          Effect.as({ branch: "main" }),
+        ),
+      );
+
+    /**
      * Capture logs from every failing GitHub Actions run on the current PR
      * and drop them in `<worktree>/.memoize/failing-checks-<ts>.txt` so the
      * renderer can attach the file to the composer (`@.memoize/...txt`) and
@@ -1184,6 +1197,7 @@ export const GitServiceLive = Layer.effect(
       diff,
       commit,
       push,
+      init,
       fixFailingChecks,
     } as const;
   }),

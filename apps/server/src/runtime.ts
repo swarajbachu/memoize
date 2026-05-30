@@ -24,6 +24,7 @@ import { SkillBridgeLive } from "./skill/layers/skill-bridge.ts";
 import { SkillDiscoveryServiceLive } from "./skill/layers/skill-discovery.ts";
 import { RepositorySettingsServiceLive } from "./repository-settings/layers/repository-settings-service.ts";
 import { FileSearchServiceLive } from "./workspace/layers/file-search.ts";
+import { ProjectScaffoldLive } from "./workspace/layers/project-scaffold-live.ts";
 import { WorkspaceServiceLive } from "./workspace/layers/workspace-service.ts";
 import { FolderPicker } from "./workspace/services/folder-picker.ts";
 import { WorktreeServiceLive } from "./worktree/layers/worktree-service.ts";
@@ -138,6 +139,14 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(NodeContext.layer),
   );
 
+  // ProjectScaffold shells out to `git`, `bunx`, and `gh` for the Clone
+  // and Quick-start flows. Pure CommandExecutor + FileSystem consumer —
+  // no SqlClient, since persistence happens via WorkspaceService.add
+  // *after* the scaffold produces a path.
+  const ProjectScaffoldLayer = ProjectScaffoldLive.pipe(
+    Layer.provide(NodeContext.layer),
+  );
+
   // PermissionService brokers between the SDK permission callback (driver
   // side) and the renderer toast (RPC side). It writes decisions to
   // SQLite so an `AllowForSession` row survives a process crash and the
@@ -210,6 +219,7 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(ConfigStoreLayer),
     Layer.provide(FsLayer),
     Layer.provide(FileSearchLayer),
+    Layer.provide(ProjectScaffoldLayer),
     Layer.provide(ProviderLayer),
     Layer.provide(MessageStoreLayer),
     Layer.provide(PermissionLayer),

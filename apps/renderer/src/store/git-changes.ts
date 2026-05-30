@@ -16,7 +16,17 @@ type GitChangesState = {
   readonly byKey: ChangesMap;
   readonly loadingByKey: Record<string, boolean>;
   readonly errorByKey: Record<string, string | null>;
+  // The error's `_tag` (e.g. "GitNotARepoError"), kept distinct from the
+  // human-readable message so the Changes tab can branch on it — most notably
+  // to swap the raw error for an "Initialize Git" CTA when there's no repo.
+  readonly errorTagByKey: Record<string, string | null>;
   readonly refresh: (
+    folderId: FolderId,
+    worktreeId?: WorktreeId | null,
+  ) => Promise<void>;
+  // Initialize a git repo in the folder, then refresh so the tab flips from
+  // the empty state to the (now clean) working tree.
+  readonly initRepo: (
     folderId: FolderId,
     worktreeId?: WorktreeId | null,
   ) => Promise<void>;
@@ -35,39 +45,55 @@ const formatError = (err: unknown): string => {
   return String(err);
 };
 
+const errorTag = (err: unknown): string | null => {
+  if (typeof err === "object" && err !== null && "_tag" in err) {
+    return String((err as { _tag: unknown })._tag);
+  }
+  return null;
+};
+
 const fetchChanges = async (
   folderId: FolderId,
   worktreeId: WorktreeId | null | undefined,
-): Promise<ReadonlyArray<GitChange> | { error: string }> => {
+): Promise<
+  ReadonlyArray<GitChange> | { error: string; tag: string | null }
+> => {
   try {
     const client = await getRpcClient();
     return await Effect.runPromise(
       client.git.changes({ folderId, worktreeId: worktreeId ?? null }),
     );
   } catch (err) {
-    return { error: formatError(err) };
+    return { error: formatError(err), tag: errorTag(err) };
   }
 };
 
-export const useGitChangesStore = create<GitChangesState>((set) => ({
+export const useGitChangesStore = create<GitChangesState>((set, get) => ({
   byKey: {},
   loadingByKey: {},
   errorByKey: {},
+  errorTagByKey: {},
   refresh: async (folderId, worktreeId) => {
     const key = gitChangesKey(folderId, worktreeId);
     const result = await fetchChanges(folderId, worktreeId);
     set((s) => {
       const isErr = !Array.isArray(result);
+      const err = isErr
+        ? (result as { error: string; tag: string | null })
+        : null;
       return {
         byKey: isErr
           ? s.byKey
           : { ...s.byKey, [key]: result as ReadonlyArray<GitChange> },
-        errorByKey: {
-          ...s.errorByKey,
-          [key]: isErr ? (result as { error: string }).error : null,
-        },
+        errorByKey: { ...s.errorByKey, [key]: err ? err.error : null },
+        errorTagByKey: { ...s.errorTagByKey, [key]: err ? err.tag : null },
         loadingByKey: { ...s.loadingByKey, [key]: false },
       };
     });
+  },
+  initRepo: async (folderId, worktreeId) => {
+    const client = await getRpcClient();
+    await Effect.runPromise(client.git.init({ folderId }));
+    await get().refresh(folderId, worktreeId);
   },
 }));

@@ -87,16 +87,41 @@ export function TerminalPane() {
     if (list.length === 1) ensureSeed(key, ctx.rootPath);
   };
 
+  // A single terminal gets the full pane — the list sidebar only earns its
+  // width once there's more than one shell to switch between. When it's
+  // hidden, a floating "+" (revealed on hover) keeps "add a terminal" within
+  // reach; adding a second one brings the sidebar back.
+  const single = list.length <= 1;
+
   return (
-    <div className="flex h-full min-h-0 w-full">
-      <TerminalList
-        instances={list}
-        activeId={activeId}
-        onAdd={handleAdd}
-        onSelect={(id) => setActive(key, id)}
-        onClose={handleClose}
-      />
+    <div className="group/terminal flex h-full min-h-0 w-full">
+      {single ? null : (
+        <TerminalList
+          instances={list}
+          activeId={activeId}
+          onAdd={handleAdd}
+          onSelect={(id) => setActive(key, id)}
+          onClose={handleClose}
+        />
+      )}
       <div className="relative flex min-w-0 flex-1 flex-col bg-background">
+        {single ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  onClick={handleAdd}
+                  className="absolute right-2 top-2 z-10 flex size-5 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-muted/60 hover:text-foreground focus-visible:opacity-100 group-hover/terminal:opacity-100"
+                  aria-label="New terminal"
+                >
+                  <Plus className="size-3.5" />
+                </button>
+              }
+            />
+            <TooltipPopup>New terminal</TooltipPopup>
+          </Tooltip>
+        ) : null}
         {list.map((inst) => (
           <div
             key={inst.id}
