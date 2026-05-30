@@ -23,6 +23,7 @@ import { softTone, type Tone } from "../lib/tones.ts";
 import { gitStatusKey, useGitStatusStore } from "../store/git-status.ts";
 import { prDetailsKey, usePrDetailsStore } from "../store/pr-details.ts";
 import { prStateKey, usePrStateStore } from "../store/pr-state.ts";
+import { GitInitCta } from "./git-init-cta.tsx";
 import { MarkdownBody } from "./markdown-body.tsx";
 
 const openExternal = (url: string) => {
@@ -63,6 +64,11 @@ export function PrPane({
   const status = useGitStatusStore((s) =>
     folderId ? (s.byKey[gitStatusKey(folderId, worktreeId)] ?? null) : null,
   );
+  const noRepo = useGitStatusStore((s) =>
+    folderId
+      ? s.noRepoByKey[gitStatusKey(folderId, worktreeId)] === true
+      : false,
+  );
   const pr = usePrStateStore((s) =>
     folderId ? (s.byKey[prStateKey(folderId, worktreeId)] ?? null) : null,
   );
@@ -82,6 +88,13 @@ export function PrPane({
 
   if (folderId === null) {
     return <Empty>Select a project to see its PR here.</Empty>;
+  }
+  if (noRepo) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col px-3 py-3 text-xs">
+        <GitInitCta folderId={folderId} worktreeId={worktreeId} />
+      </div>
+    );
   }
   if (status === null) {
     return <Empty>Reading branch state…</Empty>;

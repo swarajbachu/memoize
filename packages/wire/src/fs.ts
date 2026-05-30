@@ -45,10 +45,43 @@ export class FsConflictError extends Schema.TaggedError<FsConflictError>()(
   },
 ) {}
 
+// External-file errors mirror the in-folder ones but key off an absolute
+// `path` instead of a `folderId` — the `fs.*ExternalFile` RPCs operate
+// outside any project folder, so there's no folder id to carry.
+export class FsExternalReadError extends Schema.TaggedError<FsExternalReadError>()(
+  "FsExternalReadError",
+  { path: Schema.String, reason: Schema.String },
+) {}
+
+export class FsExternalTooLargeError extends Schema.TaggedError<FsExternalTooLargeError>()(
+  "FsExternalTooLargeError",
+  { path: Schema.String, size: Schema.Number, limit: Schema.Number },
+) {}
+
+export class FsExternalConflictError extends Schema.TaggedError<FsExternalConflictError>()(
+  "FsExternalConflictError",
+  {
+    path: Schema.String,
+    expectedMtime: Schema.String,
+    actualMtime: Schema.String,
+  },
+) {}
+
 const FsErrors = Schema.Union(
   FsFolderNotFoundError,
   FsPathOutsideError,
   FsReadError,
+);
+
+const FsReadExternalFileErrors = Schema.Union(
+  FsExternalReadError,
+  FsExternalTooLargeError,
+);
+
+const FsWriteExternalFileErrors = Schema.Union(
+  FsExternalReadError,
+  FsExternalTooLargeError,
+  FsExternalConflictError,
 );
 
 const FsReadFileErrors = Schema.Union(
@@ -142,4 +175,36 @@ export const FsWriteFileRpc = Rpc.make("fs.writeFile", {
     mtime: Schema.String,
   }),
   error: FsWriteFileErrors,
+});
+
+/**
+ * Read a file by absolute path, outside any project folder — backs opening
+ * agent-written plan/markdown files that live elsewhere on disk. Same UTF-8
+ * decode, 5 MB cap, and `mtime` concurrency token as `fs.readFile`.
+ * Deliberately not sandboxed to a folder: a local desktop app reading a file
+ * the user explicitly opened.
+ */
+export const FsReadExternalFileRpc = Rpc.make("fs.readExternalFile", {
+  payload: Schema.Struct({
+    path: Schema.String,
+  }),
+  success: FsFileContent,
+  error: FsReadExternalFileErrors,
+});
+
+/**
+ * Write a file by absolute path. Same optimistic-concurrency (`expectedMtime`)
+ * and 5 MB cap as `fs.writeFile`. Pairs with `fs.readExternalFile` for editing
+ * files outside the workspace.
+ */
+export const FsWriteExternalFileRpc = Rpc.make("fs.writeExternalFile", {
+  payload: Schema.Struct({
+    path: Schema.String,
+    content: Schema.String,
+    expectedMtime: Schema.String,
+  }),
+  success: Schema.Struct({
+    mtime: Schema.String,
+  }),
+  error: FsWriteExternalFileErrors,
 });

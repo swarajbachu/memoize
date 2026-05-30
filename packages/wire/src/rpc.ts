@@ -22,7 +22,13 @@ import {
   IndexStatusStreamRpc,
   IndexSymbolLookupRpc,
 } from "./code-index.ts";
-import { FsReadFileRpc, FsTreeRpc, FsWriteFileRpc } from "./fs.ts";
+import {
+  FsReadExternalFileRpc,
+  FsReadFileRpc,
+  FsTreeRpc,
+  FsWriteExternalFileRpc,
+  FsWriteFileRpc,
+} from "./fs.ts";
 import {
   GitChangesRpc,
   GitCommitRpc,
@@ -157,6 +163,8 @@ export const MemoizeRpcs = RpcGroup.make(
   FsTreeRpc,
   FsReadFileRpc,
   FsWriteFileRpc,
+  FsReadExternalFileRpc,
+  FsWriteExternalFileRpc,
   AgentAvailabilityRpc,
   AgentSetCredentialRpc,
   AgentStartRpc,

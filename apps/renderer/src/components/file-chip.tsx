@@ -109,28 +109,36 @@ export function FileChip({
         ? relPath
         : null;
 
-  const canOpen =
+  // A file outside the workspace (or with no workspace context at all) still
+  // opens — via the external-file path, by absolute path. Plan/markdown files
+  // the agent writes elsewhere on disk land here.
+  const externalAbs =
+    kind === "file" && resolvedAbs !== null && !insideWorkspace
+      ? resolvedAbs
+      : null;
+  const canOpenInWorkspace =
     kind === "file" && folderId !== null && workspaceRelPath !== null;
+  const canOpen = canOpenInWorkspace || externalAbs !== null;
 
   const tooltip =
-    kind === "directory"
-      ? `View ${relPath}`
-      : canOpen
-        ? `Open ${relPath}`
-        : looksAbsolute && !insideWorkspace
-          ? `${relPath} — outside this workspace`
-          : relPath;
+    kind === "directory" ? `View ${relPath}` : canOpen ? `Open ${relPath}` : relPath;
 
   const onClick = () => {
-    if (!canOpen || folderId === null || workspaceRelPath === null) return;
-    openFileInTab({
-      kind: "text",
-      folderId,
-      path: workspaceRelPath,
-      name,
-      worktreeId,
-      view,
-    });
+    if (!canOpen) return;
+    if (canOpenInWorkspace && folderId !== null && workspaceRelPath !== null) {
+      openFileInTab({
+        kind: "text",
+        folderId,
+        path: workspaceRelPath,
+        name,
+        worktreeId,
+        view,
+      });
+      return;
+    }
+    if (externalAbs !== null) {
+      openFileInTab({ kind: "external", absPath: externalAbs, name });
+    }
   };
 
   // Rendered as a `<span role="button">` rather than a real `<button>` so the

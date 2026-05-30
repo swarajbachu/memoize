@@ -1,8 +1,8 @@
-import { Effect } from "effect";
 import { create } from "zustand";
 
 import type { FolderId, GitStatusSummary, WorktreeId } from "@memoize/wire";
 
+import { classifyGit } from "../lib/git-rpc.ts";
 import { getRpcClient } from "../lib/rpc-client.ts";
 
 /**
@@ -19,6 +19,10 @@ type StatusMap = Record<string, GitStatusSummary>;
 
 type GitStatusState = {
   readonly byKey: StatusMap;
+  // True when the last fetch failed with `GitNotARepoError` — lets consumers
+  // (e.g. the PR tab) distinguish "this folder has no repo" from "status
+  // hasn't loaded yet", since both leave `byKey` empty.
+  readonly noRepoByKey: Record<string, boolean>;
   readonly refresh: (
     folderId: FolderId,
     worktreeId?: WorktreeId | null,
@@ -30,26 +34,21 @@ export const gitStatusKey = (
   worktreeId: WorktreeId | null | undefined,
 ): string => `${folderId}:${worktreeId ?? "main"}`;
 
-const fetchStatus = async (
-  folderId: FolderId,
-  worktreeId: WorktreeId | null | undefined,
-): Promise<GitStatusSummary | null> => {
-  try {
-    const client = await getRpcClient();
-    return await Effect.runPromise(
-      client.git.status({ folderId, worktreeId: worktreeId ?? null }),
-    );
-  } catch {
-    return null;
-  }
-};
-
 export const useGitStatusStore = create<GitStatusState>((set) => ({
   byKey: {},
+  noRepoByKey: {},
   refresh: async (folderId, worktreeId) => {
-    const summary = await fetchStatus(folderId, worktreeId);
-    if (summary === null) return;
     const key = gitStatusKey(folderId, worktreeId);
-    set((s) => ({ byKey: { ...s.byKey, [key]: summary } }));
+    const client = await getRpcClient();
+    const result = await classifyGit(
+      client.git.status({ folderId, worktreeId: worktreeId ?? null }),
+    );
+    set((s) => ({
+      byKey: result.ok ? { ...s.byKey, [key]: result.value } : s.byKey,
+      noRepoByKey: {
+        ...s.noRepoByKey,
+        [key]: !result.ok && result.tag === "GitNotARepoError",
+      },
+    }));
   },
 }));

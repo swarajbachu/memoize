@@ -3,7 +3,6 @@ import {
   AlertTriangle,
   ArrowRight,
   CornerDownLeft,
-  GitBranchPlus,
   Loader2,
   Minus,
   Plus,
@@ -19,6 +18,7 @@ import type {
 } from "@memoize/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
+import { GitInitCta } from "./git-init-cta.tsx";
 import { gitChangesKey, useGitChangesStore } from "../store/git-changes.ts";
 import { gitStatusKey, useGitStatusStore } from "../store/git-status.ts";
 import { prDetailsKey, usePrDetailsStore } from "../store/pr-details.ts";
@@ -139,7 +139,7 @@ export function DiffPane({
           }
         >
           {changesErrorTag === "GitNotARepoError" ? (
-            <InitRepoState folderId={folderId} worktreeId={worktreeId} />
+            <GitInitCta folderId={folderId} worktreeId={worktreeId} />
           ) : changesError !== null ? (
             <p className="text-rose-300/80">Couldn't read git status: {changesError}</p>
           ) : changesLoading && changes === null ? (
@@ -584,66 +584,6 @@ function Section({
       </h3>
       <div className="flex flex-col gap-1">{children}</div>
     </section>
-  );
-}
-
-/**
- * Shown in the Changes tab when the folder isn't a Git repo yet
- * (`GitNotARepoError`). Replaces the raw error dump with a friendly prompt and
- * a one-click "Initialize Git repository" button that runs `git init` and
- * re-reads the working tree.
- */
-function InitRepoState({
-  folderId,
-  worktreeId,
-}: {
-  folderId: FolderId;
-  worktreeId: WorktreeId | null;
-}) {
-  const initRepo = useGitChangesStore((s) => s.initRepo);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const onInit = async () => {
-    if (busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await initRepo(folderId, worktreeId);
-    } catch (err) {
-      setError(formatErr(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="flex flex-col items-start gap-2 py-1">
-      <div className="flex flex-col gap-0.5">
-        <span className="font-medium text-foreground">
-          This folder isn't a Git repository
-        </span>
-        <span className="text-muted-foreground">
-          Initialize Git to track changes, commit, and open pull requests.
-        </span>
-      </div>
-      <button
-        type="button"
-        onClick={onInit}
-        disabled={busy}
-        className="flex items-center gap-1.5 rounded-sm bg-emerald-500/15 px-2 py-1 text-[11px] font-medium text-emerald-200 transition-colors hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        {busy ? (
-          <Loader2 className="size-3 animate-spin" />
-        ) : (
-          <GitBranchPlus className="size-3" />
-        )}
-        Initialize Git repository
-      </button>
-      {error !== null ? (
-        <span className="text-rose-300/90">{error}</span>
-      ) : null}
-    </div>
   );
 }
 
