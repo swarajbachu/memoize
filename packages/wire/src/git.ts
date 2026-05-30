@@ -350,3 +350,15 @@ export const GitPushRpc = Rpc.make("git.push", {
   success: Schema.Struct({ output: Schema.String }),
   error: GitErrors,
 });
+
+// Initialize a git repository in a project folder that doesn't have one yet.
+// Surfaced from the Changes tab's "not a Git repository" empty state. Always
+// runs against the folder root (a worktree can't exist without a repo), so no
+// `worktreeId` here.
+export const GitInitRpc = Rpc.make("git.init", {
+  payload: Schema.Struct({
+    folderId: FolderId,
+  }),
+  success: Schema.Struct({ branch: Schema.String }),
+  error: GitErrors,
+});

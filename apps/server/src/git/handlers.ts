@@ -71,6 +71,10 @@ const Push = MemoizeRpcs.toLayerHandler(
     Effect.flatMap(GitService, (svc) => svc.push(folderId, worktreeId ?? null)),
 );
 
+const Init = MemoizeRpcs.toLayerHandler("git.init", ({ folderId }) =>
+  Effect.flatMap(GitService, (svc) => svc.init(folderId)),
+);
+
 const FixFailingChecks = MemoizeRpcs.toLayerHandler(
   "git.fixFailingChecks",
   ({ folderId, worktreeId }) =>
@@ -90,5 +94,6 @@ export const GitHandlersLayer = Layer.mergeAll(
   Diff,
   Commit,
   Push,
+  Init,
   FixFailingChecks,
 );
