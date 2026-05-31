@@ -25,8 +25,29 @@ export const extractEdits = (
   const obj = input as Record<string, unknown>;
   const path = typeof obj.file_path === "string" ? obj.file_path : null;
 
+  // Shared parser for an `edits: [{ old_string, new_string }]` array (MultiEdit,
+  // and Grok's SearchReplace which can apply several hunks in one Edit call).
+  const editsList = (raw: unknown, p: string): FileEdit[] => {
+    const edits = Array.isArray(raw) ? raw : [];
+    const out: FileEdit[] = [];
+    for (const e of edits) {
+      if (e === null || typeof e !== "object") continue;
+      const r = e as Record<string, unknown>;
+      out.push({
+        path: p,
+        oldText: typeof r.old_string === "string" ? r.old_string : "",
+        newText: typeof r.new_string === "string" ? r.new_string : "",
+        mode: "edit",
+      });
+    }
+    return out;
+  };
+
   if (tool === "Edit") {
     if (path === null) return [];
+    // Grok's SearchReplace can carry multiple hunks under `edits`; prefer
+    // that when present, else the single old_string/new_string pair.
+    if (Array.isArray(obj.edits)) return editsList(obj.edits, path);
     const oldText = typeof obj.old_string === "string" ? obj.old_string : "";
     const newText = typeof obj.new_string === "string" ? obj.new_string : "";
     return [{ path, oldText, newText, mode: "edit" }];
@@ -40,19 +61,7 @@ export const extractEdits = (
 
   if (tool === "MultiEdit") {
     if (path === null) return [];
-    const edits = Array.isArray(obj.edits) ? obj.edits : [];
-    const out: FileEdit[] = [];
-    for (const e of edits) {
-      if (e === null || typeof e !== "object") continue;
-      const r = e as Record<string, unknown>;
-      out.push({
-        path,
-        oldText: typeof r.old_string === "string" ? r.old_string : "",
-        newText: typeof r.new_string === "string" ? r.new_string : "",
-        mode: "edit",
-      });
-    }
-    return out;
+    return editsList(obj.edits, path);
   }
 
   return [];
