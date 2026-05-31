@@ -200,7 +200,7 @@ export function CodeBlock({
       <div
         ref={hostRef}
         className={cn(
-          "code-block-scroll overflow-auto bg-muted/15 text-[12px] leading-[1.45]",
+          "code-block-scroll overflow-auto bg-zinc-900/70 text-[12px] leading-[1.3]",
           isError ? "bg-alert-error-bg/40" : undefined,
         )}
         style={{ maxHeight }}

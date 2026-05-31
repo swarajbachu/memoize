@@ -124,12 +124,18 @@ const normalizeAcpKind = (rawKind: string): string => {
     case "edit":
     case "edit_file":
     case "editfile":
+    case "search_replace":
+    case "searchreplace":
+    case "str_replace":
+    case "str_replace_editor":
       return "Edit";
     case "write":
     case "write_file":
     case "writefile":
       return "Write";
     case "grep":
+    case "grep_search":
+    case "grepsearch":
     case "search":
     case "search_files":
     case "searchfiles":
@@ -208,6 +214,106 @@ const extractDiffBlock = (
 };
 
 /**
+ * Locate a Grok `SearchReplace` edit envelope anywhere in an update's
+ * result-bearing fields. Grok returns the applied diff in the tool *result*
+ * (not the call input), shaped like:
+ *   { type: "SearchReplace", EditsApplied: { absolute_path, old_string,
+ *     new_string, edits: { details: [{ old_string, new_string, ... }] } } }
+ * Walks arrays + one level of `content` wrapping so we find it regardless of
+ * how the provider nests it.
+ */
+const asSearchReplaceEnvelope = (
+  v: unknown,
+): Record<string, unknown> | null => {
+  if (Array.isArray(v)) {
+    for (const item of v) {
+      const env = asSearchReplaceEnvelope(item);
+      if (env !== null) return env;
+    }
+    return null;
+  }
+  if (v === null || typeof v !== "object") return null;
+  const o = v as Record<string, unknown>;
+  const type =
+    typeof o["type"] === "string" ? (o["type"] as string).toLowerCase() : null;
+  if (type === "searchreplace" || type === "search_replace" || "EditsApplied" in o) {
+    return o;
+  }
+  if ("content" in o) return asSearchReplaceEnvelope(o["content"]);
+  return null;
+};
+
+const findSearchReplaceEnvelope = (
+  u: Record<string, unknown>,
+): Record<string, unknown> | null => {
+  for (const key of ["output", "rawOutput", "result", "content"] as const) {
+    if (u[key] === undefined) continue;
+    const env = asSearchReplaceEnvelope(u[key]);
+    if (env !== null) return env;
+  }
+  return null;
+};
+
+/**
+ * Pull `(file_path, [{ old_string, new_string }])` out of a SearchReplace
+ * envelope so the Edit/MultiEdit row can render a real diff. Tolerates the
+ * fields living either under `EditsApplied` or at the top level, and both the
+ * `edits.details[]` array form and a single top-level old/new pair.
+ */
+const extractSearchReplaceEdits = (
+  env: Record<string, unknown>,
+): {
+  filePath: string | null;
+  edits: ReadonlyArray<{ old_string: string; new_string: string }>;
+} => {
+  const applied =
+    env["EditsApplied"] !== null && typeof env["EditsApplied"] === "object"
+      ? (env["EditsApplied"] as Record<string, unknown>)
+      : env;
+
+  const strField = (src: Record<string, unknown>, key: string): string | null =>
+    typeof src[key] === "string" && (src[key] as string).length > 0
+      ? (src[key] as string)
+      : null;
+
+  const filePath =
+    strField(applied, "absolute_path") ??
+    strField(applied, "file_path") ??
+    strField(applied, "path") ??
+    strField(env, "file_path") ??
+    strField(env, "path");
+
+  const edits: Array<{ old_string: string; new_string: string }> = [];
+  const editsContainer =
+    applied["edits"] !== null && typeof applied["edits"] === "object"
+      ? (applied["edits"] as Record<string, unknown>)
+      : null;
+  const details =
+    editsContainer !== null && Array.isArray(editsContainer["details"])
+      ? (editsContainer["details"] as unknown[])
+      : null;
+  if (details !== null) {
+    for (const d of details) {
+      if (d === null || typeof d !== "object") continue;
+      const r = d as Record<string, unknown>;
+      const oldS = typeof r["old_string"] === "string" ? (r["old_string"] as string) : null;
+      const newS = typeof r["new_string"] === "string" ? (r["new_string"] as string) : null;
+      if (oldS !== null || newS !== null) {
+        edits.push({ old_string: oldS ?? "", new_string: newS ?? "" });
+      }
+    }
+  }
+  if (edits.length === 0) {
+    const oldS = typeof applied["old_string"] === "string" ? (applied["old_string"] as string) : null;
+    const newS = typeof applied["new_string"] === "string" ? (applied["new_string"] as string) : null;
+    if (oldS !== null || newS !== null) {
+      edits.push({ old_string: oldS ?? "", new_string: newS ?? "" });
+    }
+  }
+  return { filePath, edits };
+};
+
+/**
  * Build a canonical `input` object for the given tool name. ACP frames put
  * the same info in several different fields depending on provider/version,
  * so we look in each common spelling. The keys we emit match the
@@ -245,6 +351,27 @@ const buildCanonicalInput = (
   switch (toolName) {
     case "Edit":
     case "MultiEdit": {
+      // Grok's SearchReplace returns the applied diff in its result envelope,
+      // not the call input — recover it so the row shows a real diff.
+      const sr = findSearchReplaceEnvelope(u);
+      if (sr !== null) {
+        const { filePath, edits } = extractSearchReplaceEdits(sr);
+        if (edits.length > 0) {
+          const fp =
+            filePath ??
+            firstLocationPath(u) ??
+            (rawInput !== null ? pathFrom(rawInput) : null) ??
+            "";
+          if (edits.length === 1) {
+            return {
+              file_path: fp,
+              old_string: edits[0]!.old_string,
+              new_string: edits[0]!.new_string,
+            };
+          }
+          return { file_path: fp, edits };
+        }
+      }
       const diff = extractDiffBlock(u["content"]);
       if (diff !== null) {
         return {
@@ -440,17 +567,228 @@ const unwrap = (o: unknown): unknown => {
   return o;
 };
 
-const extractOutput = (u: Record<string, unknown>): unknown => {
-  if (u["output"] !== undefined) return unwrap(u["output"]);
-  // Cursor's spelling: `rawOutput.content` carries the actual result payload
-  // (file contents for Read, command stdout for Bash, etc).
-  if (u["rawOutput"] !== undefined) return unwrap(u["rawOutput"]);
-  if (u["content"] !== undefined) {
-    const flat = flattenMcpContent(u["content"]);
-    return flat !== null ? flat : u["content"];
+/**
+ * Grok serialises Node streams (a tool's stdout/stderr) as JSON — either a
+ * bare array of byte values `[60, 119, …]` or `{ type: "Buffer", data: [...] }`.
+ * Decode either back to a UTF-8 string. Returns null for anything that isn't a
+ * clean byte array so callers can fall back to the raw value.
+ */
+const decodeByteArray = (v: unknown): string | null => {
+  const data = Array.isArray(v)
+    ? v
+    : v !== null &&
+        typeof v === "object" &&
+        Array.isArray((v as Record<string, unknown>)["data"])
+      ? ((v as Record<string, unknown>)["data"] as unknown[])
+      : null;
+  if (data === null || data.length === 0) return null;
+  const bytes = new Uint8Array(data.length);
+  for (let i = 0; i < data.length; i++) {
+    const n = data[i];
+    if (typeof n !== "number" || !Number.isInteger(n) || n < 0 || n > 255) {
+      return null;
+    }
+    bytes[i] = n;
   }
-  if (u["result"] !== undefined) return unwrap(u["result"]);
-  return null;
+  try {
+    return new TextDecoder("utf-8").decode(bytes);
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Grok's read tool prefixes every line with an `N→` marker (`1→{`, `2→  …`).
+ * The renderer's CodeBlock draws its own line-number gutter, so strip the
+ * markers (keeping the original indentation that follows) to avoid a doubled
+ * gutter.
+ */
+const stripLineMarkers = (content: string): string =>
+  content
+    .split("\n")
+    .map((line) => line.replace(/^\s*\d+→/, ""))
+    .join("\n");
+
+/**
+ * Flatten Grok's grep result envelope into a grouped, human-readable string:
+ *
+ *   relative/path/to/file.tsx
+ *   \t13: matching line content
+ *   \t40: another match
+ *   other/file.tsx
+ *   \t5: ...
+ *
+ * The renderer's Grep view parses this back into per-file groups with a file
+ * chip + the matched lines. Paths are relativised against the workspace root
+ * (recovered from the `<workspace_result workspace_path="…">` marker Grok
+ * embeds in `stdout`) so they read as short repo paths, not absolute ones.
+ */
+const buildGrepText = (o: Record<string, unknown>): string | null => {
+  const fileMatches = o["file_matches"];
+  if (!Array.isArray(fileMatches) || fileMatches.length === 0) return null;
+
+  let root: string | null = null;
+  const stdoutText =
+    decodeByteArray(o["stdout"]) ??
+    (typeof o["stdout"] === "string" ? (o["stdout"] as string) : null);
+  if (stdoutText !== null) {
+    const m = stdoutText.match(/workspace_path="([^"]+)"/);
+    if (m !== null) root = m[1] ?? null;
+  }
+  const rel = (p: string): string =>
+    root !== null && p.startsWith(`${root}/`) ? p.slice(root.length + 1) : p;
+
+  const lines: string[] = [];
+  for (const fm of fileMatches) {
+    if (fm === null || typeof fm !== "object") continue;
+    const f = fm as Record<string, unknown>;
+    const path = typeof f["path"] === "string" ? (f["path"] as string) : null;
+    if (path === null || path.length === 0) continue;
+    lines.push(rel(path));
+    const matches = Array.isArray(f["matches"]) ? f["matches"] : [];
+    for (const mt of matches) {
+      if (mt === null || typeof mt !== "object") continue;
+      const m = mt as Record<string, unknown>;
+      const ln =
+        typeof m["line_number"] === "number"
+          ? (m["line_number"] as number)
+          : null;
+      const content =
+        typeof m["content"] === "string" ? (m["content"] as string).trim() : "";
+      lines.push(`\t${ln !== null ? `${ln}: ` : ""}${content}`);
+    }
+  }
+  return lines.length > 0 ? lines.join("\n") : null;
+};
+
+/**
+ * Grok's internal FS/search tools (list_dir, grep, shell, …) return structured
+ * result envelopes rather than plain text. Recognise the common shapes and
+ * flatten them to the clean text the renderer's per-tool views already know how
+ * to display, so the user sees a tidy file tree / match list instead of a raw
+ * JSON blob or an array of char codes.
+ */
+/**
+ * Markers that identify a Grok tool-result envelope. We only re-parse a string
+ * result when it carries one of these, so a real file whose contents merely
+ * happen to be JSON is never disturbed.
+ */
+const ENVELOPE_SIGNATURE =
+  /"type"\s*:\s*"(ReadFile|ListDir|GrepSearch|SearchReplace)"|"FileContent"|"file_matches"|"EditsApplied"/;
+
+const normalizeNativeToolResult = (output: unknown): unknown => {
+  // Grok delivers these envelopes two ways: as a JSON object, or — when it
+  // wraps them in an MCP text block — as a JSON *string* (already flattened by
+  // flattenMcpContent before we get here). Re-parse the string form so both
+  // paths normalize identically.
+  if (typeof output === "string") {
+    const trimmed = output.trim();
+    if (trimmed.startsWith("{") && ENVELOPE_SIGNATURE.test(trimmed)) {
+      try {
+        const parsed = JSON.parse(trimmed) as unknown;
+        const normalized = normalizeNativeToolResult(parsed);
+        if (typeof normalized === "string") return normalized;
+      } catch {
+        // Not valid JSON after all — fall through and return the raw string.
+      }
+    }
+    return output;
+  }
+  if (output === null || typeof output !== "object" || Array.isArray(output)) {
+    return output;
+  }
+  const o = output as Record<string, unknown>;
+  const type =
+    typeof o["type"] === "string" ? (o["type"] as string).toLowerCase() : null;
+
+  // list_dir → the indented tree string the tool already formatted.
+  if (type === "listdir" || type === "list_dir" || type === "list_directory") {
+    const container = o["Content"] ?? o["content"];
+    if (container !== null && typeof container === "object") {
+      const c = (container as Record<string, unknown>)["content"];
+      if (typeof c === "string" && c.length > 0) return c;
+    }
+    if (typeof o["content"] === "string" && o["content"].length > 0) {
+      return o["content"];
+    }
+  }
+
+  // read_file → the file contents. Grok wraps them in a FileContent envelope.
+  // `raw_output` is the clean file text; `content` is the same but with an
+  // "N→" line-number marker per line that the CodeBlock gutter would
+  // duplicate, so strip those when raw_output isn't present.
+  if (type === "readfile" || type === "read_file" || "FileContent" in o) {
+    const fc =
+      o["FileContent"] !== null && typeof o["FileContent"] === "object"
+        ? (o["FileContent"] as Record<string, unknown>)
+        : null;
+    const rawOutput =
+      fc !== null && typeof fc["raw_output"] === "string" && fc["raw_output"].length > 0
+        ? (fc["raw_output"] as string)
+        : null;
+    if (rawOutput !== null) return rawOutput;
+    const marked =
+      fc !== null && typeof fc["content"] === "string"
+        ? (fc["content"] as string)
+        : typeof o["content"] === "string"
+          ? (o["content"] as string)
+          : null;
+    if (marked !== null) return stripLineMarkers(marked);
+  }
+
+  // grep / search → grouped "path \n \t line: content" text.
+  if (
+    type === "grepsearch" ||
+    type === "grep_search" ||
+    type === "grep" ||
+    Array.isArray(o["file_matches"])
+  ) {
+    const grep = buildGrepText(o);
+    if (grep !== null) return grep;
+  }
+
+  // SearchReplace (edit) → a short summary. The diff itself is surfaced via
+  // the canonical Edit input (see buildCanonicalInput); this is the fallback
+  // for any path that renders the raw result instead of the Edit row.
+  if (type === "searchreplace" || type === "search_replace" || "EditsApplied" in o) {
+    const { filePath, edits } = extractSearchReplaceEdits(o);
+    if (edits.length > 0) {
+      const where = filePath !== null ? ` to ${filePath}` : "";
+      return `Applied ${edits.length} edit${edits.length === 1 ? "" : "s"}${where}.`;
+    }
+  }
+
+  // Generic stdout/stderr envelope (shell-like tools), where Grok serialises
+  // the streams as byte arrays. Decode + concatenate so the row shows real
+  // terminal text instead of an array of char codes.
+  if ("stdout" in o || "stderr" in o) {
+    const out =
+      decodeByteArray(o["stdout"]) ??
+      (typeof o["stdout"] === "string" ? (o["stdout"] as string) : "");
+    const err =
+      decodeByteArray(o["stderr"]) ??
+      (typeof o["stderr"] === "string" ? (o["stderr"] as string) : "");
+    const combined = [out, err].filter((s) => s.length > 0).join("\n");
+    if (combined.length > 0) return combined;
+  }
+
+  return output;
+};
+
+const extractOutput = (u: Record<string, unknown>): unknown => {
+  const raw =
+    u["output"] !== undefined
+      ? unwrap(u["output"])
+      : // Cursor's spelling: `rawOutput.content` carries the actual result
+        // payload (file contents for Read, command stdout for Bash, etc).
+        u["rawOutput"] !== undefined
+        ? unwrap(u["rawOutput"])
+        : u["content"] !== undefined
+          ? (flattenMcpContent(u["content"]) ?? u["content"])
+          : u["result"] !== undefined
+            ? unwrap(u["result"])
+            : null;
+  return normalizeNativeToolResult(raw);
 };
 
 const extractErrorDetail = (u: Record<string, unknown>): string | null => {

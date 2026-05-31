@@ -764,11 +764,11 @@ body,
 @layer components {
   .code-block-shiki pre {
     margin: 0;
-    padding: 8px 0;
+    padding: 6px 0;
     background: transparent !important;
     font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
     font-size: 12px;
-    line-height: 1.45;
+    line-height: 1.3;
     counter-reset: line;
   }
   .code-block-shiki code {

@@ -260,6 +260,67 @@ function FileListBlock({ paths }: { paths: ReadonlyArray<string> }) {
   );
 }
 
+/**
+ * Render a `list_dir` tree (the indented "- name" / "  - sub/" text Grok's
+ * tool emits) as a calm monospace block — directories muted, files bright —
+ * instead of a raw JSON dump. Indentation is preserved verbatim.
+ */
+function DirTreeBlock({ text }: { text: string }) {
+  const lines = text.replace(/\n+$/, "").split("\n");
+  const hasContent = lines.some((l) => l.trim().length > 0);
+  if (!hasContent) {
+    return (
+      <p className="text-[11px] italic text-muted-foreground">
+        Empty directory.
+      </p>
+    );
+  }
+  return (
+    <pre className="overflow-x-auto rounded bg-zinc-900/70 px-3 py-2 font-mono text-[11px] leading-relaxed">
+      {lines.map((line, i) => {
+        const isDir = line.trimEnd().endsWith("/");
+        return (
+          <div
+            key={i}
+            className={cn(
+              "whitespace-pre",
+              isDir ? "text-muted-foreground" : "text-foreground/90",
+            )}
+          >
+            {line.length > 0 ? line : " "}
+          </div>
+        );
+      })}
+    </pre>
+  );
+}
+
+/**
+ * Render grep matches grouped by file: a clickable file chip header followed
+ * by the matched lines. Far nicer than the raw `{ stdout: [char codes],
+ * file_matches: [...] }` envelope Grok returns.
+ */
+function GrepGroupsBlock({
+  groups,
+}: {
+  groups: ReadonlyArray<{ path: string; matches: ReadonlyArray<string> }>;
+}) {
+  return (
+    <div className="space-y-2">
+      {groups.map((g, i) => (
+        <div key={i} className="space-y-0.5">
+          <FileBadge path={g.path} />
+          {g.matches.length > 0 ? (
+            <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded bg-zinc-900/70 px-3 py-1.5 font-mono text-[11px] text-foreground/80">
+              {g.matches.join("\n")}
+            </pre>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function MarkdownBlock({ text }: { text: string }) {
   return (
     <div className="prose prose-invert prose-sm max-w-none break-words text-[12px] [&>:first-child]:mt-0 [&>:last-child]:mb-0 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-3 [&_pre>code]:bg-transparent [&_pre>code]:p-0">
@@ -305,6 +366,39 @@ const parseFileList = (output: string): ReadonlyArray<string> => {
   const lines = splitLines(output);
   return lines.filter((l) => !/^found\s+\d+\s+/i.test(l) && !/^no\s+/i.test(l));
 };
+
+interface GrepGroup {
+  readonly path: string;
+  readonly matches: ReadonlyArray<string>;
+}
+
+/**
+ * Parse grep output into per-file groups. A flush-left line is a file path;
+ * indented lines are matches under the current file. Plain path-per-line
+ * output (files-with-matches mode) yields groups with no matches, which the
+ * caller renders as a simple file list. Summary lines ("Found N files", "No
+ * matches") are dropped.
+ */
+const parseGrepGroups = (output: string): ReadonlyArray<GrepGroup> => {
+  const groups: Array<{ path: string; matches: string[] }> = [];
+  let current: { path: string; matches: string[] } | null = null;
+  for (const raw of output.split("\n")) {
+    if (raw.trim().length === 0) continue;
+    if (/^\s/.test(raw) && current !== null) {
+      current.matches.push(raw.trim());
+      continue;
+    }
+    const line = raw.trim();
+    if (/^found\s+\d+\s+/i.test(line) || /^no\s+/i.test(line)) continue;
+    current = { path: line, matches: [] };
+    groups.push(current);
+  }
+  return groups;
+};
+
+// Count the leaf files in a `list_dir` tree (lines that aren't directories).
+const countTreeFiles = (tree: string): number =>
+  splitLines(tree).filter((l) => !l.endsWith("/")).length;
 
 // ---------------------------------------------------------------------------
 // Expandable row primitive (icon ↔ chevron hover swap, click to toggle)
@@ -534,15 +628,16 @@ const buildToolView = (
       const glob = asString(obj.glob);
       const type = asString(obj.type);
       const where = path ?? glob ?? type;
-      const matches =
+      // Count distinct files matched (grouped or files-with-matches output).
+      const files =
         result !== undefined && !result.isError
-          ? parseFileList(toResultText(result.output)).length
+          ? parseGrepGroups(toResultText(result.output)).length
           : null;
       const matchesHint =
-        matches !== null
-          ? matches === 0
+        files !== null
+          ? files === 0
             ? "no matches"
-            : `${matches} match${matches === 1 ? "" : "es"}`
+            : `${files} file${files === 1 ? "" : "s"}`
           : null;
       return {
         icon: SearchIcon,
@@ -573,11 +668,15 @@ const buildToolView = (
         resultPanel: (result) => {
           const text = toResultText(result.output);
           if (result.isError) return <PreBlock text={text} isError />;
-          const paths = parseFileList(text);
-          return paths.length > 0 ? (
-            <FileListBlock paths={paths} />
+          const groups = parseGrepGroups(text);
+          if (groups.length === 0) {
+            return <PreBlock text={text || "No matches."} />;
+          }
+          // Files-with-matches mode (no per-line content) → plain file list.
+          return groups.some((g) => g.matches.length > 0) ? (
+            <GrepGroupsBlock groups={groups} />
           ) : (
-            <PreBlock text={text || "No matches."} />
+            <FileListBlock paths={groups.map((g) => g.path)} />
           );
         },
       };
@@ -616,6 +715,42 @@ const buildToolView = (
           ) : (
             <PreBlock text={text || "No matches."} />
           );
+        },
+      };
+    }
+
+    case "ListDir":
+    case "ListDirectory": {
+      const path =
+        asString(obj.path) ??
+        asString(obj.dir_path) ??
+        asString(obj.directory) ??
+        asString(obj.relative_workspace_path);
+      const files =
+        result !== undefined && !result.isError
+          ? countTreeFiles(toResultText(result.output))
+          : null;
+      const filesHint =
+        files !== null
+          ? files === 0
+            ? "empty"
+            : `${files} file${files === 1 ? "" : "s"}`
+          : null;
+      return {
+        icon: Folder01Icon,
+        label: "List",
+        trailing: (
+          <>
+            {path !== null ? <InlineCodeChip value={path} /> : null}
+            {filesHint !== null ? (
+              <InlineTextHint value={`· ${filesHint}`} />
+            ) : null}
+          </>
+        ),
+        resultPanel: (result) => {
+          const text = toResultText(result.output);
+          if (result.isError) return <PreBlock text={text} isError />;
+          return <DirTreeBlock text={text} />;
         },
       };
     }
