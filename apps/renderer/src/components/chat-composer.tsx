@@ -61,6 +61,7 @@ import {
 import { parseComposerInput } from "../composer/segment-parser.ts";
 import { ComposerChipOverlay } from "./composer/composer-chip-overlay.tsx";
 import { FileTagPopover } from "./composer/file-tag-popover.tsx";
+import { ProjectPlanTray } from "./composer/project-plan-tray.tsx";
 import { QueueTray } from "./composer/queue-tray.tsx";
 import { SlashCommandPopover } from "./composer/slash-command-popover.tsx";
 import {
@@ -580,6 +581,7 @@ export function ChatComposer({ session }: { session: Session }) {
       >
         <div className="mx-auto">
           <ActiveLocationChip />
+          <ProjectPlanTray key={sessionId} sessionId={sessionId} />
           <Frame>
             <Card
               className={cn(
