@@ -160,16 +160,57 @@ function createMainWindow() {
   // — the renderer asked to leave Electron, not to host another Chromium
   // window inside the app. Allowlist scheme so the bridge can't be coaxed
   // into running arbitrary shell URI handlers.
-  ipcMain.on("app:openExternal", (_event, rawUrl: unknown) => {
-    if (typeof rawUrl !== "string") return;
+  const openHttpExternal = (rawUrl: unknown): boolean => {
+    if (typeof rawUrl !== "string") return false;
     let parsed: URL;
     try {
       parsed = new URL(rawUrl);
     } catch {
+      return false;
+    }
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+      return false;
+    }
+    void shell.openExternal(parsed.toString());
+    return true;
+  };
+
+  ipcMain.on("app:openExternal", (_event, rawUrl: unknown) => {
+    openHttpExternal(rawUrl);
+  });
+
+  // Markdown links rendered by react-markdown have no `target="_blank"`, so a
+  // click triggers an in-window navigation away from the renderer — the app
+  // would unload and Chromium would render the page inline, indistinguishable
+  // from "the app froze." Intercept those and route to the OS browser.
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    // Allow same-document navigations (dev-server HMR, our own renderer's
+    // file:// load, the privileged `memoize://` scheme). Everything else is
+    // an external link the user clicked.
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
       return;
     }
-    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return;
-    void shell.openExternal(parsed.toString());
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      // In dev the renderer is served from http://localhost:<port> — don't
+      // hijack navigations inside the renderer itself.
+      if (isDevelopment && parsed.origin === new URL(DEV_SERVER_URL).origin) {
+        return;
+      }
+      event.preventDefault();
+      void shell.openExternal(parsed.toString());
+    }
+  });
+
+  // `target="_blank"` and `window.open()` go through the window-open handler
+  // instead of will-navigate. Default behavior is to spawn a new
+  // BrowserWindow hosting the URL — i.e. the "in-app browser" the user was
+  // seeing. Deny the new window and route http(s) externally.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    openHttpExternal(url);
+    return { action: "deny" };
   });
 
   // Boot the Effect runtime once the window's webContents exists. The RPC
