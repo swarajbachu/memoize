@@ -54,8 +54,17 @@ npmRebuild: false
 
 mac:
   category: public.app-category.developer-tools
+  # Two targets, one signed/notarized `.app`:
+  #   * dmg  — what humans download from the Releases page for first install.
+  #   * zip  — what `electron-updater` (Squirrel.Mac under the hood) consumes
+  #            to apply auto-updates. Squirrel.Mac cannot read DMGs; without a
+  #            zip in `latest-mac.yml` the updater throws "ZIP file not
+  #            provided" and every installed copy is stranded on its current
+  #            version. See plans/zip-file-not-provided-jolly-lantern.md.
   target:
     - target: dmg
+      arch: universal
+    - target: zip
       arch: universal
   hardenedRuntime: true
   gatekeeperAssess: false
