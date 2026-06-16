@@ -460,16 +460,15 @@ export function TopBarRight() {
         !workflow.isDraft &&
         folderId !== null ? (
           <>
-            <AutoMergeToggle
-              folderId={folderId}
-              worktreeId={worktreeId}
-              enabled={workflow.autoMergeEnabled}
-            />
-            <MergeButton
-              folderId={folderId}
-              worktreeId={worktreeId}
-              checks={workflow.checks}
-            />
+            {workflow.checks === "pending" ? (
+              <AutoMergeToggle
+                folderId={folderId}
+                worktreeId={worktreeId}
+                enabled={workflow.autoMergeEnabled}
+              />
+            ) : (
+              <MergeButton folderId={folderId} worktreeId={worktreeId} />
+            )}
           </>
         ) : null}
       </div>
@@ -490,9 +489,22 @@ const openPrChipTone = (w: OpenPrWorkflow): GlassTone => {
  * Tinted by the same workflow tone the merge button uses.
  */
 function PrHashChip({ workflow }: { workflow: OpenPrWorkflow }) {
-  const label = `#${workflow.number ?? "?"}`;
+  const checksRunning = workflow.checksRunning;
+  const label =
+    checksRunning > 0
+      ? `${checksRunning} check${checksRunning === 1 ? "" : "s"} running`
+      : `#${workflow.number ?? "?"}`;
+  const content =
+    checksRunning > 0 ? (
+      <span className="flex items-center gap-1.5">
+        <Loader2 className="size-3 animate-spin" />
+        {label}
+      </span>
+    ) : (
+      label
+    );
   if (workflow.url === null) {
-    return <GlassChip tone={openPrChipTone(workflow)}>{label}</GlassChip>;
+    return <GlassChip tone={openPrChipTone(workflow)}>{content}</GlassChip>;
   }
   const url = workflow.url;
   return (
@@ -503,13 +515,15 @@ function PrHashChip({ workflow }: { workflow: OpenPrWorkflow }) {
             type="button"
             onClick={() => openExternal(url)}
             className="cursor-pointer rounded-md transition-opacity hover:opacity-80"
-            aria-label={`Open pull request ${label} on GitHub`}
+            aria-label={`Open pull request #${workflow.number ?? "?"} on GitHub`}
           >
-            <GlassChip tone={openPrChipTone(workflow)}>{label}</GlassChip>
+            <GlassChip tone={openPrChipTone(workflow)}>{content}</GlassChip>
           </button>
         }
       />
-      <TooltipPopup>Open {label} on GitHub</TooltipPopup>
+      <TooltipPopup>
+        Open pull request #{workflow.number ?? "?"} on GitHub
+      </TooltipPopup>
     </Tooltip>
   );
 }
@@ -523,15 +537,7 @@ function PrHashChip({ workflow }: { workflow: OpenPrWorkflow }) {
  */
 function CiStatus({ workflow }: { workflow: OpenPrWorkflow }) {
   if (workflow.checksTotal === 0) return null;
-  if (workflow.checksRunning > 0) {
-    const n = workflow.checksRunning;
-    return (
-      <span className="flex shrink-0 items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
-        <Loader2 className="size-3.5 animate-spin" />
-        {n} check{n === 1 ? "" : "s"} running
-      </span>
-    );
-  }
+  if (workflow.checksRunning > 0) return null;
   if (workflow.checksFailing > 0) {
     const n = workflow.checksFailing;
     return (
@@ -541,12 +547,7 @@ function CiStatus({ workflow }: { workflow: OpenPrWorkflow }) {
       </span>
     );
   }
-  return (
-    <span className="flex shrink-0 items-center gap-1.5 text-[11px] font-medium text-[var(--accent-green)]">
-      <Check className="size-3.5" />
-      Checks passed
-    </span>
-  );
+  return null;
 }
 
 /**
@@ -634,16 +635,13 @@ const MERGE_METHOD_LABEL: Record<GitMergeMethod, string> = {
 function MergeButton({
   folderId,
   worktreeId,
-  checks,
 }: {
   folderId: FolderId;
   worktreeId: WorktreeId | null;
-  checks: OpenPrWorkflow["checks"];
 }) {
   const method = useMergePrefs((s) => s.method);
   const deleteBranch = useMergePrefs((s) => s.deleteBranch);
   const setMethod = useMergePrefs((s) => s.setMethod);
-  const pending = checks === "pending";
 
   return (
     <div className="flex items-center gap-1">
@@ -652,7 +650,6 @@ function MergeButton({
         icon={<GitMerge />}
         label="Merge"
         loadingLabel="Merging…"
-        disabled={pending}
         run={async () => {
           const client = await getRpcClient();
           await Effect.runPromise(
