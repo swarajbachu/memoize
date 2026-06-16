@@ -108,6 +108,7 @@ const parseAgents = (
 const RUNTIME_MODES: ReadonlySet<RuntimeMode> = new Set([
   "approval-required",
   "auto-accept-edits",
+  "auto-accept-edits-and-bash",
   "full-access",
 ]);
 

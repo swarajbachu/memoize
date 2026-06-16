@@ -967,11 +967,11 @@ export function ExitPlanModeRow({
         : null
       : null;
 
-  const status: "pending" | "approved" | "rejected" =
+  const status: "pending" | "approved" | "cancelled" =
     result === undefined
       ? "pending"
       : result.isError
-        ? "rejected"
+        ? "cancelled"
         : "approved";
 
   // Find the open permission request for this session's ExitPlanMode.
@@ -1016,7 +1016,7 @@ export function ExitPlanModeRow({
               }
               className="rounded-md px-3 py-1 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground"
             >
-              Reject
+              Cancel
             </button>
             <button
               type="button"
@@ -1052,7 +1052,7 @@ export function ExitPlanModeRow({
               : "text-muted-foreground",
           )}
         >
-          {status === "approved" ? "Approved" : "Rejected"}
+          {status === "approved" ? "Approved" : "Cancelled"}
         </span>
       </div>
     </>
