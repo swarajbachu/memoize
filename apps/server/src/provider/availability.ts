@@ -298,17 +298,28 @@ export const deriveLatestAdvisory = (
 
 /**
  * The shell command that updates a provider's CLI to the latest release.
- * npm-published providers get a deterministic `npm i -g <pkg>@latest`; the
- * rest reuse their official install one-liner (curl scripts reinstall the
- * latest build). Returns `null` for an unknown provider. Run server-side via
- * a login shell so PATH + pipes resolve — see `update-service.ts`.
+ *
+ * npm-published providers uninstall-then-install rather than a bare
+ * `npm i -g <pkg>@latest`: a plain re-install fails with `ENOTEMPTY` during
+ * npm's "retire old dir" rename step when a prior install left files behind
+ * (common with packages shipping optional per-platform binaries, e.g.
+ * `@anthropic-ai/claude-code`). `uninstall -g` clears the dir first, then the
+ * install lays down a clean tree. `|| true` on the uninstall keeps a
+ * not-currently-installed case from aborting the chain.
+ *
+ * Non-npm providers reuse their official install one-liner (curl scripts
+ * reinstall the latest build). Returns `null` for an unknown provider. Run
+ * server-side via a login shell so PATH + pipes resolve — see
+ * `update-service.ts`.
  */
 export const updateCommandForProvider = (
   providerId: ProviderId,
 ): string | null => {
   const probe = PROBES.find((p) => p.providerId === providerId);
   if (probe === undefined) return null;
-  if (probe.npmPackage !== null) return `npm i -g ${probe.npmPackage}@latest`;
+  if (probe.npmPackage !== null) {
+    return `npm uninstall -g ${probe.npmPackage} || true; npm install -g ${probe.npmPackage}@latest`;
+  }
   return probe.upgradeCommand;
 };
 

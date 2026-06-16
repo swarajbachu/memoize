@@ -1,7 +1,9 @@
 import { Effect, Fiber, Stream } from "effect";
 import {
   ArrowUpCircle,
+  Check,
   ChevronDown,
+  CircleAlert,
   Copy,
   ExternalLink,
   Loader2,
@@ -19,7 +21,7 @@ import {
 import { ApiKeyRow } from "~/components/api-key-row";
 import { ProviderIcon } from "~/components/provider-icons";
 import { Button } from "~/components/ui/button";
-import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { getRpcClient } from "~/lib/rpc-client";
 import { useProvidersStore } from "~/store/providers";
 import {
@@ -180,7 +182,6 @@ export function ProviderCard({
                 displayName={PROVIDER_LABEL[providerId]}
                 latestVersion={availability?.latestVersion}
                 behind={availability?.latestVersionStatus === "behind"}
-                command={availability?.updateCommand}
               />
             )}
           </div>
@@ -592,17 +593,24 @@ function useProviderUpdate(providerId: ProviderId) {
   const refresh = useProvidersStore((s) => s.refresh);
   const [state, setState] = useState<UpdateState>({ kind: "idle" });
   const fiberRef = useRef<Fiber.RuntimeFiber<unknown, unknown> | null>(null);
+  const resetTimerRef = useRef<number | null>(null);
 
   useEffect(
     () => () => {
       const fiber = fiberRef.current;
       if (fiber !== null) void Effect.runPromise(Fiber.interrupt(fiber));
+      if (resetTimerRef.current !== null)
+        window.clearTimeout(resetTimerRef.current);
     },
     [],
   );
 
   const run = async () => {
     if (state.kind === "running") return;
+    if (resetTimerRef.current !== null) {
+      window.clearTimeout(resetTimerRef.current);
+      resetTimerRef.current = null;
+    }
     setState({ kind: "running", line: null });
     const client = await getRpcClient();
     const fiber = Effect.runFork(
@@ -617,6 +625,13 @@ function useProviderUpdate(providerId: ProviderId) {
               if (event.ok) {
                 setState({ kind: "success" });
                 void refresh();
+                // Re-probe will hide the icon if now on latest; for
+                // version-unknown CLIs (Grok) drop the "Updated" badge after
+                // a moment so the control returns to idle.
+                resetTimerRef.current = window.setTimeout(() => {
+                  setState({ kind: "idle" });
+                  resetTimerRef.current = null;
+                }, 4_000);
               } else {
                 setState({
                   kind: "failed",
@@ -644,117 +659,102 @@ function useProviderUpdate(providerId: ProviderId) {
 }
 
 /**
- * Hover-revealed one-click update affordance shown next to the version label.
- * Click opens a popover that **runs the update in-app** (spawns the install
- * command server-side and streams progress) — for npm providers and for
- * curl-installed CLIs like Grok alike. `stopPropagation` keeps a click from
- * toggling the card's expand.
+ * Hover-revealed one-click update control shown next to the version label.
+ * Clicking the icon **runs the update immediately in-app** (spawns the install
+ * command server-side, streams progress) — for npm providers and curl-based
+ * CLIs like Grok alike. No dialog: the icon itself is the status badge
+ * (spinner → check / alert), with a tooltip carrying the detail / error.
+ * `stopPropagation` keeps the click from toggling the card's expand.
  */
 function UpdateAvailableButton({
   providerId,
   displayName,
   latestVersion,
   behind,
-  command,
 }: {
   readonly providerId: ProviderId;
   readonly displayName: string;
   readonly latestVersion: string | undefined;
   readonly behind: boolean;
-  readonly command: string | undefined;
 }) {
   const { state, run } = useProviderUpdate(providerId);
-  const running = state.kind === "running";
 
-  const headline =
+  const idleLabel =
     behind && latestVersion !== undefined
-      ? `Update available — v${latestVersion}`
-      : "Update available";
-  const detail =
-    behind && latestVersion !== undefined
-      ? `Update ${displayName} to v${latestVersion}.`
-      : `Update ${displayName} to the latest version.`;
+      ? `Update ${displayName} to v${latestVersion}`
+      : `Update ${displayName} to the latest version`;
+  const tooltip =
+    state.kind === "running"
+      ? (state.line ?? "Updating…")
+      : state.kind === "success"
+        ? "Updated"
+        : state.kind === "failed"
+          ? state.reason
+          : idleLabel;
+
+  // The icon doubles as the status badge.
+  const { icon, tone } =
+    state.kind === "running"
+      ? {
+          icon: <Loader2 className="size-3.5 animate-spin" aria-hidden />,
+          tone: "text-muted-foreground",
+        }
+      : state.kind === "success"
+        ? {
+            icon: <Check className="size-3.5" aria-hidden />,
+            tone: "text-emerald-400",
+          }
+        : state.kind === "failed"
+          ? {
+              icon: <CircleAlert className="size-3.5" aria-hidden />,
+              tone: "text-rose-400",
+            }
+          : {
+              icon: <ArrowUpCircle className="size-3.5" aria-hidden />,
+              tone: behind ? "text-warning" : "text-muted-foreground",
+            };
+
+  // While active (running/success/failed) the control stays visible; idle is
+  // hover-revealed so it doesn't clutter up-to-date rows.
+  const active = state.kind !== "idle";
+  const badge =
+    state.kind === "running"
+      ? "Updating…"
+      : state.kind === "failed"
+        ? "Failed"
+        : state.kind === "success"
+          ? "Updated"
+          : null;
 
   return (
-    <Popover>
-      <PopoverTrigger
-        onClick={(e) => e.stopPropagation()}
-        aria-label={`Update ${displayName}`}
-        title="Update available"
-        className={cn(
-          "flex size-5 shrink-0 items-center justify-center rounded opacity-0 transition-opacity hover:bg-muted/60 focus-visible:opacity-100 group-hover:opacity-100 data-[popup-open]:opacity-100",
-          behind ? "text-warning" : "text-muted-foreground",
-        )}
-      >
-        <ArrowUpCircle className="size-3.5" aria-hidden />
-      </PopoverTrigger>
-      <PopoverPopup side="bottom" align="start" className="w-72">
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[13px] font-medium text-foreground">
-              {headline}
-            </span>
-            <span className="text-xs leading-snug text-muted-foreground">
-              {detail}
-            </span>
-          </div>
-
-          {state.kind === "success" ? (
-            <div className="rounded-md border border-emerald-400/30 bg-emerald-500/[0.06] px-3 py-2 text-[11px] text-emerald-200">
-              Updated. Re-checking version…
-            </div>
-          ) : (
-            <>
-              <Button
-                type="button"
-                size="xs"
-                variant="default"
-                disabled={running}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void run();
-                }}
-                className="w-full"
-              >
-                {running ? (
-                  <>
-                    <Loader2 className="mr-1 size-3 animate-spin" aria-hidden />
-                    Updating…
-                  </>
-                ) : (
-                  <>
-                    <ArrowUpCircle className="mr-1 size-3" aria-hidden />
-                    {state.kind === "failed" ? "Try again" : "Update now"}
-                  </>
-                )}
-              </Button>
-
-              {running && state.line !== null && (
-                <p className="truncate font-mono text-[10px] text-muted-foreground">
-                  {state.line}
-                </p>
-              )}
-              {state.kind === "failed" && (
-                <p className="text-[11px] leading-snug text-rose-300">
-                  {state.reason}
-                </p>
-              )}
-
-              {command !== undefined && (
-                <details className="text-[10px] text-muted-foreground">
-                  <summary className="cursor-pointer select-none">
-                    or update manually
-                  </summary>
-                  <div className="mt-1.5">
-                    <CodeRow label="Run in a terminal" command={command} />
-                  </div>
-                </details>
-              )}
-            </>
-          )}
-        </div>
-      </PopoverPopup>
-    </Popover>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            disabled={state.kind === "running"}
+            onClick={(e) => {
+              e.stopPropagation();
+              void run();
+            }}
+            aria-label={idleLabel}
+            className={cn(
+              "flex shrink-0 items-center gap-1 rounded px-1 transition-opacity hover:bg-muted/60 focus-visible:opacity-100 group-hover:opacity-100 disabled:cursor-default",
+              tone,
+              active ? "opacity-100" : "opacity-0",
+            )}
+          >
+            {icon}
+            {badge !== null && (
+              <span className="text-[10px] font-medium">{badge}</span>
+            )}
+          </button>
+        }
+      />
+      <TooltipPopup side="bottom" className="max-w-72">
+        {tooltip}
+      </TooltipPopup>
+    </Tooltip>
   );
 }
 
