@@ -120,14 +120,13 @@ function ProviderOverrideSection({
   const isOverridden = defaultProviderId !== null || defaultModel !== null;
 
   // Mirror the global "Default agent" filter: skip providers the user
-  // toggled off, and skip the subscription-gated ones (Grok → SuperGrok
-  // Heavy, Cursor → Cursor Pro) so we don't let the user pick something
-  // that can't actually launch a session.
+  // toggled off. Cursor is still excluded because its CLI does not expose
+  // enough plan information for us to distinguish signed-in from usable.
   const availableProviders = (
     ["claude", "codex", "grok", "gemini", "cursor", "opencode"] as const
   ).filter((pid) => {
     if (providerEnabled[pid] === false) return false;
-    if (pid === "grok" || pid === "cursor") return false;
+    if (pid === "cursor") return false;
     return true;
   });
 

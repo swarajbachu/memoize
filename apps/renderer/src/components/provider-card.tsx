@@ -70,14 +70,14 @@ const LOGIN_HINT: Record<ProviderId, string> = {
 /**
  * Providers that have a known paid-plan requirement for full agent usage.
  * For Grok we now decode the `tier` claim from `~/.grok/auth.json` JWT:
- *   - tier >= 5 → authLabel = "SuperGrok Heavy" (positive, shows plan, toggle works)
- *   - lower / unknown → authLabel = "Requires SuperGrok Heavy" → violet nag + disabled
+ *   - tier >= 4 → authLabel = "Grok subscription" (positive, shows plan, toggle works)
+ *   - lower / unknown → authLabel = "Requires SuperGrok or X Premium+" → violet nag + disabled
  * The frontend only forces the subscription alarm/disable when the label contains "Requires".
  */
 const SUBSCRIPTION_INFO: Partial<
   Record<ProviderId, { readonly plan: string; readonly url: string }>
 > = {
-  grok: { plan: "SuperGrok Heavy", url: "https://grok.com/#subscribe" },
+  grok: { plan: "SuperGrok or X Premium+", url: "https://x.ai/cli" },
   cursor: { plan: "Cursor Pro", url: "https://cursor.com/pricing" },
   claude: {
     plan: "Claude Pro",
@@ -320,7 +320,7 @@ const openExternal = (url: string) => {
 
 /**
  * Subscription / plan notice for providers that gate behind a paid tier
- * (Grok → SuperGrok Heavy, Cursor → Cursor Pro).
+ * (Grok → SuperGrok or X Premium+, Cursor → Cursor Pro).
  *
  * - If the server probe reports an unmet requirement (authLabel contains
  *   "Requires"), we show the strong violet alarm box + Subscribe CTA.

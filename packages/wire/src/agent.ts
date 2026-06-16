@@ -859,15 +859,20 @@ export const MODELS_BY_PROVIDER: Record<
   ],
   // Seed list — Grok CLI's `-m` flag accepts any model id it knows, so a
   // custom slug typed by the user still works; this list is just what the
-  // picker shows by default. `grok-build` is the only model free-tier
-  // accounts can run (verified via `grok models`); the rest unlock with a
-  // SuperGrok subscription. Passing a slug the account can't access yields
+  // picker shows by default. `grok-build` unlocks with a paid Grok entitlement
+  // such as SuperGrok or X Premium+. Passing a slug the account can't access yields
   // a clean 403 surfaced through grok's streaming-json `type: "error"`
   // envelope, so no client-side validation needed.
   grok: [
     {
       id: "grok-build",
       label: "Grok Build",
+      supportsPlanMode: true,
+      supportsWebSearch: "queryOnly",
+    },
+    {
+      id: "grok-composer-2.5-fast",
+      label: "Grok Composer 2.5 Fast",
       supportsPlanMode: true,
       supportsWebSearch: "queryOnly",
     },

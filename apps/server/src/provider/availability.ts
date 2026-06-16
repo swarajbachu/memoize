@@ -699,11 +699,12 @@ interface GrokAuthEntry {
 }
 
 /**
- * Minimum `tier` value from the xAI OIDC JWT that includes SuperGrok Heavy
- * (the plan required for full Grok coding agent / `grok agent stdio` access).
- * Lower tiers will be treated as "requires subscription" (disabled + nag).
+ * Minimum `tier` value from the xAI OIDC JWT that includes Grok Build CLI
+ * access. xAI now exposes Grok Build to SuperGrok and X Premium+ subscribers;
+ * locally-observed X Premium+ tokens carry tier 4, while older SuperGrok Heavy
+ * tokens carried tier 5+.
  */
-const MIN_SUPERGROK_HEAVY_TIER = 5;
+const MIN_GROK_BUILD_TIER = 4;
 
 /** Base64url decode + parse a JWT payload (no signature verification). */
 const decodeJwtPayload = (jwt: string): Record<string, unknown> | null => {
@@ -812,10 +813,10 @@ const parseGrokAuthJson = (raw: string): AccountInfo => {
         );
       }
       if (typeof tierFound === "number") {
-        if (tierFound >= MIN_SUPERGROK_HEAVY_TIER) {
-          authLabel = "SuperGrok Heavy";
+        if (tierFound >= MIN_GROK_BUILD_TIER) {
+          authLabel = "Grok subscription";
         } else {
-          authLabel = "Requires SuperGrok Heavy";
+          authLabel = "Requires SuperGrok or X Premium+";
         }
       }
       // else: we have a token but no usable tier claim → non-blocking "Grok"
@@ -856,8 +857,8 @@ export const grokAuthTestHelpers = {
 // after `grok login`. We parse the JWT to read the `tier` claim and decide the
 // plan status (best-effort only — the ACP binary is the source of truth):
 //
-// - tier >= 5 → "SuperGrok Heavy"   (nice label, toggle enabled)
-// - tier < 5  → "Requires SuperGrok Heavy" (violet nag + disabled)
+// - tier >= 4 → "Grok subscription"   (nice label, toggle enabled)
+// - tier < 4  → "Requires SuperGrok or X Premium+" (violet nag + disabled)
 // - token present but tier unreadable / missing / new shape → "Grok" (non-blocking)
 //   The runtime will surface the precise AuthorizationRequired if the account
 //   truly lacks the agent entitlement.
