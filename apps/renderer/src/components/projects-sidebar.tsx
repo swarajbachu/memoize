@@ -30,16 +30,15 @@ import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn, formatCompactNumber } from "~/lib/utils";
+import { resolveAutoWorktreeId } from "../lib/auto-worktree.ts";
 import { formatShortcut } from "../lib/shortcuts.ts";
 import { getRpcClient } from "../lib/rpc-client.ts";
 import { useChatsStore } from "../store/chats.ts";
 import { useMessagesStore } from "../store/messages.ts";
 import { prStateKey, usePrStateStore } from "../store/pr-state.ts";
 import { useProvidersStore } from "../store/providers.ts";
-import { useRepositorySettingsStore } from "../store/repository-settings.ts";
 import { useSessionsStore } from "../store/sessions.ts";
 import { useSettingsStore } from "../store/settings.ts";
-import { useWorktreesStore } from "../store/worktrees.ts";
 import { useUiStore } from "../store/ui.ts";
 import { useWorkspaceStore } from "../store/workspace.ts";
 import { BranchIcon, type BranchState } from "./branch-icon.tsx";
@@ -619,17 +618,7 @@ export async function createNewSession(projectId: FolderId): Promise<void> {
     const model =
       settings.defaultModelByProvider[defaultProviderId] ??
       defaultModelFor(defaultProviderId);
-    const repoSettings = await useRepositorySettingsStore
-      .getState()
-      .refresh(projectId);
-    const shouldAutoCreate =
-      repoSettings?.autoCreateWorktree === true ||
-      settings.defaultAutoCreateWorktree === true;
-    let worktreeId = null;
-    if (shouldAutoCreate) {
-      const wt = await useWorktreesStore.getState().create(projectId);
-      if (wt !== null) worktreeId = wt.id;
-    }
+    const worktreeId = await resolveAutoWorktreeId(projectId);
     void useChatsStore
       .getState()
       .create(projectId, defaultProviderId, model, {
