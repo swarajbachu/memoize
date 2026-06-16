@@ -10,6 +10,16 @@ import {
   type WorktreeRemoveError,
 } from "@memoize/wire";
 
+export interface WorktreeRestoreSnapshot {
+  readonly id: WorktreeId;
+  readonly projectId: FolderId;
+  readonly path: string;
+  readonly name: string;
+  readonly branch: string;
+  readonly baseBranch: string;
+  readonly createdAt: Date;
+}
+
 export interface WorktreeServiceShape {
   readonly create: (
     projectId: FolderId,
@@ -17,9 +27,7 @@ export interface WorktreeServiceShape {
   readonly list: (
     projectId: FolderId,
   ) => Effect.Effect<ReadonlyArray<Worktree>>;
-  readonly get: (
-    worktreeId: WorktreeId,
-  ) => Effect.Effect<Worktree | null>;
+  readonly get: (worktreeId: WorktreeId) => Effect.Effect<Worktree | null>;
   readonly remove: (
     worktreeId: WorktreeId,
     force: boolean,
@@ -27,6 +35,9 @@ export interface WorktreeServiceShape {
     void,
     WorktreeNotFoundError | WorktreeDirtyError | WorktreeRemoveError
   >;
+  readonly restore: (
+    snapshot: WorktreeRestoreSnapshot,
+  ) => Effect.Effect<Worktree, WorktreeRemoveError>;
 }
 
 export class WorktreeService extends Context.Tag("memoize/WorktreeService")<

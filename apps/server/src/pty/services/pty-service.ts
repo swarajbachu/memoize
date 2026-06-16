@@ -24,9 +24,8 @@ export interface PtyServiceShape {
     cols: number,
     rows: number,
   ) => Effect.Effect<void, PtyNotFoundError>;
-  readonly close: (
-    ptyId: PtyId,
-  ) => Effect.Effect<void, PtyNotFoundError>;
+  readonly close: (ptyId: PtyId) => Effect.Effect<void, PtyNotFoundError>;
+  readonly closeByCwdPrefix: (cwdPrefix: string) => Effect.Effect<void>;
   readonly subscribe: (
     ptyId: PtyId,
   ) => Stream.Stream<typeof PtyEvent.Type, PtyNotFoundError>;

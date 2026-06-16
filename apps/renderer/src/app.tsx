@@ -11,6 +11,7 @@ import {
 import { ChatComposer } from "./components/chat-composer";
 import { ChatCreatingPanel } from "./components/chat-creating-panel.tsx";
 import { ChatLanding } from "./components/chat-landing.tsx";
+import { ArchivedChatsPage } from "./components/archived-chats-page.tsx";
 import { CliUpgradeBanner } from "./components/cli-upgrade-banner.tsx";
 import { IndexProgressBanner } from "./components/index-progress-banner.tsx";
 import { TooltipProvider } from "./components/ui/tooltip.tsx";
@@ -368,6 +369,17 @@ function MainShell() {
                 </>
               ) : (
                 <ChatLanding />
+              )}
+            </div>
+            <div
+              hidden={activeMainTab !== "archives"}
+              className="flex min-h-0 flex-1 flex-col"
+            >
+              {activeMainTab === "archives" && (
+                <ArchivedChatsPage
+                  projectId={selectedFolderId}
+                  projectName={selectedFolder?.name ?? "No repository selected"}
+                />
               )}
             </div>
             {openFile !== null && (

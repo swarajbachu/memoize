@@ -93,9 +93,7 @@ export function MainTabs({ projectId, emptyLabel }: Props) {
   const tabs = useMemo(() => {
     if (activeChatId === null) return EMPTY_SESSIONS;
     return projectSessions
-      .filter(
-        (row) => row.chatId === activeChatId && row.archivedAt === null,
-      )
+      .filter((row) => row.chatId === activeChatId && row.archivedAt === null)
       .slice()
       .sort((a, b) => {
         const aTs = new Date(a.createdAt).getTime();
@@ -117,7 +115,10 @@ export function MainTabs({ projectId, emptyLabel }: Props) {
         {tabs.map((session) => {
           const isActive =
             activeMainTab === "chat" && selectedSessionId === session.id;
-          const modelLabel = lookupModelLabel(session.providerId, session.model);
+          const modelLabel = lookupModelLabel(
+            session.providerId,
+            session.model,
+          );
           const tooltip = modelLabel
             ? `${session.title} — ${PROVIDER_LABEL[session.providerId]} · ${modelLabel}`
             : session.title;
@@ -154,6 +155,13 @@ export function MainTabs({ projectId, emptyLabel }: Props) {
             onClose={closeFileTab}
           />
         )}
+        {activeMainTab === "archives" && (
+          <TabButton
+            active
+            onClick={() => setActiveMainTab("archives")}
+            label="Archived"
+          />
+        )}
       </div>
       <div className="flex-1" />
     </header>
@@ -187,8 +195,7 @@ const closeChatTab = async (sessionId: SessionId): Promise<void> => {
   }
   if (projectId === null || session === null) return;
 
-  const projectRows =
-    sessions.sessionsByProject[projectId] ?? EMPTY_SESSIONS;
+  const projectRows = sessions.sessionsByProject[projectId] ?? EMPTY_SESSIONS;
   // Live siblings in the same chat (excluding the one we're closing) sorted
   // by creation time — used to pick the next active tab and to detect the
   // "last tab" case.
@@ -208,7 +215,9 @@ const closeChatTab = async (sessionId: SessionId): Promise<void> => {
   if (siblings.length > 0) {
     // Not the last tab — archive and refocus the right neighbor (else left).
     const idx = projectRows
-      .filter((row) => row.chatId === session!.chatId && row.archivedAt === null)
+      .filter(
+        (row) => row.chatId === session!.chatId && row.archivedAt === null,
+      )
       .sort(
         (a, b) =>
           new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
@@ -331,12 +340,14 @@ function ChatTabButton({
   );
 }
 
-function NewChatTabButton({ chatId }: { chatId: import("@memoize/wire").ChatId }) {
+function NewChatTabButton({
+  chatId,
+}: {
+  chatId: import("@memoize/wire").ChatId;
+}) {
   const refresh = useProvidersStore((s) => s.refresh);
   const create = useSessionsStore((s) => s.create);
-  const creating = useSessionsStore(
-    (s) => s.creatingByChat[chatId] === true,
-  );
+  const creating = useSessionsStore((s) => s.creatingByChat[chatId] === true);
   const defaultProviderId = useSettingsStore((s) => s.defaultProviderId);
   const defaultModelByProvider = useSettingsStore(
     (s) => s.defaultModelByProvider,

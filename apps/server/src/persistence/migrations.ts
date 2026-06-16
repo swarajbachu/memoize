@@ -12,6 +12,7 @@ import { Migration0009PermissionModeAndToolSearch } from "./migrations/0009_perm
 import { Migration0010NestedSessions } from "./migrations/0010_nested_sessions.ts";
 import { Migration0011ChatsTable } from "./migrations/0011_chats_table.ts";
 import { Migration0012ChatIdNotNull } from "./migrations/0012_chat_id_not_null.ts";
+import { Migration0013ArchiveCleanup } from "./migrations/0013_archive_cleanup.ts";
 
 /**
  * Runs every numbered migration on boot. `fromRecord` keys must match
@@ -36,5 +37,6 @@ export const MigrationsLive = SqliteMigrator.layer({
     "0010_nested_sessions": Migration0010NestedSessions,
     "0011_chats_table": Migration0011ChatsTable,
     "0012_chat_id_not_null": Migration0012ChatIdNotNull,
+    "0013_archive_cleanup": Migration0013ArchiveCleanup,
   }),
 });
