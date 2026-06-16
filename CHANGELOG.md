@@ -5,6 +5,23 @@ All notable changes to memoize will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2]
+
+### Added
+- Three-way "add project" menu (Open project / Open GitHub project / Quick start) with clone and create-project dialogs — templates Empty / Next.js / Turborepo and an optional private GitHub repo on create (gh-authed). (#104)
+- Project Plan tray docked above the composer: surfaces the agent's TodoWrite task list as a collapsible panel with an "X of Y Done" count and per-item status icons, reading the list from either the Claude (`tool_use` input) or Grok (`tool_result` output) shape. (#107)
+
+### Changed
+- Git-not-a-repo handling: a new `git.init` RPC and a shared "Initialize Git repository" CTA replace the raw error payload across the Changes, PR, and Diff tabs; the failure is classified inside the Effect (typed `GitNotARepoError`) so the CTA fires reliably, and the Diff view re-fetches immediately after an in-place init. (#104, #105)
+- A lone terminal now spans the full pane width; the terminal-list sidebar appears only once there are 2+ shells, with a floating hover-revealed `+` to add more. (#104)
+- Grok native tool results (`list_dir` / `grep` / `read` / `edit`) now render as clean rows — directory tree, grouped grep matches, file contents, and real diffs — instead of raw JSON envelopes or byte-array char codes. (#106)
+
+### Fixed
+- Auto-update on macOS was stranded: `electron-updater` (Squirrel.Mac) needs a ZIP of the `.app`, but releases only shipped a DMG. Each release now ships a `zip/universal` target alongside the DMG, so auto-update works from 0.3.2 onward. (#108)
+- External (http/https) links now open in the system browser instead of hijacking the app window or spawning an in-app Chromium window; the Vite dev origin is whitelisted so HMR is unaffected. (#108)
+- Create-project dialog no longer crashes — the base-ui Checkbox hook error is gone, replaced with a native checkbox. (#105)
+- Files outside the project folder can be opened, edited, and saved via dedicated external-file RPCs, with clickable out-of-workspace file chips. (#105)
+
 ## [0.3.1]
 
 ### Added
