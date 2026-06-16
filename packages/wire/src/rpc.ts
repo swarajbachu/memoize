@@ -14,6 +14,14 @@ import {
 } from "./agent.ts";
 import { AttachmentTouchRpc, AttachmentUploadRpc } from "./attachment.ts";
 import {
+  BrowserCommandsRpc,
+  BrowserFillForOriginRpc,
+  BrowserListCredentialsRpc,
+  BrowserRemoveCredentialRpc,
+  BrowserRespondRpc,
+  BrowserSetCredentialRpc,
+} from "./browser.ts";
+import {
   IndexFindReferencesRpc,
   IndexListModuleRpc,
   IndexReadChunkRpc,
@@ -38,6 +46,8 @@ import {
   GitHeadChangedRpc,
   GitInitRpc,
   GitLogRpc,
+  GitMarkReadyRpc,
+  GitMergePrRpc,
   GitOriginRpc,
   GitPrDetailsRpc,
   GitPrStateRpc,
@@ -159,6 +169,8 @@ export const MemoizeRpcs = RpcGroup.make(
   GitDiffRpc,
   GitCommitRpc,
   GitPushRpc,
+  GitMergePrRpc,
+  GitMarkReadyRpc,
   GitInitRpc,
   GitFixFailingChecksRpc,
   FsTreeRpc,
@@ -213,6 +225,12 @@ export const MemoizeRpcs = RpcGroup.make(
   PermissionListPendingRpc,
   PermissionListDecisionsRpc,
   PermissionRevokeDecisionRpc,
+  BrowserCommandsRpc,
+  BrowserRespondRpc,
+  BrowserSetCredentialRpc,
+  BrowserListCredentialsRpc,
+  BrowserRemoveCredentialRpc,
+  BrowserFillForOriginRpc,
   WorktreeCreateRpc,
   WorktreeListRpc,
   WorktreeGetRpc,

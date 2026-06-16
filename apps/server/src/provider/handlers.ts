@@ -9,6 +9,8 @@ import { Effect, Layer, Stream } from "effect";
 
 import { resolveCliPath, resolveUpdateCommand } from "./availability.ts";
 import { loadOpencodeInventory } from "./drivers/opencode.ts";
+import { BrowserBridgeService } from "./services/browser-bridge-service.ts";
+import { CredentialsService } from "./services/credentials-service.ts";
 import { startProviderLogin } from "./services/login-service.ts";
 import { startProviderUpdate } from "./services/update-service.ts";
 import { MessageStore } from "./services/message-store.ts";
@@ -392,6 +394,60 @@ const PermissionRevokeDecision = MemoizeRpcs.toLayerHandler(
     Effect.flatMap(PermissionService, (svc) => svc.revokeDecision(requestId)),
 );
 
+// ---------------------------------------------------------------------------
+// browser.* — in-app agent browser bridge. The renderer's BrowserPane
+// subscribes to `browser.commands`, drives the `<webview>`, and posts the
+// outcome back via `browser.respond`, resolving the Deferred the MCP browser
+// tool is awaiting. Mirrors the permission.* request/decide pair.
+// ---------------------------------------------------------------------------
+
+const BrowserCommands = MemoizeRpcs.toLayerHandler("browser.commands", () =>
+  Stream.unwrap(
+    Effect.map(BrowserBridgeService, (svc) => svc.commands()),
+  ),
+);
+
+const BrowserRespond = MemoizeRpcs.toLayerHandler(
+  "browser.respond",
+  ({ result }) =>
+    Effect.flatMap(BrowserBridgeService, (svc) => svc.respond(result)),
+);
+
+// Browser credentials — DUMMY/TEST logins kept in the keychain. A keychain
+// failure is swallowed to a safe value (void / [] / null) rather than
+// surfacing a defect: a missing credential just means autofill no-ops.
+const BrowserSetCredential = MemoizeRpcs.toLayerHandler(
+  "browser.setCredential",
+  ({ origin, username, password }) =>
+    Effect.flatMap(CredentialsService, (svc) =>
+      svc.setBrowser(origin, username, password),
+    ).pipe(Effect.catchAll(() => Effect.void)),
+);
+
+const BrowserListCredentials = MemoizeRpcs.toLayerHandler(
+  "browser.listCredentials",
+  () =>
+    Effect.flatMap(CredentialsService, (svc) => svc.listBrowser()).pipe(
+      Effect.catchAll(() => Effect.succeed([])),
+    ),
+);
+
+const BrowserRemoveCredential = MemoizeRpcs.toLayerHandler(
+  "browser.removeCredential",
+  ({ origin }) =>
+    Effect.flatMap(CredentialsService, (svc) => svc.removeBrowser(origin)).pipe(
+      Effect.catchAll(() => Effect.void),
+    ),
+);
+
+const BrowserFillForOrigin = MemoizeRpcs.toLayerHandler(
+  "browser.fillForOrigin",
+  ({ origin }) =>
+    Effect.flatMap(CredentialsService, (svc) => svc.getBrowser(origin)).pipe(
+      Effect.catchAll(() => Effect.succeed(null)),
+    ),
+);
+
 export const ProviderHandlersLayer = Layer.mergeAll(
   Availability,
   SetCredential,
@@ -436,4 +492,10 @@ export const ProviderHandlersLayer = Layer.mergeAll(
   PermissionListPending,
   PermissionListDecisions,
   PermissionRevokeDecision,
+  BrowserCommands,
+  BrowserRespond,
+  BrowserSetCredential,
+  BrowserListCredentials,
+  BrowserRemoveCredential,
+  BrowserFillForOrigin,
 );

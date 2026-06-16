@@ -19,6 +19,7 @@ import {
   TooltipPopup,
   TooltipTrigger,
 } from "~/components/ui/tooltip";
+import { resolveAutoWorktreeId } from "~/lib/auto-worktree";
 import { useChatsStore } from "~/store/chats";
 import { useSettingsStore } from "~/store/settings";
 import { useWorkspaceStore } from "~/store/workspace";
@@ -103,9 +104,14 @@ export function ChatLanding() {
     const model = defaultModelByProvider[defaultProviderId];
     setSubmitError(null);
     setPendingPrompt(trimmed);
+    // Spin up the worktree before creating the chat so the session runs in
+    // it — without this the landing screen promised a worktree (see the
+    // ChatCreatingPanel below) but stranded the agent in the main checkout.
+    const worktreeId = await resolveAutoWorktreeId(selectedFolderId);
     const result = await create(selectedFolderId, defaultProviderId, model, {
       initialPrompt: trimmed,
       runtimeMode: defaultRuntimeMode,
+      worktreeId,
     });
     if (result === null) {
       const reason =

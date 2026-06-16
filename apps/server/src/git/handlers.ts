@@ -10,7 +10,9 @@ const Log = MemoizeRpcs.toLayerHandler("git.log", ({ folderId, limit }) =>
 const Status = MemoizeRpcs.toLayerHandler(
   "git.status",
   ({ folderId, worktreeId }) =>
-    Effect.flatMap(GitService, (svc) => svc.status(folderId, worktreeId ?? null)),
+    Effect.flatMap(GitService, (svc) =>
+      svc.status(folderId, worktreeId ?? null),
+    ),
 );
 
 const HeadChanged = MemoizeRpcs.toLayerHandler(
@@ -71,6 +73,22 @@ const Push = MemoizeRpcs.toLayerHandler(
     Effect.flatMap(GitService, (svc) => svc.push(folderId, worktreeId ?? null)),
 );
 
+const MergePr = MemoizeRpcs.toLayerHandler(
+  "git.mergePr",
+  ({ folderId, worktreeId, action, method, deleteBranch }) =>
+    Effect.flatMap(GitService, (svc) =>
+      svc.mergePr(folderId, action, method, deleteBranch, worktreeId ?? null),
+    ),
+);
+
+const MarkReady = MemoizeRpcs.toLayerHandler(
+  "git.markReady",
+  ({ folderId, worktreeId }) =>
+    Effect.flatMap(GitService, (svc) =>
+      svc.markReady(folderId, worktreeId ?? null),
+    ),
+);
+
 const Init = MemoizeRpcs.toLayerHandler("git.init", ({ folderId }) =>
   Effect.flatMap(GitService, (svc) => svc.init(folderId)),
 );
@@ -94,6 +112,8 @@ export const GitHandlersLayer = Layer.mergeAll(
   Diff,
   Commit,
   Push,
+  MergePr,
+  MarkReady,
   Init,
   FixFailingChecks,
 );

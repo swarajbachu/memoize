@@ -1,6 +1,8 @@
 import {
   Brain01Icon,
+  BrowserIcon,
   BubbleChatIcon,
+  Camera01Icon,
   CheckListIcon,
   Copy01Icon,
   File01Icon,
@@ -78,7 +80,15 @@ export const iconForTool = (tool: string): IconHandle => {
       return GlobeIcon;
     case "TodoWrite":
       return CheckListIcon;
+    case "mcp__memoize__browser_navigate":
+      return BrowserIcon;
+    case "mcp__memoize__browser_screenshot":
+      return Camera01Icon;
     default: {
+      // Agent browser tools arrive as their MCP FQN; match by suffix so the
+      // exact-case list above stays the source of truth.
+      if (tool.endsWith("__browser_screenshot")) return Camera01Icon;
+      if (tool.includes("__browser_")) return BrowserIcon;
       // Heuristic fallback for any Grok-native or future tool we haven't
       // wired an exact case for yet. "list dir", "read file", "run shell"
       // etc. will now get a reasonable icon instead of the generic wrench.
@@ -908,6 +918,177 @@ const buildToolView = (
             text={toResultText(result.output) || stringifyJson(obj.agentsStates)}
             isError={result.isError}
           />
+        ),
+      };
+    }
+
+    case "mcp__memoize__browser_navigate": {
+      const targetUrl = asString(obj.url);
+      return {
+        icon: BrowserIcon,
+        label: "Browse",
+        trailing:
+          targetUrl !== null ? (
+            <InlineTextHint value={truncate(targetUrl, 64)} />
+          ) : undefined,
+        resultPanel: (result) => (
+          <PreBlock
+            text={toResultText(result.output) || "(loaded)"}
+            isError={result.isError}
+          />
+        ),
+      };
+    }
+
+    case "mcp__memoize__browser_screenshot": {
+      return {
+        icon: Camera01Icon,
+        label: "Screenshot",
+        trailing: <InlineTextHint value="in-app browser" />,
+        resultPanel: (result) =>
+          result.isError ? (
+            <PreBlock text={toResultText(result.output)} isError />
+          ) : (
+            <span className="text-[11px] text-muted-foreground">
+              Captured the visible page.
+            </span>
+          ),
+      };
+    }
+
+    case "mcp__memoize__browser_snapshot": {
+      return {
+        icon: BrowserIcon,
+        label: "Read page",
+        trailing: <InlineTextHint value="elements" />,
+        resultPanel: (result) => (
+          <PreBlock text={toResultText(result.output)} isError={result.isError} />
+        ),
+      };
+    }
+
+    case "mcp__memoize__browser_click": {
+      const ref = asString(obj.ref);
+      return {
+        icon: BrowserIcon,
+        label: "Click",
+        trailing: ref !== null ? <InlineTextHint value={ref} /> : undefined,
+        resultPanel: (result) => (
+          <PreBlock text={toResultText(result.output)} isError={result.isError} />
+        ),
+      };
+    }
+
+    case "mcp__memoize__browser_type": {
+      const typed = asString(obj.text);
+      return {
+        icon: BrowserIcon,
+        label: "Type",
+        trailing:
+          typed !== null ? (
+            <InlineTextHint value={truncate(typed, 48)} />
+          ) : undefined,
+        resultPanel: (result) => (
+          <PreBlock text={toResultText(result.output)} isError={result.isError} />
+        ),
+      };
+    }
+
+    case "mcp__memoize__browser_wait": {
+      const sel = asString(obj.selector);
+      const ms = typeof obj.ms === "number" ? `${obj.ms}ms` : null;
+      return {
+        icon: BrowserIcon,
+        label: "Wait",
+        trailing: <InlineTextHint value={sel ?? ms ?? "settle"} />,
+      };
+    }
+
+    case "mcp__memoize__browser_scroll": {
+      const dir = asString(obj.direction);
+      const ref = asString(obj.ref);
+      return {
+        icon: BrowserIcon,
+        label: "Scroll",
+        trailing: <InlineTextHint value={ref ?? dir ?? "down"} />,
+      };
+    }
+
+    case "mcp__memoize__browser_hover": {
+      const ref = asString(obj.ref);
+      return {
+        icon: BrowserIcon,
+        label: "Hover",
+        trailing: ref !== null ? <InlineTextHint value={ref} /> : undefined,
+      };
+    }
+
+    case "mcp__memoize__browser_select": {
+      const value = asString(obj.value);
+      return {
+        icon: BrowserIcon,
+        label: "Select",
+        trailing:
+          value !== null ? <InlineTextHint value={truncate(value, 40)} /> : undefined,
+        resultPanel: (result) => (
+          <PreBlock text={toResultText(result.output)} isError={result.isError} />
+        ),
+      };
+    }
+
+    case "mcp__memoize__browser_press": {
+      const key = asString(obj.key);
+      return {
+        icon: BrowserIcon,
+        label: "Press",
+        trailing: key !== null ? <InlineTextHint value={key} /> : undefined,
+      };
+    }
+
+    case "mcp__memoize__browser_read": {
+      return {
+        icon: File01Icon,
+        label: "Read page",
+        resultPanel: (result) => (
+          <PreBlock text={toResultText(result.output)} isError={result.isError} />
+        ),
+      };
+    }
+
+    case "mcp__memoize__browser_history": {
+      const action = asString(obj.action);
+      return {
+        icon: BrowserIcon,
+        label:
+          action === "back"
+            ? "Back"
+            : action === "forward"
+              ? "Forward"
+              : "Reload",
+      };
+    }
+
+    case "mcp__memoize__browser_console": {
+      return {
+        icon: TerminalIcon,
+        label: "Console",
+        resultPanel: (result) => (
+          <PreBlock text={toResultText(result.output)} isError={result.isError} />
+        ),
+      };
+    }
+
+    case "mcp__memoize__browser_login": {
+      const origin = asString(obj.origin);
+      return {
+        icon: BrowserIcon,
+        label: "Log in",
+        trailing:
+          origin !== null ? (
+            <InlineTextHint value={truncate(origin, 48)} />
+          ) : undefined,
+        resultPanel: (result) => (
+          <PreBlock text={toResultText(result.output)} isError={result.isError} />
         ),
       };
     }

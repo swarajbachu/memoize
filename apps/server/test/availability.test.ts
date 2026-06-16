@@ -2,13 +2,73 @@ import { describe, expect, it } from "bun:test";
 
 import {
   buildUpdateCommand,
+  compareCliVersion,
   deriveLatestAdvisory,
   grokAuthTestHelpers,
+  MIN_CODEX_CLI_VERSION,
+  parseCliVersion,
   selectCliPathCandidate,
-} from "./availability.ts";
+} from "../src/provider/availability.ts";
 
 const { parseGrokAuthJson, extractTier, decodeJwtPayload } =
   grokAuthTestHelpers;
+
+describe("parseCliVersion", () => {
+  it("pulls the first dotted triple out of labelled output", () => {
+    expect(parseCliVersion("codex-cli 0.27.0")).toMatchObject({
+      major: 0,
+      minor: 27,
+      patch: 0,
+    });
+    expect(parseCliVersion("1.0.123 (Claude Code)")).toMatchObject({
+      major: 1,
+      minor: 0,
+      patch: 123,
+    });
+  });
+
+  it("ignores pre-release suffixes when extracting the baseline triple", () => {
+    expect(parseCliVersion("2.5.9-beta.3")).toMatchObject({
+      major: 2,
+      minor: 5,
+      patch: 9,
+    });
+  });
+
+  it("retains the trimmed raw string", () => {
+    expect(parseCliVersion("  0.128.0  ")?.raw).toBe("0.128.0");
+  });
+
+  it("returns null for output without a version triple", () => {
+    expect(parseCliVersion("no version here")).toBe(null);
+    expect(parseCliVersion("1.2")).toBe(null); // only a pair, not a triple
+    expect(parseCliVersion("")).toBe(null);
+  });
+});
+
+describe("compareCliVersion", () => {
+  const v = (major: number, minor: number, patch: number) => ({
+    major,
+    minor,
+    patch,
+    raw: `${major}.${minor}.${patch}`,
+  });
+
+  it("orders by major, then minor, then patch", () => {
+    expect(compareCliVersion(v(1, 0, 0), v(0, 9, 9))).toBeGreaterThan(0);
+    expect(compareCliVersion(v(0, 128, 0), v(0, 127, 9))).toBeGreaterThan(0);
+    expect(compareCliVersion(v(0, 27, 1), v(0, 27, 2))).toBeLessThan(0);
+  });
+
+  it("returns 0 for equal versions", () => {
+    expect(compareCliVersion(v(0, 128, 0), v(0, 128, 0))).toBe(0);
+  });
+
+  it("detects an older-than-minimum codex CLI", () => {
+    const old = parseCliVersion("codex-cli 0.27.0")!;
+    expect(compareCliVersion(old, MIN_CODEX_CLI_VERSION)).toBeLessThan(0);
+  });
+});
 
 describe("grok auth probe — tier extraction & parseGrokAuthJson", () => {
   it("decodeJwtPayload handles a real-ish JWT payload", () => {
