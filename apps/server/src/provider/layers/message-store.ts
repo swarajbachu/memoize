@@ -1,16 +1,13 @@
 import { SqlClient } from "@effect/sql";
-import {
-  Effect,
-  Fiber,
-  Layer,
-  PubSub,
-  Ref,
-  Stream,
-} from "effect";
+import { Effect, Fiber, Layer, PubSub, Ref, Stream } from "effect";
+import { spawn } from "node:child_process";
 
 import {
   Chat,
   ChatAlreadyStartedError,
+  ChatArchiveScriptError,
+  ChatArchiveTimeoutError,
+  ChatArchiveWorktreeError,
   type ChatId,
   ChatNotFoundError,
   DEFAULT_PERMISSION_MODE,
@@ -34,12 +31,15 @@ import {
   SessionNotFoundError,
   SessionStartError,
   type SkillRef,
-  type WorktreeId,
+  type Worktree,
+  WorktreeId,
 } from "@memoize/wire";
 
 import { WorktreeService } from "../../worktree/services/worktree-service.ts";
 
 import { NdjsonLogger } from "../../persistence/ndjson-logger.ts";
+import { PtyService } from "../../pty/services/pty-service.ts";
+import { RepositorySettingsService } from "../../repository-settings/services/repository-settings-service.ts";
 import {
   MessageStore,
   type CreateChatInput,
@@ -80,6 +80,7 @@ interface ChatRow {
   readonly title: string;
   readonly active_session_id: string | null;
   readonly archived_at: string | null;
+  readonly archived_worktree_json: string | null;
   readonly created_at: string;
   readonly updated_at: string;
 }
@@ -92,7 +93,56 @@ const SESSION_COLUMNS =
 
 const CHAT_COLUMNS =
   "id, project_id, worktree_id, title, active_session_id, " +
-  "archived_at, created_at, updated_at";
+  "archived_at, archived_worktree_json, created_at, updated_at";
+
+const ARCHIVE_SCRIPT_TIMEOUT_MS = 10 * 60 * 1000;
+const ARCHIVE_OUTPUT_LIMIT = 12_000;
+
+interface ArchivedWorktreeSnapshot {
+  readonly id: string;
+  readonly projectId: string;
+  readonly path: string;
+  readonly name: string;
+  readonly branch: string;
+  readonly baseBranch: string;
+  readonly createdAt: string;
+}
+
+const truncateArchiveOutput = (value: string): string => {
+  if (value.length <= ARCHIVE_OUTPUT_LIMIT) return value;
+  return `…${value.slice(value.length - ARCHIVE_OUTPUT_LIMIT)}`;
+};
+
+const parseArchivedWorktreeSnapshot = (
+  raw: string | null,
+): ArchivedWorktreeSnapshot | null => {
+  if (raw === null || raw.length === 0) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<ArchivedWorktreeSnapshot>;
+    if (
+      typeof parsed.id !== "string" ||
+      typeof parsed.projectId !== "string" ||
+      typeof parsed.path !== "string" ||
+      typeof parsed.name !== "string" ||
+      typeof parsed.branch !== "string" ||
+      typeof parsed.baseBranch !== "string" ||
+      typeof parsed.createdAt !== "string"
+    ) {
+      return null;
+    }
+    return {
+      id: parsed.id,
+      projectId: parsed.projectId,
+      path: parsed.path,
+      name: parsed.name,
+      branch: parsed.branch,
+      baseBranch: parsed.baseBranch,
+      createdAt: parsed.createdAt,
+    };
+  } catch {
+    return null;
+  }
+};
 
 const parseAgents = (
   raw: string | null,
@@ -345,7 +395,9 @@ const formatProviderFailure = (cause: unknown): string => {
       typeof record["sessionId"] === "string" ? record["sessionId"] : null;
     if (reason !== null && reason.length > 0) {
       const provider = providerId !== null ? `${providerId}: ` : "";
-      return tag !== null ? `${tag}: ${provider}${reason}` : `${provider}${reason}`;
+      return tag !== null
+        ? `${tag}: ${provider}${reason}`
+        : `${provider}${reason}`;
     }
     if (sessionId !== null) {
       return tag !== null
@@ -368,6 +420,8 @@ export const MessageStoreLive = Layer.scoped(
     const provider = yield* ProviderService;
     const ndjson = yield* NdjsonLogger;
     const worktrees = yield* WorktreeService;
+    const repositorySettings = yield* RepositorySettingsService;
+    const ptys = yield* PtyService;
 
     /**
      * Resolve the cwd a session should run in. NULL `worktreeId` falls
@@ -380,6 +434,105 @@ export const MessageStoreLive = Layer.scoped(
       worktreeId === null
         ? Effect.succeed(undefined)
         : Effect.map(worktrees.get(worktreeId), (wt) => wt?.path ?? undefined);
+
+    const projectPath = (projectId: FolderId): Effect.Effect<string | null> =>
+      Effect.gen(function* () {
+        const rows = yield* sql<{ readonly path: string }>`
+          SELECT path FROM projects WHERE id = ${projectId} LIMIT 1
+        `.pipe(Effect.orDie);
+        return rows[0]?.path ?? null;
+      });
+
+    const runArchiveScript = ({
+      chatId,
+      script,
+      cwd,
+      env,
+    }: {
+      readonly chatId: ChatId;
+      readonly script: string;
+      readonly cwd: string;
+      readonly env: Readonly<Record<string, string>>;
+    }) =>
+      Effect.tryPromise({
+        try: () =>
+          new Promise<{ readonly output: string }>((resolve, reject) => {
+            let output = "";
+            let timedOut = false;
+            const child = spawn("/bin/zsh", ["-lc", script], {
+              cwd,
+              env: { ...(process.env as Record<string, string>), ...env },
+              stdio: ["ignore", "pipe", "pipe"],
+            });
+
+            const append = (chunk: unknown) => {
+              output = truncateArchiveOutput(output + String(chunk));
+            };
+            child.stdout?.on("data", append);
+            child.stderr?.on("data", append);
+
+            const timer = setTimeout(() => {
+              timedOut = true;
+              try {
+                child.kill("SIGKILL");
+              } catch {
+                // already exited
+              }
+            }, ARCHIVE_SCRIPT_TIMEOUT_MS);
+
+            child.on("error", (err) => {
+              clearTimeout(timer);
+              reject(
+                new ChatArchiveScriptError({
+                  chatId,
+                  exitCode: null,
+                  signal: null,
+                  output: truncateArchiveOutput(
+                    output ||
+                      (err instanceof Error ? err.message : String(err)),
+                  ),
+                }),
+              );
+            });
+
+            child.on("close", (code, signal) => {
+              clearTimeout(timer);
+              const finalOutput = truncateArchiveOutput(output);
+              if (timedOut) {
+                reject(
+                  new ChatArchiveTimeoutError({
+                    chatId,
+                    timeoutMs: ARCHIVE_SCRIPT_TIMEOUT_MS,
+                    output: finalOutput,
+                  }),
+                );
+                return;
+              }
+              if (code !== 0) {
+                reject(
+                  new ChatArchiveScriptError({
+                    chatId,
+                    exitCode: code,
+                    signal,
+                    output: finalOutput,
+                  }),
+                );
+                return;
+              }
+              resolve({ output: finalOutput });
+            });
+          }),
+        catch: (err) =>
+          err instanceof ChatArchiveScriptError ||
+          err instanceof ChatArchiveTimeoutError
+            ? err
+            : new ChatArchiveScriptError({
+                chatId,
+                exitCode: null,
+                signal: null,
+                output: err instanceof Error ? err.message : String(err),
+              }),
+      });
 
     // Project-id cache so the per-message NDJSON append doesn't hit the DB
     // for every event. Populated lazily on first append per session.
@@ -410,7 +563,10 @@ export const MessageStoreLive = Layer.scoped(
      */
     const agentsBySession = new Map<
       SessionId,
-      { agents: Readonly<Record<string, AgentDefinition>>; enableSubagents: boolean }
+      {
+        agents: Readonly<Record<string, AgentDefinition>>;
+        enableSubagents: boolean;
+      }
     >();
 
     /**
@@ -431,7 +587,9 @@ export const MessageStoreLive = Layer.scoped(
             SELECT project_id FROM sessions WHERE id = ${sessionId} LIMIT 1
           `.pipe(
             Effect.catchAll(() =>
-              Effect.succeed([] as ReadonlyArray<{ readonly project_id: string }>),
+              Effect.succeed(
+                [] as ReadonlyArray<{ readonly project_id: string }>,
+              ),
             ),
           );
           if (rows.length === 0) return;
@@ -522,8 +680,7 @@ export const MessageStoreLive = Layer.scoped(
         return sessionFromRow(row);
       });
 
-    const agentsFor = (sessionId: SessionId) =>
-      agentsBySession.get(sessionId);
+    const agentsFor = (sessionId: SessionId) => agentsBySession.get(sessionId);
 
     const persistMessage = (
       sessionId: SessionId,
@@ -773,7 +930,7 @@ export const MessageStoreLive = Layer.scoped(
       Effect.gen(function* () {
         const rows = yield* sql<ChatRow>`
           SELECT id, project_id, worktree_id, title, active_session_id,
-                 archived_at, created_at, updated_at
+                 archived_at, archived_worktree_json, created_at, updated_at
           FROM chats WHERE id = ${chatId} LIMIT 1
         `.pipe(Effect.orDie);
         const row = rows[0];
@@ -803,7 +960,10 @@ export const MessageStoreLive = Layer.scoped(
         // Project + worktree are inherited from the chat row — clients no
         // longer pass them at session-create time. Fail-fast on missing /
         // archived chats so we never leave a stray provider session behind.
-        const chatRow = yield* lookupChatForSession(input.chatId, input.providerId);
+        const chatRow = yield* lookupChatForSession(
+          input.chatId,
+          input.providerId,
+        );
         const projectId = chatRow.project_id as FolderId;
         const worktreeId: WorktreeId | null =
           chatRow.worktree_id === null
@@ -828,7 +988,10 @@ export const MessageStoreLive = Layer.scoped(
         const initialRuntimeMode = input.runtimeMode ?? DEFAULT_RUNTIME_MODE;
         runtimeModeBySession.set(sessionId, initialRuntimeMode);
         permissionModeBySession.set(sessionId, initialPermissionMode);
-        if (input.agents !== undefined && Object.keys(input.agents).length > 0) {
+        if (
+          input.agents !== undefined &&
+          Object.keys(input.agents).length > 0
+        ) {
           agentsBySession.set(sessionId, {
             agents: input.agents,
             enableSubagents: effectiveEnableSubagents,
@@ -836,7 +999,8 @@ export const MessageStoreLive = Layer.scoped(
         }
         const now = new Date();
         const nowIso = now.toISOString();
-        const title = input.title?.trim() || titleFromInitial(input.initialPrompt);
+        const title =
+          input.title?.trim() || titleFromInitial(input.initialPrompt);
         const agentsJson =
           input.agents !== undefined && Object.keys(input.agents).length > 0
             ? JSON.stringify({
@@ -1110,9 +1274,9 @@ export const MessageStoreLive = Layer.scoped(
         // the row sits in the DB until the next hydrate.
         yield* broadcastMessage(sessionId, persisted);
         yield* ndjsonAppend(sessionId, persisted);
-        yield* provider.answerQuestion(sessionId, itemId, answers).pipe(
-          Effect.catchAll(() => Effect.void),
-        );
+        yield* provider
+          .answerQuestion(sessionId, itemId, answers)
+          .pipe(Effect.catchAll(() => Effect.void));
       });
 
     /**
@@ -1162,7 +1326,9 @@ export const MessageStoreLive = Layer.scoped(
         // fiber; the message + status pubsubs stay alive so the renderer's
         // streams remain connected. sendMessage's "send fails → restart"
         // path reads sessions.model so the next turn picks up the new model.
-        yield* provider.close(sessionId).pipe(Effect.catchAll(() => Effect.void));
+        yield* provider
+          .close(sessionId)
+          .pipe(Effect.catchAll(() => Effect.void));
         yield* interruptProviderFiber(sessionId);
         yield* setStatus(sessionId, "idle");
       });
@@ -1203,7 +1369,9 @@ export const MessageStoreLive = Layer.scoped(
         `.pipe(Effect.orDie);
         // See setModel: keep the pubsubs alive so the renderer's streams
         // stay connected across the provider swap.
-        yield* provider.close(sessionId).pipe(Effect.catchAll(() => Effect.void));
+        yield* provider
+          .close(sessionId)
+          .pipe(Effect.catchAll(() => Effect.void));
         yield* interruptProviderFiber(sessionId);
         yield* setStatus(sessionId, "idle");
       });
@@ -1235,7 +1403,9 @@ export const MessageStoreLive = Layer.scoped(
         yield* lookupSession(sessionId);
         // Best-effort: provider may not know the id (already closed) — that's
         // not an error from the user's perspective.
-        yield* provider.close(sessionId).pipe(Effect.catchAll(() => Effect.void));
+        yield* provider
+          .close(sessionId)
+          .pipe(Effect.catchAll(() => Effect.void));
         yield* teardownSubscription(sessionId);
         yield* sql`DELETE FROM sessions WHERE id = ${sessionId}`.pipe(
           Effect.orDie,
@@ -1253,7 +1423,7 @@ export const MessageStoreLive = Layer.scoped(
       Effect.gen(function* () {
         const rows = yield* sql<ChatRow>`
           SELECT id, project_id, worktree_id, title, active_session_id,
-                 archived_at, created_at, updated_at
+                 archived_at, archived_worktree_json, created_at, updated_at
           FROM chats WHERE id = ${chatId} LIMIT 1
         `.pipe(Effect.orDie);
         if (rows.length === 0) {
@@ -1270,13 +1440,13 @@ export const MessageStoreLive = Layer.scoped(
         const rows = includeArchived
           ? yield* sql<ChatRow>`
               SELECT id, project_id, worktree_id, title, active_session_id,
-                     archived_at, created_at, updated_at
+                     archived_at, archived_worktree_json, created_at, updated_at
               FROM chats WHERE project_id = ${projectId}
               ORDER BY updated_at DESC
             `.pipe(Effect.orDie)
           : yield* sql<ChatRow>`
               SELECT id, project_id, worktree_id, title, active_session_id,
-                     archived_at, created_at, updated_at
+                     archived_at, archived_worktree_json, created_at, updated_at
               FROM chats
               WHERE project_id = ${projectId} AND archived_at IS NULL
               ORDER BY updated_at DESC
@@ -1284,7 +1454,8 @@ export const MessageStoreLive = Layer.scoped(
         return rows.map(chatFromRow);
       });
 
-    const getChat: MessageStoreShape["getChat"] = (chatId) => lookupChat(chatId);
+    const getChat: MessageStoreShape["getChat"] = (chatId) =>
+      lookupChat(chatId);
 
     /**
      * Create a chat row AND its initial session in one effect. Both rows
@@ -1441,26 +1612,187 @@ export const MessageStoreLive = Layer.scoped(
 
     const archiveChat: MessageStoreShape["archiveChat"] = (chatId) =>
       Effect.gen(function* () {
-        yield* lookupChat(chatId);
+        const chat = yield* lookupChat(chatId);
+        if (chat.archivedAt !== null) {
+          return { chat, cleanup: null };
+        }
+
+        const settings = yield* repositorySettings.get(chat.projectId);
+        const worktree =
+          chat.worktreeId === null
+            ? null
+            : yield* worktrees.get(chat.worktreeId);
+        const snapshot =
+          worktree === null
+            ? null
+            : {
+                id: worktree.id,
+                projectId: worktree.projectId,
+                path: worktree.path,
+                name: worktree.name,
+                branch: worktree.branch,
+                baseBranch: worktree.baseBranch,
+                createdAt: worktree.createdAt.toISOString(),
+              };
+        const snapshotJson =
+          snapshot === null ? null : JSON.stringify(snapshot);
+
+        const liveSessions = yield* sql<{ readonly id: string }>`
+          SELECT id FROM sessions
+          WHERE chat_id = ${chatId} AND archived_at IS NULL
+        `.pipe(Effect.orDie);
+        for (const row of liveSessions) {
+          const sessionId = SessionId.make(row.id);
+          yield* provider
+            .close(sessionId)
+            .pipe(Effect.catchAll(() => Effect.void));
+          yield* interruptProviderFiber(sessionId);
+        }
+        if (worktree !== null) {
+          yield* ptys
+            .closeByCwdPrefix(worktree.path)
+            .pipe(Effect.catchAll(() => Effect.void));
+        }
+
+        let cleanup: { readonly ran: boolean; readonly output: string } | null =
+          null;
+        const script = settings.archiveCleanupScript?.trim() ?? "";
+        if (worktree !== null && script.length > 0) {
+          const rootPath = yield* projectPath(chat.projectId);
+          const result = yield* runArchiveScript({
+            chatId,
+            script: settings.archiveCleanupScript ?? "",
+            cwd: worktree.path,
+            env: {
+              MEMOIZE_ROOT_PATH: rootPath ?? "",
+              MEMOIZE_WORKSPACE_PATH: worktree.path,
+              MEMOIZE_CHAT_ID: chatId,
+              MEMOIZE_WORKTREE_ID: worktree.id,
+            },
+          });
+          cleanup = { ran: true, output: result.output };
+        } else if (worktree !== null) {
+          cleanup = { ran: false, output: "" };
+        }
+
+        if (worktree !== null && settings.archiveRemoveWorktree) {
+          yield* worktrees.remove(worktree.id, false).pipe(
+            Effect.mapError(
+              (err) =>
+                new ChatArchiveWorktreeError({
+                  chatId,
+                  reason:
+                    "reason" in err && typeof err.reason === "string"
+                      ? err.reason
+                      : err._tag,
+                }),
+            ),
+          );
+        }
+
         const nowIso = new Date().toISOString();
         yield* sql`
-          UPDATE chats SET archived_at = ${nowIso}, updated_at = ${nowIso}
+          UPDATE chats
+          SET archived_at = ${nowIso},
+              archived_worktree_json = ${snapshotJson},
+              updated_at = ${nowIso}
           WHERE id = ${chatId}
         `.pipe(Effect.asVoid, Effect.orDie);
         yield* sql`
           UPDATE sessions SET archived_at = ${nowIso}, updated_at = ${nowIso}
           WHERE chat_id = ${chatId} AND archived_at IS NULL
         `.pipe(Effect.asVoid, Effect.orDie);
+        return { chat: yield* lookupChat(chatId), cleanup };
       });
 
     const unarchiveChat: MessageStoreShape["unarchiveChat"] = (chatId) =>
       Effect.gen(function* () {
-        yield* lookupChat(chatId);
+        const chatRows = yield* sql<ChatRow>`
+          SELECT id, project_id, worktree_id, title, active_session_id,
+                 archived_at, archived_worktree_json, created_at, updated_at
+          FROM chats WHERE id = ${chatId} LIMIT 1
+        `.pipe(Effect.orDie);
+        const chatRow = chatRows[0];
+        if (chatRow === undefined) {
+          return yield* Effect.fail(new ChatNotFoundError({ chatId }));
+        }
+
+        const snapshot = parseArchivedWorktreeSnapshot(
+          chatRow.archived_worktree_json,
+        );
+        let restoredWorktree: Worktree | null = null;
+        let restoredWorktreeId: WorktreeId | null =
+          chatRow.worktree_id === null
+            ? null
+            : WorktreeId.make(chatRow.worktree_id);
+        if (snapshot !== null) {
+          const existing = yield* worktrees.get(WorktreeId.make(snapshot.id));
+          if (existing !== null) {
+            restoredWorktree = existing;
+            restoredWorktreeId = existing.id;
+          } else if (chatRow.worktree_id === null) {
+            restoredWorktree = yield* worktrees
+              .restore({
+                id: WorktreeId.make(snapshot.id),
+                projectId: snapshot.projectId as FolderId,
+                path: snapshot.path,
+                name: snapshot.name,
+                branch: snapshot.branch,
+                baseBranch: snapshot.baseBranch,
+                createdAt: new Date(snapshot.createdAt),
+              })
+              .pipe(
+                Effect.mapError(
+                  (err) =>
+                    new ChatArchiveWorktreeError({
+                      chatId,
+                      reason: err.reason,
+                    }),
+                ),
+              );
+            restoredWorktreeId = restoredWorktree.id;
+          }
+        }
+
         const nowIso = new Date().toISOString();
         yield* sql`
-          UPDATE chats SET archived_at = NULL, updated_at = ${nowIso}
+          UPDATE chats
+          SET archived_at = NULL,
+              worktree_id = ${restoredWorktreeId},
+              archived_worktree_json = NULL,
+              updated_at = ${nowIso}
           WHERE id = ${chatId}
         `.pipe(Effect.asVoid, Effect.orDie);
+        if (restoredWorktreeId !== null) {
+          yield* sql`
+            UPDATE sessions
+            SET worktree_id = ${restoredWorktreeId}, updated_at = ${nowIso}
+            WHERE chat_id = ${chatId}
+          `.pipe(Effect.asVoid, Effect.orDie);
+        }
+        if (chatRow.archived_at !== null) {
+          yield* sql`
+            UPDATE sessions
+            SET archived_at = NULL, updated_at = ${nowIso}
+            WHERE chat_id = ${chatId}
+              AND archived_at = ${chatRow.archived_at}
+          `.pipe(Effect.asVoid, Effect.orDie);
+        }
+        const sessions = yield* sql<SessionRow>`
+          SELECT id, project_id, title, provider_id, model, status,
+                 archived_at, cursor, resume_strategy, runtime_mode,
+                 agents_json, worktree_id, chat_id, forked_from_session_id,
+                 forked_from_message_id, permission_mode, tool_search,
+                 created_at, updated_at
+          FROM sessions
+          WHERE chat_id = ${chatId} AND archived_at IS NULL
+          ORDER BY updated_at DESC
+        `.pipe(Effect.orDie);
+        return {
+          chat: yield* lookupChat(chatId),
+          sessions: sessions.map(sessionFromRow),
+          worktree: restoredWorktree,
+        };
       });
 
     const deleteChat: MessageStoreShape["deleteChat"] = (chatId) =>
@@ -1529,7 +1861,10 @@ export const MessageStoreLive = Layer.scoped(
           // so transitions during the SELECT window are still delivered.
           const pubsub = yield* getOrMakeStatusPubsub(sessionId);
           const dequeue = yield* pubsub.subscribe;
-          const initial: { readonly sessionId: SessionId; readonly status: Session["status"] } = {
+          const initial: {
+            readonly sessionId: SessionId;
+            readonly status: Session["status"];
+          } = {
             sessionId,
             status: session.status,
           };
@@ -1622,7 +1957,9 @@ export const MessageStoreLive = Layer.scoped(
         // a fresh handle attached to the same DB row. Keep the pubsubs
         // alive so renderer subscriptions stay connected across the
         // resume — only the event-pump fiber needs to restart.
-        yield* provider.close(sessionId).pipe(Effect.catchAll(() => Effect.void));
+        yield* provider
+          .close(sessionId)
+          .pipe(Effect.catchAll(() => Effect.void));
         yield* interruptProviderFiber(sessionId);
         runtimeModeBySession.set(session.id, session.runtimeMode);
         permissionModeBySession.set(session.id, session.permissionMode);
@@ -1808,9 +2145,9 @@ export const MessageStoreLive = Layer.scoped(
     ) =>
       Effect.gen(function* () {
         yield* lookupSession(sessionId);
-        yield* provider.interrupt(sessionId).pipe(
-          Effect.mapError(() => new SessionNotFoundError({ sessionId })),
-        );
+        yield* provider
+          .interrupt(sessionId)
+          .pipe(Effect.mapError(() => new SessionNotFoundError({ sessionId })));
       });
 
     const getSession: MessageStoreShape["getSession"] = (sessionId) =>

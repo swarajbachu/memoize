@@ -22,10 +22,29 @@ export const formatError = (err: unknown): string => {
     typeof err["providerId"] === "string" ? err["providerId"] : null;
   const sessionId =
     typeof err["sessionId"] === "string" ? err["sessionId"] : null;
+  const output = typeof err["output"] === "string" ? err["output"] : null;
+  const exitCode = typeof err["exitCode"] === "number" ? err["exitCode"] : null;
+  const timeoutMs =
+    typeof err["timeoutMs"] === "number" ? err["timeoutMs"] : null;
 
+  if (tag === "ChatArchiveScriptError") {
+    const status = exitCode === null ? "failed" : `exited ${exitCode}`;
+    return output !== null && output.trim().length > 0
+      ? `Archive cleanup ${status}:\n${output.trim()}`
+      : `Archive cleanup ${status}.`;
+  }
+  if (tag === "ChatArchiveTimeoutError") {
+    const seconds =
+      timeoutMs === null ? "the timeout" : `${Math.round(timeoutMs / 1000)}s`;
+    return output !== null && output.trim().length > 0
+      ? `Archive cleanup timed out after ${seconds}:\n${output.trim()}`
+      : `Archive cleanup timed out after ${seconds}.`;
+  }
   if (reason !== null && reason.length > 0) {
     const provider = providerId !== null ? `${providerId}: ` : "";
-    return tag !== null ? `${tag}: ${provider}${reason}` : `${provider}${reason}`;
+    return tag !== null
+      ? `${tag}: ${provider}${reason}`
+      : `${provider}${reason}`;
   }
   if (message !== null && message.length > 0) {
     return tag !== null ? `${tag}: ${message}` : message;

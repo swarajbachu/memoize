@@ -13,15 +13,12 @@ import { useWorkspaceStore } from "../store/workspace.ts";
 import { EMPTY_WORKTREES, useWorktreesStore } from "../store/worktrees.ts";
 import { ProviderIcon } from "./provider-icons.tsx";
 import { MODES_ORDER, MODE_META } from "./runtime-mode-meta.ts";
-import {
-  PROVIDER_LABEL,
-  RadioCheck,
-  SettingsFrame,
-} from "./settings-page.tsx";
+import { PROVIDER_LABEL, RadioCheck, SettingsFrame } from "./settings-page.tsx";
 import { Button } from "./ui/button.tsx";
 import { Card } from "./ui/card.tsx";
 import { Frame, FrameFooter, FrameHeader } from "./ui/frame.tsx";
 import { Switch } from "./ui/switch.tsx";
+import { Textarea } from "./ui/textarea.tsx";
 
 /**
  * Per-repository settings: provider/model/permission overrides plus
@@ -51,9 +48,7 @@ export function RepositorySettings({ projectId }: { projectId: FolderId }) {
   }
 
   if (settings === null) {
-    return (
-      <p className="text-sm text-muted-foreground">Loading settings…</p>
-    );
+    return <p className="text-sm text-muted-foreground">Loading settings…</p>;
   }
 
   return (
@@ -79,8 +74,16 @@ export function RepositorySettings({ projectId }: { projectId: FolderId }) {
       <WorktreeSection
         projectId={projectId}
         autoCreate={settings.autoCreateWorktree}
+        archiveCleanupScript={settings.archiveCleanupScript}
+        archiveRemoveWorktree={settings.archiveRemoveWorktree}
         onAutoCreateChange={(value) =>
           void update(projectId, { autoCreateWorktree: value })
+        }
+        onArchiveCleanupScriptChange={(value) =>
+          void update(projectId, { archiveCleanupScript: value })
+        }
+        onArchiveRemoveWorktreeChange={(value) =>
+          void update(projectId, { archiveRemoveWorktree: value })
         }
       />
     </>
@@ -241,8 +244,8 @@ function RuntimeModeOverrideSection({
   currentValue,
   onChange,
 }: {
-  currentValue: typeof MODES_ORDER[number] | null;
-  onChange: (v: typeof MODES_ORDER[number] | null) => void;
+  currentValue: (typeof MODES_ORDER)[number] | null;
+  onChange: (v: (typeof MODES_ORDER)[number] | null) => void;
 }) {
   const globalMode = useSettingsStore((s) => s.defaultRuntimeMode);
   const effective = currentValue ?? globalMode;
@@ -303,11 +306,19 @@ function RuntimeModeOverrideSection({
 function WorktreeSection({
   projectId,
   autoCreate,
+  archiveCleanupScript,
+  archiveRemoveWorktree,
   onAutoCreateChange,
+  onArchiveCleanupScriptChange,
+  onArchiveRemoveWorktreeChange,
 }: {
   projectId: FolderId;
   autoCreate: boolean;
+  archiveCleanupScript: string | null;
+  archiveRemoveWorktree: boolean;
   onAutoCreateChange: (v: boolean) => void;
+  onArchiveCleanupScriptChange: (v: string | null) => void;
+  onArchiveRemoveWorktreeChange: (v: boolean) => void;
 }) {
   const worktrees = useWorktreesStore(
     (s) => s.byProject[projectId] ?? EMPTY_WORKTREES,
@@ -323,14 +334,14 @@ function WorktreeSection({
 
   const sorted = useMemo(
     () =>
-      [...worktrees].sort((a, b) =>
-        b.createdAt.getTime() - a.createdAt.getTime(),
+      [...worktrees].sort(
+        (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
       ),
     [worktrees],
   );
 
   const onRemove = async (
-    worktreeId: typeof worktrees[number]["id"],
+    worktreeId: (typeof worktrees)[number]["id"],
     name: string,
     force: boolean,
   ) => {
@@ -356,12 +367,16 @@ function WorktreeSection({
       <SettingsFrame
         title="Auto-create a worktree for new chats"
         trailing={
-          <Switch
-            checked={autoCreate}
-            onCheckedChange={onAutoCreateChange}
-          />
+          <Switch checked={autoCreate} onCheckedChange={onAutoCreateChange} />
         }
         description={`When on, the composer's workspace picker pre-selects a fresh worktree. You can still flip back to "Current checkout" before sending the first message.`}
+      />
+
+      <ArchiveCleanupSection
+        script={archiveCleanupScript}
+        removeWorktree={archiveRemoveWorktree}
+        onScriptChange={onArchiveCleanupScriptChange}
+        onRemoveWorktreeChange={onArchiveRemoveWorktreeChange}
       />
 
       <Frame>
@@ -375,8 +390,8 @@ function WorktreeSection({
         <Card>
           {sorted.length === 0 ? (
             <p className="px-4 py-8 text-center text-xs text-muted-foreground">
-              No worktrees yet. Memoize creates one for you when you start a
-              new chat.
+              No worktrees yet. Memoize creates one for you when you start a new
+              chat.
             </p>
           ) : (
             <ul className="flex flex-col divide-y divide-border/40">
@@ -454,5 +469,67 @@ function WorktreeSection({
         </FrameFooter>
       </Frame>
     </>
+  );
+}
+
+function ArchiveCleanupSection({
+  script,
+  removeWorktree,
+  onScriptChange,
+  onRemoveWorktreeChange,
+}: {
+  script: string | null;
+  removeWorktree: boolean;
+  onScriptChange: (v: string | null) => void;
+  onRemoveWorktreeChange: (v: boolean) => void;
+}) {
+  const [draft, setDraft] = useState(script ?? "");
+
+  useEffect(() => {
+    setDraft(script ?? "");
+  }, [script]);
+
+  const persist = () => {
+    const next = draft.trim().length === 0 ? null : draft;
+    if ((script ?? "") === (next ?? "")) return;
+    onScriptChange(next);
+  };
+
+  return (
+    <Frame>
+      <FrameHeader className="flex flex-row items-center justify-between px-2 py-2 w-full">
+        <div className="flex min-w-0 flex-col">
+          <p className="text-sm font-semibold text-foreground">
+            Archive cleanup
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Runs only for chats bound to a worktree.
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="text-xs text-muted-foreground">Remove worktree</span>
+          <Switch
+            checked={removeWorktree}
+            onCheckedChange={onRemoveWorktreeChange}
+          />
+        </div>
+      </FrameHeader>
+      <Card className="p-3">
+        <Textarea
+          value={draft}
+          onChange={(event) => setDraft(event.currentTarget.value)}
+          onBlur={persist}
+          spellCheck={false}
+          placeholder={'rm -rf node_modules .next\npkill -f "next dev" || true'}
+          className="min-h-28 resize-y font-mono text-xs"
+        />
+      </Card>
+      <FrameFooter className="px-2 py-1 w-full">
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          Memoize runs this with <span className="font-mono">zsh -lc</span> from
+          the worktree. A non-zero exit keeps the chat unarchived.
+        </p>
+      </FrameFooter>
+    </Frame>
   );
 }

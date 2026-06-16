@@ -16,7 +16,10 @@ import {
 
 import { WorkspaceService } from "../../workspace/services/workspace-service.ts";
 import { generateCoolName } from "../cool-name.ts";
-import { WorktreeService } from "../services/worktree-service.ts";
+import {
+  WorktreeService,
+  type WorktreeRestoreSnapshot,
+} from "../services/worktree-service.ts";
 
 interface WorktreeRow {
   readonly id: string;
@@ -48,7 +51,10 @@ export const WorktreeServiceLive = Layer.effect(
     const sql = yield* SqlClient.SqlClient;
 
     const collectText = (
-      s: Stream.Stream<Uint8Array, import("@effect/platform/Error").PlatformError>,
+      s: Stream.Stream<
+        Uint8Array,
+        import("@effect/platform/Error").PlatformError
+      >,
     ) =>
       s.pipe(
         Stream.decodeText("utf-8"),
@@ -83,10 +89,9 @@ export const WorktreeServiceLive = Layer.effect(
             Effect.fail(
               err.reason === "NotFound"
                 ? "git is not installed"
-                : err.message ?? String(err),
+                : (err.message ?? String(err)),
             ),
-          BadArgument: (err) =>
-            Effect.fail(err.message ?? String(err)),
+          BadArgument: (err) => Effect.fail(err.message ?? String(err)),
         }),
       );
 
@@ -135,17 +140,15 @@ export const WorktreeServiceLive = Layer.effect(
           `${folder.name}-${folder.id.slice(0, 8)}`,
         );
 
-        yield* fs
-          .makeDirectory(baseDir, { recursive: true })
-          .pipe(
-            Effect.mapError(
-              (err) =>
-                new WorktreeCreateError({
-                  projectId,
-                  reason: `mkdir failed: ${err.message ?? String(err)}`,
-                }),
-            ),
-          );
+        yield* fs.makeDirectory(baseDir, { recursive: true }).pipe(
+          Effect.mapError(
+            (err) =>
+              new WorktreeCreateError({
+                projectId,
+                reason: `mkdir failed: ${err.message ?? String(err)}`,
+              }),
+          ),
+        );
 
         // Resolve current HEAD on the main repo so we can record the base
         // branch in the row. Falls back to "HEAD" if `--abbrev-ref` is
@@ -314,6 +317,89 @@ export const WorktreeServiceLive = Layer.effect(
         );
       });
 
-    return { create, list, get, remove } as const;
+    const restore: WorktreeService["Type"]["restore"] = (
+      snapshot: WorktreeRestoreSnapshot,
+    ) =>
+      Effect.gen(function* () {
+        const folder = yield* workspace.findById(snapshot.projectId);
+        if (folder === null) {
+          return yield* Effect.fail(
+            new WorktreeRemoveError({
+              worktreeId: snapshot.id,
+              reason: "project not found",
+            }),
+          );
+        }
+
+        const existing = yield* get(snapshot.id);
+        if (existing !== null) return existing;
+
+        const targetExists = yield* fs
+          .exists(snapshot.path)
+          .pipe(Effect.catchAll(() => Effect.succeed(false)));
+        if (targetExists) {
+          return yield* Effect.fail(
+            new WorktreeRemoveError({
+              worktreeId: snapshot.id,
+              reason: `restore path already exists: ${snapshot.path}`,
+            }),
+          );
+        }
+
+        const branchExists = yield* runGit(folder.path, [
+          "rev-parse",
+          "--verify",
+          "--quiet",
+          `refs/heads/${snapshot.branch}`,
+        ]).pipe(
+          Effect.map(() => true),
+          Effect.catchAll(() => Effect.succeed(false)),
+        );
+        if (!branchExists) {
+          return yield* Effect.fail(
+            new WorktreeRemoveError({
+              worktreeId: snapshot.id,
+              reason: `branch not found: ${snapshot.branch}`,
+            }),
+          );
+        }
+
+        const result = yield* runGit(folder.path, [
+          "worktree",
+          "add",
+          snapshot.path,
+          snapshot.branch,
+        ]).pipe(Effect.either);
+        if (result._tag === "Left") {
+          return yield* Effect.fail(
+            new WorktreeRemoveError({
+              worktreeId: snapshot.id,
+              reason: result.left,
+            }),
+          );
+        }
+
+        const createdAtIso = snapshot.createdAt.toISOString();
+        yield* sql`
+          INSERT INTO worktrees
+            (id, project_id, path, name, branch, base_branch, created_at)
+          VALUES
+            (${snapshot.id}, ${snapshot.projectId}, ${snapshot.path},
+             ${snapshot.name}, ${snapshot.branch}, ${snapshot.baseBranch},
+             ${createdAtIso})
+        `.pipe(Effect.orDie);
+
+        return Worktree.make({
+          id: snapshot.id,
+          projectId: snapshot.projectId,
+          path: snapshot.path,
+          name: snapshot.name,
+          branch: snapshot.branch,
+          baseBranch: snapshot.baseBranch,
+          createdAt: snapshot.createdAt,
+        });
+      });
+
+    return { create, list, get, remove, restore } as const;
   }),
 );

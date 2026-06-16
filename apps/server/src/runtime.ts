@@ -66,7 +66,10 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
   const SqliteLayer = SqliteLive.pipe(Layer.provide(AppPathsLayer));
   const MigratedSqlite = SqliteLayer.pipe(
     Layer.provideMerge(
-      MigrationsLive.pipe(Layer.provide(SqliteLayer), Layer.provide(NodeContext.layer)),
+      MigrationsLive.pipe(
+        Layer.provide(SqliteLayer),
+        Layer.provide(NodeContext.layer),
+      ),
     ),
   );
 
@@ -113,6 +116,8 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
   const RepositorySettingsLayer = RepositorySettingsServiceLive.pipe(
     Layer.provide(MigratedSqlite),
   );
+
+  const PtyLayer = PtyServiceLive;
 
   // Global settings + user keybindings live in JSON files under userData
   // (Electron's `app.getPath("userData")`). Watched for external hand-edits.
@@ -191,9 +196,7 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
   // NdjsonLogger writes a best-effort transcript audit file alongside the
   // SQLite store. Provided to MessageStore so the same daemon that persists
   // a row also tail-writes the NDJSON line.
-  const NdjsonLoggerLayer = NdjsonLoggerLive.pipe(
-    Layer.provide(AppPathsLayer),
-  );
+  const NdjsonLoggerLayer = NdjsonLoggerLive.pipe(Layer.provide(AppPathsLayer));
 
   // MessageStore composes ProviderService with the SQLite-backed sessions /
   // messages tables. The chat-MVP RPC surface (session.* / messages.*) talks
@@ -202,6 +205,8 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
   const MessageStoreLayer = MessageStoreLive.pipe(
     Layer.provide(ProviderLayer),
     Layer.provide(WorktreeLayer),
+    Layer.provide(RepositorySettingsLayer),
+    Layer.provide(PtyLayer),
     Layer.provide(MigratedSqlite),
     Layer.provide(NdjsonLoggerLayer),
   );
@@ -221,7 +226,7 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
 
   const Handlers = HandlersLayer.pipe(
     Layer.provide(WorkspaceLayer),
-    Layer.provide(PtyServiceLive),
+    Layer.provide(PtyLayer),
     Layer.provide(GitLayer),
     Layer.provide(WorktreeLayer),
     Layer.provide(RepositorySettingsLayer),
