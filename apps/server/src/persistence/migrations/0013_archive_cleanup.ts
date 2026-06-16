@@ -15,18 +15,36 @@ import { Effect } from "effect";
 export const Migration0013ArchiveCleanup = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
 
-  yield* sql`
-    ALTER TABLE repository_settings
-      ADD COLUMN archive_cleanup_script TEXT
+  const repositoryColumns = yield* sql<{ readonly name: string }>`
+    PRAGMA table_info(repository_settings)
   `;
+  const hasRepositoryColumn = (name: string): boolean =>
+    repositoryColumns.some((column) => column.name === name);
 
-  yield* sql`
-    ALTER TABLE repository_settings
-      ADD COLUMN archive_remove_worktree INTEGER NOT NULL DEFAULT 0
-  `;
+  if (!hasRepositoryColumn("archive_cleanup_script")) {
+    yield* sql`
+      ALTER TABLE repository_settings
+        ADD COLUMN archive_cleanup_script TEXT
+    `;
+  }
 
-  yield* sql`
-    ALTER TABLE chats
-      ADD COLUMN archived_worktree_json TEXT
+  if (!hasRepositoryColumn("archive_remove_worktree")) {
+    yield* sql`
+      ALTER TABLE repository_settings
+        ADD COLUMN archive_remove_worktree INTEGER NOT NULL DEFAULT 0
+    `;
+  }
+
+  const chatColumns = yield* sql<{ readonly name: string }>`
+    PRAGMA table_info(chats)
   `;
+  const hasChatColumn = (name: string): boolean =>
+    chatColumns.some((column) => column.name === name);
+
+  if (!hasChatColumn("archived_worktree_json")) {
+    yield* sql`
+      ALTER TABLE chats
+        ADD COLUMN archived_worktree_json TEXT
+    `;
+  }
 });

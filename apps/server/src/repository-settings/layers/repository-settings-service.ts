@@ -54,6 +54,24 @@ export const RepositorySettingsServiceLive = Layer.effect(
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
 
+    const columns = yield* sql<{ readonly name: string }>`
+      PRAGMA table_info(repository_settings)
+    `.pipe(Effect.orDie);
+    const hasColumn = (name: string): boolean =>
+      columns.some((column) => column.name === name);
+    if (!hasColumn("archive_cleanup_script")) {
+      yield* sql`
+        ALTER TABLE repository_settings
+          ADD COLUMN archive_cleanup_script TEXT
+      `.pipe(Effect.orDie);
+    }
+    if (!hasColumn("archive_remove_worktree")) {
+      yield* sql`
+        ALTER TABLE repository_settings
+          ADD COLUMN archive_remove_worktree INTEGER NOT NULL DEFAULT 0
+      `.pipe(Effect.orDie);
+    }
+
     const get: RepositorySettingsService["Type"]["get"] = (projectId) =>
       Effect.gen(function* () {
         const rows = yield* sql<Row>`

@@ -423,6 +423,18 @@ export const MessageStoreLive = Layer.scoped(
     const repositorySettings = yield* RepositorySettingsService;
     const ptys = yield* PtyService;
 
+    const chatColumns = yield* sql<{ readonly name: string }>`
+      PRAGMA table_info(chats)
+    `.pipe(Effect.orDie);
+    const hasChatColumn = (name: string): boolean =>
+      chatColumns.some((column) => column.name === name);
+    if (!hasChatColumn("archived_worktree_json")) {
+      yield* sql`
+        ALTER TABLE chats
+          ADD COLUMN archived_worktree_json TEXT
+      `.pipe(Effect.orDie);
+    }
+
     /**
      * Resolve the cwd a session should run in. NULL `worktreeId` falls
      * through to the project's main checkout (handled by `provider.start`
