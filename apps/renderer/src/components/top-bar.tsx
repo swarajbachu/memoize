@@ -260,7 +260,7 @@ type Workflow =
  * doesn't have to re-narrow PR shape downstream.
  */
 const deriveWorkflow = (
-  status: { dirtyFiles: number; ahead: number } | null,
+  status: { branch: string | null; dirtyFiles: number; ahead: number } | null,
   pr: {
     state: string;
     number: number | null;
@@ -298,6 +298,16 @@ const deriveWorkflow = (
   }
   if (canCreatePrWhenSynced && prKnownNotOpen) return { kind: "ready-for-pr" };
   return { kind: "idle" };
+};
+
+const canCreatePrFromSyncedBranch = (
+  status: { branch: string | null } | null,
+  ctx: ReturnType<typeof useActiveContext>,
+): boolean => {
+  if (ctx.status !== "ready" || ctx.worktreePending) return false;
+  if (ctx.rootKind === "worktree") return true;
+  const branch = status?.branch ?? null;
+  return branch !== null && branch !== "main" && branch !== "master";
 };
 
 /**
@@ -342,10 +352,7 @@ export function TopBarRight() {
     void useMessagesStore.getState().send(selectedSessionId, text);
   };
 
-  const canCreatePrWhenSynced =
-    ctx.status === "ready" &&
-    ctx.rootKind === "worktree" &&
-    !ctx.worktreePending;
+  const canCreatePrWhenSynced = canCreatePrFromSyncedBranch(status, ctx);
   const workflow = deriveWorkflow(status, pr, canCreatePrWhenSynced);
   const agentReady = selectedSessionId !== null;
 
