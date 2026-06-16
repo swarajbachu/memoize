@@ -8,6 +8,7 @@ import {
   type GitDiffResult,
   type GitFailingChecksArtifact,
   type GitFolderNotFoundError,
+  type GitMergeMethod,
   type GitNotARepoError,
   type GitNotInstalledError,
   type GitOriginInfo,
@@ -61,6 +62,17 @@ export interface GitServiceShape {
     worktreeId?: WorktreeId | null,
   ) => Effect.Effect<{ readonly sha: string }, GitFailure>;
   readonly push: (
+    folderId: FolderId,
+    worktreeId?: WorktreeId | null,
+  ) => Effect.Effect<{ readonly output: string }, GitFailure>;
+  readonly mergePr: (
+    folderId: FolderId,
+    action: "merge" | "enable-auto" | "disable-auto",
+    method: GitMergeMethod,
+    deleteBranch: boolean,
+    worktreeId?: WorktreeId | null,
+  ) => Effect.Effect<{ readonly output: string }, GitFailure>;
+  readonly markReady: (
     folderId: FolderId,
     worktreeId?: WorktreeId | null,
   ) => Effect.Effect<{ readonly output: string }, GitFailure>;
