@@ -40,19 +40,40 @@ const NETWORK_PATTERN =
  * persists to sessionStorage. For opencode the value is a variant name
  * (`high`, `medium`, `super-high`, …) that comes from the live inventory,
  * so we pass it through as-is instead of enforcing the codex enum.
+ *
+ * Multiple keys are supported — the Claude provider uses `effort` for
+ * its reasoning tier (with values `low | medium | high | xhigh | max |
+ * ultracode | ultrathink`), `fastMode` / `thinking` booleans, and
+ * `contextWindow` (`200k | 1m`). Non-Claude providers use `reasoning`.
  * Returns `null` when nothing has been set so the RPC payload stays
  * clean (drivers default to model presets).
  */
+const SESSION_MODEL_OPTION_KEYS: ReadonlyArray<string> = [
+  "reasoning",
+  "effort",
+  "fastMode",
+  "thinking",
+  "contextWindow",
+];
 const readSessionModelOptions = (
   sessionId: SessionId,
 ): Record<string, string> | null => {
   if (typeof window === "undefined") return null;
   const out: Record<string, string> = {};
-  const reasoning = window.sessionStorage.getItem(
-    `memoize.reasoning.${sessionId}`,
-  );
-  if (reasoning !== null && reasoning.length > 0) {
-    out["reasoning"] = reasoning;
+  for (const key of SESSION_MODEL_OPTION_KEYS) {
+    const v = window.sessionStorage.getItem(
+      `memoize.modelOptions.${sessionId}.${key}`,
+    );
+    if (v !== null && v.length > 0) out[key] = v;
+  }
+  // Backwards compat — the previous schema stored reasoning under a
+  // bare `memoize.reasoning.<sessionId>` key. Read it if the new key
+  // wasn't set so existing sessions don't lose their picker selection.
+  if (out["reasoning"] === undefined) {
+    const legacy = window.sessionStorage.getItem(
+      `memoize.reasoning.${sessionId}`,
+    );
+    if (legacy !== null && legacy.length > 0) out["reasoning"] = legacy;
   }
   return Object.keys(out).length === 0 ? null : out;
 };

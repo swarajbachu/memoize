@@ -21,6 +21,7 @@ import { createAcpTranslator } from "./acp/translate.ts";
 import { applyPlanModePrefix } from "./planMode.ts";
 import { handleFsRequest } from "./acp/fs.ts";
 import { handleTerminalRequest } from "./acp/terminal.ts";
+import type { GetRuntimeMode, RequestPermission } from "./claude.ts";
 
 /**
  * Live-only handle for one Gemini conversation. Mirrors the Grok/Codex/Claude
@@ -227,6 +228,8 @@ export const startGeminiSession = (
   apiKey: string | null,
   geminiPath: string,
   sessionId: AgentSessionId,
+  requestPermission: RequestPermission,
+  getRuntimeMode: GetRuntimeMode,
   resumeCursor: string | null = null,
 ): Effect.Effect<GeminiSessionHandle, AgentSessionStartError, AttachmentService> =>
   Effect.gen(function* () {
@@ -237,6 +240,22 @@ export const startGeminiSession = (
     const events = yield* Mailbox.make<AgentEvent>();
 
     let currentMode: PermissionMode = input.permissionMode ?? "default";
+
+    // Shared context for the ACP fs/* and terminal/* handlers so file writes
+    // and command execution are gated through PermissionService + RuntimeMode,
+    // exactly like Claude/Codex. `currentMode` is read live.
+    const acpHandlerContext = () => ({
+      cwd,
+      sessionId,
+      projectId: input.folderId,
+      requestPermission: (
+        kind: import("@memoize/wire").PermissionKind,
+        options: { readonly forcePrompt: boolean },
+      ) => requestPermission(sessionId, kind, options),
+      getRuntimeMode,
+      getPermissionMode: () => currentMode,
+    });
+
     let acpSessionId: string | null = null;
     let nextRpcId = 1;
     let closed = false;
@@ -406,7 +425,7 @@ export const startGeminiSession = (
             );
           }
           if (isFs) {
-            handleFsRequest(msg.method, msg.params, { cwd })
+            handleFsRequest(msg.method, msg.params, acpHandlerContext())
               .then((result) => {
                 writeMessage({ jsonrpc: "2.0", id: msg.id, result });
               })
@@ -422,7 +441,7 @@ export const startGeminiSession = (
           }
 
           if (msg.method.startsWith("terminal/")) {
-            handleTerminalRequest(msg.method, msg.params, { cwd })
+            handleTerminalRequest(msg.method, msg.params, acpHandlerContext())
               .then((result) => {
                 writeMessage({ jsonrpc: "2.0", id: msg.id, result });
               })

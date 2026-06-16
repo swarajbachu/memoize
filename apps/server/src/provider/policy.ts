@@ -98,6 +98,47 @@ export const getFsPolicy = (
 };
 
 // ---------------------------------------------------------------------------
-// Future: Bash policy surface can live here too when terminal.exec is wired.
-// export const getBashPolicy = (command: string, runtimeMode, ...) => ...
+// Bash / terminal command policy (used by ACP handleTerminalRequest)
 // ---------------------------------------------------------------------------
+
+export type BashPolicy =
+  | { readonly kind: "auto-allow" }
+  | { readonly kind: "prompt"; readonly forcePrompt: boolean };
+
+/**
+ * Decide whether an ACP terminal command should prompt the user.
+ *
+ * Mirrors Claude's `policyFor` handling of the Bash tool exactly so ACP
+ * agents (Grok, Gemini, Cursor) get the same gating as the SDK drivers:
+ *  1. plan mode → always prompt (forcePrompt) — never silently run commands.
+ *  2. full-access → auto-allow.
+ *  3. auto-accept-edits → still prompt. Unlike file edits, command execution
+ *     is NOT auto-accepted in this mode (matches Claude: only FILE_EDIT_TOOLS
+ *     skip the prompt under auto-accept-edits, Bash falls through).
+ *  4. default (approval-required) → prompt (forcePrompt: false).
+ *
+ * `command` is accepted for future per-command heuristics (e.g. forcing a
+ * prompt on obviously destructive commands) but is not inspected yet.
+ */
+export const getBashPolicy = (
+  command: string,
+  runtimeMode: RuntimeMode,
+  permissionMode?: PermissionMode,
+): BashPolicy => {
+  void command;
+
+  // 1. Plan mode never silently runs commands.
+  if (permissionMode === "plan") {
+    return { kind: "prompt", forcePrompt: true };
+  }
+
+  // 2. full-access — auto-allow anything.
+  if (runtimeMode === "full-access") {
+    return { kind: "auto-allow" };
+  }
+
+  // 3. auto-accept-edits — commands still prompt (only file edits are auto-
+  //    accepted in this mode, matching Claude).
+  // 4. Default — prompt.
+  return { kind: "prompt", forcePrompt: false };
+};
