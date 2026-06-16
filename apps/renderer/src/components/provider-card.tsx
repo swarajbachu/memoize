@@ -373,14 +373,12 @@ function SubscriptionRow({
 /**
  * Privacy-aware email pill. Blurs the address by default (so screen-records
  * and screenshots don't leak it) and reveals on click; clicking again
- * re-blurs. Stops propagation so clicking it doesn't also collapse/expand
- * the parent card.
+ * re-blurs. Rendered as a span because the provider row itself is a button.
  */
 function BlurredEmail({ email }: { email: string }) {
   const [revealed, setRevealed] = useState(false);
   return (
-    <button
-      type="button"
+    <span
       onClick={(e) => {
         e.stopPropagation();
         setRevealed((r) => !r);
@@ -388,14 +386,14 @@ function BlurredEmail({ email }: { email: string }) {
       title={revealed ? "Click to hide" : "Click to reveal"}
       aria-label={revealed ? "Hide email" : "Reveal email"}
       className={cn(
-        "max-w-[16rem] truncate rounded px-1 py-0.5 text-left font-mono text-[11px] transition-[filter,background-color] duration-150",
+        "max-w-[16rem] cursor-pointer truncate rounded px-1 py-0.5 text-left font-mono text-[11px] transition-[filter,background-color] duration-150",
         revealed
           ? "bg-muted/40 text-foreground"
           : "bg-muted/40 text-foreground blur-[5px] select-none hover:blur-[3px]",
       )}
     >
       {email}
-    </button>
+    </span>
   );
 }
 
