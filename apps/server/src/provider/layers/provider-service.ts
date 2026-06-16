@@ -42,7 +42,9 @@ import {
 } from "../drivers/opencode.ts";
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
 import { buildIndexTools } from "../../code-index/claude-tools.ts";
+import { buildBrowserTools } from "../drivers/browser-tools.ts";
 import { IndexRegistry } from "../../code-index/services/index-registry.ts";
+import { BrowserBridgeService } from "../services/browser-bridge-service.ts";
 import { CredentialsService } from "../services/credentials-service.ts";
 import { PermissionService } from "../services/permission-service.ts";
 import { ProviderService } from "../services/provider-service.ts";
@@ -82,6 +84,7 @@ export const ProviderServiceLive = Layer.effect(
     const workspace = yield* WorkspaceService;
     const permissions = yield* PermissionService;
     const attachmentService = yield* AttachmentService;
+    const browserBridge = yield* BrowserBridgeService;
     const indexRegistry = yield* IndexRegistry;
     const runtime = yield* Effect.runtime<never>();
     const sessions = yield* Ref.make<Map<AgentSessionId, SessionEntry>>(
@@ -307,6 +310,15 @@ export const ProviderServiceLive = Layer.effect(
             // resolves it; Phase E adds a real git-checkout subscription.
             const indexHandle = yield* indexRegistry.getHandle(cwd, "HEAD");
             const indexTools = buildIndexTools(indexHandle);
+            // Browser tools drive the renderer's shared `<webview>` through
+            // the bridge. Bind `send` to this session id + the live runtime so
+            // the SDK's async tool handlers stay free of Effect wiring (same
+            // shape as `buildIndexTools` binding the workspace handle).
+            const browserTools = buildBrowserTools((command) =>
+              Runtime.runPromise(runtime)(
+                browserBridge.send(sessionId, command),
+              ),
+            );
 
             handle = yield* startClaudeSession(
               input,
@@ -317,7 +329,7 @@ export const ProviderServiceLive = Layer.effect(
               buildRequestPermission(input.folderId),
               runtimeModeGetter,
               resumeCursor,
-              indexTools,
+              [...indexTools, ...browserTools],
             ).pipe(Effect.provideService(AttachmentService, attachmentService));
           } else {
             // Same story as Claude: we don't ship the SDK's bundled native

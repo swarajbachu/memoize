@@ -742,6 +742,23 @@ const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
   `mcp__${MEMOIZE_MCP_NAME}__find_references`,
   `mcp__${MEMOIZE_MCP_NAME}__read_chunk`,
   `mcp__${MEMOIZE_MCP_NAME}__list_module`,
+  // Agent browser — navigate / screenshot / snapshot / wait are read-only and
+  // fully visible to the user (the page loads in the on-screen webview,
+  // screenshots flash a shutter). Auto-allow like the index reads.
+  // `browser_click` and `browser_type` are deliberately absent: they mutate
+  // page state, so they fall through to the regular permission prompt.
+  `mcp__${MEMOIZE_MCP_NAME}__browser_navigate`,
+  `mcp__${MEMOIZE_MCP_NAME}__browser_screenshot`,
+  `mcp__${MEMOIZE_MCP_NAME}__browser_snapshot`,
+  `mcp__${MEMOIZE_MCP_NAME}__browser_wait`,
+  // Read-only / non-mutating browsing: scroll, hover, read text, console,
+  // and history (back/forward/reload — like navigate, which also auto-allows).
+  // `browser_select` and `browser_press` change page state, so they prompt.
+  `mcp__${MEMOIZE_MCP_NAME}__browser_scroll`,
+  `mcp__${MEMOIZE_MCP_NAME}__browser_hover`,
+  `mcp__${MEMOIZE_MCP_NAME}__browser_read`,
+  `mcp__${MEMOIZE_MCP_NAME}__browser_console`,
+  `mcp__${MEMOIZE_MCP_NAME}__browser_history`,
 ]);
 
 /**
@@ -821,6 +838,12 @@ const policyFor = (
   //    prompting. Always auto-allow.
   if (isAskUserQuestion(toolName)) {
     return { kind: "auto-allow" };
+  }
+  // 0b. Agent browser login submits saved (dummy) credentials into a page.
+  //     Always prompt, even in full-access mode — a login attempt should
+  //     never fire silently. Treated like a sensitive path.
+  if (toolName.endsWith("__browser_login")) {
+    return { kind: "prompt", forcePrompt: true };
   }
   // 1. Sensitive paths — checked before any auto-allow. Even YOLO mode prompts.
   if (toolName === "Read") {

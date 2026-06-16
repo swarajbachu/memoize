@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, RotateCw, Star } from "lucide-react";
+import { Effect, Fiber, Stream } from "effect";
+
+import { BrowserCommandResult, type BrowserCommandRequest } from "@memoize/wire";
+
+import { getRpcClient } from "../lib/rpc-client.ts";
+import { useUiStore } from "../store/ui.ts";
+import { BrowserShutter } from "./browser-shutter.tsx";
 
 /**
  * In-app Browser tab — toolbar (back/forward/refresh/URL bar) + Electron
@@ -14,11 +21,16 @@ import { ArrowLeft, ArrowRight, RotateCw, Star } from "lucide-react";
  */
 export function BrowserPane() {
   const webviewRef = useRef<HTMLElement | null>(null);
+  // Ring buffer of console messages + page errors, captured per page load so
+  // `browser_console` can report them to the agent. Cleared on navigation.
+  const consoleBufferRef = useRef<string[]>([]);
   const [url, setUrl] = useState<string>("");
   const [inputValue, setInputValue] = useState<string>("");
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  // Bumped each time the agent takes a screenshot — drives the shutter flash.
+  const [shutterNonce, setShutterNonce] = useState(0);
 
   // Wire navigation lifecycle events onto the underlying webview element.
   // We attach via `addEventListener` because the webview tag isn't a real
@@ -43,22 +55,104 @@ export function BrowserPane() {
       }
       syncNav();
     };
-    const onStart = () => setIsLoading(true);
+    const onStart = () => {
+      setIsLoading(true);
+      // Fresh page — drop the previous page's console history.
+      consoleBufferRef.current = [];
+    };
     const onStop = () => {
       setIsLoading(false);
       syncNav();
+    };
+    const LEVELS = ["log", "info", "warning", "error"] as const;
+    const onConsole = (e: Event) => {
+      const ev = e as Event & {
+        level?: number;
+        message?: string;
+        line?: number;
+        sourceId?: string;
+      };
+      const level = LEVELS[ev.level ?? 0] ?? "log";
+      const where = ev.sourceId ? ` (${ev.sourceId}:${ev.line ?? 0})` : "";
+      const line = `[${level}] ${ev.message ?? ""}${where}`;
+      const buf = consoleBufferRef.current;
+      buf.push(line);
+      if (buf.length > 200) buf.splice(0, buf.length - 200);
+    };
+    const onFailLoad = (e: Event) => {
+      const ev = e as Event & {
+        errorDescription?: string;
+        validatedURL?: string;
+      };
+      if (ev.errorDescription) {
+        consoleBufferRef.current.push(
+          `[error] page load failed: ${ev.errorDescription} ${ev.validatedURL ?? ""}`.trim(),
+        );
+      }
     };
     el.addEventListener("did-navigate", onDidNavigate);
     el.addEventListener("did-navigate-in-page", onDidNavigate);
     el.addEventListener("did-start-loading", onStart);
     el.addEventListener("did-stop-loading", onStop);
     el.addEventListener("dom-ready", syncNav);
+    el.addEventListener("console-message", onConsole);
+    el.addEventListener("did-fail-load", onFailLoad);
     return () => {
       el.removeEventListener("did-navigate", onDidNavigate);
       el.removeEventListener("did-navigate-in-page", onDidNavigate);
       el.removeEventListener("did-start-loading", onStart);
       el.removeEventListener("did-stop-loading", onStop);
       el.removeEventListener("dom-ready", syncNav);
+      el.removeEventListener("console-message", onConsole);
+      el.removeEventListener("did-fail-load", onFailLoad);
+    };
+  }, []);
+
+  // Agent browser executor. Subscribe once to the server's `browser.commands`
+  // broadcast and drive the webview for each command, replying on
+  // `browser.respond`. Commands run serially (runForEach awaits each) so the
+  // agent's navigate→screenshot sequence can't race. The component stays
+  // mounted while a project is open, so this subscription lives as long as the
+  // pane does.
+  useEffect(() => {
+    let fiber: Fiber.RuntimeFiber<unknown, unknown> | null = null;
+    let cancelled = false;
+    void (async () => {
+      const client = await getRpcClient();
+      if (cancelled) return;
+      fiber = Effect.runFork(
+        Stream.runForEach(client.browser.commands({}), (req) =>
+          Effect.promise(() => executeBrowserCommand(req)),
+        ),
+      );
+    })();
+
+    const executeBrowserCommand = async (
+      req: BrowserCommandRequest,
+    ): Promise<void> => {
+      // Always surface the action: force the Browser tab visible. This also
+      // un-hides the webview so `capturePage` works (it returns an empty
+      // image for a `display:none` element).
+      useUiStore.getState().setActiveRightTab("browser");
+      const wv = webviewRef.current as WebviewElement | null;
+      const result = await runBrowserCommand(req, wv, {
+        setUrl,
+        setInputValue,
+        flashShutter: () => setShutterNonce((n) => n + 1),
+        readConsole: () => consoleBufferRef.current.join("\n"),
+      });
+      try {
+        const client = await getRpcClient();
+        await Effect.runPromise(client.browser.respond({ result }));
+      } catch {
+        // A failed respond just means this command times out server-side;
+        // the agent gets a clean "browser didn't respond" tool result.
+      }
+    };
+
+    return () => {
+      cancelled = true;
+      if (fiber !== null) void Effect.runPromise(Fiber.interrupt(fiber));
     };
   }, []);
 
@@ -170,9 +264,352 @@ export function BrowserPane() {
             height: "100%",
           }}
         />
+        <BrowserShutter nonce={shutterNonce} />
       </div>
     </div>
   );
+}
+
+/**
+ * Drive the webview for one agent browser command and build the reply. Pure
+ * helper (no React state beyond the passed-in setters) so the executor effect
+ * stays small. Never throws — failures come back as `{ ok: false, error }`.
+ */
+async function runBrowserCommand(
+  req: BrowserCommandRequest,
+  wv: WebviewElement | null,
+  hooks: {
+    setUrl: (u: string) => void;
+    setInputValue: (u: string) => void;
+    flashShutter: () => void;
+    readConsole: () => string;
+  },
+): Promise<BrowserCommandResult> {
+  const fail = (error: string) =>
+    BrowserCommandResult.make({ id: req.id, ok: false, error });
+  if (wv === null) {
+    return fail("The in-app browser is not available in this window.");
+  }
+  const command = req.command;
+  try {
+    switch (command._tag) {
+      case "Navigate": {
+        const resolved = resolveUrl(command.url);
+        if (resolved === null) return fail(`Invalid URL: ${command.url}`);
+        hooks.setUrl(resolved);
+        hooks.setInputValue(resolved);
+        await loadAndWait(wv, resolved);
+        return BrowserCommandResult.make({
+          id: req.id,
+          ok: true,
+          url: safeCall(() => wv.getURL(), resolved),
+          title: safeCall(() => wv.getTitle(), ""),
+        });
+      }
+      case "Screenshot": {
+        const current = safeCall(() => wv.getURL(), "");
+        if (current === "" || current === "about:blank") {
+          return fail("No page is loaded — navigate to a URL first.");
+        }
+        // The tab was just made visible; give the compositor a beat to paint
+        // before capturing, otherwise the frame can come back blank.
+        await delay(180);
+        const image = await wv.capturePage();
+        if (image.isEmpty()) {
+          return fail("Screenshot came back empty — the page may still be loading.");
+        }
+        const base64 = image.toDataURL().replace(/^data:image\/png;base64,/, "");
+        hooks.flashShutter();
+        return BrowserCommandResult.make({
+          id: req.id,
+          ok: true,
+          url: current,
+          title: safeCall(() => wv.getTitle(), ""),
+          screenshot: base64,
+        });
+      }
+      case "Snapshot": {
+        const raw = await wv.executeJavaScript(SNAPSHOT_JS);
+        return BrowserCommandResult.make({
+          id: req.id,
+          ok: true,
+          url: safeCall(() => wv.getURL(), ""),
+          title: safeCall(() => wv.getTitle(), ""),
+          snapshot: typeof raw === "string" ? raw : JSON.stringify(raw ?? []),
+        });
+      }
+      case "Click": {
+        if (!isValidRef(command.ref)) return fail("Invalid element ref.");
+        const res = await runJsObject(
+          wv,
+          `(() => { const el = document.querySelector('[data-mz-ref=${JSON.stringify(command.ref)}]'); if (!el) return JSON.stringify({ ok:false, error:'No element with that ref — re-snapshot the page first.' }); el.scrollIntoView({ block:'center', inline:'center' }); el.click(); return JSON.stringify({ ok:true, detail:'Clicked ' + ((el.innerText||el.getAttribute('aria-label')||el.tagName)||'').slice(0,60) }); })()`,
+        );
+        return resultFromJs(req.id, res, `Clicked ${command.ref}.`);
+      }
+      case "Type": {
+        if (!isValidRef(command.ref)) return fail("Invalid element ref.");
+        const submit = command.submit === true;
+        const res = await runJsObject(
+          wv,
+          `(() => { const el = document.querySelector('[data-mz-ref=${JSON.stringify(command.ref)}]'); if (!el) return JSON.stringify({ ok:false, error:'No element with that ref — re-snapshot first.' }); el.focus(); const v = ${JSON.stringify(command.text)}; const tag = el.tagName; if (tag === 'INPUT' || tag === 'TEXTAREA') { const proto = tag === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype; const d = Object.getOwnPropertyDescriptor(proto, 'value'); if (d && d.set) d.set.call(el, v); else el.value = v; } else { el.textContent = v; } el.dispatchEvent(new Event('input', { bubbles:true })); el.dispatchEvent(new Event('change', { bubbles:true })); if (${submit ? "true" : "false"}) { el.dispatchEvent(new KeyboardEvent('keydown', { key:'Enter', keyCode:13, which:13, bubbles:true })); el.dispatchEvent(new KeyboardEvent('keyup', { key:'Enter', keyCode:13, which:13, bubbles:true })); const f = el.form; if (f && typeof f.requestSubmit === 'function') { try { f.requestSubmit(); } catch (e) {} } } return JSON.stringify({ ok:true, detail:'Typed into ' + ((el.getAttribute('name')||el.getAttribute('aria-label')||el.tagName)||'') }); })()`,
+        );
+        return resultFromJs(req.id, res, `Typed into ${command.ref}.`);
+      }
+      case "Wait": {
+        if (typeof command.selector === "string" && command.selector.length > 0) {
+          const res = await runJsObject(
+            wv,
+            `(async () => { const sel = ${JSON.stringify(command.selector)}; const deadline = Date.now() + 10000; while (Date.now() < deadline) { if (document.querySelector(sel)) return JSON.stringify({ ok:true, detail:'Element appeared: ' + sel }); await new Promise(r => setTimeout(r, 150)); } return JSON.stringify({ ok:false, error:'Timed out (10s) waiting for ' + sel }); })()`,
+          );
+          return resultFromJs(req.id, res, "Done waiting.");
+        }
+        const ms = Math.min(Math.max(command.ms ?? 500, 0), 15000);
+        await delay(ms);
+        return BrowserCommandResult.make({
+          id: req.id,
+          ok: true,
+          detail: `Waited ${ms}ms.`,
+        });
+      }
+      case "Scroll": {
+        if (typeof command.ref === "string" && command.ref.length > 0) {
+          if (!isValidRef(command.ref)) return fail("Invalid element ref.");
+          const res = await runJsObject(
+            wv,
+            `(() => { const el = document.querySelector('[data-mz-ref=${JSON.stringify(command.ref)}]'); if (!el) return JSON.stringify({ ok:false, error:'No element with that ref — re-snapshot first.' }); el.scrollIntoView({ block:'center', inline:'center' }); return JSON.stringify({ ok:true, detail:'Scrolled element into view.' }); })()`,
+          );
+          return resultFromJs(req.id, res, "Scrolled into view.");
+        }
+        const dir = command.direction ?? "down";
+        const res = await runJsObject(
+          wv,
+          `(() => { const dir = ${JSON.stringify(dir)}; const h = window.innerHeight; if (dir === 'top') window.scrollTo({ top:0, behavior:'instant' }); else if (dir === 'bottom') window.scrollTo({ top:document.body.scrollHeight, behavior:'instant' }); else if (dir === 'up') window.scrollBy({ top:-Math.round(h*0.85), behavior:'instant' }); else window.scrollBy({ top:Math.round(h*0.85), behavior:'instant' }); const atBottom = (window.innerHeight + window.scrollY) >= document.body.scrollHeight - 4; return JSON.stringify({ ok:true, detail:'Scrolled ' + dir + (atBottom ? ' (reached bottom).' : '.') }); })()`,
+        );
+        return resultFromJs(req.id, res, `Scrolled ${dir}.`);
+      }
+      case "Hover": {
+        if (!isValidRef(command.ref)) return fail("Invalid element ref.");
+        const res = await runJsObject(
+          wv,
+          `(() => { const el = document.querySelector('[data-mz-ref=${JSON.stringify(command.ref)}]'); if (!el) return JSON.stringify({ ok:false, error:'No element with that ref — re-snapshot first.' }); el.scrollIntoView({ block:'center' }); const r = el.getBoundingClientRect(); const opts = { bubbles:true, clientX: r.left + r.width/2, clientY: r.top + r.height/2 }; for (const t of ['pointerover','mouseover','pointerenter','mouseenter','mousemove']) { el.dispatchEvent(new MouseEvent(t, opts)); } return JSON.stringify({ ok:true, detail:'Hovered ' + ((el.innerText||el.getAttribute('aria-label')||el.tagName)||'').slice(0,40) }); })()`,
+        );
+        return resultFromJs(req.id, res, `Hovered ${command.ref}.`);
+      }
+      case "Select": {
+        if (!isValidRef(command.ref)) return fail("Invalid element ref.");
+        const res = await runJsObject(
+          wv,
+          `(() => { const el = document.querySelector('[data-mz-ref=${JSON.stringify(command.ref)}]'); if (!el) return JSON.stringify({ ok:false, error:'No element with that ref — re-snapshot first.' }); if (el.tagName !== 'SELECT') return JSON.stringify({ ok:false, error:'That ref is not a <select> dropdown.' }); const want = ${JSON.stringify(command.value)}; const opt = Array.from(el.options).find((o) => o.value === want || (o.textContent||'').trim() === want); if (!opt) return JSON.stringify({ ok:false, error:'No option matching "' + want + '".' }); el.value = opt.value; el.dispatchEvent(new Event('input', { bubbles:true })); el.dispatchEvent(new Event('change', { bubbles:true })); return JSON.stringify({ ok:true, detail:'Selected ' + (opt.textContent||opt.value) }); })()`,
+        );
+        return resultFromJs(req.id, res, `Selected ${command.value}.`);
+      }
+      case "Press": {
+        const refClause =
+          typeof command.ref === "string" && command.ref.length > 0
+            ? (isValidRef(command.ref)
+                ? `document.querySelector('[data-mz-ref=${JSON.stringify(command.ref)}]')`
+                : null)
+            : `(document.activeElement || document.body)`;
+        if (refClause === null) return fail("Invalid element ref.");
+        const res = await runJsObject(
+          wv,
+          `(() => { const el = ${refClause}; if (!el) return JSON.stringify({ ok:false, error:'No target element — re-snapshot first.' }); if (typeof el.focus === 'function') el.focus(); const key = ${JSON.stringify(command.key)}; const isEnter = key === 'Enter'; const opts = { key, bubbles:true, cancelable:true }; el.dispatchEvent(new KeyboardEvent('keydown', opts)); el.dispatchEvent(new KeyboardEvent('keyup', opts)); if (isEnter && el.form && typeof el.form.requestSubmit === 'function') { try { el.form.requestSubmit(); } catch (e) {} } return JSON.stringify({ ok:true, detail:'Pressed ' + key }); })()`,
+        );
+        return resultFromJs(req.id, res, `Pressed ${command.key}.`);
+      }
+      case "Read": {
+        const refExpr =
+          typeof command.ref === "string" && command.ref.length > 0
+            ? (isValidRef(command.ref)
+                ? `document.querySelector('[data-mz-ref=${JSON.stringify(command.ref)}]')`
+                : null)
+            : `document.body`;
+        if (refExpr === null) return fail("Invalid element ref.");
+        const raw = await wv.executeJavaScript(
+          `(() => { const el = ${refExpr}; if (!el) return ''; return (el.innerText || el.textContent || '').replace(/\\n{3,}/g, '\\n\\n').trim().slice(0, 8000); })()`,
+        );
+        const text = typeof raw === "string" ? raw : "";
+        return BrowserCommandResult.make({
+          id: req.id,
+          ok: true,
+          url: safeCall(() => wv.getURL(), ""),
+          title: safeCall(() => wv.getTitle(), ""),
+          text: text.length > 0 ? text : "(no visible text)",
+        });
+      }
+      case "History": {
+        if (command.action === "back") {
+          if (!safeCall(() => wv.canGoBack(), false)) {
+            return fail("Can't go back — no earlier page in history.");
+          }
+          wv.goBack();
+        } else if (command.action === "forward") {
+          if (!safeCall(() => wv.canGoForward(), false)) {
+            return fail("Can't go forward — no later page in history.");
+          }
+          wv.goForward();
+        } else {
+          wv.reload();
+        }
+        await waitForStop(wv);
+        return BrowserCommandResult.make({
+          id: req.id,
+          ok: true,
+          url: safeCall(() => wv.getURL(), ""),
+          title: safeCall(() => wv.getTitle(), ""),
+          detail: `Did ${command.action}.`,
+        });
+      }
+      case "Console": {
+        const log = hooks.readConsole();
+        return BrowserCommandResult.make({
+          id: req.id,
+          ok: true,
+          text: log,
+        });
+      }
+      case "Login": {
+        // Pull the dummy secret out-of-band (renderer-only RPC) and inject it
+        // straight into the page. The password never returns to the agent —
+        // only the ok/detail below, which omit it.
+        const client = await getRpcClient();
+        const secret = await Effect.runPromise(
+          client.browser.fillForOrigin({ origin: command.origin }),
+        );
+        if (secret === null) {
+          return fail(
+            `No saved credential for ${command.origin}. Add a dummy login in Settings → Browser.`,
+          );
+        }
+        const res = await runJsObject(
+          wv,
+          `(() => { const U = ${JSON.stringify(secret.username)}; const P = ${JSON.stringify(secret.password)}; const pw = document.querySelector('input[type="password"]'); if (!pw) return JSON.stringify({ ok:false, error:'No password field on this page — navigate to the login form first.' }); let user = document.querySelector('input[autocomplete="username"], input[type="email"], input[name*="user" i], input[name*="email" i], input[id*="user" i], input[id*="email" i]'); if (!user) { user = Array.from(document.querySelectorAll('input')).find((i) => /^(text|email|)$/.test(i.type)) || null; } const setVal = (el, v) => { const proto = el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype; const d = Object.getOwnPropertyDescriptor(proto, 'value'); if (d && d.set) d.set.call(el, v); else el.value = v; el.dispatchEvent(new Event('input', { bubbles:true })); el.dispatchEvent(new Event('change', { bubbles:true })); }; if (user) setVal(user, U); setVal(pw, P); const form = pw.form; if (form && typeof form.requestSubmit === 'function') { try { form.requestSubmit(); return JSON.stringify({ ok:true, detail:'Filled and submitted the login form.' }); } catch (e) {} } pw.dispatchEvent(new KeyboardEvent('keydown', { key:'Enter', keyCode:13, which:13, bubbles:true })); return JSON.stringify({ ok:true, detail:'Filled the saved credentials and pressed Enter.' }); })()`,
+        );
+        return resultFromJs(req.id, res, "Submitted the saved login.");
+      }
+    }
+  } catch (err) {
+    return fail(err instanceof Error ? err.message : String(err));
+  }
+}
+
+// Snapshot refs are minted as `e<number>` — validate before string-injecting
+// into a querySelector so a crafted ref can't break out of the selector.
+const isValidRef = (ref: string): boolean => /^e\d+$/.test(ref);
+
+/** Run page JS that returns a JSON string and parse it; null on any failure. */
+async function runJsObject(
+  wv: WebviewElement,
+  code: string,
+): Promise<{ ok: boolean; error?: string; detail?: string } | null> {
+  const raw = await wv.executeJavaScript(code);
+  if (typeof raw !== "string") return null;
+  try {
+    return JSON.parse(raw) as { ok: boolean; error?: string; detail?: string };
+  } catch {
+    return null;
+  }
+}
+
+const resultFromJs = (
+  id: string,
+  res: { ok: boolean; error?: string; detail?: string } | null,
+  fallbackDetail: string,
+): BrowserCommandResult =>
+  res === null
+    ? BrowserCommandResult.make({
+        id,
+        ok: false,
+        error: "The page did not respond to the action.",
+      })
+    : BrowserCommandResult.make({
+        id,
+        ok: res.ok,
+        ...(res.ok
+          ? { detail: res.detail ?? fallbackDetail }
+          : { error: res.error ?? "Action failed." }),
+      });
+
+/**
+ * Page-side DOM snapshot. Clears stale refs, then tags every visible
+ * interactive element with a fresh `data-mz-ref` and returns a compact JSON
+ * array `[{ ref, role, name, value, tag }]` for the agent to target.
+ */
+const SNAPSHOT_JS = `(() => {
+  document.querySelectorAll('[data-mz-ref]').forEach((e) => e.removeAttribute('data-mz-ref'));
+  const sel = 'a[href], button, input, textarea, select, [role="button"], [role="link"], [role="textbox"], [role="checkbox"], [role="tab"], [role="menuitem"], [onclick], [contenteditable="true"]';
+  const out = [];
+  let i = 0;
+  for (const el of document.querySelectorAll(sel)) {
+    const rect = el.getBoundingClientRect();
+    const style = window.getComputedStyle(el);
+    const visible = rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none' && Number(style.opacity || '1') > 0.05 && rect.bottom > 0 && rect.right > 0 && rect.top < window.innerHeight + 400;
+    if (!visible) continue;
+    if (el.disabled) continue;
+    const ref = 'e' + (++i);
+    el.setAttribute('data-mz-ref', ref);
+    const tag = el.tagName.toLowerCase();
+    const role = el.getAttribute('role') || (tag === 'a' ? 'link' : tag);
+    const name = (el.getAttribute('aria-label') || el.getAttribute('placeholder') || (el.innerText || '').trim() || el.getAttribute('name') || el.getAttribute('title') || el.getAttribute('value') || '').replace(/\\s+/g, ' ').trim().slice(0, 80);
+    const value = (el.value != null ? String(el.value) : '').slice(0, 80);
+    out.push({ ref, role, name, value, tag });
+    if (out.length >= 200) break;
+  }
+  return JSON.stringify(out);
+})()`;
+
+const delay = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+const safeCall = <T,>(fn: () => T, fallback: T): T => {
+  try {
+    return fn();
+  } catch {
+    return fallback;
+  }
+};
+
+/**
+ * Load a URL and resolve once the page settles (or a 20s cap, so a hung load
+ * can't pin the agent's command). Resolves on the first `did-stop-loading`
+ * or `did-fail-load` after the load starts.
+ */
+/** Wait for the next `did-stop-loading` (or a 15s cap) after a history nav. */
+function waitForStop(wv: WebviewElement): Promise<void> {
+  return new Promise<void>((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      wv.removeEventListener("did-stop-loading", finish);
+      wv.removeEventListener("did-fail-load", finish);
+      resolve();
+    };
+    wv.addEventListener("did-stop-loading", finish);
+    wv.addEventListener("did-fail-load", finish);
+    setTimeout(finish, 15000);
+  });
+}
+
+function loadAndWait(wv: WebviewElement, url: string): Promise<void> {
+  return new Promise<void>((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      wv.removeEventListener("did-stop-loading", finish);
+      wv.removeEventListener("did-fail-load", finish);
+      resolve();
+    };
+    wv.addEventListener("did-stop-loading", finish);
+    wv.addEventListener("did-fail-load", finish);
+    try {
+      void wv.loadURL(url).catch(() => finish());
+    } catch {
+      wv.src = url;
+    }
+    setTimeout(finish, 20000);
+  });
 }
 
 function ToolbarButton({
@@ -223,4 +660,15 @@ type WebviewElement = HTMLElement & {
   goForward: () => void;
   canGoBack: () => boolean;
   canGoForward: () => boolean;
+  getURL: () => string;
+  getTitle: () => string;
+  capturePage: () => Promise<NativeImageLike>;
+  executeJavaScript: (code: string) => Promise<unknown>;
+};
+
+// Minimal surface of Electron's NativeImage we touch from the renderer.
+// `toDataURL` keeps us off `Buffer`, which the sandboxed renderer lacks.
+type NativeImageLike = {
+  toDataURL: () => string;
+  isEmpty: () => boolean;
 };
