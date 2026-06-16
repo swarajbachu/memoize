@@ -161,6 +161,38 @@ export const WorktreeServiceLive = Layer.effect(
         );
         const baseBranch = headRefRaw.trim() || "HEAD";
 
+        // Prefer branching off the freshly-fetched `origin/<branch>` rather
+        // than the main repo's local checkout: users live in worktrees and
+        // push from there, so the local base branch (e.g. `main`) is rarely
+        // pulled and goes stale. `git fetch` only touches the remote-tracking
+        // ref — the main checkout is left exactly as-is. Falls back to local
+        // `HEAD` when there's no `origin`, we're offline, the branch isn't on
+        // origin, or HEAD is detached, so worktree creation never fails just
+        // because the network/remote is unavailable.
+        let baseRef = "HEAD";
+        if (baseBranch !== "HEAD") {
+          const fetched = yield* runGit(repoPath, [
+            "fetch",
+            "origin",
+            baseBranch,
+          ]).pipe(
+            Effect.map(() => true),
+            Effect.catchAll(() => Effect.succeed(false)),
+          );
+          if (fetched) {
+            const remoteRefExists = yield* runGit(repoPath, [
+              "rev-parse",
+              "--verify",
+              "--quiet",
+              `refs/remotes/origin/${baseBranch}`,
+            ]).pipe(
+              Effect.map(() => true),
+              Effect.catchAll(() => Effect.succeed(false)),
+            );
+            if (remoteRefExists) baseRef = `origin/${baseBranch}`;
+          }
+        }
+
         // Try a few cool-names before giving up. Disk, DB, and existing-branch
         // collisions all count as "pick another."
         let attempt = 0;
@@ -197,15 +229,15 @@ export const WorktreeServiceLive = Layer.effect(
           if (branchExists) continue;
 
           // git worktree add -b <branch> <target> <baseRef>
-          // baseRef resolves the new branch's start point; use HEAD so we
-          // branch off whatever the user is currently on.
+          // baseRef is the freshly-fetched `origin/<branch>` when available,
+          // otherwise local `HEAD` (see baseRef resolution above).
           const addResult = yield* runGit(repoPath, [
             "worktree",
             "add",
             "-b",
             branch,
             target,
-            "HEAD",
+            baseRef,
           ]).pipe(Effect.either);
           if (addResult._tag === "Left") {
             return yield* Effect.fail(
