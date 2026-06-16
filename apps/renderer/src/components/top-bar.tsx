@@ -244,6 +244,7 @@ type Workflow =
   | { kind: "idle" }
   | { kind: "dirty"; count: number }
   | { kind: "ahead"; count: number; prOpen: boolean }
+  | { kind: "ready-for-pr" }
   | OpenPrWorkflow;
 
 /**
@@ -253,7 +254,8 @@ type Workflow =
  *                there are unpushed commits, that's what the user should do
  *                next, not stare at failing checks on stale code)
  *   3. open-pr — a PR exists and the working tree + upstream are in sync
- *   4. idle    — nothing to do
+ *   4. ready-for-pr — clean pushed worktree branch with no open PR
+ *   5. idle    — nothing to do
  *
  * Each kind carries only the fields its button needs, so the renderer
  * doesn't have to re-narrow PR shape downstream.
@@ -273,8 +275,10 @@ const deriveWorkflow = (
     checksFailing?: number;
     autoMergeEnabled?: boolean;
   } | null,
+  canCreatePrWhenSynced: boolean,
 ): Workflow => {
   const prOpen = pr !== null && pr.state === "open";
+  const prKnownNotOpen = pr !== null && !prOpen;
   if (status === null) return { kind: "idle" };
   if (status.dirtyFiles > 0) return { kind: "dirty", count: status.dirtyFiles };
   if (status.ahead > 0) return { kind: "ahead", count: status.ahead, prOpen };
@@ -293,6 +297,7 @@ const deriveWorkflow = (
       autoMergeEnabled: pr.autoMergeEnabled === true,
     };
   }
+  if (canCreatePrWhenSynced && prKnownNotOpen) return { kind: "ready-for-pr" };
   return { kind: "idle" };
 };
 
@@ -338,7 +343,11 @@ export function TopBarRight() {
     void useMessagesStore.getState().send(selectedSessionId, text);
   };
 
-  const workflow = deriveWorkflow(status, pr);
+  const canCreatePrWhenSynced =
+    ctx.status === "ready" &&
+    ctx.rootKind === "worktree" &&
+    !ctx.worktreePending;
+  const workflow = deriveWorkflow(status, pr, canCreatePrWhenSynced);
   const agentReady = selectedSessionId !== null;
 
   return (
@@ -351,6 +360,9 @@ export function TopBarRight() {
         ) : null}
         {workflow.kind === "ahead" ? (
           <GlassChip tone="pink">{workflow.count} ahead</GlassChip>
+        ) : null}
+        {workflow.kind === "ready-for-pr" ? (
+          <GlassChip tone="zinc">No PR</GlassChip>
         ) : null}
         {workflow.kind === "open-pr" ? (
           <>
@@ -386,6 +398,15 @@ export function TopBarRight() {
           />
         ) : null}
         {workflow.kind === "ahead" && !workflow.prOpen ? (
+          <GlassActionButton
+            tone="pink"
+            icon={<GitPullRequestArrow />}
+            label="Create PR"
+            disabled={!agentReady}
+            onClick={() => sendToAgent("create a pull request for this branch")}
+          />
+        ) : null}
+        {workflow.kind === "ready-for-pr" ? (
           <GlassActionButton
             tone="pink"
             icon={<GitPullRequestArrow />}
