@@ -7,7 +7,7 @@ import {
 import { CommandExecutor } from "@effect/platform";
 import { Effect, Layer, Stream } from "effect";
 
-import { resolveCliPath } from "./availability.ts";
+import { resolveCliPath, resolveUpdateCommand } from "./availability.ts";
 import { loadOpencodeInventory } from "./drivers/opencode.ts";
 import { startProviderLogin } from "./services/login-service.ts";
 import { startProviderUpdate } from "./services/update-service.ts";
@@ -83,7 +83,12 @@ const StartLogin = MemoizeRpcs.toLayerHandler(
 // availability so the new version shows immediately.
 const UpdateProvider = MemoizeRpcs.toLayerHandler(
   "agent.updateProvider",
-  ({ providerId }) => startProviderUpdate(providerId),
+  ({ providerId }) =>
+    Stream.unwrap(
+      resolveUpdateCommand(providerId).pipe(
+        Effect.map((command) => startProviderUpdate(providerId, command)),
+      ),
+    ),
 );
 
 // Renderer calls this on first open of the opencode model picker to refresh

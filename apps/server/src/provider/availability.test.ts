@@ -1,6 +1,10 @@
 import { describe, expect, it } from "bun:test";
 
-import { deriveLatestAdvisory, grokAuthTestHelpers } from "./availability.ts";
+import {
+  buildUpdateCommand,
+  deriveLatestAdvisory,
+  grokAuthTestHelpers,
+} from "./availability.ts";
 
 const { parseGrokAuthJson, extractTier, decodeJwtPayload } =
   grokAuthTestHelpers;
@@ -114,5 +118,57 @@ describe("deriveLatestAdvisory — update-available verdict", () => {
     expect(deriveLatestAdvisory(undefined, "1.0.0")).toBe("unknown");
     expect(deriveLatestAdvisory("1.0.0", null)).toBe("unknown");
     expect(deriveLatestAdvisory("not-a-version", "1.0.0")).toBe("unknown");
+  });
+});
+
+describe("buildUpdateCommand — install-method detection", () => {
+  it("uses the native self-updater for a native Claude install", () => {
+    expect(buildUpdateCommand("claude", ["/Users/me/.local/bin/claude"])).toBe(
+      "claude update",
+    );
+  });
+
+  it("uses the native self-updater for a native OpenCode install", () => {
+    expect(
+      buildUpdateCommand("opencode", ["/Users/me/.opencode/bin/opencode"]),
+    ).toBe("opencode upgrade");
+  });
+
+  it("uses npm (uninstall-then-install) for an nvm/npm-global install", () => {
+    // `which` returns the bin symlink; realpath points into node_modules.
+    const cmd = buildUpdateCommand("codex", [
+      "/Users/me/.nvm/versions/node/v23.10.0/bin/codex",
+      "/Users/me/.nvm/versions/node/v23.10.0/lib/node_modules/@openai/codex/bin/codex.js",
+    ]);
+    expect(cmd).toBe(
+      "npm uninstall -g @openai/codex || true; npm install -g @openai/codex@latest",
+    );
+  });
+
+  it("uses bun / pnpm for those global installs", () => {
+    expect(buildUpdateCommand("codex", ["/Users/me/.bun/bin/codex"])).toBe(
+      "bun i -g @openai/codex@latest",
+    );
+    expect(
+      buildUpdateCommand("codex", ["/Users/me/.local/share/pnpm/codex"]),
+    ).toBe("pnpm add -g @openai/codex@latest");
+  });
+
+  it("uses brew when the binary lives under a Homebrew prefix", () => {
+    expect(buildUpdateCommand("codex", ["/opt/homebrew/bin/codex"])).toBe(
+      "brew upgrade codex",
+    );
+  });
+
+  it("defaults npm providers to npm when the path is unknown / absent", () => {
+    expect(buildUpdateCommand("gemini", [])).toBe(
+      "npm uninstall -g @google/gemini-cli || true; npm install -g @google/gemini-cli@latest",
+    );
+  });
+
+  it("reinstalls via the install one-liner for curl-based CLIs (Grok)", () => {
+    expect(buildUpdateCommand("grok", ["/Users/me/.local/bin/grok"])).toBe(
+      "curl -fsSL https://x.ai/cli/install.sh | bash",
+    );
   });
 });

@@ -623,15 +623,20 @@ function useProviderUpdate(providerId: ProviderId) {
             } else if (event._tag === "done") {
               fiberRef.current = null;
               if (event.ok) {
-                setState({ kind: "success" });
-                void refresh();
-                // Re-probe will hide the icon if now on latest; for
-                // version-unknown CLIs (Grok) drop the "Updated" badge after
-                // a moment so the control returns to idle.
-                resetTimerRef.current = window.setTimeout(() => {
-                  setState({ kind: "idle" });
-                  resetTimerRef.current = null;
-                }, 4_000);
+                // Re-probe FIRST so the version label is fresh before we flip
+                // the badge to "Updated" — otherwise the badge and the old
+                // version show together for a beat. Stay on the spinner until
+                // the probe lands.
+                void refresh().finally(() => {
+                  setState({ kind: "success" });
+                  // Re-probe hides the icon if now on latest; for
+                  // version-unknown CLIs (Grok) drop the "Updated" badge after
+                  // a moment so the control returns to idle.
+                  resetTimerRef.current = window.setTimeout(() => {
+                    setState({ kind: "idle" });
+                    resetTimerRef.current = null;
+                  }, 4_000);
+                });
               } else {
                 setState({
                   kind: "failed",

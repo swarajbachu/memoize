@@ -10,8 +10,6 @@ import {
   type ProviderUpdateEvent,
 } from "@memoize/wire";
 
-import { updateCommandForProvider } from "../availability.ts";
-
 const ANSI_PATTERN = /\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
 
 // Hard ceiling on a single update. npm global installs + curl bootstrap
@@ -34,8 +32,8 @@ const UPDATE_TIMEOUT_MS = 5 * 60_000;
  */
 export const startProviderUpdate = (
   providerId: ProviderId,
+  command: string | null,
 ): Stream.Stream<ProviderUpdateEvent, AgentSessionStartError> => {
-  const command = updateCommandForProvider(providerId);
   if (command === null) {
     const event: ProviderUpdateEvent = {
       _tag: "done",

@@ -39,6 +39,18 @@ interface ProviderProbe {
    * and surface no update affordance.
    */
   readonly npmPackage: string | null;
+  /** Homebrew formula, when the CLI is also distributed via brew. */
+  readonly homebrewFormula: string | null;
+  /**
+   * Native self-update (e.g. `claude update`, `opencode upgrade`) used when
+   * the on-PATH binary is the provider's own native install rather than a
+   * package-manager one. `matches` is given the normalized (lowercased,
+   * forward-slash) binary path.
+   */
+  readonly nativeUpdate: {
+    readonly command: string;
+    readonly matches: (normalizedPath: string) => boolean;
+  } | null;
 }
 
 const PROBES: ReadonlyArray<ProviderProbe> = [
@@ -52,6 +64,13 @@ const PROBES: ReadonlyArray<ProviderProbe> = [
     minVersion: null,
     upgradeCommand: null,
     npmPackage: "@anthropic-ai/claude-code",
+    homebrewFormula: "claude-code",
+    // Native installer drops the binary in `~/.local/bin/claude` and ships a
+    // `claude update` self-updater. npm can't touch that install.
+    nativeUpdate: {
+      command: "claude update",
+      matches: (p) => p.endsWith("/.local/bin/claude"),
+    },
   },
   {
     providerId: "codex",
@@ -60,6 +79,8 @@ const PROBES: ReadonlyArray<ProviderProbe> = [
     minVersion: { major: 0, minor: 128, patch: 0, raw: "0.128.0" },
     upgradeCommand: "npm i -g @openai/codex@latest",
     npmPackage: "@openai/codex",
+    homebrewFormula: "codex",
+    nativeUpdate: null,
   },
   {
     providerId: "grok",
@@ -71,7 +92,10 @@ const PROBES: ReadonlyArray<ProviderProbe> = [
     minVersion: null,
     upgradeCommand: "curl -fsSL https://x.ai/cli/install.sh | bash",
     // xAI ships Grok via a curl installer, not npm — no registry to poll.
+    // The installer reinstalls the latest build, so it doubles as the updater.
     npmPackage: null,
+    homebrewFormula: null,
+    nativeUpdate: null,
   },
   {
     providerId: "gemini",
@@ -83,6 +107,8 @@ const PROBES: ReadonlyArray<ProviderProbe> = [
     minVersion: null,
     upgradeCommand: "npm i -g @google/gemini-cli",
     npmPackage: "@google/gemini-cli",
+    homebrewFormula: "gemini-cli",
+    nativeUpdate: null,
   },
   {
     providerId: "cursor",
@@ -94,8 +120,11 @@ const PROBES: ReadonlyArray<ProviderProbe> = [
     // ACP-introducing version.
     minVersion: null,
     upgradeCommand: "curl https://cursor.com/install -fsS | bash",
-    // cursor-agent ships via a curl installer, not npm.
+    // cursor-agent ships via a curl installer, not npm. Its install script
+    // reinstalls the latest build, so it doubles as the updater.
     npmPackage: null,
+    homebrewFormula: null,
+    nativeUpdate: null,
   },
   {
     providerId: "opencode",
@@ -108,6 +137,13 @@ const PROBES: ReadonlyArray<ProviderProbe> = [
     minVersion: { major: 1, minor: 3, patch: 15, raw: "1.3.15" },
     upgradeCommand: "curl -fsSL https://opencode.ai/install | bash",
     npmPackage: "opencode-ai",
+    homebrewFormula: "anomalyco/tap/opencode",
+    // Native installer drops the binary in `~/.opencode/bin/opencode` and
+    // ships an `opencode upgrade` self-updater.
+    nativeUpdate: {
+      command: "opencode upgrade",
+      matches: (p) => p.endsWith("/.opencode/bin/opencode"),
+    },
   },
 ];
 
@@ -296,32 +332,117 @@ export const deriveLatestAdvisory = (
   return compareCliVersion(installed, latest) < 0 ? "behind" : "current";
 };
 
+// ---------------------------------------------------------------------------
+// Install-method detection. The right update command depends on HOW the
+// on-PATH binary was installed — a native install (`~/.local/bin/claude`)
+// can't be updated by npm, a brew install needs `brew upgrade`, etc. We
+// inspect the resolved binary path (and its realpath, since global bins are
+// symlinks into `…/lib/node_modules/…`) the same way the t3 reference does.
+// ---------------------------------------------------------------------------
+
+const normalizeCommandPath = (p: string): string =>
+  p.replaceAll("\\", "/").toLowerCase();
+
+const isBunGlobalPath = (p: string): boolean => p.includes("/.bun/bin/");
+
+const isPnpmGlobalPath = (p: string): boolean =>
+  p.includes("/.local/share/pnpm/") ||
+  p.includes("/library/pnpm/") ||
+  p.includes("/pnpm/global/");
+
+const isNpmGlobalPath = (p: string): boolean =>
+  p.includes("/lib/node_modules/") ||
+  p.includes("/node_modules/.bin/") ||
+  p.includes("/npm/node_modules/");
+
+const isHomebrewPath = (p: string): boolean =>
+  p.includes("/cellar/") ||
+  p.includes("/caskroom/") ||
+  p.startsWith("/opt/homebrew/bin/") ||
+  p.startsWith("/usr/local/bin/");
+
+// A plain `npm i -g <pkg>@latest` re-install fails with ENOTEMPTY during npm's
+// "retire old dir" rename step when a prior install left files behind (common
+// with packages shipping optional per-platform binaries, e.g.
+// @anthropic-ai/claude-code). Uninstall first so install lays down a clean
+// tree; `|| true` keeps a not-installed case from aborting the chain.
+const npmGlobalUpdate = (pkg: string): string =>
+  `npm uninstall -g ${pkg} || true; npm install -g ${pkg}@latest`;
+
 /**
- * The shell command that updates a provider's CLI to the latest release.
- *
- * npm-published providers uninstall-then-install rather than a bare
- * `npm i -g <pkg>@latest`: a plain re-install fails with `ENOTEMPTY` during
- * npm's "retire old dir" rename step when a prior install left files behind
- * (common with packages shipping optional per-platform binaries, e.g.
- * `@anthropic-ai/claude-code`). `uninstall -g` clears the dir first, then the
- * install lays down a clean tree. `|| true` on the uninstall keeps a
- * not-currently-installed case from aborting the chain.
- *
- * Non-npm providers reuse their official install one-liner (curl scripts
- * reinstall the latest build). Returns `null` for an unknown provider. Run
- * server-side via a login shell so PATH + pipes resolve — see
- * `update-service.ts`.
+ * Pure resolver: pick the update command for a provider given the candidate
+ * binary paths (the `which` result plus its realpath). Detection order mirrors
+ * the t3 reference: native self-update → bun → pnpm → npm → homebrew. Falls
+ * back to the provider's install one-liner (curl installers reinstall latest),
+ * else `null`.
  */
-export const updateCommandForProvider = (
+export const buildUpdateCommand = (
   providerId: ProviderId,
+  candidatePaths: ReadonlyArray<string>,
 ): string | null => {
   const probe = PROBES.find((p) => p.providerId === providerId);
   if (probe === undefined) return null;
-  if (probe.npmPackage !== null) {
-    return `npm uninstall -g ${probe.npmPackage} || true; npm install -g ${probe.npmPackage}@latest`;
+
+  const norms = candidatePaths
+    .filter((p) => p.length > 0)
+    .map(normalizeCommandPath);
+
+  if (
+    probe.nativeUpdate !== null &&
+    norms.some((p) => probe.nativeUpdate!.matches(p))
+  ) {
+    return probe.nativeUpdate.command;
   }
+
+  if (probe.npmPackage !== null) {
+    if (norms.some(isBunGlobalPath)) {
+      return `bun i -g ${probe.npmPackage}@latest`;
+    }
+    if (norms.some(isPnpmGlobalPath)) {
+      return `pnpm add -g ${probe.npmPackage}@latest`;
+    }
+    if (norms.some(isNpmGlobalPath)) {
+      return npmGlobalUpdate(probe.npmPackage);
+    }
+    if (probe.homebrewFormula !== null && norms.some(isHomebrewPath)) {
+      return `brew upgrade ${probe.homebrewFormula}`;
+    }
+    // Path didn't reveal the manager (or no path at all): default to npm,
+    // which is how these packages are most commonly installed.
+    return npmGlobalUpdate(probe.npmPackage);
+  }
+
+  // Non-npm providers (Grok, Cursor): reinstall via the official one-liner.
   return probe.upgradeCommand;
 };
+
+/**
+ * Resolve the update command for a provider by locating its binary and its
+ * realpath, then delegating to {@link buildUpdateCommand}. Run server-side via
+ * a login shell so PATH + pipes resolve — see `update-service.ts`.
+ */
+export const resolveUpdateCommand = (
+  providerId: ProviderId,
+): Effect.Effect<
+  string | null,
+  never,
+  CommandExecutor.CommandExecutor | FileSystem.FileSystem
+> =>
+  Effect.gen(function* () {
+    const probe = PROBES.find((p) => p.providerId === providerId);
+    if (probe === undefined) return null;
+    const cliPath = yield* resolveCliPath(probe.cliBinary);
+    if (cliPath === null) {
+      // Not on PATH — fall back to a path-less resolution (npm default /
+      // install one-liner) so the command still does something sensible.
+      return buildUpdateCommand(providerId, []);
+    }
+    const fs = yield* FileSystem.FileSystem;
+    const realPath = yield* fs
+      .realPath(cliPath)
+      .pipe(Effect.catchAll(() => Effect.succeed(cliPath)));
+    return buildUpdateCommand(providerId, [cliPath, realPath]);
+  });
 
 // ---------------------------------------------------------------------------
 // Verified-auth probes per provider.
@@ -997,11 +1118,16 @@ const probeOne = (
       cliVersion,
       latestVersionRaw,
     );
-    // Set for every provider that has an install one-liner (incl. curl-based
-    // CLIs like Grok/Cursor) so the renderer can offer one-click update even
-    // when we can't detect the latest version from a registry.
+    // Install-method-aware update command (native / brew / bun / pnpm / npm /
+    // curl). Resolve the binary's realpath too, since global bins are symlinks
+    // into `…/lib/node_modules/…`. Set for every provider that has any update
+    // path so the renderer can offer one-click update.
+    const fs = yield* FileSystem.FileSystem;
+    const realPath = yield* fs
+      .realPath(cliPath)
+      .pipe(Effect.catchAll(() => Effect.succeed(cliPath)));
     const updateCommand =
-      updateCommandForProvider(probe.providerId) ?? undefined;
+      buildUpdateCommand(probe.providerId, [cliPath, realPath]) ?? undefined;
 
     const account = yield* probeAccount(probe.providerId, cliPath);
     const cliLoggedIn = account.authStatus === "authenticated";
