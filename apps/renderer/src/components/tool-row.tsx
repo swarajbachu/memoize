@@ -18,8 +18,6 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 
 import type {
   SessionId,
@@ -93,10 +91,19 @@ export const iconForTool = (tool: string): IconHandle => {
       // wired an exact case for yet. "list dir", "read file", "run shell"
       // etc. will now get a reasonable icon instead of the generic wrench.
       const t = tool.toLowerCase();
-      if (t.includes("dir") || t.includes("folder") || t.includes("list")) return Folder01Icon;
-      if (t.includes("file") || t.includes("read") || t.includes("write")) return File01Icon;
-      if (t.includes("bash") || t.includes("shell") || t.includes("cmd") || t.includes("exec")) return TerminalIcon;
-      if (t.includes("search") || t.includes("grep") || t.includes("glob")) return SearchIcon;
+      if (t.includes("dir") || t.includes("folder") || t.includes("list"))
+        return Folder01Icon;
+      if (t.includes("file") || t.includes("read") || t.includes("write"))
+        return File01Icon;
+      if (
+        t.includes("bash") ||
+        t.includes("shell") ||
+        t.includes("cmd") ||
+        t.includes("exec")
+      )
+        return TerminalIcon;
+      if (t.includes("search") || t.includes("grep") || t.includes("glob"))
+        return SearchIcon;
       if (t.includes("web") || t.includes("http")) return GlobeIcon;
       return Wrench01Icon;
     }
@@ -195,9 +202,7 @@ function InlineCodeChip({ value }: { value: string }) {
 
 function InlineTextHint({ value }: { value: string }) {
   return (
-    <span className="ml-1 truncate text-muted-foreground italic">
-      {value}
-    </span>
+    <span className="ml-1 truncate text-muted-foreground italic">{value}</span>
   );
 }
 
@@ -213,10 +218,10 @@ function TerminalBlock({
   return (
     <div
       className={cn(
-        "rounded px-3 py-2 font-mono text-[11px] leading-relaxed overflow-x-auto",
+        "overflow-x-auto rounded border px-3 py-2 font-mono text-[11px] leading-relaxed",
         isError
-          ? "bg-alert-error-bg"
-          : "bg-zinc-900/70",
+          ? "border-alert-error-bg bg-alert-error-bg"
+          : "border-message-rule bg-message-pre-bg",
       )}
     >
       {command !== undefined ? (
@@ -286,7 +291,7 @@ function DirTreeBlock({ text }: { text: string }) {
     );
   }
   return (
-    <pre className="overflow-x-auto rounded bg-zinc-900/70 px-3 py-2 font-mono text-[11px] leading-relaxed">
+    <pre className="overflow-x-auto rounded border border-message-rule bg-message-pre-bg px-3 py-2 font-mono text-[11px] leading-relaxed">
       {lines.map((line, i) => {
         const isDir = line.trimEnd().endsWith("/");
         return (
@@ -321,7 +326,7 @@ function GrepGroupsBlock({
         <div key={i} className="space-y-0.5">
           <FileBadge path={g.path} />
           {g.matches.length > 0 ? (
-            <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded bg-zinc-900/70 px-3 py-1.5 font-mono text-[11px] text-foreground/80">
+            <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded border border-message-rule bg-message-pre-bg px-3 py-1.5 font-mono text-[11px] text-foreground/80">
               {g.matches.join("\n")}
             </pre>
           ) : null}
@@ -332,27 +337,17 @@ function GrepGroupsBlock({
 }
 
 function MarkdownBlock({ text }: { text: string }) {
-  return (
-    <div className="prose prose-invert prose-sm max-w-none break-words text-[12px] [&>:first-child]:mt-0 [&>:last-child]:mb-0 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-3 [&_pre>code]:bg-transparent [&_pre>code]:p-0">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
-    </div>
-  );
+  return <MarkdownBody className="text-[12px]">{text}</MarkdownBody>;
 }
 
-function PreBlock({
-  text,
-  isError,
-}: {
-  text: string;
-  isError?: boolean;
-}) {
+function PreBlock({ text, isError }: { text: string; isError?: boolean }) {
   return (
     <pre
       className={cn(
-        "overflow-x-auto whitespace-pre-wrap break-words rounded px-3 py-2 font-mono text-[11px] text-foreground/80",
+        "overflow-x-auto whitespace-pre-wrap break-words rounded border px-3 py-2 font-mono text-[11px] text-foreground/80",
         isError
-          ? "bg-alert-error-bg"
-          : "bg-zinc-900/70",
+          ? "border-alert-error-bg bg-alert-error-bg"
+          : "border-message-rule bg-message-pre-bg",
       )}
     >
       {text || "(empty)"}
@@ -367,7 +362,10 @@ function PreBlock({
 const splitLines = (s: string): ReadonlyArray<string> => {
   const trimmed = s.trim();
   if (trimmed.length === 0) return [];
-  return trimmed.split("\n").map((line) => line.trim()).filter((l) => l.length > 0);
+  return trimmed
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((l) => l.length > 0);
 };
 
 // Grep / Glob results are usually one path per line, sometimes followed
@@ -515,9 +513,10 @@ const buildToolView = (
         icon: TerminalIcon,
         label: desc ?? "Bash",
         trailing:
-          cmd !== null ? <InlineCodeChip value={truncate(cmd, 120)} /> : undefined,
-        inputPanel:
-          cmd !== null ? <TerminalBlock command={cmd} /> : undefined,
+          cmd !== null ? (
+            <InlineCodeChip value={truncate(cmd, 120)} />
+          ) : undefined,
+        inputPanel: cmd !== null ? <TerminalBlock command={cmd} /> : undefined,
         resultPanel: (result) => (
           <TerminalBlock
             output={toResultText(result.output) || "(no output)"}
@@ -525,9 +524,7 @@ const buildToolView = (
           />
         ),
         fallbackBody:
-          cmd === null ? (
-            <PreBlock text={stringifyJson(input)} />
-          ) : undefined,
+          cmd === null ? <PreBlock text={stringifyJson(input)} /> : undefined,
       };
     }
 
@@ -574,11 +571,7 @@ const buildToolView = (
             );
           }
           return (
-            <CodeBlock
-              filename={path}
-              text={text}
-              isError={result.isError}
-            />
+            <CodeBlock filename={path} text={text} isError={result.isError} />
           );
         },
       };
@@ -666,11 +659,13 @@ const buildToolView = (
           pattern !== null ? (
             <div className="text-[11px] text-muted-foreground space-y-0.5">
               <div>
-                pattern <span className="font-mono text-foreground/90">{pattern}</span>
+                pattern{" "}
+                <span className="font-mono text-foreground/90">{pattern}</span>
               </div>
               {where !== null ? (
                 <div>
-                  scope <span className="font-mono text-foreground/90">{where}</span>
+                  scope{" "}
+                  <span className="font-mono text-foreground/90">{where}</span>
                 </div>
               ) : null}
             </div>
@@ -833,10 +828,7 @@ const buildToolView = (
             );
           }
           return (
-            <PreBlock
-              text={truncate(text, 4000)}
-              isError={result.isError}
-            />
+            <PreBlock text={truncate(text, 4000)} isError={result.isError} />
           );
         },
       };
@@ -858,7 +850,8 @@ const buildToolView = (
                 if (t === null || typeof t !== "object")
                   return <li key={i}>{stringifyJson(t)}</li>;
                 const r = t as Record<string, unknown>;
-                const content = asString(r.content) ?? asString(r.activeForm) ?? "";
+                const content =
+                  asString(r.content) ?? asString(r.activeForm) ?? "";
                 const status = asString(r.status) ?? "";
                 return (
                   <li key={i} className="font-mono">
@@ -897,7 +890,9 @@ const buildToolView = (
             )}
             {promptText && (
               <div className="rounded border bg-muted/30 p-1.5 font-mono text-[11px] leading-snug">
-                {promptText.length > 280 ? promptText.slice(0, 277) + "…" : promptText}
+                {promptText.length > 280
+                  ? promptText.slice(0, 277) + "…"
+                  : promptText}
               </div>
             )}
             {receivers.length > 0 && (
@@ -915,7 +910,9 @@ const buildToolView = (
         ),
         resultPanel: (result) => (
           <PreBlock
-            text={toResultText(result.output) || stringifyJson(obj.agentsStates)}
+            text={
+              toResultText(result.output) || stringifyJson(obj.agentsStates)
+            }
             isError={result.isError}
           />
         ),
@@ -962,7 +959,10 @@ const buildToolView = (
         label: "Read page",
         trailing: <InlineTextHint value="elements" />,
         resultPanel: (result) => (
-          <PreBlock text={toResultText(result.output)} isError={result.isError} />
+          <PreBlock
+            text={toResultText(result.output)}
+            isError={result.isError}
+          />
         ),
       };
     }
@@ -974,7 +974,10 @@ const buildToolView = (
         label: "Click",
         trailing: ref !== null ? <InlineTextHint value={ref} /> : undefined,
         resultPanel: (result) => (
-          <PreBlock text={toResultText(result.output)} isError={result.isError} />
+          <PreBlock
+            text={toResultText(result.output)}
+            isError={result.isError}
+          />
         ),
       };
     }
@@ -989,7 +992,10 @@ const buildToolView = (
             <InlineTextHint value={truncate(typed, 48)} />
           ) : undefined,
         resultPanel: (result) => (
-          <PreBlock text={toResultText(result.output)} isError={result.isError} />
+          <PreBlock
+            text={toResultText(result.output)}
+            isError={result.isError}
+          />
         ),
       };
     }
@@ -1029,9 +1035,14 @@ const buildToolView = (
         icon: BrowserIcon,
         label: "Select",
         trailing:
-          value !== null ? <InlineTextHint value={truncate(value, 40)} /> : undefined,
+          value !== null ? (
+            <InlineTextHint value={truncate(value, 40)} />
+          ) : undefined,
         resultPanel: (result) => (
-          <PreBlock text={toResultText(result.output)} isError={result.isError} />
+          <PreBlock
+            text={toResultText(result.output)}
+            isError={result.isError}
+          />
         ),
       };
     }
@@ -1050,7 +1061,10 @@ const buildToolView = (
         icon: File01Icon,
         label: "Read page",
         resultPanel: (result) => (
-          <PreBlock text={toResultText(result.output)} isError={result.isError} />
+          <PreBlock
+            text={toResultText(result.output)}
+            isError={result.isError}
+          />
         ),
       };
     }
@@ -1073,7 +1087,10 @@ const buildToolView = (
         icon: TerminalIcon,
         label: "Console",
         resultPanel: (result) => (
-          <PreBlock text={toResultText(result.output)} isError={result.isError} />
+          <PreBlock
+            text={toResultText(result.output)}
+            isError={result.isError}
+          />
         ),
       };
     }
@@ -1088,7 +1105,10 @@ const buildToolView = (
             <InlineTextHint value={truncate(origin, 48)} />
           ) : undefined,
         resultPanel: (result) => (
-          <PreBlock text={toResultText(result.output)} isError={result.isError} />
+          <PreBlock
+            text={toResultText(result.output)}
+            isError={result.isError}
+          />
         ),
       };
     }
@@ -1192,9 +1212,7 @@ export function ExitPlanModeRow({
           <div className="mt-4 flex items-center justify-end gap-2">
             <button
               type="button"
-              onClick={() =>
-                void decide(pendingRequest.id, { _tag: "Deny" })
-              }
+              onClick={() => void decide(pendingRequest.id, { _tag: "Deny" })}
               className="rounded-md px-3 py-1 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground"
             >
               Cancel
@@ -1218,9 +1236,7 @@ export function ExitPlanModeRow({
   const body = (
     <>
       {plan === null ? (
-        <p className="text-sm italic text-muted-foreground">
-          (No plan body.)
-        </p>
+        <p className="text-sm italic text-muted-foreground">(No plan body.)</p>
       ) : (
         <MarkdownBody>{plan}</MarkdownBody>
       )}
@@ -1474,10 +1490,10 @@ export function ThinkingRow({
     </p>
   ) : isEmpty ? (
     <p className="whitespace-pre-wrap text-[11px] italic leading-relaxed text-muted-foreground/70">
-      The model produced a thinking block (the SDK forwarded its signed
-      receipt) but the underlying text was filtered out by Anthropic's
-      agent SDK before it reached us. We can&apos;t expose the actual
-      thoughts without bypassing the official SDK.
+      The model produced a thinking block (the SDK forwarded its signed receipt)
+      but the underlying text was filtered out by Anthropic's agent SDK before
+      it reached us. We can&apos;t expose the actual thoughts without bypassing
+      the official SDK.
     </p>
   ) : (
     <MarkdownBlock text={text} />
