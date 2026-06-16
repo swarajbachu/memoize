@@ -100,7 +100,7 @@ const GROK_DIAG = process.env.MEMOIZE_DEBUG_GROK === "1" || process.env.MEMOIZE_
 // the slightly longer "Your cached login may have expired...") never diverge.
 export const GROK_AUTH_REQUIRED_MESSAGE =
   "Grok authentication failed (AuthorizationRequired). " +
-  "Run `grok login` again or verify that your account has the SuperGrok Heavy plan. " +
+  "Run `grok login` again or verify that your account has SuperGrok or X Premium+. " +
   "If the problem persists after logging in, check your plan at https://x.ai/.";
 
 /** Always-on diagnostic helper. Use for anything that helps root-cause "it stops". */
@@ -121,7 +121,7 @@ const grokDiag = (label: string, data?: unknown): void => {
 
 /**
  * Detect fatal authorization failures from the grok agent's own stderr.
- * When the cached token is missing/expired/insufficient (SuperGrok Heavy
+ * When the cached token is missing/expired/insufficient (Grok paid tier
  * tier required), the agent prints:
  *   "worker quit with fatal: Transport channel closed, when Auth(AuthorizationRequired)"
  * and dies. We watch for this in real time so we can fail the in-flight
@@ -301,7 +301,7 @@ export const startGrokSession = (
     let spawnedAt = 0;
     /** Re-spawn the grok child and re-run the ACP handshake. Used both for
      *  the initial start() path and for transparent recovery after the
-     *  worker dies (auth refresh races, the SuperGrok Heavy worker quitting
+     *  worker dies (auth refresh races, the Grok worker quitting
      *  mid-session, etc). On success: child/rl/acpSessionId/authMethodUsed
      *  are populated, dead=false, listeners attached. On failure the
      *  returned promise rejects and the caller decides whether to surface

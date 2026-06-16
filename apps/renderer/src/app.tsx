@@ -21,6 +21,7 @@ import { FileEditor } from "./components/file-editor.tsx";
 import { closeActiveChatTab, MainTabs } from "./components/main-tabs.tsx";
 import { OnboardingWizard } from "./components/onboarding/onboarding-wizard.tsx";
 import { ProjectsSidebar } from "./components/projects-sidebar";
+import { ProviderUpdatesToast } from "./components/provider-updates-toast.tsx";
 import { RightPane } from "./components/right-pane";
 import { SettingsPage } from "./components/settings-page";
 import { TopBarLeft, TopBarMain, TopBarRight } from "./components/top-bar.tsx";
@@ -30,6 +31,7 @@ import { useMenuShortcuts } from "./hooks/use-menu-shortcuts.ts";
 import { getRpcClient } from "./lib/rpc-client.ts";
 import { useKeybindingsStore } from "./store/keybindings.ts";
 import { usePermissionsStore } from "./store/permissions.ts";
+import { useProvidersStore } from "./store/providers.ts";
 import { useChatsStore } from "./store/chats.ts";
 import { useSessionsStore } from "./store/sessions.ts";
 import { useSettingsStore } from "./store/settings.ts";
@@ -76,6 +78,14 @@ export function App() {
     void hydrateKeybindings();
     void hydrateSubagentsStore();
   }, [hydrateSettings, hydrateKeybindings]);
+
+  // Probe provider availability once on boot so the "update available" launch
+  // toast can fire without the user first opening settings. ProvidersPane
+  // keeps its own mount/focus refresh for live updates while settings is open.
+  const refreshProviders = useProvidersStore((s) => s.refresh);
+  useEffect(() => {
+    void refreshProviders();
+  }, [refreshProviders]);
 
   // Mirror Electron's fullscreen state into the ui store so the top bars
   // can drop the macOS traffic-light gutter.
@@ -312,6 +322,7 @@ function MainShell() {
           <main className="flex h-full min-h-0 min-w-0 flex-col bg-background/70 backdrop-blur-3xl">
             <TopBarMain />
             <UpdateBanner />
+            <ProviderUpdatesToast />
             <IndexProgressBanner />
             <MainTabs projectId={selectedFolderId} emptyLabel={emptyTabLabel} />
             <div

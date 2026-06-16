@@ -272,9 +272,9 @@ body,
   --user-bubble-foreground: oklch(0.22 0.01 260);
   --message-text: oklch(0.28 0.008 260);
   --message-heading: oklch(0.18 0.01 260);
-  --message-code: oklch(0.42 0.05 30);
-  --message-code-bg: oklch(0.95 0.006 260);
-  --message-pre-bg: oklch(0.97 0.005 260);
+  --message-code: oklch(0.36 0.065 122);
+  --message-code-bg: oklch(0.945 0.012 122);
+  --message-pre-bg: oklch(0.965 0.004 260);
   --message-quote: oklch(0.46 0.01 260);
   --message-rule: oklch(0.88 0.005 260);
 }
@@ -370,9 +370,9 @@ body,
   --user-bubble-foreground: oklch(0.96 0.005 260);
   --message-text: oklch(0.78 0.006 260);
   --message-heading: oklch(0.88 0.006 260);
-  --message-code: oklch(0.82 0.04 60);
-  --message-code-bg: oklch(0.28 0.008 260);
-  --message-pre-bg: oklch(0.235 0.006 260);
+  --message-code: oklch(0.84 0.085 122);
+  --message-code-bg: oklch(0.265 0.012 122);
+  --message-pre-bg: oklch(0.225 0.006 260);
   --message-quote: oklch(0.66 0.008 260);
   --message-rule: oklch(1 0 0 / 0.08);
 }
@@ -430,18 +430,36 @@ body,
     --diffs-modified-light: oklch(0.7 0.13 80);
     --diffs-modified-dark: oklch(0.82 0.11 82);
 
-    --diffs-bg-addition-override:
-      color-mix(in oklab, var(--diffs-added-dark) 10%, var(--background));
-    --diffs-bg-addition-emphasis-override:
-      color-mix(in oklab, var(--diffs-added-dark) 20%, var(--background));
-    --diffs-bg-addition-number-override:
-      color-mix(in oklab, var(--diffs-added-dark) 14%, var(--bg-subtle));
-    --diffs-bg-deletion-override:
-      color-mix(in oklab, var(--diffs-deleted-dark) 10%, var(--background));
-    --diffs-bg-deletion-emphasis-override:
-      color-mix(in oklab, var(--diffs-deleted-dark) 20%, var(--background));
-    --diffs-bg-deletion-number-override:
-      color-mix(in oklab, var(--diffs-deleted-dark) 14%, var(--bg-subtle));
+    --diffs-bg-addition-override: color-mix(
+      in oklab,
+      var(--diffs-added-dark) 10%,
+      var(--background)
+    );
+    --diffs-bg-addition-emphasis-override: color-mix(
+      in oklab,
+      var(--diffs-added-dark) 20%,
+      var(--background)
+    );
+    --diffs-bg-addition-number-override: color-mix(
+      in oklab,
+      var(--diffs-added-dark) 14%,
+      var(--bg-subtle)
+    );
+    --diffs-bg-deletion-override: color-mix(
+      in oklab,
+      var(--diffs-deleted-dark) 10%,
+      var(--background)
+    );
+    --diffs-bg-deletion-emphasis-override: color-mix(
+      in oklab,
+      var(--diffs-deleted-dark) 20%,
+      var(--background)
+    );
+    --diffs-bg-deletion-number-override: color-mix(
+      in oklab,
+      var(--diffs-deleted-dark) 14%,
+      var(--bg-subtle)
+    );
 
     /* Typography — same monospace token as the rest of the app, slightly
        smaller than Pierre's default so a diff doesn't dwarf the chat. */
@@ -459,7 +477,7 @@ body,
   .fz-prose {
     color: var(--message-text);
     font-size: 0.9rem;
-    line-height: 1.65;
+    line-height: 1.62;
     word-break: break-word;
   }
   .fz-prose > :first-child {
@@ -480,8 +498,8 @@ body,
     color: var(--message-heading);
     font-weight: 600;
     line-height: 1.3;
-    letter-spacing: -0.01em;
-    margin: 1.4em 0 0.5em;
+    letter-spacing: 0;
+    margin: 1.35em 0 0.45em;
   }
   .fz-prose h1 {
     font-size: 1.4em;
@@ -502,13 +520,14 @@ body,
     font-weight: 600;
   }
   .fz-prose a {
-    color: var(--info);
+    color: color-mix(in oklch, var(--info) 78%, var(--foreground));
     text-decoration: underline;
-    text-decoration-color: color-mix(in srgb, var(--info), transparent 60%);
+    text-decoration-color: color-mix(in oklch, var(--info) 36%, transparent);
     text-underline-offset: 0.2em;
   }
   .fz-prose a:hover {
-    text-decoration-color: var(--info);
+    color: color-mix(in oklch, var(--info) 88%, var(--foreground));
+    text-decoration-color: color-mix(in oklch, var(--info) 68%, transparent);
   }
   .fz-prose ul,
   .fz-prose ol {
@@ -523,8 +542,9 @@ body,
   }
   .fz-prose blockquote {
     margin: 0.8em 0;
-    padding: 0.1em 0 0.1em 0.9em;
-    border-left: 2px solid var(--message-rule);
+    padding: 0.2em 0 0.2em 0.9em;
+    border-left: 2px solid
+      color-mix(in oklch, var(--primary) 36%, var(--message-rule));
     color: var(--message-quote);
     font-style: normal;
   }
@@ -537,12 +557,21 @@ body,
     font-family: var(--font-mono);
     font-size: 0.86em;
     color: var(--message-code);
-    background-color: var(--message-code-bg);
-    padding: 0.1em 0.35em;
+    background-color: color-mix(
+      in oklch,
+      var(--message-code-bg) 84%,
+      var(--background)
+    );
+    border: 1px solid color-mix(in oklch, var(--message-rule) 72%, transparent);
+    padding: 0.08em 0.34em;
     border-radius: 0.3rem;
   }
   .fz-prose pre {
-    background-color: var(--message-pre-bg);
+    background-color: color-mix(
+      in oklch,
+      var(--message-pre-bg) 90%,
+      var(--background)
+    );
     border: 1px solid var(--message-rule);
     border-radius: 0.5rem;
     padding: 0.85em 1em;
@@ -554,6 +583,20 @@ body,
   .fz-prose pre code {
     color: var(--message-text);
     background: transparent;
+    border: 0;
+    padding: 0;
+    font-size: inherit;
+  }
+  .fz-prose .markdown-code-block {
+    margin: 0.9em 0;
+  }
+  .fz-prose .markdown-code-block code,
+  .fz-prose .markdown-code-block pre code,
+  .fz-prose .code-block-shiki code {
+    color: inherit;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
     padding: 0;
     font-size: inherit;
   }
@@ -573,9 +616,9 @@ body,
     color: var(--message-heading);
     font-weight: 600;
     background-color: color-mix(
-      in srgb,
-      var(--message-pre-bg),
-      transparent 40%
+      in oklch,
+      var(--message-pre-bg) 72%,
+      var(--background)
     );
   }
 }
@@ -766,7 +809,13 @@ body,
     margin: 0;
     padding: 6px 0;
     background: transparent !important;
-    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+    font-family: var(
+      --font-mono,
+      ui-monospace,
+      SFMono-Regular,
+      Menlo,
+      monospace
+    );
     font-size: 12px;
     line-height: 1.3;
     counter-reset: line;
@@ -787,7 +836,8 @@ body,
     width: 2em;
     margin-right: 0.6em;
     text-align: right;
-    color: rgba(255, 255, 255, 0.25);
+    color: var(--text-faint);
+    opacity: 0.58;
     user-select: none;
   }
   /* Scrollbar polish — match xterm-viewport style. */

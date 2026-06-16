@@ -10,6 +10,7 @@ import {
   AgentSetCredentialRpc,
   AgentStartLoginRpc,
   AgentStartRpc,
+  AgentUpdateProviderRpc,
 } from "./agent.ts";
 import { AttachmentTouchRpc, AttachmentUploadRpc } from "./attachment.ts";
 import {
@@ -45,6 +46,8 @@ import {
   GitHeadChangedRpc,
   GitInitRpc,
   GitLogRpc,
+  GitMarkReadyRpc,
+  GitMergePrRpc,
   GitOriginRpc,
   GitPrDetailsRpc,
   GitPrStateRpc,
@@ -166,6 +169,8 @@ export const MemoizeRpcs = RpcGroup.make(
   GitDiffRpc,
   GitCommitRpc,
   GitPushRpc,
+  GitMergePrRpc,
+  GitMarkReadyRpc,
   GitInitRpc,
   GitFixFailingChecksRpc,
   FsTreeRpc,
@@ -182,6 +187,7 @@ export const MemoizeRpcs = RpcGroup.make(
   AgentEventsRpc,
   AgentOpencodeInventoryRpc,
   AgentStartLoginRpc,
+  AgentUpdateProviderRpc,
   ChatListRpc,
   ChatGetRpc,
   ChatCreateRpc,
