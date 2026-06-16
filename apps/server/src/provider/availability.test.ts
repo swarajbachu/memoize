@@ -1,8 +1,9 @@
 import { describe, expect, it } from "bun:test";
 
-import { grokAuthTestHelpers } from "./availability.ts";
+import { deriveLatestAdvisory, grokAuthTestHelpers } from "./availability.ts";
 
-const { parseGrokAuthJson, extractTier, decodeJwtPayload } = grokAuthTestHelpers;
+const { parseGrokAuthJson, extractTier, decodeJwtPayload } =
+  grokAuthTestHelpers;
 
 describe("grok auth probe — tier extraction & parseGrokAuthJson", () => {
   it("decodeJwtPayload handles a real-ish JWT payload", () => {
@@ -84,5 +85,34 @@ describe("grok auth probe — tier extraction & parseGrokAuthJson", () => {
   it("parseGrokAuthJson for empty entry still authenticated", () => {
     const info = parseGrokAuthJson(JSON.stringify({}));
     expect(info.authLabel).toBe("Grok");
+  });
+});
+
+describe("deriveLatestAdvisory — update-available verdict", () => {
+  it("reports behind when installed < latest", () => {
+    expect(deriveLatestAdvisory("1.0.5", "1.0.9")).toBe("behind");
+    expect(deriveLatestAdvisory("0.128.0", "0.130.2")).toBe("behind");
+    expect(deriveLatestAdvisory("1.2.3", "2.0.0")).toBe("behind");
+  });
+
+  it("reports current when installed == or > latest", () => {
+    expect(deriveLatestAdvisory("1.0.9", "1.0.9")).toBe("current");
+    expect(deriveLatestAdvisory("2.1.0", "2.0.5")).toBe("current");
+  });
+
+  it("tolerates label-wrapped version strings (parser pulls the triple)", () => {
+    // `claude --version` prints "1.0.123 (Claude Code)"
+    expect(deriveLatestAdvisory("1.0.123 (Claude Code)", "1.0.140")).toBe(
+      "behind",
+    );
+    expect(deriveLatestAdvisory("codex-cli 0.130.0", "0.130.0")).toBe(
+      "current",
+    );
+  });
+
+  it("reports unknown when either side is missing or unparsable", () => {
+    expect(deriveLatestAdvisory(undefined, "1.0.0")).toBe("unknown");
+    expect(deriveLatestAdvisory("1.0.0", null)).toBe("unknown");
+    expect(deriveLatestAdvisory("not-a-version", "1.0.0")).toBe("unknown");
   });
 });

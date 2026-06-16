@@ -1,5 +1,11 @@
 import { Effect, Fiber, Stream } from "effect";
-import { ChevronDown, Copy, ExternalLink, Loader2 } from "lucide-react";
+import {
+  ArrowUpCircle,
+  ChevronDown,
+  Copy,
+  ExternalLink,
+  Loader2,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -12,6 +18,7 @@ import {
 import { ApiKeyRow } from "~/components/api-key-row";
 import { ProviderIcon } from "~/components/provider-icons";
 import { Button } from "~/components/ui/button";
+import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
 import { getRpcClient } from "~/lib/rpc-client";
 import { useProvidersStore } from "~/store/providers";
 import {
@@ -121,8 +128,12 @@ export function ProviderCard({
     : baseSummary;
   const styles = PROVIDER_STATUS_STYLES[summary.statusKey];
   const versionLabel = formatVersionLabel(availability?.cliVersion);
-  const showUpgrade =
-    enabled && availability?.cliVersionStatus === "outdated";
+  const showUpgrade = enabled && availability?.cliVersionStatus === "outdated";
+  // Informational "a newer release is published" affordance — independent of
+  // the blocking SDK floor (`showUpgrade`). Hidden when the SDK-floor upgrade
+  // card is already showing, so we don't stack two update prompts.
+  const showUpdate =
+    enabled && !showUpgrade && availability?.latestVersionStatus === "behind";
 
   return (
     <div
@@ -152,6 +163,13 @@ export function ProviderCard({
               <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
                 {versionLabel}
               </span>
+            )}
+            {showUpdate && (
+              <UpdateAvailableButton
+                displayName={PROVIDER_LABEL[providerId]}
+                latestVersion={availability?.latestVersion}
+                command={availability?.updateCommand}
+              />
             )}
           </div>
           <div className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
@@ -319,7 +337,8 @@ function SubscriptionRow({
       </span>
       <p className="text-[11px] leading-snug text-muted-foreground">
         Sessions will fail if your plan doesn&apos;t include {info.plan}.
-        Subscribe (or confirm your existing plan) before using {PROVIDER_LABEL[providerId]}.
+        Subscribe (or confirm your existing plan) before using{" "}
+        {PROVIDER_LABEL[providerId]}.
       </p>
       <div>
         <button
@@ -542,6 +561,51 @@ function CursorSignInRow() {
         </span>
       </div>
     </div>
+  );
+}
+
+/**
+ * Hover-revealed "update available" affordance shown next to the version label
+ * when a newer release is published. Click opens a popover with the exact
+ * version and the copy-able update command — check-and-notify only, no in-app
+ * execution. `stopPropagation` keeps a click from toggling the card's expand.
+ */
+function UpdateAvailableButton({
+  displayName,
+  latestVersion,
+  command,
+}: {
+  readonly displayName: string;
+  readonly latestVersion: string | undefined;
+  readonly command: string | undefined;
+}) {
+  return (
+    <Popover>
+      <PopoverTrigger
+        onClick={(e) => e.stopPropagation()}
+        aria-label={`Update available for ${displayName}`}
+        title="Update available"
+        className="flex size-5 shrink-0 items-center justify-center rounded text-warning opacity-0 transition-opacity hover:bg-muted/60 focus-visible:opacity-100 group-hover:opacity-100 data-[popup-open]:opacity-100"
+      >
+        <ArrowUpCircle className="size-3.5" aria-hidden />
+      </PopoverTrigger>
+      <PopoverPopup side="bottom" align="start" className="w-72">
+        <div className="flex flex-col gap-2.5">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[13px] font-medium text-foreground">
+              Update available
+            </span>
+            <span className="text-xs leading-snug text-muted-foreground">
+              Update {displayName}
+              {latestVersion !== undefined ? ` to v${latestVersion}` : ""}.
+            </span>
+          </div>
+          {command !== undefined && (
+            <CodeRow label="Run to update" command={command} />
+          )}
+        </div>
+      </PopoverPopup>
+    </Popover>
   );
 }
 

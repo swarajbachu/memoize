@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   AgentAvailability,
   type CliVersionStatus,
+  type LatestVersionStatus,
   type ProviderAuthStatus,
   type ProviderHealthStatus,
   type ProviderId,
@@ -31,6 +32,13 @@ interface ProviderProbe {
    * because npm vs brew vs cargo channels differ.
    */
   readonly upgradeCommand: string | null;
+  /**
+   * npm package name used to resolve the *latest published* version (for the
+   * informational "update available" layer). `null` for providers installed
+   * outside npm (curl scripts) — those report `latestVersionStatus: "unknown"`
+   * and surface no update affordance.
+   */
+  readonly npmPackage: string | null;
 }
 
 const PROBES: ReadonlyArray<ProviderProbe> = [
@@ -43,6 +51,7 @@ const PROBES: ReadonlyArray<ProviderProbe> = [
     // mode we can pin to a version.
     minVersion: null,
     upgradeCommand: null,
+    npmPackage: "@anthropic-ai/claude-code",
   },
   {
     providerId: "codex",
@@ -50,6 +59,7 @@ const PROBES: ReadonlyArray<ProviderProbe> = [
     cliBinary: "codex",
     minVersion: { major: 0, minor: 128, patch: 0, raw: "0.128.0" },
     upgradeCommand: "npm i -g @openai/codex@latest",
+    npmPackage: "@openai/codex",
   },
   {
     providerId: "grok",
@@ -60,6 +70,8 @@ const PROBES: ReadonlyArray<ProviderProbe> = [
     // Revisit if a future release breaks the streaming-json contract.
     minVersion: null,
     upgradeCommand: "curl -fsSL https://x.ai/cli/install.sh | bash",
+    // xAI ships Grok via a curl installer, not npm — no registry to poll.
+    npmPackage: null,
   },
   {
     providerId: "gemini",
@@ -70,6 +82,7 @@ const PROBES: ReadonlyArray<ProviderProbe> = [
     // flag or breaks the handshake.
     minVersion: null,
     upgradeCommand: "npm i -g @google/gemini-cli",
+    npmPackage: "@google/gemini-cli",
   },
   {
     providerId: "cursor",
@@ -81,6 +94,8 @@ const PROBES: ReadonlyArray<ProviderProbe> = [
     // ACP-introducing version.
     minVersion: null,
     upgradeCommand: "curl https://cursor.com/install -fsS | bash",
+    // cursor-agent ships via a curl installer, not npm.
+    npmPackage: null,
   },
   {
     providerId: "opencode",
@@ -92,6 +107,7 @@ const PROBES: ReadonlyArray<ProviderProbe> = [
     // so we surface the upgrade card before the user hits that.
     minVersion: { major: 1, minor: 3, patch: 15, raw: "1.3.15" },
     upgradeCommand: "curl -fsSL https://opencode.ai/install | bash",
+    npmPackage: "opencode-ai",
   },
 ];
 
@@ -182,15 +198,103 @@ export const probeCliVersion = (
   cliBinary: string,
 ): Effect.Effect<CliVersion | null, never, CommandExecutor.CommandExecutor> =>
   Effect.gen(function* () {
-    const result = yield* runCapture(
-      Command.make(cliBinary, "--version"),
-    ).pipe(
+    const result = yield* runCapture(Command.make(cliBinary, "--version")).pipe(
       Effect.timeoutOption(PROBE_TIMEOUT),
       Effect.catchAll(() => Effect.succeedNone),
     );
     if (result._tag !== "Some" || result.value.exitCode !== 0) return null;
     return parseCliVersion(result.value.stdout);
   });
+
+// ---------------------------------------------------------------------------
+// Latest-version advisory (informational "update available" layer).
+//
+// Separate from the SDK floor above: this polls the npm registry for the
+// latest *published* release and compares it to what's installed. Everything
+// here is failure-tolerant — any miss collapses to `"unknown"` so a flaky
+// network never blocks (or even surfaces in) availability.
+// ---------------------------------------------------------------------------
+
+// In-memory cache so we hit the registry at most once per package per hour.
+// `probeAllProviders` runs on every settings open + window focus; without this
+// every focus would fan out a burst of registry calls.
+const LATEST_VERSION_CACHE_TTL_MS = 60 * 60 * 1_000;
+const latestVersionCache = new Map<
+  string,
+  { readonly version: string | null; readonly expiresAt: number }
+>();
+
+interface NpmLatestResponse {
+  readonly version?: unknown;
+}
+
+/**
+ * Resolve the latest published version of an npm package via the registry's
+ * lightweight `/<pkg>/latest` endpoint. Returns `null` on any failure
+ * (offline, non-2xx, malformed JSON, timeout) so callers treat it as
+ * "unknown" rather than erroring.
+ */
+const fetchNpmLatestVersion = (
+  packageName: string,
+): Effect.Effect<string | null> =>
+  Effect.tryPromise({
+    try: async (signal) => {
+      const res = await fetch(
+        `https://registry.npmjs.org/${encodeURIComponent(packageName)}/latest`,
+        { headers: { accept: "application/json" }, signal },
+      );
+      if (!res.ok) return null;
+      const body = (await res.json()) as NpmLatestResponse;
+      const version =
+        typeof body.version === "string" && body.version.trim().length > 0
+          ? body.version.trim()
+          : null;
+      return version;
+    },
+    catch: () => null,
+  }).pipe(
+    Effect.timeoutOption(PROBE_TIMEOUT),
+    Effect.map((opt) => (opt._tag === "Some" ? opt.value : null)),
+    Effect.catchAll(() => Effect.succeed(null)),
+  );
+
+/**
+ * Cached wrapper around {@link fetchNpmLatestVersion}. Returns `null` for
+ * providers with no npm package (curl-installed CLIs we don't version-check).
+ */
+const resolveLatestVersion = (
+  probe: ProviderProbe,
+): Effect.Effect<string | null> =>
+  Effect.gen(function* () {
+    if (probe.npmPackage === null) return null;
+    const now = Date.now();
+    const cached = latestVersionCache.get(probe.npmPackage);
+    if (cached !== undefined && cached.expiresAt > now) {
+      return cached.version;
+    }
+    const version = yield* fetchNpmLatestVersion(probe.npmPackage);
+    latestVersionCache.set(probe.npmPackage, {
+      version,
+      expiresAt: now + LATEST_VERSION_CACHE_TTL_MS,
+    });
+    return version;
+  });
+
+/**
+ * Compare the installed CLI version string against the latest published
+ * version. Reuses the SDK-floor parser/comparator so the semantics match.
+ * `"unknown"` whenever either side is missing or unparsable.
+ */
+export const deriveLatestAdvisory = (
+  cliVersion: string | undefined,
+  latestVersion: string | null,
+): LatestVersionStatus => {
+  if (cliVersion === undefined || latestVersion === null) return "unknown";
+  const installed = parseCliVersion(cliVersion);
+  const latest = parseCliVersion(latestVersion);
+  if (installed === null || latest === null) return "unknown";
+  return compareCliVersion(installed, latest) < 0 ? "behind" : "current";
+};
 
 // ---------------------------------------------------------------------------
 // Verified-auth probes per provider.
@@ -435,7 +539,13 @@ const extractTier = (claims: unknown): number | null => {
   if (!claims || typeof claims !== "object") return null;
   const obj = claims as Record<string, unknown>;
 
-  const directCandidates = ["tier", "xai_tier", "plan_tier", "subscription_tier", "agent_tier"];
+  const directCandidates = [
+    "tier",
+    "xai_tier",
+    "plan_tier",
+    "subscription_tier",
+    "agent_tier",
+  ];
   for (const k of directCandidates) {
     const v = obj[k];
     if (typeof v === "number") return v;
@@ -493,11 +603,7 @@ const parseGrokAuthJson = (raw: string): AccountInfo => {
 
     // Try every plausible token field the CLI might use now or in the future
     const token =
-      entry.key ||
-      entry.access_token ||
-      entry.token ||
-      entry.jwt ||
-      null;
+      entry.key || entry.access_token || entry.token || entry.jwt || null;
 
     let authLabel = "Grok";
     let tierFound: number | null = null;
@@ -520,7 +626,9 @@ const parseGrokAuthJson = (raw: string): AccountInfo => {
       // else: we have a token but no usable tier claim → non-blocking "Grok"
       // (runtime ACP still does the real entitlement check)
     } else if (GROK_DEBUG) {
-      process.stderr.write(`[grok.probe] entry present but no token field found\n`);
+      process.stderr.write(
+        `[grok.probe] entry present but no token field found\n`,
+      );
     }
 
     return {
@@ -562,54 +670,60 @@ export const grokAuthTestHelpers = {
 // This change (from always-requires on parse failure) stops paying SuperGrok
 // Heavy users from being incorrectly locked out by our heuristic when the
 // auth.json shape or claim location differs from what we first shipped.
-const probeGrokAccount: Effect.Effect<AccountInfo, never, FileSystem.FileSystem> =
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const dir = join(homedir(), ".grok");
-    const authPath = join(dir, "auth.json");
+const probeGrokAccount: Effect.Effect<
+  AccountInfo,
+  never,
+  FileSystem.FileSystem
+> = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const dir = join(homedir(), ".grok");
+  const authPath = join(dir, "auth.json");
 
-    const authExists = yield* fs
-      .exists(authPath)
-      .pipe(Effect.catchAll(() => Effect.succeed(false)));
+  const authExists = yield* fs
+    .exists(authPath)
+    .pipe(Effect.catchAll(() => Effect.succeed(false)));
 
-    if (authExists) {
-      const raw = yield* fs
-        .readFileString(authPath)
-        .pipe(Effect.catchAll(() => Effect.succeed("")));
-      if (raw.length > 0) {
-        return parseGrokAuthJson(raw);
-      }
+  if (authExists) {
+    const raw = yield* fs
+      .readFileString(authPath)
+      .pipe(Effect.catchAll(() => Effect.succeed("")));
+    if (raw.length > 0) {
+      return parseGrokAuthJson(raw);
     }
+  }
 
-    // No auth.json at all → unauthenticated (user has never run `grok login`)
-    const dirExists = yield* fs
-      .exists(dir)
-      .pipe(Effect.catchAll(() => Effect.succeed(false)));
-    return dirExists
-      ? ({
-          authStatus: "authenticated",
-          authType: "cli",
-          authLabel: "Grok",
-        } satisfies AccountInfo)
-      : ({ authStatus: "unauthenticated" } satisfies AccountInfo);
-  });
+  // No auth.json at all → unauthenticated (user has never run `grok login`)
+  const dirExists = yield* fs
+    .exists(dir)
+    .pipe(Effect.catchAll(() => Effect.succeed(false)));
+  return dirExists
+    ? ({
+        authStatus: "authenticated",
+        authType: "cli",
+        authLabel: "Grok",
+      } satisfies AccountInfo)
+    : ({ authStatus: "unauthenticated" } satisfies AccountInfo);
+});
 
 // Gemini CLI writes OAuth tokens + settings under `~/.gemini/` after the
 // first interactive sign-in. Same file-existence heuristic as Grok — we
 // don't yet have a verified-auth call we can make to the gemini CLI to
 // extract email/plan, so the card stays at "Authenticated" without the
 // subscription label.
-const probeGeminiAccount: Effect.Effect<AccountInfo, never, FileSystem.FileSystem> =
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const path = join(homedir(), ".gemini");
-    const exists = yield* fs
-      .exists(path)
-      .pipe(Effect.catchAll(() => Effect.succeed(false)));
-    return exists
-      ? ({ authStatus: "authenticated", authType: "cli" } satisfies AccountInfo)
-      : ({ authStatus: "unauthenticated" } satisfies AccountInfo);
-  });
+const probeGeminiAccount: Effect.Effect<
+  AccountInfo,
+  never,
+  FileSystem.FileSystem
+> = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const path = join(homedir(), ".gemini");
+  const exists = yield* fs
+    .exists(path)
+    .pipe(Effect.catchAll(() => Effect.succeed(false)));
+  return exists
+    ? ({ authStatus: "authenticated", authType: "cli" } satisfies AccountInfo)
+    : ({ authStatus: "unauthenticated" } satisfies AccountInfo);
+});
 
 // Strip ANSI escape sequences (cursor-positioning, colors, etc). The
 // cursor-agent CLI emits a TUI-style status frame before its final answer,
@@ -677,7 +791,9 @@ const probeCursorAccount: Effect.Effect<
   }
   // Exit code is not a reliable signal — the CLI returns 0 even when not
   // logged in. Parse the text instead.
-  return parseCursorStatusOutput(`${result.value.stdout}\n${result.value.stderr}`);
+  return parseCursorStatusOutput(
+    `${result.value.stdout}\n${result.value.stderr}`,
+  );
 });
 
 // OpenCode stores per-provider credentials in `~/.local/share/opencode/auth.json`
@@ -721,13 +837,7 @@ const probeOpencodeAccount: Effect.Effect<
   FileSystem.FileSystem
 > = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
-  const authPath = join(
-    homedir(),
-    ".local",
-    "share",
-    "opencode",
-    "auth.json",
-  );
+  const authPath = join(homedir(), ".local", "share", "opencode", "auth.json");
   const exists = yield* fs
     .exists(authPath)
     .pipe(Effect.catchAll(() => Effect.succeed(false)));
@@ -793,7 +903,9 @@ const probeOne = (
 > =>
   Effect.gen(function* () {
     const lastCheckedAt = new Date();
-    const whichResult = yield* runCapture(Command.make("which", probe.cliBinary)).pipe(
+    const whichResult = yield* runCapture(
+      Command.make("which", probe.cliBinary),
+    ).pipe(
       Effect.timeoutOption(PROBE_TIMEOUT),
       Effect.catchAll(() => Effect.succeedNone),
     );
@@ -849,6 +961,20 @@ const probeOne = (
       }
     }
 
+    // Informational "update available" layer — independent of the SDK floor.
+    // Only providers with a registry package are checked; the rest report
+    // `"unknown"` and surface no update affordance.
+    const latestVersionRaw = yield* resolveLatestVersion(probe);
+    const latestVersion = latestVersionRaw ?? undefined;
+    const latestVersionStatus = deriveLatestAdvisory(
+      cliVersion,
+      latestVersionRaw,
+    );
+    const updateCommand =
+      probe.npmPackage !== null
+        ? `npm i -g ${probe.npmPackage}@latest`
+        : undefined;
+
     const account = yield* probeAccount(probe.providerId, cliPath);
     const cliLoggedIn = account.authStatus === "authenticated";
 
@@ -877,6 +1003,9 @@ const probeOne = (
       cliVersionStatus,
       cliVersionMinRequired,
       cliUpgradeCommand,
+      latestVersion,
+      latestVersionStatus,
+      updateCommand,
       authStatus: account.authStatus,
       authEmail: account.authEmail,
       authLabel: account.authLabel,

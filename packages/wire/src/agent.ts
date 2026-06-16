@@ -1,12 +1,7 @@
 import { Rpc } from "@effect/rpc";
 import { Schema } from "effect";
 
-import {
-  AgentItemId,
-  AgentSessionId,
-  AgentTurnId,
-  FolderId,
-} from "./ids.ts";
+import { AgentItemId, AgentSessionId, AgentTurnId, FolderId } from "./ids.ts";
 
 /**
  * Identifier for a provider implementation (driver). v1 ships claude + codex;
@@ -77,11 +72,7 @@ export const DEFAULT_RUNTIME_MODE: RuntimeMode = "approval-required";
  * switches `permissionMode` back to `default` and the existing `RuntimeMode`
  * resumes governing prompts.
  */
-export const PermissionMode = Schema.Literal(
-  "default",
-  "plan",
-  "acceptEdits",
-);
+export const PermissionMode = Schema.Literal("default", "plan", "acceptEdits");
 export type PermissionMode = typeof PermissionMode.Type;
 export const DEFAULT_PERMISSION_MODE: PermissionMode = "default";
 
@@ -141,6 +132,24 @@ export type OptionDescriptor = typeof OptionDescriptor.Type;
  */
 export const CliVersionStatus = Schema.Literal("ok", "outdated", "unknown");
 export type CliVersionStatus = typeof CliVersionStatus.Type;
+
+/**
+ * Per-provider verdict on whether a *newer published release* exists, distinct
+ * from {@link CliVersionStatus} (which is the blocking SDK floor). This layer
+ * is purely informational — it powers the "update available" hover affordance
+ * in settings and the launch toast, and never blocks a session.
+ *
+ *   - `current` — installed version is at or ahead of the latest published
+ *   - `behind` — a newer version is published (`latestVersion` carries it)
+ *   - `unknown` — couldn't reach the registry, parse failed, or the provider
+ *     isn't published to a registry we check (e.g. curl-installed CLIs)
+ */
+export const LatestVersionStatus = Schema.Literal(
+  "current",
+  "behind",
+  "unknown",
+);
+export type LatestVersionStatus = typeof LatestVersionStatus.Type;
 
 /**
  * Server-side verdict on whether a provider is usable right now. Distinct
@@ -210,6 +219,25 @@ export const AgentAvailability = Schema.Struct({
    * own per-provider install lookup.
    */
   cliUpgradeCommand: Schema.optional(Schema.String),
+  /**
+   * Latest version published to the registry (e.g. `"1.0.140"`), when we were
+   * able to resolve one. Set in tandem with `latestVersionStatus`.
+   */
+  latestVersion: Schema.optional(Schema.String),
+  /**
+   * Verdict on whether a newer published release exists. Drives the
+   * informational "update available" UI (hover icon + launch toast) — never
+   * blocks a session. `"unknown"` for providers we don't version-check (no
+   * registry package) or when the registry lookup failed.
+   */
+  latestVersionStatus: Schema.optional(LatestVersionStatus),
+  /**
+   * Copy-able one-liner the user can run to update to the latest published
+   * release (e.g. `"npm i -g @openai/codex@latest"`). Distinct from
+   * `cliUpgradeCommand` (which targets the blocking SDK floor) — though they
+   * often coincide.
+   */
+  updateCommand: Schema.optional(Schema.String),
   /**
    * Verified auth state. Distinct from `cliLoggedIn` (which only checks for
    * a credential file): set when an out-of-process probe (Codex
@@ -606,7 +634,10 @@ const reasoningSelectDescriptor = (
   defaultId,
 });
 
-export const MODELS_BY_PROVIDER: Record<ProviderId, ReadonlyArray<ModelOption>> = {
+export const MODELS_BY_PROVIDER: Record<
+  ProviderId,
+  ReadonlyArray<ModelOption>
+> = {
   claude: [
     {
       id: "claude-opus-4-7",
@@ -798,7 +829,10 @@ export const findModelDescriptor = (
  * persisted user settings and incoming requests through this map so existing
  * sessions don't crash.
  */
-export const MODEL_ALIASES_BY_PROVIDER: Record<ProviderId, Record<string, string>> = {
+export const MODEL_ALIASES_BY_PROVIDER: Record<
+  ProviderId,
+  Record<string, string>
+> = {
   claude: {},
   codex: {
     "gpt-5-codex": "gpt-5.4",
@@ -838,13 +872,15 @@ export const MODEL_ALIASES_BY_PROVIDER: Record<ProviderId, Record<string, string
     "gpt-5.4-high": "gpt-5.4",
     "gpt-5.4-high-fast": "gpt-5.4",
     "gpt-5.3-codex-fast": "gpt-5.3-codex",
-    "auto": "default",
+    auto: "default",
   },
   opencode: {},
 };
 
-export const resolveModelSlug = (providerId: ProviderId, slug: string): string =>
-  MODEL_ALIASES_BY_PROVIDER[providerId][slug] ?? slug;
+export const resolveModelSlug = (
+  providerId: ProviderId,
+  slug: string,
+): string => MODEL_ALIASES_BY_PROVIDER[providerId][slug] ?? slug;
 
 /**
  * Per-million-token USD pricing used by the renderer to compute the
@@ -860,9 +896,24 @@ export interface ModelPricing {
 }
 
 export const MODEL_PRICING: Record<string, ModelPricing> = {
-  "claude-opus-4-7": { input: 15, output: 75, cacheRead: 1.5, cacheCreate: 18.75 },
-  "claude-sonnet-4-6": { input: 3, output: 15, cacheRead: 0.3, cacheCreate: 3.75 },
-  "claude-haiku-4-5": { input: 1, output: 5, cacheRead: 0.1, cacheCreate: 1.25 },
+  "claude-opus-4-7": {
+    input: 15,
+    output: 75,
+    cacheRead: 1.5,
+    cacheCreate: 18.75,
+  },
+  "claude-sonnet-4-6": {
+    input: 3,
+    output: 15,
+    cacheRead: 0.3,
+    cacheCreate: 3.75,
+  },
+  "claude-haiku-4-5": {
+    input: 1,
+    output: 5,
+    cacheRead: 0.1,
+    cacheCreate: 1.25,
+  },
 };
 
 export const SendInput = Schema.Struct({

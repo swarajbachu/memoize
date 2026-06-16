@@ -20,6 +20,7 @@ import { FileEditor } from "./components/file-editor.tsx";
 import { closeActiveChatTab, MainTabs } from "./components/main-tabs.tsx";
 import { OnboardingWizard } from "./components/onboarding/onboarding-wizard.tsx";
 import { ProjectsSidebar } from "./components/projects-sidebar";
+import { ProviderUpdatesToast } from "./components/provider-updates-toast.tsx";
 import { RightPane } from "./components/right-pane";
 import { SettingsPage } from "./components/settings-page";
 import { TopBarLeft, TopBarMain, TopBarRight } from "./components/top-bar.tsx";
@@ -29,6 +30,7 @@ import { useMenuShortcuts } from "./hooks/use-menu-shortcuts.ts";
 import { getRpcClient } from "./lib/rpc-client.ts";
 import { useKeybindingsStore } from "./store/keybindings.ts";
 import { usePermissionsStore } from "./store/permissions.ts";
+import { useProvidersStore } from "./store/providers.ts";
 import { useChatsStore } from "./store/chats.ts";
 import { useSessionsStore } from "./store/sessions.ts";
 import { useSettingsStore } from "./store/settings.ts";
@@ -75,6 +77,14 @@ export function App() {
     void hydrateKeybindings();
     void hydrateSubagentsStore();
   }, [hydrateSettings, hydrateKeybindings]);
+
+  // Probe provider availability once on boot so the "update available" launch
+  // toast can fire without the user first opening settings. ProvidersPane
+  // keeps its own mount/focus refresh for live updates while settings is open.
+  const refreshProviders = useProvidersStore((s) => s.refresh);
+  useEffect(() => {
+    void refreshProviders();
+  }, [refreshProviders]);
 
   // Mirror Electron's fullscreen state into the ui store so the top bars
   // can drop the macOS traffic-light gutter.
@@ -171,8 +181,7 @@ function MainShell() {
   // booting-session loading panel and the tab strip stay in lockstep when
   // the chats store is mid-transition.
   const selectedChatId = useChatsStore((s) => s.selectedChatId);
-  const activeChatId =
-    selectedSession?.chatId ?? selectedChatId ?? null;
+  const activeChatId = selectedSession?.chatId ?? selectedChatId ?? null;
   // Mirror `NewChatTabButton.creating` so the chat surface flips to the
   // loading panel the moment the user clicks "+", even before the
   // optimistic session row lands (~200ms RPC). Once the new row is
@@ -190,8 +199,7 @@ function MainShell() {
   );
   // Provider label for the session-boot panel — falls back to the user's
   // default when no session is selected yet (the brief click → RPC window).
-  const bootingProviderId =
-    selectedSession?.providerId ?? defaultProviderId;
+  const bootingProviderId = selectedSession?.providerId ?? defaultProviderId;
 
   const activeMainTab = useUiStore((s) => s.activeMainTab);
   const openFile = useUiStore((s) => s.openFile);
@@ -313,11 +321,9 @@ function MainShell() {
           <main className="flex h-full min-h-0 min-w-0 flex-col bg-background/70 backdrop-blur-3xl">
             <TopBarMain />
             <UpdateBanner />
+            <ProviderUpdatesToast />
             <IndexProgressBanner />
-            <MainTabs
-              projectId={selectedFolderId}
-              emptyLabel={emptyTabLabel}
-            />
+            <MainTabs projectId={selectedFolderId} emptyLabel={emptyTabLabel} />
             <div
               hidden={activeMainTab !== "chat"}
               className="flex min-h-0 flex-1 flex-col"
@@ -325,9 +331,16 @@ function MainShell() {
               {creatingChat ? (
                 <div className="flex min-h-0 flex-1 flex-col px-8 py-6">
                   <p className="mb-4 text-[13px] leading-snug text-foreground/85">
-                    {selectedFolder
-                      ? <>You're starting a new chat in <code className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[12px] text-foreground/90">{selectedFolder.name}</code></>
-                      : "You're starting a new chat"}
+                    {selectedFolder ? (
+                      <>
+                        You're starting a new chat in{" "}
+                        <code className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[12px] text-foreground/90">
+                          {selectedFolder.name}
+                        </code>
+                      </>
+                    ) : (
+                      "You're starting a new chat"
+                    )}
                   </p>
                   <ChatCreatingPanel
                     providerId={defaultProviderId}
@@ -350,9 +363,7 @@ function MainShell() {
                 <>
                   <ChatView sessionId={selectedSessionId} />
                   <CostFooter sessionId={selectedSessionId} />
-                  <CliUpgradeBanner
-                    providerId={selectedSession.providerId}
-                  />
+                  <CliUpgradeBanner providerId={selectedSession.providerId} />
                   <ChatComposer session={selectedSession} />
                 </>
               ) : (
