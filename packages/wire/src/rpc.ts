@@ -10,6 +10,7 @@ import {
   AgentSetCredentialRpc,
   AgentStartLoginRpc,
   AgentStartRpc,
+  AgentUpdateProviderRpc,
 } from "./agent.ts";
 import { AttachmentTouchRpc, AttachmentUploadRpc } from "./attachment.ts";
 import {
@@ -174,6 +175,7 @@ export const MemoizeRpcs = RpcGroup.make(
   AgentEventsRpc,
   AgentOpencodeInventoryRpc,
   AgentStartLoginRpc,
+  AgentUpdateProviderRpc,
   ChatListRpc,
   ChatGetRpc,
   ChatCreateRpc,

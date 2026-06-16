@@ -13,6 +13,7 @@ import {
   type AgentAvailability,
   type LoginEvent,
   type ProviderId,
+  type ProviderUpdateEvent,
 } from "@memoize/wire";
 
 import { ApiKeyRow } from "~/components/api-key-row";
@@ -129,11 +130,20 @@ export function ProviderCard({
   const styles = PROVIDER_STATUS_STYLES[summary.statusKey];
   const versionLabel = formatVersionLabel(availability?.cliVersion);
   const showUpgrade = enabled && availability?.cliVersionStatus === "outdated";
-  // Informational "a newer release is published" affordance — independent of
-  // the blocking SDK floor (`showUpgrade`). Hidden when the SDK-floor upgrade
-  // card is already showing, so we don't stack two update prompts.
+  // Hover-revealed one-click update affordance — independent of the blocking
+  // SDK floor (`showUpgrade`). Shown for any installed provider that has an
+  // update command, EXCEPT when we know it's already on the latest published
+  // version (`"current"`). That means:
+  //   - npm providers behind latest → shown (warning-styled "vX available")
+  //   - npm providers on latest      → hidden
+  //   - curl-installed CLIs (Grok/Cursor, version "unknown") → shown so they
+  //     are updatable even though we can't read a registry version
   const showUpdate =
-    enabled && !showUpgrade && availability?.latestVersionStatus === "behind";
+    enabled &&
+    !showUpgrade &&
+    availability?.cliInstalled === true &&
+    availability.updateCommand !== undefined &&
+    availability.latestVersionStatus !== "current";
 
   return (
     <div
@@ -166,8 +176,10 @@ export function ProviderCard({
             )}
             {showUpdate && (
               <UpdateAvailableButton
+                providerId={providerId}
                 displayName={PROVIDER_LABEL[providerId]}
                 latestVersion={availability?.latestVersion}
+                behind={availability?.latestVersionStatus === "behind"}
                 command={availability?.updateCommand}
               />
             )}
@@ -564,44 +576,181 @@ function CursorSignInRow() {
   );
 }
 
+type UpdateState =
+  | { readonly kind: "idle" }
+  | { readonly kind: "running"; readonly line: string | null }
+  | { readonly kind: "success" }
+  | { readonly kind: "failed"; readonly reason: string };
+
 /**
- * Hover-revealed "update available" affordance shown next to the version label
- * when a newer release is published. Click opens a popover with the exact
- * version and the copy-able update command — check-and-notify only, no in-app
- * execution. `stopPropagation` keeps a click from toggling the card's expand.
+ * Subscribe to `agent.updateProvider`, which spawns the provider's update
+ * command server-side and streams its output. On the terminal `done` event we
+ * re-probe availability so the card reflects the new version. Interrupting the
+ * fiber (unmount / cancel) closes the stream scope, which SIGTERMs the child.
+ */
+function useProviderUpdate(providerId: ProviderId) {
+  const refresh = useProvidersStore((s) => s.refresh);
+  const [state, setState] = useState<UpdateState>({ kind: "idle" });
+  const fiberRef = useRef<Fiber.RuntimeFiber<unknown, unknown> | null>(null);
+
+  useEffect(
+    () => () => {
+      const fiber = fiberRef.current;
+      if (fiber !== null) void Effect.runPromise(Fiber.interrupt(fiber));
+    },
+    [],
+  );
+
+  const run = async () => {
+    if (state.kind === "running") return;
+    setState({ kind: "running", line: null });
+    const client = await getRpcClient();
+    const fiber = Effect.runFork(
+      Stream.runForEach(
+        client.agent.updateProvider({ providerId }),
+        (event: ProviderUpdateEvent) =>
+          Effect.sync(() => {
+            if (event._tag === "log") {
+              setState({ kind: "running", line: event.text });
+            } else if (event._tag === "done") {
+              fiberRef.current = null;
+              if (event.ok) {
+                setState({ kind: "success" });
+                void refresh();
+              } else {
+                setState({
+                  kind: "failed",
+                  reason: event.reason ?? "Update failed.",
+                });
+              }
+            }
+          }),
+      ).pipe(
+        Effect.catchAll((err) =>
+          Effect.sync(() => {
+            fiberRef.current = null;
+            setState({
+              kind: "failed",
+              reason: err instanceof Error ? err.message : String(err),
+            });
+          }),
+        ),
+      ),
+    );
+    fiberRef.current = fiber;
+  };
+
+  return { state, run };
+}
+
+/**
+ * Hover-revealed one-click update affordance shown next to the version label.
+ * Click opens a popover that **runs the update in-app** (spawns the install
+ * command server-side and streams progress) — for npm providers and for
+ * curl-installed CLIs like Grok alike. `stopPropagation` keeps a click from
+ * toggling the card's expand.
  */
 function UpdateAvailableButton({
+  providerId,
   displayName,
   latestVersion,
+  behind,
   command,
 }: {
+  readonly providerId: ProviderId;
   readonly displayName: string;
   readonly latestVersion: string | undefined;
+  readonly behind: boolean;
   readonly command: string | undefined;
 }) {
+  const { state, run } = useProviderUpdate(providerId);
+  const running = state.kind === "running";
+
+  const headline =
+    behind && latestVersion !== undefined
+      ? `Update available — v${latestVersion}`
+      : "Update available";
+  const detail =
+    behind && latestVersion !== undefined
+      ? `Update ${displayName} to v${latestVersion}.`
+      : `Update ${displayName} to the latest version.`;
+
   return (
     <Popover>
       <PopoverTrigger
         onClick={(e) => e.stopPropagation()}
-        aria-label={`Update available for ${displayName}`}
+        aria-label={`Update ${displayName}`}
         title="Update available"
-        className="flex size-5 shrink-0 items-center justify-center rounded text-warning opacity-0 transition-opacity hover:bg-muted/60 focus-visible:opacity-100 group-hover:opacity-100 data-[popup-open]:opacity-100"
+        className={cn(
+          "flex size-5 shrink-0 items-center justify-center rounded opacity-0 transition-opacity hover:bg-muted/60 focus-visible:opacity-100 group-hover:opacity-100 data-[popup-open]:opacity-100",
+          behind ? "text-warning" : "text-muted-foreground",
+        )}
       >
         <ArrowUpCircle className="size-3.5" aria-hidden />
       </PopoverTrigger>
       <PopoverPopup side="bottom" align="start" className="w-72">
-        <div className="flex flex-col gap-2.5">
+        <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-0.5">
             <span className="text-[13px] font-medium text-foreground">
-              Update available
+              {headline}
             </span>
             <span className="text-xs leading-snug text-muted-foreground">
-              Update {displayName}
-              {latestVersion !== undefined ? ` to v${latestVersion}` : ""}.
+              {detail}
             </span>
           </div>
-          {command !== undefined && (
-            <CodeRow label="Run to update" command={command} />
+
+          {state.kind === "success" ? (
+            <div className="rounded-md border border-emerald-400/30 bg-emerald-500/[0.06] px-3 py-2 text-[11px] text-emerald-200">
+              Updated. Re-checking version…
+            </div>
+          ) : (
+            <>
+              <Button
+                type="button"
+                size="xs"
+                variant="default"
+                disabled={running}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void run();
+                }}
+                className="w-full"
+              >
+                {running ? (
+                  <>
+                    <Loader2 className="mr-1 size-3 animate-spin" aria-hidden />
+                    Updating…
+                  </>
+                ) : (
+                  <>
+                    <ArrowUpCircle className="mr-1 size-3" aria-hidden />
+                    {state.kind === "failed" ? "Try again" : "Update now"}
+                  </>
+                )}
+              </Button>
+
+              {running && state.line !== null && (
+                <p className="truncate font-mono text-[10px] text-muted-foreground">
+                  {state.line}
+                </p>
+              )}
+              {state.kind === "failed" && (
+                <p className="text-[11px] leading-snug text-rose-300">
+                  {state.reason}
+                </p>
+              )}
+
+              {command !== undefined && (
+                <details className="text-[10px] text-muted-foreground">
+                  <summary className="cursor-pointer select-none">
+                    or update manually
+                  </summary>
+                  <div className="mt-1.5">
+                    <CodeRow label="Run in a terminal" command={command} />
+                  </div>
+                </details>
+              )}
+            </>
           )}
         </div>
       </PopoverPopup>

@@ -1,12 +1,7 @@
 import { Rpc } from "@effect/rpc";
 import { Schema } from "effect";
 
-import {
-  AgentItemId,
-  AgentSessionId,
-  AgentTurnId,
-  FolderId,
-} from "./ids.ts";
+import { AgentItemId, AgentSessionId, AgentTurnId, FolderId } from "./ids.ts";
 
 /**
  * Identifier for a provider implementation (driver). v1 ships claude + codex;
@@ -81,11 +76,7 @@ export const DEFAULT_RUNTIME_MODE: RuntimeMode = "approval-required";
  * switches `permissionMode` back to `default` and the existing `RuntimeMode`
  * resumes governing prompts.
  */
-export const PermissionMode = Schema.Literal(
-  "default",
-  "plan",
-  "acceptEdits",
-);
+export const PermissionMode = Schema.Literal("default", "plan", "acceptEdits");
 export type PermissionMode = typeof PermissionMode.Type;
 export const DEFAULT_PERMISSION_MODE: PermissionMode = "default";
 
@@ -731,7 +722,10 @@ const claudeContextWindowDescriptor = (): SelectOptionDescriptor => ({
   defaultId: "1m",
 });
 
-export const MODELS_BY_PROVIDER: Record<ProviderId, ReadonlyArray<ModelOption>> = {
+export const MODELS_BY_PROVIDER: Record<
+  ProviderId,
+  ReadonlyArray<ModelOption>
+> = {
   // Claude 4.x catalog (May 2026). Effort tiers and per-model knobs match
   // the published Claude Agent SDK contract — see also the t3code reference
   // (`/Users/whizzy/Developer/temp/t3code/.../ClaudeProvider.ts`) which
@@ -1002,7 +996,10 @@ export const findModelDescriptor = (
  * persisted user settings and incoming requests through this map so existing
  * sessions don't crash.
  */
-export const MODEL_ALIASES_BY_PROVIDER: Record<ProviderId, Record<string, string>> = {
+export const MODEL_ALIASES_BY_PROVIDER: Record<
+  ProviderId,
+  Record<string, string>
+> = {
   // Short / vendor-formatted slugs and pre-pricing-reset names route to the
   // canonical 4.x slugs above. Mirror of t3code's
   // `MODEL_SLUG_ALIASES_BY_PROVIDER[CLAUDE_DRIVER_KIND]` so a user typing
@@ -1060,13 +1057,15 @@ export const MODEL_ALIASES_BY_PROVIDER: Record<ProviderId, Record<string, string
     "gpt-5.4-high": "gpt-5.4",
     "gpt-5.4-high-fast": "gpt-5.4",
     "gpt-5.3-codex-fast": "gpt-5.3-codex",
-    "auto": "default",
+    auto: "default",
   },
   opencode: {},
 };
 
-export const resolveModelSlug = (providerId: ProviderId, slug: string): string =>
-  MODEL_ALIASES_BY_PROVIDER[providerId][slug] ?? slug;
+export const resolveModelSlug = (
+  providerId: ProviderId,
+  slug: string,
+): string => MODEL_ALIASES_BY_PROVIDER[providerId][slug] ?? slug;
 
 /**
  * Per-million-token USD pricing used by the renderer to compute the
@@ -1087,11 +1086,36 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   // to $10 in / $50 out for ~2.5x throughput; we don't encode that here,
   // the renderer's cost footer applies the multiplier when the session
   // flips the boolean. 1M context window: no per-token premium.
-  "claude-opus-4-8": { input: 5, output: 25, cacheRead: 0.5, cacheCreate: 6.25 },
-  "claude-opus-4-7": { input: 5, output: 25, cacheRead: 0.5, cacheCreate: 6.25 },
-  "claude-opus-4-6": { input: 5, output: 25, cacheRead: 0.5, cacheCreate: 6.25 },
-  "claude-sonnet-4-6": { input: 3, output: 15, cacheRead: 0.3, cacheCreate: 3.75 },
-  "claude-haiku-4-5": { input: 1, output: 5, cacheRead: 0.1, cacheCreate: 1.25 },
+  "claude-opus-4-8": {
+    input: 5,
+    output: 25,
+    cacheRead: 0.5,
+    cacheCreate: 6.25,
+  },
+  "claude-opus-4-7": {
+    input: 5,
+    output: 25,
+    cacheRead: 0.5,
+    cacheCreate: 6.25,
+  },
+  "claude-opus-4-6": {
+    input: 5,
+    output: 25,
+    cacheRead: 0.5,
+    cacheCreate: 6.25,
+  },
+  "claude-sonnet-4-6": {
+    input: 3,
+    output: 15,
+    cacheRead: 0.3,
+    cacheCreate: 3.75,
+  },
+  "claude-haiku-4-5": {
+    input: 1,
+    output: 5,
+    cacheRead: 0.1,
+    cacheCreate: 1.25,
+  },
 };
 
 export const SendInput = Schema.Struct({
@@ -1274,6 +1298,31 @@ export type LoginEvent = typeof LoginEvent.Type;
 export const AgentStartLoginRpc = Rpc.make("agent.startLogin", {
   payload: Schema.Struct({ providerId: ProviderId }),
   success: LoginEvent,
+  error: AgentSessionStartError,
+  stream: true,
+});
+
+// ---------------------------------------------------------------------------
+// One-click provider CLI update. The renderer subscribes to
+// `agent.updateProvider`, which spawns the provider's install/upgrade command
+// in a login shell (so `npm`/`bun` are on PATH and `curl … | bash` installers
+// work), streams the command's output back as `log` lines, and ends with a
+// terminal `done`. On success the renderer re-probes availability so the new
+// version is reflected immediately.
+// ---------------------------------------------------------------------------
+
+export const ProviderUpdateEvent = Schema.Union(
+  Schema.TaggedStruct("log", { text: Schema.String }),
+  Schema.TaggedStruct("done", {
+    ok: Schema.Boolean,
+    reason: Schema.optional(Schema.String),
+  }),
+);
+export type ProviderUpdateEvent = typeof ProviderUpdateEvent.Type;
+
+export const AgentUpdateProviderRpc = Rpc.make("agent.updateProvider", {
+  payload: Schema.Struct({ providerId: ProviderId }),
+  success: ProviderUpdateEvent,
   error: AgentSessionStartError,
   stream: true,
 });

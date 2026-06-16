@@ -296,6 +296,22 @@ export const deriveLatestAdvisory = (
   return compareCliVersion(installed, latest) < 0 ? "behind" : "current";
 };
 
+/**
+ * The shell command that updates a provider's CLI to the latest release.
+ * npm-published providers get a deterministic `npm i -g <pkg>@latest`; the
+ * rest reuse their official install one-liner (curl scripts reinstall the
+ * latest build). Returns `null` for an unknown provider. Run server-side via
+ * a login shell so PATH + pipes resolve — see `update-service.ts`.
+ */
+export const updateCommandForProvider = (
+  providerId: ProviderId,
+): string | null => {
+  const probe = PROBES.find((p) => p.providerId === providerId);
+  if (probe === undefined) return null;
+  if (probe.npmPackage !== null) return `npm i -g ${probe.npmPackage}@latest`;
+  return probe.upgradeCommand;
+};
+
 // ---------------------------------------------------------------------------
 // Verified-auth probes per provider.
 //
@@ -970,10 +986,11 @@ const probeOne = (
       cliVersion,
       latestVersionRaw,
     );
+    // Set for every provider that has an install one-liner (incl. curl-based
+    // CLIs like Grok/Cursor) so the renderer can offer one-click update even
+    // when we can't detect the latest version from a registry.
     const updateCommand =
-      probe.npmPackage !== null
-        ? `npm i -g ${probe.npmPackage}@latest`
-        : undefined;
+      updateCommandForProvider(probe.providerId) ?? undefined;
 
     const account = yield* probeAccount(probe.providerId, cliPath);
     const cliLoggedIn = account.authStatus === "authenticated";
