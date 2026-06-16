@@ -1,4 +1,5 @@
 import {
+  Archive,
   Check,
   ChevronDown,
   GitBranch,
@@ -33,6 +34,7 @@ import {
 } from "./glass-action.tsx";
 import { TooltipShortcut } from "./projects-sidebar.tsx";
 import { useActiveContext } from "../store/active-workspace.ts";
+import { useChatsStore } from "../store/chats.ts";
 import { gitStatusKey, useGitStatusStore } from "../store/git-status.ts";
 import { useMergePrefs } from "../store/merge-prefs.ts";
 import { useMessagesStore } from "../store/messages.ts";
@@ -244,6 +246,7 @@ type Workflow =
   | { kind: "idle" }
   | { kind: "dirty"; count: number }
   | { kind: "ahead"; count: number }
+  | { kind: "merged-pr" }
   | { kind: "ready-for-pr" }
   | OpenPrWorkflow;
 
@@ -253,8 +256,9 @@ type Workflow =
  *   2. ahead   — local commits not yet pushed; push before creating or
  *                updating a PR
  *   3. open-pr — a PR exists and the working tree + upstream are in sync
- *   4. ready-for-pr — clean pushed worktree branch with no open PR
- *   5. idle    — nothing to do
+ *   4. merged-pr — this branch's PR is already merged
+ *   5. ready-for-pr — clean pushed branch with no open/merged PR
+ *   6. idle    — nothing to do
  *
  * Each kind carries only the fields its button needs, so the renderer
  * doesn't have to re-narrow PR shape downstream.
@@ -296,6 +300,7 @@ const deriveWorkflow = (
       autoMergeEnabled: pr.autoMergeEnabled === true,
     };
   }
+  if (pr?.state === "merged") return { kind: "merged-pr" };
   if (canCreatePrWhenSynced && prKnownNotOpen) return { kind: "ready-for-pr" };
   return { kind: "idle" };
 };
@@ -343,6 +348,8 @@ export function TopBarRight() {
     folderId ? (s.byKey[prStateKey(folderId, worktreeId)] ?? null) : null,
   );
   const selectedSessionId = useSessionsStore((s) => s.selectedSessionId);
+  const selectedChatId = useChatsStore((s) => s.selectedChatId);
+  const archiveChat = useChatsStore((s) => s.archive);
   const setActiveMainTab = useUiStore((s) => s.setActiveMainTab);
 
   // Auto-submit a new chat message to the active session (no manual Send).
@@ -369,6 +376,9 @@ export function TopBarRight() {
         ) : null}
         {workflow.kind === "ready-for-pr" ? (
           <GlassChip tone="zinc">No PR</GlassChip>
+        ) : null}
+        {workflow.kind === "merged-pr" ? (
+          <GlassChip tone="green">Merged</GlassChip>
         ) : null}
         {workflow.kind === "open-pr" ? (
           <>
@@ -410,6 +420,15 @@ export function TopBarRight() {
             label="Create PR"
             disabled={!agentReady}
             onClick={() => sendToAgent("create a pull request for this branch")}
+          />
+        ) : null}
+        {workflow.kind === "merged-pr" && selectedChatId !== null ? (
+          <DirectActionButton
+            tone="zinc"
+            icon={<Archive />}
+            label="Archive chat"
+            loadingLabel="Archiving…"
+            run={() => archiveChat(selectedChatId)}
           />
         ) : null}
         {workflow.kind === "open-pr" && workflow.mergeable === "conflicting" ? (
