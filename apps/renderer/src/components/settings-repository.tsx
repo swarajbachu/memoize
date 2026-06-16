@@ -12,6 +12,7 @@ import { useSettingsStore } from "../store/settings.ts";
 import { useWorkspaceStore } from "../store/workspace.ts";
 import { EMPTY_WORKTREES, useWorktreesStore } from "../store/worktrees.ts";
 import { ProviderIcon } from "./provider-icons.tsx";
+import { PermissionsInspector } from "./permissions-inspector.tsx";
 import { MODES_ORDER, MODE_META } from "./runtime-mode-meta.ts";
 import { PROVIDER_LABEL, RadioCheck, SettingsFrame } from "./settings-page.tsx";
 import { Button } from "./ui/button.tsx";
@@ -34,6 +35,7 @@ export function RepositorySettings({ projectId }: { projectId: FolderId }) {
   );
   const refresh = useRepositorySettingsStore((s) => s.refresh);
   const update = useRepositorySettingsStore((s) => s.update);
+  const [permissionsOpen, setPermissionsOpen] = useState(false);
 
   useEffect(() => {
     if (settings === null) void refresh(projectId);
@@ -69,6 +71,26 @@ export function RepositorySettings({ projectId }: { projectId: FolderId }) {
         onChange={(value) =>
           void update(projectId, { defaultRuntimeMode: value })
         }
+      />
+
+      <SettingsFrame
+        title="Project permissions"
+        trailing={
+          <Button
+            variant="settings"
+            size="sm"
+            onClick={() => setPermissionsOpen(true)}
+          >
+            Manage
+          </Button>
+        }
+        description="Review and revoke saved tool permission decisions for this repository."
+      />
+      <PermissionsInspector
+        open={permissionsOpen}
+        onOpenChange={setPermissionsOpen}
+        projectId={projectId}
+        projectName={folder.name}
       />
 
       <WorktreeSection

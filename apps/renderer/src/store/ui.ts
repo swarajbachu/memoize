@@ -27,7 +27,7 @@ export type SettingsSection =
  * the file tab only exists when `openFile !== null`. Opening a different file
  * replaces (never stacks) the file tab — see specs/0.02-MVP/features/file-viewer.md.
  */
-export type MainTab = "chat" | "file";
+export type MainTab = "chat" | "file" | "archives";
 
 /**
  * Tabs in the right-hand workspace pane. Lifted from `RightPane`'s local
@@ -133,9 +133,7 @@ export const useUiStore = create<UiState>((set) => ({
   openFileInTab: (file) =>
     set({
       openFile:
-        file.kind === "image"
-          ? file
-          : { ...file, view: file.view ?? "edit" },
+        file.kind === "image" ? file : { ...file, view: file.view ?? "edit" },
       activeMainTab: "file",
       fileDirty: false,
     }),

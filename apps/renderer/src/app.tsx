@@ -11,6 +11,7 @@ import {
 import { ChatComposer } from "./components/chat-composer";
 import { ChatCreatingPanel } from "./components/chat-creating-panel.tsx";
 import { ChatLanding } from "./components/chat-landing.tsx";
+import { ArchivedChatsPage } from "./components/archived-chats-page.tsx";
 import { CliUpgradeBanner } from "./components/cli-upgrade-banner.tsx";
 import { IndexProgressBanner } from "./components/index-progress-banner.tsx";
 import { TooltipProvider } from "./components/ui/tooltip.tsx";
@@ -171,8 +172,7 @@ function MainShell() {
   // booting-session loading panel and the tab strip stay in lockstep when
   // the chats store is mid-transition.
   const selectedChatId = useChatsStore((s) => s.selectedChatId);
-  const activeChatId =
-    selectedSession?.chatId ?? selectedChatId ?? null;
+  const activeChatId = selectedSession?.chatId ?? selectedChatId ?? null;
   // Mirror `NewChatTabButton.creating` so the chat surface flips to the
   // loading panel the moment the user clicks "+", even before the
   // optimistic session row lands (~200ms RPC). Once the new row is
@@ -190,8 +190,7 @@ function MainShell() {
   );
   // Provider label for the session-boot panel — falls back to the user's
   // default when no session is selected yet (the brief click → RPC window).
-  const bootingProviderId =
-    selectedSession?.providerId ?? defaultProviderId;
+  const bootingProviderId = selectedSession?.providerId ?? defaultProviderId;
 
   const activeMainTab = useUiStore((s) => s.activeMainTab);
   const openFile = useUiStore((s) => s.openFile);
@@ -314,10 +313,7 @@ function MainShell() {
             <TopBarMain />
             <UpdateBanner />
             <IndexProgressBanner />
-            <MainTabs
-              projectId={selectedFolderId}
-              emptyLabel={emptyTabLabel}
-            />
+            <MainTabs projectId={selectedFolderId} emptyLabel={emptyTabLabel} />
             <div
               hidden={activeMainTab !== "chat"}
               className="flex min-h-0 flex-1 flex-col"
@@ -325,9 +321,16 @@ function MainShell() {
               {creatingChat ? (
                 <div className="flex min-h-0 flex-1 flex-col px-8 py-6">
                   <p className="mb-4 text-[13px] leading-snug text-foreground/85">
-                    {selectedFolder
-                      ? <>You're starting a new chat in <code className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[12px] text-foreground/90">{selectedFolder.name}</code></>
-                      : "You're starting a new chat"}
+                    {selectedFolder ? (
+                      <>
+                        You're starting a new chat in{" "}
+                        <code className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[12px] text-foreground/90">
+                          {selectedFolder.name}
+                        </code>
+                      </>
+                    ) : (
+                      "You're starting a new chat"
+                    )}
                   </p>
                   <ChatCreatingPanel
                     providerId={defaultProviderId}
@@ -350,13 +353,22 @@ function MainShell() {
                 <>
                   <ChatView sessionId={selectedSessionId} />
                   <CostFooter sessionId={selectedSessionId} />
-                  <CliUpgradeBanner
-                    providerId={selectedSession.providerId}
-                  />
+                  <CliUpgradeBanner providerId={selectedSession.providerId} />
                   <ChatComposer session={selectedSession} />
                 </>
               ) : (
                 <ChatLanding />
+              )}
+            </div>
+            <div
+              hidden={activeMainTab !== "archives"}
+              className="flex min-h-0 flex-1 flex-col"
+            >
+              {activeMainTab === "archives" && (
+                <ArchivedChatsPage
+                  projectId={selectedFolderId}
+                  projectName={selectedFolder?.name ?? "No repository selected"}
+                />
               )}
             </div>
             {openFile !== null && (

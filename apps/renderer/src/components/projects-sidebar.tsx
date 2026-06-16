@@ -4,12 +4,8 @@ import {
   ArchiveRestore,
   ChevronDown,
   ChevronRight,
-  Eye,
-  EyeOff,
-  MoreHorizontal,
   Pencil,
   Settings,
-  Shield,
   SquarePen,
   Trash2,
 } from "lucide-react";
@@ -27,7 +23,7 @@ import {
 } from "@memoize/wire";
 
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
-import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
+import { Menu, MenuItem, MenuPopup } from "~/components/ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn, formatCompactNumber } from "~/lib/utils";
 import { resolveAutoWorktreeId } from "../lib/auto-worktree.ts";
@@ -42,7 +38,6 @@ import { useSettingsStore } from "../store/settings.ts";
 import { useUiStore } from "../store/ui.ts";
 import { useWorkspaceStore } from "../store/workspace.ts";
 import { BranchIcon, type BranchState } from "./branch-icon.tsx";
-import { PermissionsInspector } from "./permissions-inspector.tsx";
 import { ProjectAddMenu } from "./project-add-menu.tsx";
 import { Beacon, Diffusion } from "./ui/loaders";
 
@@ -81,9 +76,7 @@ const formatRelative = (iso: Date): string => {
  * fiber writes into `useMessagesStore.runningBySession[sessionId]`, which
  * every consumer already reads from.
  */
-function useSessionRunningSubscriptions(
-  sessionIds: ReadonlyArray<SessionId>,
-) {
+function useSessionRunningSubscriptions(sessionIds: ReadonlyArray<SessionId>) {
   // Stable ref-tracked fiber map. We diff incoming `sessionIds` against the
   // tracked set and only start/stop the deltas. Critically, an existing
   // session's fiber is NEVER torn down just because another session is
@@ -91,9 +84,9 @@ function useSessionRunningSubscriptions(
   // `streamStatus` subscribe whose initial event (read from the DB at
   // subscribe time) would clobber the live `true` flag with whatever's
   // persisted, making the previous session's loader disappear.
-  const fibersRef = useRef<Map<SessionId, Fiber.RuntimeFiber<unknown, unknown>>>(
-    new Map(),
-  );
+  const fibersRef = useRef<
+    Map<SessionId, Fiber.RuntimeFiber<unknown, unknown>>
+  >(new Map());
   const idsKey = sessionIds.join(",");
 
   useEffect(() => {
@@ -178,12 +171,8 @@ export function ProjectsSidebar() {
   const sessionsError = useSessionsStore((s) => s.error);
 
   const chatsByProject = useChatsStore((s) => s.chatsByProject);
-  const showArchivedByProject = useChatsStore(
-    (s) => s.showArchivedByProject,
-  );
   const chatsError = useChatsStore((s) => s.error);
   const hydrateChats = useChatsStore((s) => s.hydrate);
-  const toggleShowArchived = useChatsStore((s) => s.toggleShowArchived);
 
   const [origins, setOrigins] = useState<Record<string, GitOriginInfo | null>>(
     {},
@@ -300,11 +289,9 @@ export function ProjectsSidebar() {
             isExpanded={expanded[folder.id] === true}
             chats={chatsByProject[folder.id] ?? []}
             projectSessions={sessionsByProject[folder.id] ?? []}
-            showArchived={showArchivedByProject[folder.id] === true}
             onSelect={() => void select(folder.id)}
             onToggleExpanded={() => onToggleExpanded(folder.id)}
             onRemove={() => void remove(folder.id)}
-            onToggleShowArchived={() => toggleShowArchived(folder.id)}
           />
         ))}
       </ul>
@@ -354,11 +341,9 @@ function ProjectGroup({
   isExpanded,
   chats,
   projectSessions,
-  showArchived,
   onSelect,
   onToggleExpanded,
   onRemove,
-  onToggleShowArchived,
 }: {
   id: FolderId;
   name: string;
@@ -371,31 +356,49 @@ function ProjectGroup({
     readonly chatId: ChatId;
     readonly archivedAt: Date | null;
   }>;
-  showArchived: boolean;
   onSelect: () => void;
   onToggleExpanded: () => void;
   onRemove: () => void;
-  onToggleShowArchived: () => void;
 }) {
   const displayName = origin?.repo ?? name;
   const avatarUrl = avatarUrlFor(origin);
   const fallbackText = initialsOf(origin?.owner ?? name);
-  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const setView = useUiStore((s) => s.setView);
+  const setSettingsSection = useUiStore((s) => s.setSettingsSection);
+  const setActiveMainTab = useUiStore((s) => s.setActiveMainTab);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const anchorRef = useRef<{ getBoundingClientRect: () => DOMRect } | null>(
+    null,
+  );
+
+  const openRepositorySettings = () => {
+    setSettingsSection({ kind: "repository", projectId: id });
+    setView("settings");
+  };
+
+  const openArchives = () => {
+    onSelect();
+    setView("chat");
+    setActiveMainTab("archives");
+  };
+
+  const onContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = new DOMRect(e.clientX, e.clientY, 0, 0);
+    anchorRef.current = { getBoundingClientRect: () => rect };
+    setMenuOpen(true);
+  };
 
   const visibleChats = useMemo(
-    () =>
-      showArchived
-        ? chats
-        : chats.filter((c) => c.archivedAt === null),
-    [chats, showArchived],
+    () => chats.filter((c) => c.archivedAt === null),
+    [chats],
   );
-  const archivedCount = chats.filter((c) => c.archivedAt !== null).length;
 
   // Surface a busy hint on the collapsed project header when any session
   // inside any of this project's live chats is running.
   const liveSessionIds = useMemo(
-    () =>
-      projectSessions.filter((s) => s.archivedAt === null).map((s) => s.id),
+    () => projectSessions.filter((s) => s.archivedAt === null).map((s) => s.id),
     [projectSessions],
   );
   const anyRunning = useMessagesStore((s) =>
@@ -414,6 +417,7 @@ function ProjectGroup({
         <div
           role="button"
           tabIndex={0}
+          onContextMenu={onContextMenu}
           onClick={() => {
             onSelect();
             onToggleExpanded();
@@ -476,22 +480,28 @@ function ProjectGroup({
           >
             {displayName}
           </span>
-          <ProjectActionsMenu
-            displayName={displayName}
-            showArchived={showArchived}
-            archivedCount={archivedCount}
-            onOpenPermissions={() => setInspectorOpen(true)}
-            onToggleShowArchived={onToggleShowArchived}
-            onRemove={onRemove}
-          />
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              openRepositorySettings();
+            }}
+            className="rounded p-0.5 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            aria-label={`Settings for ${displayName}`}
+            title="Repository settings"
+          >
+            <Settings className="size-3.5" />
+          </button>
           <NewChatButton projectId={id} />
         </div>
 
-        <PermissionsInspector
-          open={inspectorOpen}
-          onOpenChange={setInspectorOpen}
-          projectId={id}
-          projectName={displayName}
+        <ProjectContextMenu
+          open={menuOpen}
+          anchor={anchorRef.current}
+          onOpenSettings={openRepositorySettings}
+          onOpenArchives={openArchives}
+          onRemove={onRemove}
+          onOpenChange={setMenuOpen}
         />
       </li>
 
@@ -505,73 +515,49 @@ function ProjectGroup({
           {visibleChats.map((chat) => (
             <ChatRow key={chat.id} chat={chat} />
           ))}
-          {archivedCount > 0 && (
-            <li>
-              <button
-                type="button"
-                onClick={onToggleShowArchived}
-                className="ml-12 rounded px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
-              >
-                {showArchived
-                  ? `Hide archived (${archivedCount})`
-                  : `Show archived (${archivedCount})`}
-              </button>
-            </li>
-          )}
         </>
       )}
     </Fragment>
   );
 }
 
-function ProjectActionsMenu({
-  displayName,
-  showArchived,
-  archivedCount,
-  onOpenPermissions,
-  onToggleShowArchived,
+function ProjectContextMenu({
+  open,
+  anchor,
+  onOpenSettings,
+  onOpenArchives,
   onRemove,
+  onOpenChange,
 }: {
-  displayName: string;
-  showArchived: boolean;
-  archivedCount: number;
-  onOpenPermissions: () => void;
-  onToggleShowArchived: () => void;
+  open: boolean;
+  anchor: { getBoundingClientRect: () => DOMRect } | null;
+  onOpenSettings: () => void;
+  onOpenArchives: () => void;
   onRemove: () => void;
+  onOpenChange: (open: boolean) => void;
 }) {
   return (
-    <Menu>
-      <MenuTrigger
-        onClick={(e) => e.stopPropagation()}
-        className="rounded p-0.5 text-muted-foreground opacity-0 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group-hover:opacity-100 data-[popup-open]:opacity-100"
-        aria-label={`Actions for ${displayName}`}
-        title="More actions"
+    <Menu open={open} onOpenChange={onOpenChange}>
+      <MenuPopup
+        anchor={anchor ?? undefined}
+        align="start"
+        side="bottom"
+        className="min-w-[180px]"
       >
-        <MoreHorizontal className="size-3.5" />
-      </MenuTrigger>
-      <MenuPopup align="end" className="min-w-[180px]">
         <MenuItem
-          onClick={onOpenPermissions}
+          onClick={onOpenSettings}
           className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
         >
-          <Shield className="size-3.5" />
-          Permissions
+          <Settings className="size-3.5" />
+          Settings
         </MenuItem>
-        {archivedCount > 0 && (
-          <MenuItem
-            onClick={onToggleShowArchived}
-            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
-          >
-            {showArchived ? (
-              <EyeOff className="size-3.5" />
-            ) : (
-              <Eye className="size-3.5" />
-            )}
-            {showArchived
-              ? `Hide archived (${archivedCount})`
-              : `Show archived (${archivedCount})`}
-          </MenuItem>
-        )}
+        <MenuItem
+          onClick={onOpenArchives}
+          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
+        >
+          <Archive className="size-3.5" />
+          Archived chats
+        </MenuItem>
         <MenuItem
           onClick={onRemove}
           className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-red-300 hover:bg-red-500/20"
@@ -619,12 +605,10 @@ export async function createNewSession(projectId: FolderId): Promise<void> {
       settings.defaultModelByProvider[defaultProviderId] ??
       defaultModelFor(defaultProviderId);
     const worktreeId = await resolveAutoWorktreeId(projectId);
-    void useChatsStore
-      .getState()
-      .create(projectId, defaultProviderId, model, {
-        runtimeMode: settings.defaultRuntimeMode,
-        worktreeId,
-      });
+    void useChatsStore.getState().create(projectId, defaultProviderId, model, {
+      runtimeMode: settings.defaultRuntimeMode,
+      worktreeId,
+    });
   } catch (err) {
     useChatsStore.setState((s) => ({
       creatingByProject: { ...s.creatingByProject, [projectId]: false },
@@ -722,9 +706,7 @@ function ChatRow({ chat }: { chat: Chat }) {
   const sessionIds = useMemo(
     () =>
       (sessionsByProject[chat.projectId] ?? [])
-        .filter(
-          (row) => row.chatId === chat.id && row.archivedAt === null,
-        )
+        .filter((row) => row.chatId === chat.id && row.archivedAt === null)
         .map((row) => row.id),
     [sessionsByProject, chat.projectId, chat.id],
   );
