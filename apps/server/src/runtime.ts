@@ -15,6 +15,7 @@ import { importWorkspacesJson } from "./persistence/import-workspaces.ts";
 import { MigrationsLive } from "./persistence/migrations.ts";
 import { NdjsonLoggerLive } from "./persistence/ndjson-logger.ts";
 import { SqliteLive } from "./persistence/sqlite.ts";
+import { BrowserBridgeServiceLive } from "./provider/layers/browser-bridge-service.ts";
 import { CredentialsServiceLive } from "./provider/layers/credentials-service.ts";
 import { MessageStoreLive } from "./provider/layers/message-store.ts";
 import { PermissionServiceLive } from "./provider/layers/permission-service.ts";
@@ -155,6 +156,13 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(MigratedSqlite),
   );
 
+  // BrowserBridge brokers between the in-process browser MCP tools (driver
+  // side) and the renderer's `<webview>` (RPC side). Ephemeral — no SQLite.
+  // Same instance is provided to both ProviderLayer (the driver publishes
+  // commands) and Handlers (the renderer subscribes + responds); Effect
+  // memoizes the layer by reference so they share one PubSub + pending map.
+  const BrowserBridgeLayer = BrowserBridgeServiceLive;
+
   // AttachmentService writes uploaded image bytes under userData and runs
   // the GC sweep that reaps orphaned blobs. Disk I/O comes from
   // NodeContext; persistence joins MigratedSqlite. Defined before
@@ -175,6 +183,7 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(WorkspaceLayer),
     Layer.provide(PermissionLayer),
     Layer.provide(AttachmentLayer),
+    Layer.provide(BrowserBridgeLayer),
     Layer.provide(IndexLayer),
     Layer.provide(NodeContext.layer),
   );
@@ -224,6 +233,9 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(MessageStoreLayer),
     Layer.provide(PermissionLayer),
     Layer.provide(AttachmentLayer),
+    Layer.provide(BrowserBridgeLayer),
+    // browser.* credential RPCs read/write the keychain directly.
+    Layer.provide(CredentialsServiceLive),
     Layer.provide(SkillBridgeLayer),
     Layer.provide(IndexLayer),
     Layer.provide(FolderPickerLayer),

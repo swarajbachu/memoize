@@ -13,6 +13,14 @@ import {
 } from "./agent.ts";
 import { AttachmentTouchRpc, AttachmentUploadRpc } from "./attachment.ts";
 import {
+  BrowserCommandsRpc,
+  BrowserFillForOriginRpc,
+  BrowserListCredentialsRpc,
+  BrowserRemoveCredentialRpc,
+  BrowserRespondRpc,
+  BrowserSetCredentialRpc,
+} from "./browser.ts";
+import {
   IndexFindReferencesRpc,
   IndexListModuleRpc,
   IndexReadChunkRpc,
@@ -211,6 +219,12 @@ export const MemoizeRpcs = RpcGroup.make(
   PermissionListPendingRpc,
   PermissionListDecisionsRpc,
   PermissionRevokeDecisionRpc,
+  BrowserCommandsRpc,
+  BrowserRespondRpc,
+  BrowserSetCredentialRpc,
+  BrowserListCredentialsRpc,
+  BrowserRemoveCredentialRpc,
+  BrowserFillForOriginRpc,
   WorktreeCreateRpc,
   WorktreeListRpc,
   WorktreeGetRpc,

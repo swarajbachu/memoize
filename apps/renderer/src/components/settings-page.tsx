@@ -5,11 +5,19 @@ import {
   FlaskConical,
   FolderClosed,
   GitBranch,
+  Globe,
   Keyboard,
+  Plus,
   RotateCw,
   Settings as SettingsIcon,
+  Trash2,
+  TriangleAlert,
 } from "lucide-react";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+
+import { Effect } from "effect";
+
+import { getRpcClient } from "../lib/rpc-client.ts";
 
 import {
   MODELS_BY_PROVIDER,
@@ -82,6 +90,12 @@ const TOP_RAIL: ReadonlyArray<RailItemBase> = [
     label: "Workspace",
     Icon: GitBranch,
     section: { kind: "workspace" },
+  },
+  {
+    id: "browser",
+    label: "Browser",
+    Icon: Globe,
+    section: { kind: "browser" },
   },
   {
     id: "shortcuts",
@@ -272,6 +286,12 @@ function SectionTitle({
         subtitle: "How new chats relate to your git checkout.",
       };
     }
+    if (section.kind === "browser") {
+      return {
+        title: "Browser",
+        subtitle: "Dummy test logins the agent browser can autofill.",
+      };
+    }
     if (section.kind === "shortcuts") {
       return {
         title: "Keyboard shortcuts",
@@ -314,9 +334,172 @@ function Pane({ section }: { section: SettingsSection }) {
   if (section.kind === "general") return <GeneralPane />;
   if (section.kind === "providers") return <ProvidersPane />;
   if (section.kind === "workspace") return <WorkspacePane />;
+  if (section.kind === "browser") return <BrowserSettingsPane />;
   if (section.kind === "shortcuts") return <KeybindingsPane />;
   if (section.kind === "developer") return <DeveloperPane />;
   return <RepositorySettings projectId={section.projectId} />;
+}
+
+interface BrowserCredRow {
+  readonly origin: string;
+  readonly username: string;
+}
+
+/**
+ * Browser settings — manage the DUMMY/TEST logins the agent browser autofills
+ * via `browser_login`. Passwords go straight to the OS keychain (write-only
+ * from here; the list RPC never returns them). The warning banner is
+ * load-bearing: real credentials must never live here.
+ */
+function BrowserSettingsPane() {
+  const [creds, setCreds] = useState<ReadonlyArray<BrowserCredRow>>([]);
+  const [origin, setOrigin] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    const client = await getRpcClient();
+    const list = await Effect.runPromise(client.browser.listCredentials({}));
+    setCreds(list.map((c) => ({ origin: c.origin, username: c.username })));
+  };
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  const add = async () => {
+    if (origin.trim() === "" || password === "") return;
+    setBusy(true);
+    try {
+      const client = await getRpcClient();
+      await Effect.runPromise(
+        client.browser.setCredential({
+          origin: origin.trim(),
+          username: username.trim(),
+          password,
+        }),
+      );
+      setOrigin("");
+      setUsername("");
+      setPassword("");
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (target: string) => {
+    const client = await getRpcClient();
+    await Effect.runPromise(client.browser.removeCredential({ origin: target }));
+    await load();
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-start gap-2 rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2.5 text-[12px] leading-relaxed text-amber-200">
+        <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+        <span>
+          <strong className="font-semibold">Dummy / test logins only.</strong>{" "}
+          Never store a real or production password here. These are for seeded
+          accounts on dev and staging sites you ask the agent to verify. The
+          agent never sees the password — it's injected straight into the page.
+        </span>
+      </div>
+
+      <SettingsFrame
+        title="Saved logins"
+        description="The agent calls browser_login with a site's origin; you'll always be asked to approve before it submits."
+      >
+        <div className="flex flex-col gap-3">
+          {creds.length === 0 ? (
+            <p className="text-[13px] text-muted-foreground">
+              No saved logins yet.
+            </p>
+          ) : (
+            <ul className="flex flex-col divide-y divide-border/40">
+              {creds.map((c) => (
+                <li
+                  key={c.origin}
+                  className="flex items-center gap-3 py-2 first:pt-0 last:pb-0"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[13px] font-medium text-foreground">
+                      {c.origin}
+                    </p>
+                    <p className="truncate text-[12px] text-muted-foreground">
+                      {c.username || "(no username)"} · ••••••••
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void remove(c.origin)}
+                    aria-label={`Remove login for ${c.origin}`}
+                    className="flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className="flex flex-col gap-2 border-t border-border/40 pt-3">
+            <CredInput
+              placeholder="Origin (https://app.example.com)"
+              value={origin}
+              onChange={setOrigin}
+            />
+            <CredInput
+              placeholder="Username / email"
+              value={username}
+              onChange={setUsername}
+            />
+            <CredInput
+              placeholder="Password (dummy)"
+              value={password}
+              onChange={setPassword}
+              type="password"
+            />
+            <div className="flex justify-end">
+              <Button
+                size="sm"
+                onClick={() => void add()}
+                disabled={busy || origin.trim() === "" || password === ""}
+              >
+                <Plus className="size-3.5" />
+                Add login
+              </Button>
+            </div>
+          </div>
+        </div>
+      </SettingsFrame>
+    </div>
+  );
+}
+
+function CredInput({
+  placeholder,
+  value,
+  onChange,
+  type = "text",
+}: {
+  placeholder: string;
+  value: string;
+  onChange: (v: string) => void;
+  type?: "text" | "password";
+}) {
+  return (
+    <input
+      type={type}
+      value={value}
+      placeholder={placeholder}
+      spellCheck={false}
+      autoComplete="off"
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full rounded-lg border border-border/50 bg-background px-3 py-1.5 text-[13px] text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-border"
+    />
+  );
 }
 
 function GeneralPane() {
