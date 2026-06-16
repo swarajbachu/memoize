@@ -12,7 +12,11 @@ import {
   type AgentItemId,
   type AgentSessionId,
   type AttachmentRef,
+  type FolderId,
+  type PermissionDecision,
+  type PermissionKind,
   type PermissionMode,
+  type RuntimeMode,
   type StartSessionInput,
   type UserQuestionAnswer,
 } from "@memoize/wire";
@@ -21,6 +25,7 @@ import { AttachmentService } from "../../attachment/services/attachment-service.
 import { handleFsRequest } from "./acp/fs.ts";
 import { handleTerminalRequest } from "./acp/terminal.ts";
 import { createAcpTranslator } from "./acp/translate.ts";
+import type { GetRuntimeMode, RequestPermission } from "./claude.ts";
 
 /**
  * Live-only handle for one Cursor Agent conversation. Mirrors Grok's
@@ -217,6 +222,25 @@ interface CursorReadyTransport {
    * in the project cwd as soon as it takes ownership.
    */
   setSessionCwd(cwd: string): void;
+  /**
+   * Wire the permission/runtime-mode callbacks used to gate fs writes and
+   * terminal command execution. Until set (prewarm phase), the handlers fall
+   * back to auto-allow. `startCursorSession` installs the real callbacks on
+   * takeover so commands route through PermissionService.
+   */
+  setAcpPermissionContext(ctx: AcpPermissionContext): void;
+}
+
+/** Permission/runtime-mode callbacks shared by the ACP fs + terminal handlers. */
+interface AcpPermissionContext {
+  readonly sessionId?: AgentSessionId;
+  readonly projectId?: FolderId;
+  readonly requestPermission?: (
+    kind: PermissionKind,
+    options: { readonly forcePrompt: boolean },
+  ) => Promise<PermissionDecision>;
+  readonly getRuntimeMode?: () => RuntimeMode;
+  readonly getPermissionMode?: () => PermissionMode;
 }
 
 /**
@@ -267,6 +291,11 @@ const connectAndAuthenticateCursor = async (
   // Sandbox root for client-side fs/terminal requests. Defaults to $HOME
   // until startCursorSession swaps in the project cwd.
   let sessionCwd: string = process.env.HOME ?? process.cwd();
+  // Permission/runtime-mode callbacks for fs writes + terminal exec. Empty
+  // during prewarm (handlers auto-allow); startCursorSession swaps in the
+  // real PermissionService bridge on takeover.
+  let acpPermissionContext: AcpPermissionContext = {};
+  const acpHandlerContext = () => ({ cwd: sessionCwd, ...acpPermissionContext });
 
   const writeMessage = (msg: Record<string, unknown>): void => {
     if (!child.stdin.writable) return;
@@ -347,7 +376,7 @@ const connectAndAuthenticateCursor = async (
         }
         const replyId = msg.id;
         if (isFs) {
-          handleFsRequest(msg.method, msg.params, { cwd: sessionCwd })
+          handleFsRequest(msg.method, msg.params, acpHandlerContext())
             .then((result) => {
               writeMessage({ jsonrpc: "2.0", id: replyId, result });
             })
@@ -362,7 +391,7 @@ const connectAndAuthenticateCursor = async (
           return;
         }
         if (isTerminal) {
-          handleTerminalRequest(msg.method, msg.params, { cwd: sessionCwd })
+          handleTerminalRequest(msg.method, msg.params, acpHandlerContext())
             .then((result) => {
               writeMessage({ jsonrpc: "2.0", id: replyId, result });
             })
@@ -550,6 +579,9 @@ const connectAndAuthenticateCursor = async (
     setSessionCwd(next) {
       sessionCwd = next;
     },
+    setAcpPermissionContext(ctx) {
+      acpPermissionContext = ctx;
+    },
   };
 };
 
@@ -673,6 +705,8 @@ export const startCursorSession = (
   apiKey: string | null,
   cursorPath: string,
   sessionId: AgentSessionId,
+  requestPermission: RequestPermission,
+  getRuntimeMode: GetRuntimeMode,
   resumeCursor: string | null = null,
 ): Effect.Effect<CursorSessionHandle, AgentSessionStartError, AttachmentService> =>
   Effect.gen(function* () {
@@ -719,6 +753,17 @@ export const startCursorSession = (
     // project cwd before cursor's fs/* and terminal/* server→client
     // requests start flowing — handleFsRequest sandboxes paths under this.
     transportResult.setSessionCwd(cwd);
+
+    // Gate fs writes + terminal command execution through PermissionService +
+    // RuntimeMode, exactly like Claude/Codex/Grok. `currentMode` is read live.
+    transportResult.setAcpPermissionContext({
+      sessionId,
+      projectId: input.folderId,
+      requestPermission: (kind, options) =>
+        requestPermission(sessionId, kind, options),
+      getRuntimeMode,
+      getPermissionMode: () => currentMode,
+    });
 
     // === Wire session-level handlers onto the (possibly prewarmed) transport.
     transportResult.setSessionUpdateHandler((update) => {

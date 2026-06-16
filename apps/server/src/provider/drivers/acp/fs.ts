@@ -42,13 +42,13 @@ export interface FsHandleContext {
   readonly getPermissionMode?: () => PermissionMode;
 }
 
-const isUnderCwd = (requested: string, cwd: string): boolean => {
+export const isUnderCwd = (requested: string, cwd: string): boolean => {
   const abs = path.resolve(requested);
   const root = path.resolve(cwd);
   return abs === root || abs.startsWith(root + path.sep);
 };
 
-const ensureUnderCwd = (p: string, cwd: string): string => {
+export const ensureUnderCwd = (p: string, cwd: string): string => {
   const abs = path.resolve(p);
   if (!isUnderCwd(abs, cwd)) {
     throw new Error(`Path escapes workspace: ${p}`);
