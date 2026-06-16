@@ -828,11 +828,11 @@ export const MODELS_BY_PROVIDER: Record<ProviderId, ReadonlyArray<ModelOption>> 
   ],
   // Seed list — Grok CLI's `-m` flag accepts any model id it knows, so a
   // custom slug typed by the user still works; this list is just what the
-  // picker shows by default. `grok-build` is the only model free-tier
-  // accounts can run (verified via `grok models`); the rest unlock with a
-  // SuperGrok subscription. Passing a slug the account can't access yields
-  // a clean 403 surfaced through grok's streaming-json `type: "error"`
-  // envelope, so no client-side validation needed.
+  // picker shows by default. We surface only the two slugs users actually
+  // want: `grok-build` (free-tier coding model) and `grok-composer-2.5-fast`
+  // (SuperGrok composer). Anything else can still be typed manually. A
+  // slug the account can't access yields a clean 403 surfaced through
+  // grok's streaming-json `type: "error"` envelope.
   grok: [
     {
       id: "grok-build",
@@ -841,20 +841,8 @@ export const MODELS_BY_PROVIDER: Record<ProviderId, ReadonlyArray<ModelOption>> 
       supportsWebSearch: "queryOnly",
     },
     {
-      id: "grok-4",
-      label: "Grok 4",
-      supportsPlanMode: true,
-      supportsWebSearch: "queryOnly",
-    },
-    {
-      id: "grok-4-fast",
-      label: "Grok 4 Fast",
-      supportsPlanMode: true,
-      supportsWebSearch: "queryOnly",
-    },
-    {
-      id: "grok-code-fast-1",
-      label: "Grok Code Fast",
+      id: "grok-composer-2.5-fast",
+      label: "Composer 2.5",
       supportsPlanMode: true,
       supportsWebSearch: "queryOnly",
     },
@@ -982,7 +970,14 @@ export const MODEL_ALIASES_BY_PROVIDER: Record<ProviderId, Record<string, string
     "gpt-5-codex": "gpt-5.4",
     "gpt-5": "gpt-5.4",
   },
-  grok: {},
+  // Shorthand → canonical for the two surfaced Grok slugs. We only alias
+  // names that could plausibly be persisted from the picker or typed by
+  // hand for the surviving entries.
+  grok: {
+    composer: "grok-composer-2.5-fast",
+    "composer-2.5": "grok-composer-2.5-fast",
+    "composer-2.5-fast": "grok-composer-2.5-fast",
+  },
   gemini: {
     "gemini-3-pro": "gemini-3-pro-preview",
     "gemini-3.1-pro-preview": "gemini-3-pro-preview",
