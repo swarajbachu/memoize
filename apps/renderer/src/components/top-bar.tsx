@@ -243,16 +243,15 @@ type OpenPrWorkflow = {
 type Workflow =
   | { kind: "idle" }
   | { kind: "dirty"; count: number }
-  | { kind: "ahead"; count: number; prOpen: boolean }
+  | { kind: "ahead"; count: number }
   | { kind: "ready-for-pr" }
   | OpenPrWorkflow;
 
 /**
  * Priority is the user's next sensible action, in order of urgency:
  *   1. dirty   — uncommitted files in the working tree
- *   2. ahead   — local commits not yet pushed (regardless of PR state — if
- *                there are unpushed commits, that's what the user should do
- *                next, not stare at failing checks on stale code)
+ *   2. ahead   — local commits not yet pushed; push before creating or
+ *                updating a PR
  *   3. open-pr — a PR exists and the working tree + upstream are in sync
  *   4. ready-for-pr — clean pushed worktree branch with no open PR
  *   5. idle    — nothing to do
@@ -281,7 +280,7 @@ const deriveWorkflow = (
   const prKnownNotOpen = pr !== null && !prOpen;
   if (status === null) return { kind: "idle" };
   if (status.dirtyFiles > 0) return { kind: "dirty", count: status.dirtyFiles };
-  if (status.ahead > 0) return { kind: "ahead", count: status.ahead, prOpen };
+  if (status.ahead > 0) return { kind: "ahead", count: status.ahead };
   if (pr && prOpen) {
     return {
       kind: "open-pr",
@@ -381,8 +380,8 @@ export function TopBarRight() {
             onClick={() => sendToAgent("commit and push the current changes")}
           />
         ) : null}
-        {workflow.kind === "ahead" && workflow.prOpen && folderId !== null ? (
-          // Pushing existing commits needs no agent — do it directly.
+        {workflow.kind === "ahead" && folderId !== null ? (
+          // Pushing committed changes needs no agent — do it directly.
           <DirectActionButton
             tone="pink"
             icon={<Upload />}
@@ -395,15 +394,6 @@ export function TopBarRight() {
               );
             }}
             onSuccess={() => refreshAfterAction(folderId, worktreeId)}
-          />
-        ) : null}
-        {workflow.kind === "ahead" && !workflow.prOpen ? (
-          <GlassActionButton
-            tone="pink"
-            icon={<GitPullRequestArrow />}
-            label="Create PR"
-            disabled={!agentReady}
-            onClick={() => sendToAgent("create a pull request for this branch")}
           />
         ) : null}
         {workflow.kind === "ready-for-pr" ? (
