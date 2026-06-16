@@ -51,11 +51,15 @@ export type AgentStatus = typeof AgentStatus.Type;
  *   - `approval-required` — prompt every write/Bash/Network/Task/MCP call.
  *   - `auto-accept-edits` — also auto-allow Edit / Write / MultiEdit /
  *     NotebookEdit. Bash / Network / Task / MCP still prompt.
- *   - `full-access` — auto-allow everything except sensitive paths.
+ *   - `auto-accept-edits-and-bash` — auto-allow file edits AND Bash. Network
+ *     (WebFetch / WebSearch) and MCP/Other still prompt.
+ *   - `full-access` — auto-allow everything except sensitive paths. Plan
+ *     mode (ExitPlanMode) ALWAYS prompts regardless of runtime mode.
  */
 export const RuntimeMode = Schema.Literal(
   "approval-required",
   "auto-accept-edits",
+  "auto-accept-edits-and-bash",
   "full-access",
 );
 export type RuntimeMode = typeof RuntimeMode.Type;
@@ -88,14 +92,27 @@ export const DEFAULT_PERMISSION_MODE: PermissionMode = "default";
 /**
  * Canonical reasoning effort levels exposed to the user. Providers map these
  * to their native concept:
- *   - Claude → `maxThinkingTokens` (low=5k, medium=15k, high=60k)
- *   - Codex → `reasoning_effort` enum (low/medium/high pass through)
+ *   - Claude → `maxThinkingTokens` (low=5k, medium=15k, high=60k) + SDK
+ *     `effort` enum (low/medium/high/xhigh/max). `ultracode` is a Claude
+ *     Code preset that normalizes to `xhigh` + `settings.ultracode: true`.
+ *     `ultrathink` is prompt-injected (the literal word is prepended to the
+ *     user prompt); SDK `effort` stays unset.
+ *   - Codex → `reasoning_effort` enum (low/medium/high pass through; higher
+ *     tiers fall back to `high`).
  *   - Gemini Pro → `thinkingConfig.thinkingBudget` (low=4k, medium=16k, high=32k)
  *
  * Providers/models that don't support thinking simply omit the descriptor
  * from `ModelDescriptor.optionDescriptors`, which hides the FE picker.
  */
-export const ReasoningLevel = Schema.Literal("low", "medium", "high");
+export const ReasoningLevel = Schema.Literal(
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+  "ultracode",
+  "ultrathink",
+);
 export type ReasoningLevel = typeof ReasoningLevel.Type;
 
 /**
@@ -111,6 +128,14 @@ export const SelectOptionDescriptor = Schema.Struct({
     Schema.Struct({ id: Schema.String, label: Schema.String }),
   ),
   defaultId: Schema.optional(Schema.String),
+  /**
+   * Option ids in this list are *prompt-injected* rather than forwarded to
+   * the SDK as a knob value. The driver prepends the option id (e.g. the
+   * literal word `"ultrathink"`) to the user prompt and unsets the
+   * underlying SDK field. Used by Claude's `effort` descriptor for the
+   * `ultrathink` tier.
+   */
+  promptInjectedValues: Schema.optional(Schema.Array(Schema.String)),
 });
 export type SelectOptionDescriptor = typeof SelectOptionDescriptor.Type;
 
@@ -586,11 +611,21 @@ export interface ModelOption {
   readonly optionDescriptors?: ReadonlyArray<OptionDescriptor>;
   readonly supportsPlanMode?: boolean;
   readonly supportsWebSearch?: "native" | "queryOnly";
+  /**
+   * When set, the renderer renders a rainbow "Ultracode" chip + info icon on
+   * this model's picker row, and the composer footer surfaces an Ultracode
+   * toggle pill. Server-side, picking this model defaults
+   * `modelOptions.effort = "ultracode"`, which the Claude driver normalizes
+   * to `effort: "xhigh"` + `settings.ultracode: true` on the SDK options.
+   * Today only Opus 4.8 advertises this.
+   */
+  readonly ultracode?: { readonly available: true };
 }
 
 /**
- * Standard reasoning-level descriptor reused across providers that support
- * thinking. Keep id/options aligned with `ReasoningLevel`.
+ * Standard 3-level reasoning descriptor for Codex/Gemini/Cursor and the
+ * `reasoning` knob name used across non-Claude providers. Keep id/options
+ * aligned with `ReasoningLevel`.
  */
 const reasoningSelectDescriptor = (
   defaultId: ReasoningLevel = "medium",
@@ -606,25 +641,157 @@ const reasoningSelectDescriptor = (
   defaultId,
 });
 
+/**
+ * Per-model effort descriptor for the Claude provider. Each model declares
+ * its own supported tiers (see `MODELS_BY_PROVIDER.claude` below); `ultracode`
+ * and `ultrathink` are special — see `ReasoningLevel` docs. The knob id is
+ * `effort` (matching the Claude SDK + t3code reference) rather than
+ * `reasoning` to make driver-side mapping explicit.
+ */
+const claudeEffortDescriptor = (args: {
+  options: ReadonlyArray<{ id: string; label: string }>;
+  defaultId: string;
+  promptInjectedValues?: ReadonlyArray<string>;
+}): SelectOptionDescriptor => ({
+  kind: "select",
+  id: "effort",
+  label: "Reasoning",
+  options: args.options,
+  defaultId: args.defaultId,
+  ...(args.promptInjectedValues !== undefined
+    ? { promptInjectedValues: args.promptInjectedValues }
+    : {}),
+});
+
+/**
+ * Boolean descriptor for Claude's per-model toggles. `fastMode` halves the
+ * token cost and roughly doubles throughput at the cost of some quality;
+ * `thinking` enables Haiku 4.5's always-on adaptive thinking.
+ */
+const claudeBooleanDescriptor = (
+  id: string,
+  label: string,
+): BooleanOptionDescriptor => ({
+  kind: "boolean",
+  id,
+  label,
+});
+
+/**
+ * Standard `contextWindow` descriptor used by every Claude 4.x model that
+ * supports the 1M variant. Driver-side, picking `"1m"` rewrites the API
+ * model id to `${slug}[1m]`. We default to `"1m"` because Anthropic now
+ * routes most Claude 4.x sessions to the 1M window by default.
+ */
+const claudeContextWindowDescriptor = (): SelectOptionDescriptor => ({
+  kind: "select",
+  id: "contextWindow",
+  label: "Context Window",
+  options: [
+    { id: "200k", label: "200k" },
+    { id: "1m", label: "1M" },
+  ],
+  defaultId: "1m",
+});
+
 export const MODELS_BY_PROVIDER: Record<ProviderId, ReadonlyArray<ModelOption>> = {
+  // Claude 4.x catalog (May 2026). Effort tiers and per-model knobs match
+  // the published Claude Agent SDK contract — see also the t3code reference
+  // (`/Users/whizzy/Developer/temp/t3code/.../ClaudeProvider.ts`) which
+  // ships the same lineup. Ordering = newest first so the picker accordion
+  // expands Opus 4.8 by default.
   claude: [
+    {
+      id: "claude-opus-4-8",
+      label: "Opus 4.8",
+      optionDescriptors: [
+        claudeEffortDescriptor({
+          options: [
+            { id: "low", label: "Low" },
+            { id: "medium", label: "Medium" },
+            { id: "high", label: "High" },
+            { id: "xhigh", label: "Extra High" },
+            { id: "max", label: "Max" },
+            { id: "ultracode", label: "Ultracode" },
+            { id: "ultrathink", label: "Ultrathink" },
+          ],
+          defaultId: "high",
+          promptInjectedValues: ["ultrathink"],
+        }),
+        claudeBooleanDescriptor("fastMode", "Fast Mode"),
+        claudeContextWindowDescriptor(),
+      ],
+      supportsPlanMode: true,
+      supportsWebSearch: "native",
+      ultracode: { available: true },
+    },
     {
       id: "claude-opus-4-7",
       label: "Opus 4.7",
-      optionDescriptors: [reasoningSelectDescriptor("high")],
+      optionDescriptors: [
+        claudeEffortDescriptor({
+          options: [
+            { id: "low", label: "Low" },
+            { id: "medium", label: "Medium" },
+            { id: "high", label: "High" },
+            { id: "xhigh", label: "Extra High" },
+            { id: "max", label: "Max" },
+            { id: "ultrathink", label: "Ultrathink" },
+          ],
+          defaultId: "xhigh",
+          promptInjectedValues: ["ultrathink"],
+        }),
+        claudeBooleanDescriptor("fastMode", "Fast Mode"),
+        claudeContextWindowDescriptor(),
+      ],
+      supportsPlanMode: true,
+      supportsWebSearch: "native",
+    },
+    {
+      id: "claude-opus-4-6",
+      label: "Opus 4.6",
+      optionDescriptors: [
+        claudeEffortDescriptor({
+          options: [
+            { id: "low", label: "Low" },
+            { id: "medium", label: "Medium" },
+            { id: "high", label: "High" },
+            { id: "max", label: "Max" },
+            { id: "ultrathink", label: "Ultrathink" },
+          ],
+          defaultId: "high",
+          promptInjectedValues: ["ultrathink"],
+        }),
+        claudeBooleanDescriptor("fastMode", "Fast Mode"),
+        claudeContextWindowDescriptor(),
+      ],
       supportsPlanMode: true,
       supportsWebSearch: "native",
     },
     {
       id: "claude-sonnet-4-6",
       label: "Sonnet 4.6",
-      optionDescriptors: [reasoningSelectDescriptor("medium")],
+      optionDescriptors: [
+        claudeEffortDescriptor({
+          options: [
+            { id: "low", label: "Low" },
+            { id: "medium", label: "Medium" },
+            { id: "high", label: "High" },
+            { id: "max", label: "Max" },
+            { id: "ultrathink", label: "Ultrathink" },
+          ],
+          defaultId: "high",
+          promptInjectedValues: ["ultrathink"],
+        }),
+        claudeContextWindowDescriptor(),
+      ],
       supportsPlanMode: true,
       supportsWebSearch: "native",
     },
     {
       id: "claude-haiku-4-5",
       label: "Haiku 4.5",
+      optionDescriptors: [claudeBooleanDescriptor("thinking", "Thinking")],
       supportsPlanMode: true,
       supportsWebSearch: "native",
     },
@@ -792,7 +959,25 @@ export const findModelDescriptor = (
  * sessions don't crash.
  */
 export const MODEL_ALIASES_BY_PROVIDER: Record<ProviderId, Record<string, string>> = {
-  claude: {},
+  // Short / vendor-formatted slugs and pre-pricing-reset names route to the
+  // canonical 4.x slugs above. Mirror of t3code's
+  // `MODEL_SLUG_ALIASES_BY_PROVIDER[CLAUDE_DRIVER_KIND]` so a user typing
+  // `opus` or `sonnet-4.6` resolves the same in both apps.
+  claude: {
+    opus: "claude-opus-4-8",
+    "opus-4.8": "claude-opus-4-8",
+    "claude-opus-4.8": "claude-opus-4-8",
+    "opus-4.7": "claude-opus-4-7",
+    "claude-opus-4.7": "claude-opus-4-7",
+    "opus-4.6": "claude-opus-4-6",
+    "claude-opus-4.6": "claude-opus-4-6",
+    sonnet: "claude-sonnet-4-6",
+    "sonnet-4.6": "claude-sonnet-4-6",
+    "claude-sonnet-4.6": "claude-sonnet-4-6",
+    haiku: "claude-haiku-4-5",
+    "haiku-4.5": "claude-haiku-4-5",
+    "claude-haiku-4.5": "claude-haiku-4-5",
+  },
   codex: {
     "gpt-5-codex": "gpt-5.4",
     "gpt-5": "gpt-5.4",
@@ -832,7 +1017,14 @@ export interface ModelPricing {
 }
 
 export const MODEL_PRICING: Record<string, ModelPricing> = {
-  "claude-opus-4-7": { input: 15, output: 75, cacheRead: 1.5, cacheCreate: 18.75 },
+  // 2026-05 Anthropic pricing reset — every Opus 4.x tier landed at the
+  // same $5/$25 per-million numbers. `fastMode` (Opus only) doubles those
+  // to $10 in / $50 out for ~2.5x throughput; we don't encode that here,
+  // the renderer's cost footer applies the multiplier when the session
+  // flips the boolean. 1M context window: no per-token premium.
+  "claude-opus-4-8": { input: 5, output: 25, cacheRead: 0.5, cacheCreate: 6.25 },
+  "claude-opus-4-7": { input: 5, output: 25, cacheRead: 0.5, cacheCreate: 6.25 },
+  "claude-opus-4-6": { input: 5, output: 25, cacheRead: 0.5, cacheCreate: 6.25 },
   "claude-sonnet-4-6": { input: 3, output: 15, cacheRead: 0.3, cacheCreate: 3.75 },
   "claude-haiku-4-5": { input: 1, output: 5, cacheRead: 0.1, cacheCreate: 1.25 },
 };

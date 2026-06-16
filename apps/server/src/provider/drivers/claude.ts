@@ -816,9 +816,18 @@ const policyFor = (
   toolInput: Record<string, unknown>,
   runtimeMode: RuntimeMode,
 ): ToolPolicy => {
-  // 0. Our own AskUserQuestion is the user-facing prompt — gating it
-  //    behind a separate "Use tool AskUserQuestion?" toast is double
-  //    prompting. Always auto-allow.
+  // 0a. Plan-mode exit is ALWAYS a user decision. Regardless of runtime
+  //     mode — including `full-access` — `ExitPlanMode` must surface the
+  //     Approve / Cancel card in the renderer. Without `forcePrompt: true`
+  //     a prior `AllowForSession` could silence it, and without putting
+  //     this branch ahead of every other auto-allow `full-access` would
+  //     short-circuit the prompt entirely.
+  if (toolName === "ExitPlanMode") {
+    return { kind: "prompt", forcePrompt: true };
+  }
+  // 0b. Our own AskUserQuestion is the user-facing prompt — gating it
+  //     behind a separate "Use tool AskUserQuestion?" toast is double
+  //     prompting. Always auto-allow.
   if (isAskUserQuestion(toolName)) {
     return { kind: "auto-allow" };
   }
@@ -849,7 +858,15 @@ const policyFor = (
     return { kind: "auto-allow" };
   }
 
-  // 4. full-access — auto-allow anything that survived the sensitive-path check.
+  // 3b. auto-accept-edits-and-bash — file edits AND Bash auto-allow;
+  //     WebFetch / WebSearch / MCP / Other still prompt.
+  if (runtimeMode === "auto-accept-edits-and-bash") {
+    if (FILE_EDIT_TOOLS.has(toolName)) return { kind: "auto-allow" };
+    if (toolName === "Bash") return { kind: "auto-allow" };
+  }
+
+  // 4. full-access — auto-allow anything that survived the sensitive-path
+  //    + plan-mode checks above.
   if (runtimeMode === "full-access") {
     return { kind: "auto-allow" };
   }
@@ -915,6 +932,79 @@ export type RequestPermission = (
   kind: PermissionKind,
   options: { readonly forcePrompt: boolean },
 ) => Promise<PermissionDecision>;
+
+/**
+ * Resolve the SDK `effort` field and the per-session `settings` slice from
+ * the FE picker's `modelOptions`. Mirrors the t3code reference:
+ *   - `ultracode`  → `effort: "xhigh"` + `settings.ultracode: true`
+ *   - `ultrathink` → prompt-injected (driver-side prefix added at send()
+ *                    time); SDK `effort` stays unset so the model still
+ *                    uses its default tier.
+ *   - `low | medium | high | xhigh | max` pass straight through, clamped
+ *     by what the SDK type accepts.
+ *   - Anything else (or missing) falls back to `"high"`.
+ *
+ * `fastMode` (Opus only) and `thinking` (Haiku 4.5) ride on `settings`.
+ *
+ * The returned object is spread into the `Options` literal so omitted
+ * fields don't override SDK defaults.
+ */
+type ClaudeSdkEffort = "low" | "medium" | "high" | "xhigh" | "max";
+type EffortAndSettings = {
+  effort?: ClaudeSdkEffort;
+  settings?: Record<string, unknown>;
+};
+const effortAndSettings = (
+  modelOptions: Readonly<Record<string, string>> | undefined,
+): EffortAndSettings => {
+  const raw =
+    modelOptions?.["effort"] ?? modelOptions?.["reasoning"] ?? undefined;
+  const ultracode = raw === "ultracode";
+  const ultrathink = raw === "ultrathink";
+  const sdkEffort: ClaudeSdkEffort | undefined = (() => {
+    if (ultrathink) return undefined; // prompt-injected; no SDK knob
+    if (ultracode) return "xhigh"; // Claude Code preset → xhigh + ultracode flag
+    if (
+      raw === "low" ||
+      raw === "medium" ||
+      raw === "high" ||
+      raw === "xhigh" ||
+      raw === "max"
+    ) {
+      return raw;
+    }
+    return "high";
+  })();
+
+  const settings: Record<string, unknown> = {};
+  if (ultracode) settings["ultracode"] = true;
+  if (modelOptions?.["fastMode"] === "true") settings["fastMode"] = true;
+  if (modelOptions?.["thinking"] === "true") {
+    settings["alwaysThinkingEnabled"] = true;
+  } else if (modelOptions?.["thinking"] === "false") {
+    settings["alwaysThinkingEnabled"] = false;
+  }
+
+  return {
+    ...(sdkEffort !== undefined ? { effort: sdkEffort } : {}),
+    ...(Object.keys(settings).length > 0 ? { settings } : {}),
+  };
+};
+
+/**
+ * If the user's effort selection is `ultrathink`, prepend the literal word
+ * to the prompt and unset the SDK effort knob. Mirrors t3code's
+ * `promptInjectedValues` contract. Driver hooks call this before forwarding
+ * the user's text to the SDK.
+ */
+export const applyUltrathinkPrefix = (
+  modelOptions: Readonly<Record<string, string>> | undefined,
+  text: string,
+): string => {
+  const raw =
+    modelOptions?.["effort"] ?? modelOptions?.["reasoning"] ?? undefined;
+  return raw === "ultrathink" ? `ultrathink\n\n${text}` : text;
+};
 
 /**
  * Spin up a streaming-input Claude conversation. The SDK is driven by an
@@ -1215,20 +1305,21 @@ export const startClaudeSession = (
         "Phase 4 — Propose. Call ExitPlanMode with a concise plan: what changes, where, and how to verify.",
       ].join("\n"),
       // Reasoning effort: mapped from FE picker via `input.modelOptions
-      // .reasoning` (the per-model descriptor in
-      // `MODELS_BY_PROVIDER[claude]` declares which models expose this).
-      // Falls back to "high" when omitted to preserve prior default. We
-      // pair it with an explicit `display: "summarized"` because Opus
+      // .effort` (or legacy `reasoning`). The per-model descriptor in
+      // `MODELS_BY_PROVIDER[claude]` declares which tiers each model
+      // exposes. Special values:
+      //   - `ultracode`  → SDK `effort: "xhigh"` + `settings.ultracode: true`
+      //   - `ultrathink` → prompt-injected at `send()` time; SDK `effort`
+      //                    stays unset.
+      // Falls back to "high" when omitted.
+      //
+      // We pair it with an explicit `display: "summarized"` because Opus
       // 4.7 defaults the adaptive-thinking display to "omitted" — without
       // this override our `thinking_delta` chunks arrive empty (only
       // signatures), which would break the streaming thinking UI. Other
       // Claude 4 models default to "summarized" so this is a no-op for
       // them.
-      effort: (() => {
-        const r = input.modelOptions?.["reasoning"];
-        if (r === "low" || r === "medium" || r === "high") return r;
-        return "high";
-      })(),
+      ...effortAndSettings(input.modelOptions),
       thinking: { type: "adaptive", display: "summarized" },
       forwardSubagentText: true,
       // Surfaces thinking deltas in the partial-message stream so we
@@ -1355,8 +1446,13 @@ export const startClaudeSession = (
       events: Mailbox.toStream(events),
       send: (text, attachmentRefs) =>
         Effect.promise(async () => {
+          // Ultrathink is the only `effort` tier that's not forwarded to
+          // the SDK as a knob — instead the literal word `"ultrathink"` is
+          // prepended to the user's prompt. The session-level modelOptions
+          // were captured at start() so we can apply the prefix here.
+          const promptText = applyUltrathinkPrefix(input.modelOptions, text);
           console.log(
-            `[claude.send] sessionId=${sessionId} textLen=${text.length} attachments=${attachmentRefs?.length ?? 0}`,
+            `[claude.send] sessionId=${sessionId} textLen=${promptText.length} attachments=${attachmentRefs?.length ?? 0}`,
           );
           const attachmentBlocks =
             attachmentRefs !== undefined && attachmentRefs.length > 0
@@ -1370,11 +1466,13 @@ export const startClaudeSession = (
                     ? { type: "text", textLen: b.text.length }
                     : { type: b.type, media_type: b.source.media_type, base64Len: b.source.data.length },
                 ),
-                { type: "text", textLen: text.length },
+                { type: "text", textLen: promptText.length },
               ],
             )}`,
           );
-          inputChannel.push(userMessageOf(text, sessionId, attachmentBlocks));
+          inputChannel.push(
+            userMessageOf(promptText, sessionId, attachmentBlocks),
+          );
         }),
       interrupt: () =>
         Effect.tryPromise({

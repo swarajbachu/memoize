@@ -25,6 +25,7 @@ const isProviderId = (v: unknown): v is ProviderId =>
 const isRuntimeMode = (v: unknown): v is RuntimeMode =>
   v === "approval-required" ||
   v === "auto-accept-edits" ||
+  v === "auto-accept-edits-and-bash" ||
   v === "full-access";
 
 const rowToSettings = (

@@ -1,4 +1,11 @@
-import { ArrowUpRight, Check, ChevronDown, ChevronRight, Search as SearchIcon } from "lucide-react";
+import {
+  ArrowUpRight,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Info,
+  Search as SearchIcon,
+} from "lucide-react";
 import {
   Fragment,
   useCallback,
@@ -18,7 +25,9 @@ import type {
 } from "@memoize/wire";
 import {
   MODELS_BY_PROVIDER,
+  findModelDescriptor,
   type Message,
+  type SelectOptionDescriptor,
 } from "@memoize/wire";
 
 import { cn } from "~/lib/utils";
@@ -63,6 +72,14 @@ interface ModelPickerEntry {
   providerId: ProviderId;
   modelId: string;
   label: string;
+  /** When true, render the rainbow Ultracode chip on this row. */
+  ultracode?: boolean;
+  /**
+   * When set, render a small context-window pill on this row. We only show
+   * a pill when the model's `contextWindow` descriptor defaults to `"1m"`
+   * — otherwise the chip would clutter every legacy 200k row.
+   */
+  contextWindowLabel?: string;
 }
 
 type Scope = ProviderId | "all";
@@ -194,7 +211,27 @@ export function ModelPicker(props: ModelPickerProps) {
     const out: ModelPickerEntry[] = [];
     for (const pid of pickableProviders) {
       for (const m of modelsForProvider(pid)) {
-        out.push({ providerId: pid, modelId: m.id, label: m.label });
+        const descriptor = findModelDescriptor(pid, m.id);
+        const ctxDescriptor = descriptor?.optionDescriptors?.find(
+          (d): d is SelectOptionDescriptor =>
+            d.kind === "select" && d.id === "contextWindow",
+        );
+        const ctxDefault = ctxDescriptor?.defaultId;
+        const ctxLabel =
+          ctxDescriptor !== undefined
+            ? ctxDescriptor.options.find((o) => o.id === ctxDefault)?.label
+            : undefined;
+        // Only surface a pill when the default is the larger window —
+        // 200k-by-default rows would be noise.
+        const contextWindowLabel =
+          ctxDefault === "1m" ? ctxLabel ?? "1M" : undefined;
+        out.push({
+          providerId: pid,
+          modelId: m.id,
+          label: m.label,
+          ultracode: descriptor?.ultracode?.available === true,
+          ...(contextWindowLabel !== undefined ? { contextWindowLabel } : {}),
+        });
       }
     }
     return out;
@@ -251,6 +288,19 @@ export function ModelPicker(props: ModelPickerProps) {
       .filter((g) => g.models.length > 0);
   }, [scope, query, allModels, pickableProviders, providerId]);
 
+  // When the user picks an Ultracode-eligible model (today: Opus 4.8), seed
+  // the per-session `effort` to `"ultracode"` so the rainbow chip lights up
+  // out of the box. Skipped if the user has already picked an effort for
+  // this session — their explicit choice wins.
+  const seedUltracodeDefault = (sessionId: SessionId, modelId: string) => {
+    if (typeof window === "undefined") return;
+    const descriptor = findModelDescriptor("claude", modelId);
+    if (descriptor?.ultracode?.available !== true) return;
+    const key = `memoize.modelOptions.${sessionId}.effort`;
+    if (window.sessionStorage.getItem(key) !== null) return;
+    window.sessionStorage.setItem(key, "ultracode");
+  };
+
   const handlePick = async (pid: ProviderId, modelId: string) => {
     if (isDefault) {
       setDefaultProviderAndModel(pid, modelId);
@@ -294,6 +344,7 @@ export function ModelPicker(props: ModelPickerProps) {
           return;
         }
       }
+      seedUltracodeDefault(sessionId, modelId);
       pushModelPickerEvent({ providerId: pid, modelId });
       setOpen(false);
     } finally {
@@ -686,7 +737,25 @@ function ModelRow({
           className="size-3.5 shrink-0 text-muted-foreground"
         />
       )}
-      <span className="flex-1 truncate">{entry.label}</span>
+      <span className="truncate">{entry.label}</span>
+      {entry.ultracode === true && (
+        <span
+          title="Ultracode — max reasoning + automatic workflow orchestration."
+          className="flex items-center gap-0.5 rounded-md bg-gradient-to-r from-rose-400 via-amber-300 via-emerald-400 via-sky-400 to-violet-400 px-1.5 py-px text-[10px] font-medium text-white shadow-sm/10"
+        >
+          Ultracode
+          <Info className="size-2.5 opacity-80" aria-hidden />
+        </span>
+      )}
+      {entry.contextWindowLabel !== undefined && (
+        <span
+          title={`${entry.contextWindowLabel} context window`}
+          className="rounded bg-muted/70 px-1 py-px text-[10px] font-medium text-muted-foreground"
+        >
+          {entry.contextWindowLabel}
+        </span>
+      )}
+      <span className="flex-1" />
       {opensNewTab && (
         <ArrowUpRight
           className="size-3 text-muted-foreground/70"

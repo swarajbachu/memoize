@@ -5,6 +5,7 @@ import {
   FolderClosed,
   GitBranch,
   Gauge,
+  Info,
   Lock,
   Map,
   Paperclip,
@@ -890,11 +891,15 @@ function ReasoningPicker({
 
   // For opencode, the variant list is per-model and lives on the live
   // inventory (`provider.list()` → `model.variants`). For other providers
-  // it's the static reasoning descriptor curated in `MODELS_BY_PROVIDER`.
+  // it's the static reasoning/effort descriptor curated in
+  // `MODELS_BY_PROVIDER`. Claude's descriptor is keyed `effort` (with
+  // tiers up through ultracode/ultrathink); everything else uses
+  // `reasoning`.
   const resolved = useMemo((): {
     label: string;
     options: ReadonlyArray<{ id: string; label: string }>;
     defaultId: string;
+    descriptorId: string;
   } | null => {
     if (providerId === "opencode") {
       if (opencodeInventory === null) return null;
@@ -910,29 +915,37 @@ function ReasoningPicker({
             : m.variants.includes("high")
               ? "high"
               : m.variants[0]!,
+          descriptorId: "reasoning",
         };
       }
       return null;
     }
     const descriptor = findModelDescriptor(providerId, model);
-    const reasoningDescriptor = descriptor?.optionDescriptors?.find(
+    const selectDescriptor = descriptor?.optionDescriptors?.find(
       (d): d is SelectOptionDescriptor =>
-        d.kind === "select" && d.id === "reasoning",
+        d.kind === "select" && (d.id === "reasoning" || d.id === "effort"),
     );
-    if (reasoningDescriptor === undefined) return null;
+    if (selectDescriptor === undefined) return null;
     return {
-      label: reasoningDescriptor.label,
-      options: reasoningDescriptor.options,
-      defaultId: reasoningDescriptor.defaultId ?? "medium",
+      label: selectDescriptor.label,
+      options: selectDescriptor.options,
+      defaultId: selectDescriptor.defaultId ?? "medium",
+      descriptorId: selectDescriptor.id,
     };
   }, [providerId, model, opencodeInventory]);
 
   const defaultId = resolved?.defaultId ?? "medium";
-  const storageKey = `memoize.reasoning.${sessionId}`;
+  const descriptorId = resolved?.descriptorId ?? "reasoning";
+  const storageKey = `memoize.modelOptions.${sessionId}.${descriptorId}`;
   const [level, setLevel] = useState<string>(() => {
     if (typeof window === "undefined") return defaultId;
     const stored = window.sessionStorage.getItem(storageKey);
     if (stored !== null) return stored;
+    // One-shot legacy migration so users mid-session keep their pick.
+    const legacy = window.sessionStorage.getItem(
+      `memoize.reasoning.${sessionId}`,
+    );
+    if (legacy !== null && legacy.length > 0) return legacy;
     return defaultId;
   });
 
@@ -949,16 +962,27 @@ function ReasoningPicker({
   };
 
   const activeLabel = options.find((o) => o.id === level)?.label ?? level;
+  const isUltracode = level === "ultracode";
 
   return (
     <Menu>
       <MenuTrigger
-        className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-foreground hover:bg-muted/60 data-[popup-open]:bg-muted/60"
+        className={cn(
+          "flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] transition-colors data-[popup-open]:bg-muted/60",
+          isUltracode
+            ? "bg-gradient-to-r from-rose-400/90 via-amber-300/90 via-emerald-400/90 via-sky-400/90 to-violet-400/90 text-white shadow-sm/10 hover:opacity-95"
+            : "text-foreground hover:bg-muted/60",
+        )}
         aria-label={resolved.label}
-        title={`${resolved.label} for the next message`}
+        title={
+          isUltracode
+            ? "Ultracode — max reasoning + automatic workflow orchestration."
+            : `${resolved.label} for the next message`
+        }
       >
         <Gauge className="size-3" />
         <span>{activeLabel}</span>
+        {isUltracode && <Info className="size-3 opacity-90" aria-hidden />}
         <ChevronDown className="size-3 opacity-60" />
       </MenuTrigger>
       <MenuPopup side="top" align="start" className="w-44">
