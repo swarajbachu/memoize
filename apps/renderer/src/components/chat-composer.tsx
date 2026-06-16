@@ -1,5 +1,6 @@
 import type { EditorView } from "@codemirror/view";
 import {
+  Bolt,
   Check,
   ChevronDown,
   FolderClosed,
@@ -22,6 +23,7 @@ import {
 
 import {
   findModelDescriptor,
+  type BooleanOptionDescriptor,
   type Message,
   type PermissionMode,
   type PermissionRequest,
@@ -688,6 +690,11 @@ export function ChatComposer({ session }: { session: Session }) {
                   providerId={session.providerId}
                   model={session.model}
                 />
+                {findModelDescriptor(session.providerId, session.model)
+                  ?.optionDescriptors?.some(
+                    (d): d is BooleanOptionDescriptor =>
+                      d.kind === "boolean" && d.id === "fastMode",
+                  ) === true && <FastModeToggle sessionId={sessionId} />}
                 {(findModelDescriptor(session.providerId, session.model)
                   ?.supportsPlanMode ?? true) && (
                   <PlanModeToggle
@@ -811,6 +818,66 @@ function RuntimeModeToggle({
         })}
       </MenuPopup>
     </Menu>
+  );
+}
+
+/**
+ * Claude Fast Mode is a boolean model option, persisted in the same
+ * per-session sessionStorage namespace the send path already reads.
+ */
+function FastModeToggle({ sessionId }: { sessionId: SessionId }) {
+  const storageKey = `memoize.modelOptions.${sessionId}.fastMode`;
+  const [enabled, setEnabled] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.sessionStorage.getItem(storageKey) === "true";
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      setEnabled(false);
+      return;
+    }
+    setEnabled(window.sessionStorage.getItem(storageKey) === "true");
+  }, [storageKey]);
+
+  const onClick = () => {
+    const next = !enabled;
+    setEnabled(next);
+    if (typeof window !== "undefined") {
+      if (next) {
+        window.sessionStorage.setItem(storageKey, "true");
+      } else {
+        window.sessionStorage.removeItem(storageKey);
+      }
+    }
+  };
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            onClick={onClick}
+            aria-label={
+              enabled ? "Disable Claude fast mode" : "Enable Claude fast mode"
+            }
+            aria-pressed={enabled}
+            className={cn(
+              "flex h-6 items-center gap-1.5 rounded-md px-2 text-[11px] transition-colors",
+              enabled
+                ? "bg-amber-300/15 text-amber-200 dark:text-amber-200 hover:bg-amber-300/25"
+                : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+            )}
+          >
+            <Bolt className="size-3.5" />
+            {enabled ? <span>Fast</span> : null}
+          </button>
+        }
+      />
+      <TooltipPopup>
+        {enabled ? "Disable Claude fast mode" : "Enable Claude fast mode"}
+      </TooltipPopup>
+    </Tooltip>
   );
 }
 
