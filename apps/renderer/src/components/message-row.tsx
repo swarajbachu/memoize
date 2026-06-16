@@ -25,6 +25,7 @@ import { cn } from "~/lib/utils";
 import { useMessagesStore, type ChatError } from "~/store/messages";
 import { useUiStore } from "~/store/ui";
 
+import { CopyButton } from "./copy-button.tsx";
 import { FileChip } from "./file-chip.tsx";
 import { MarkdownBody } from "./markdown-body.tsx";
 import {
@@ -81,7 +82,12 @@ export function MessageRow({
         />
       );
     case "assistant":
-      return <AssistantBubble text={message.content.text} />;
+      return (
+        <AssistantBubble
+          text={message.content.text}
+          createdAt={message.createdAt}
+        />
+      );
     case "thinking":
       return (
         <ThinkingRow
@@ -170,6 +176,12 @@ const stripChipTokens = (
   return out.replace(/[ \t]{2,}/g, " ").trim();
 };
 
+const formatMessageTime = (date: Date): string =>
+  date.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
 function UserBubble({
   text,
   attachments,
@@ -191,8 +203,13 @@ function UserBubble({
   const truncate = (name: string): string =>
     name.length > 28 ? `${name.slice(0, 25)}...` : name;
   return (
-    <div className="flex justify-end px-4 py-2">
-      <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-user-bubble px-3 py-2 text-sm text-user-bubble-foreground">
+    <div className="group/message flex justify-end px-4 py-2">
+      <div className="relative max-w-[80%] rounded-2xl rounded-tr-sm bg-user-bubble px-3 py-2 pr-9 text-sm text-user-bubble-foreground">
+        <CopyButton
+          text={display || text}
+          label="Copy message"
+          className="absolute right-2 top-1.5 size-5 text-user-bubble-foreground/50 opacity-60 hover:bg-background/10 hover:text-user-bubble-foreground hover:opacity-100 focus-visible:opacity-100"
+        />
         {hasChips ? (
           <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
             {(attachments ?? []).map((a) => {
@@ -273,11 +290,27 @@ function UserBubble({
   );
 }
 
-function AssistantBubble({ text }: { text: string }) {
+function AssistantBubble({
+  text,
+  createdAt,
+}: {
+  text: string;
+  createdAt?: Date;
+}) {
   return (
     <div className="px-4 py-2">
       <div className="max-w-[88%]">
         <MarkdownBody>{text}</MarkdownBody>
+        <div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          {createdAt !== undefined ? (
+            <span className="tabular-nums">{formatMessageTime(createdAt)}</span>
+          ) : null}
+          <CopyButton
+            text={text}
+            label="Copy message"
+            className="size-5 rounded opacity-70 hover:opacity-100"
+          />
+        </div>
       </div>
     </div>
   );
@@ -389,11 +422,7 @@ const isGeminiAcpUpgradeError = (text: string): boolean =>
     text,
   );
 
-function GeminiUpgradeCard({
-  onDismiss,
-}: {
-  onDismiss?: () => void;
-}) {
+function GeminiUpgradeCard({ onDismiss }: { onDismiss?: () => void }) {
   const [copied, setCopied] = useState(false);
   const copyCommand = () => {
     void navigator.clipboard.writeText(GEMINI_UPGRADE_COMMAND).then(() => {
@@ -512,7 +541,9 @@ export function ErrorBubble({
   const headline =
     error.kind === "auth"
       ? `Sign in to ${
-          error.providerId ? PROVIDER_LABEL_FOR_ERROR[error.providerId] : "your provider"
+          error.providerId
+            ? PROVIDER_LABEL_FOR_ERROR[error.providerId]
+            : "your provider"
         }`
       : error.kind === "network"
         ? "Connection lost"
@@ -546,7 +577,9 @@ export function ErrorBubble({
             {headline !== null ? (
               <span className="font-medium text-foreground">{headline}</span>
             ) : (
-              <span className="font-medium text-foreground">Provider error</span>
+              <span className="font-medium text-foreground">
+                Provider error
+              </span>
             )}
             <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-muted-foreground">
               {error.message || "(empty)"}
