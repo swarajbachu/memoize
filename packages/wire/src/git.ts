@@ -132,6 +132,21 @@ export class GitPrInfo extends Schema.Class<GitPrInfo>("GitPrInfo")({
   isDraft: Schema.Boolean,
   checks: GitPrChecks,
   mergeable: GitPrMergeable,
+  /**
+   * Per-check counts derived from the same `statusCheckRollup` that feeds
+   * `checks`. Lets the top bar render "N checks running" without the heavier
+   * `prDetails` round-trip. `checksTotal === 0` means the PR has no checks.
+   */
+  checksTotal: Schema.Number,
+  checksRunning: Schema.Number,
+  checksPassing: Schema.Number,
+  checksFailing: Schema.Number,
+  /**
+   * True when GitHub has a pending auto-merge request on this PR (`gh pr view
+   * --json autoMergeRequest` is non-null). Reflects the "Auto-merge on success"
+   * toggle's real, server-side state.
+   */
+  autoMergeEnabled: Schema.Boolean,
 }) {}
 
 export const GitPrStateRpc = Rpc.make("git.prState", {
@@ -195,12 +210,14 @@ export const GitPrCheckRunConclusion = Schema.Literal(
 );
 export type GitPrCheckRunConclusion = typeof GitPrCheckRunConclusion.Type;
 
-export class GitPrCheckRun extends Schema.Class<GitPrCheckRun>("GitPrCheckRun")({
-  name: Schema.String,
-  status: GitPrCheckRunStatus,
-  conclusion: Schema.NullOr(GitPrCheckRunConclusion),
-  url: Schema.NullOr(Schema.String),
-}) {}
+export class GitPrCheckRun extends Schema.Class<GitPrCheckRun>("GitPrCheckRun")(
+  {
+    name: Schema.String,
+    status: GitPrCheckRunStatus,
+    conclusion: Schema.NullOr(GitPrCheckRunConclusion),
+    url: Schema.NullOr(Schema.String),
+  },
+) {}
 
 /**
  * Heavier per-PR payload than {@link GitPrInfo}: title, body, reviews, comments,
@@ -315,12 +332,14 @@ export const GitDiffMode = Schema.Literal(
 );
 export type GitDiffMode = typeof GitDiffMode.Type;
 
-export class GitDiffResult extends Schema.Class<GitDiffResult>("GitDiffResult")({
-  mode: GitDiffMode,
-  patch: Schema.String,
-  truncated: Schema.Boolean,
-  bytes: Schema.Number,
-}) {}
+export class GitDiffResult extends Schema.Class<GitDiffResult>("GitDiffResult")(
+  {
+    mode: GitDiffMode,
+    patch: Schema.String,
+    truncated: Schema.Boolean,
+    bytes: Schema.Number,
+  },
+) {}
 
 export const GitDiffRpc = Rpc.make("git.diff", {
   payload: Schema.Struct({
@@ -343,6 +362,47 @@ export const GitCommitRpc = Rpc.make("git.commit", {
 });
 
 export const GitPushRpc = Rpc.make("git.push", {
+  payload: Schema.Struct({
+    folderId: FolderId,
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
+  }),
+  success: Schema.Struct({ output: Schema.String }),
+  error: GitErrors,
+});
+
+/**
+ * Merge method passed to `gh pr merge`. Mirrors GitHub's three merge buttons;
+ * the renderer remembers the last-used value (default `merge`).
+ */
+export const GitMergeMethod = Schema.Literal("merge", "squash", "rebase");
+export type GitMergeMethod = typeof GitMergeMethod.Type;
+
+/**
+ * Direct PR merge via `gh pr merge`. No agent involved.
+ *   merge        — merge now: `gh pr merge --<method> [--delete-branch]`
+ *   enable-auto  — arm GitHub-native auto-merge so the PR merges once required
+ *                  checks pass: `gh pr merge --auto --<method> [--delete-branch]`
+ *                  (requires the repo's "Allow auto-merge" setting).
+ *   disable-auto — cancel a pending auto-merge: `gh pr merge --disable-auto`.
+ * `gh`'s stderr is surfaced verbatim via GitCommandError so the renderer can
+ * show e.g. "auto-merge is not allowed for this repository".
+ */
+export const GitMergePrRpc = Rpc.make("git.mergePr", {
+  payload: Schema.Struct({
+    folderId: FolderId,
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
+    action: Schema.Literal("merge", "enable-auto", "disable-auto"),
+    method: GitMergeMethod,
+    deleteBranch: Schema.Boolean,
+  }),
+  success: Schema.Struct({ output: Schema.String }),
+  error: GitErrors,
+});
+
+/**
+ * Mark a draft PR ready for review via `gh pr ready`. No agent involved.
+ */
+export const GitMarkReadyRpc = Rpc.make("git.markReady", {
   payload: Schema.Struct({
     folderId: FolderId,
     worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
