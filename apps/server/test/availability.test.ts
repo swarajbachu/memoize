@@ -89,20 +89,20 @@ describe("grok auth probe — tier extraction & parseGrokAuthJson", () => {
     expect(extractTier({ a: { b: { weird_tier: "8" } } })).toBe(8);
   });
 
-  it("parseGrokAuthJson returns SuperGrok Heavy for tier >= 5", () => {
+  it("parseGrokAuthJson accepts X Premium+ / SuperGrok tiers", () => {
     const raw = JSON.stringify({
       "user@x.ai": {
-        key: "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ0aWVyIjo3LCJlbWFpbCI6InVzZXJAeC5haSJ9.sig",
+        key: "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ0aWVyIjo0LCJlbWFpbCI6InVzZXJAeC5haSJ9.sig",
         email: "user@x.ai",
       },
     });
     const info = parseGrokAuthJson(raw);
     expect(info.authStatus).toBe("authenticated");
-    expect(info.authLabel).toBe("SuperGrok Heavy");
+    expect(info.authLabel).toBe("Grok subscription");
     expect(info.authEmail).toBe("user@x.ai");
   });
 
-  it("parseGrokAuthJson returns Requires... only for confirmed low tier", () => {
+  it("parseGrokAuthJson returns Requires... only for confirmed below-entitlement tier", () => {
     const raw = JSON.stringify({
       "free@x.ai": {
         key: "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ0aWVyIjozLCJlbWFpbCI6ImZyZWVAeC5haSJ9.sig",
@@ -110,7 +110,7 @@ describe("grok auth probe — tier extraction & parseGrokAuthJson", () => {
       },
     });
     const info = parseGrokAuthJson(raw);
-    expect(info.authLabel).toBe("Requires SuperGrok Heavy");
+    expect(info.authLabel).toBe("Requires SuperGrok or X Premium+");
   });
 
   it("parseGrokAuthJson is non-blocking (Grok label) when token present but no usable tier", () => {
@@ -134,7 +134,7 @@ describe("grok auth probe — tier extraction & parseGrokAuthJson", () => {
         email: "u@x.ai",
       },
     });
-    expect(parseGrokAuthJson(raw).authLabel).toBe("SuperGrok Heavy");
+    expect(parseGrokAuthJson(raw).authLabel).toBe("Grok subscription");
   });
 
   it("parseGrokAuthJson for unparseable file still returns authenticated (non-blocking)", () => {

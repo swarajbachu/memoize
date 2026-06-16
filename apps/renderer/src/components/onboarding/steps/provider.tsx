@@ -20,7 +20,7 @@ import { StepHeader } from "./shared.tsx";
 const SUBSCRIPTION_INFO: Partial<
   Record<ProviderId, { readonly plan: string; readonly url: string }>
 > = {
-  grok: { plan: "SuperGrok Heavy", url: "https://grok.com/#subscribe" },
+  grok: { plan: "SuperGrok or X Premium+", url: "https://x.ai/cli" },
   cursor: { plan: "Cursor Pro", url: "https://cursor.com/pricing" },
 };
 
@@ -59,7 +59,7 @@ type ProviderState =
   | { readonly kind: "missing" } // CLI not installed
   | { readonly kind: "outdated"; readonly current: string; readonly required: string; readonly command: string | null } // installed but below SDK floor
   | { readonly kind: "signed-out" } // CLI installed, not logged in, no API key
-  | { readonly kind: "subscription"; readonly plan: string } // logged in but missing required paid plan (e.g. SuperGrok Heavy)
+  | { readonly kind: "subscription"; readonly plan: string } // logged in but missing required paid plan (e.g. SuperGrok or X Premium+)
   | { readonly kind: "ready"; readonly via: "cli" | "key" };
 
 function deriveState(
@@ -85,7 +85,7 @@ function deriveState(
   }
 
   // For subscription-gated providers (grok, cursor), the server-side probe
-  // (parseGrokAuthJson etc.) sets authLabel to "Requires SuperGrok Heavy"
+  // (parseGrokAuthJson etc.) sets authLabel to "Requires SuperGrok or X Premium+"
   // (or equivalent) when the JWT tier is insufficient, even if cliLoggedIn
   // is true. We surface this as a distinct state so onboarding no longer
   // lies to paying users who already have the plan.

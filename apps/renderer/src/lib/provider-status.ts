@@ -11,7 +11,7 @@ export const PROVIDER_STATUS_STYLES = {
   error: { dot: "bg-rose-400" },
   disabled: { dot: "bg-muted-foreground/40" },
   loading: { dot: "bg-muted-foreground/40 animate-pulse" },
-  // Subscription-gated providers (Grok → SuperGrok Heavy) — distinct from
+  // Subscription-gated providers (Grok → SuperGrok or X Premium+) — distinct from
   // amber "sign in required" because the user already signed in; their
   // plan is what's missing.
   subscription: { dot: "bg-violet-400" },
