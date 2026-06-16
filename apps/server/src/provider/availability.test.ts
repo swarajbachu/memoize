@@ -4,6 +4,7 @@ import {
   buildUpdateCommand,
   deriveLatestAdvisory,
   grokAuthTestHelpers,
+  selectCliPathCandidate,
 } from "./availability.ts";
 
 const { parseGrokAuthJson, extractTier, decodeJwtPayload } =
@@ -121,7 +122,46 @@ describe("deriveLatestAdvisory — update-available verdict", () => {
   });
 });
 
+describe("selectCliPathCandidate", () => {
+  it("prefers a user Codex install over Conductor's managed Codex shim", () => {
+    expect(
+      selectCliPathCandidate("codex", [
+        "/Users/me/Library/Application Support/com.conductor.app/./bin/codex",
+        "/Users/me/.nvm/versions/node/v23.10.0/bin/codex",
+      ]),
+    ).toBe("/Users/me/.nvm/versions/node/v23.10.0/bin/codex");
+  });
+
+  it("falls back to Conductor's managed Codex when it is the only candidate", () => {
+    expect(
+      selectCliPathCandidate("codex", [
+        "/Users/me/Library/Application Support/com.conductor.app/./bin/codex",
+      ]),
+    ).toBe("/Users/me/Library/Application Support/com.conductor.app/./bin/codex");
+  });
+
+  it("keeps first PATH match for non-Codex providers", () => {
+    expect(
+      selectCliPathCandidate("claude", [
+        "/opt/homebrew/bin/claude",
+        "/Users/me/.local/bin/claude",
+      ]),
+    ).toBe("/opt/homebrew/bin/claude");
+  });
+});
+
 describe("buildUpdateCommand — install-method detection", () => {
+  it("uses the exact Conductor-managed standalone Codex binary updater", () => {
+    expect(
+      buildUpdateCommand("codex", [
+        "/Users/me/Library/Application Support/com.conductor.app/./bin/codex",
+        "/Users/me/Library/Application Support/com.conductor.app/agent-binaries/codex/0.138.0/codex",
+      ]),
+    ).toBe(
+      "'/Users/me/Library/Application Support/com.conductor.app/./bin/codex' update",
+    );
+  });
+
   it("uses the native self-updater for a native Claude install", () => {
     expect(buildUpdateCommand("claude", ["/Users/me/.local/bin/claude"])).toBe(
       "claude update",
@@ -164,6 +204,10 @@ describe("buildUpdateCommand — install-method detection", () => {
     expect(buildUpdateCommand("gemini", [])).toBe(
       "npm uninstall -g @google/gemini-cli || true; npm install -g @google/gemini-cli@latest",
     );
+  });
+
+  it("does not update npm when an npm provider path is an unknown absolute install", () => {
+    expect(buildUpdateCommand("codex", ["/opt/custom/codex"])).toBeNull();
   });
 
   it("reinstalls via the install one-liner for curl-based CLIs (Grok)", () => {

@@ -80,6 +80,10 @@ const PROBES: ReadonlyArray<ProviderProbe> = [
     upgradeCommand: "npm i -g @openai/codex@latest",
     npmPackage: "@openai/codex",
     homebrewFormula: "codex",
+    // Conductor can place a standalone Codex binary on PATH under
+    // `Application Support/.../agent-binaries/codex/<version>/codex`; npm
+    // cannot update that install. `buildUpdateCommand` special-cases this
+    // path so the updater runs the exact binary the app probed.
     nativeUpdate: null,
   },
   {
@@ -166,6 +170,31 @@ const runCapture = (cmd: Command.Command) =>
     return { stdout: stdout.trim(), exitCode };
   }).pipe(Effect.scoped);
 
+const splitCommandPaths = (stdout: string): ReadonlyArray<string> =>
+  stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+export const selectCliPathCandidate = (
+  cliBinary: string,
+  candidates: ReadonlyArray<string>,
+): string | null => {
+  if (candidates.length === 0) return null;
+  if (cliBinary !== "codex") return candidates[0]!;
+
+  // Conductor can prepend its own standalone Codex binary to PATH for app
+  // internals. Provider settings should report the user's real Codex install
+  // when one exists later on PATH, matching what t3code does by resolving the
+  // provider binary before deriving version/update capabilities.
+  return (
+    candidates.find(
+      (candidate) =>
+        !isConductorManagedCodexPath(normalizeCommandPath(candidate)),
+    ) ?? candidates[0]!
+  );
+};
+
 /**
  * Resolve the absolute path to a provider's CLI binary on PATH, or `null` if
  * not found. Used by `ProviderService.start` to feed the SDK's
@@ -176,13 +205,12 @@ export const resolveCliPath = (
   cliBinary: string,
 ): Effect.Effect<string | null, never, CommandExecutor.CommandExecutor> =>
   Effect.gen(function* () {
-    const result = yield* runCapture(Command.make("which", cliBinary)).pipe(
+    const result = yield* runCapture(Command.make("which", "-a", cliBinary)).pipe(
       Effect.timeoutOption(PROBE_TIMEOUT),
       Effect.catchAll(() => Effect.succeedNone),
     );
     if (result._tag !== "Some" || result.value.exitCode !== 0) return null;
-    const path = result.value.stdout;
-    return path.length > 0 ? path : null;
+    return selectCliPathCandidate(cliBinary, splitCommandPaths(result.value.stdout));
   });
 
 export interface CliVersion {
@@ -341,7 +369,10 @@ export const deriveLatestAdvisory = (
 // ---------------------------------------------------------------------------
 
 const normalizeCommandPath = (p: string): string =>
-  p.replaceAll("\\", "/").toLowerCase();
+  p.replaceAll("\\", "/").replaceAll("/./", "/").toLowerCase();
+
+const shellQuote = (value: string): string =>
+  `'${value.replaceAll("'", `'\\''`)}'`;
 
 const isBunGlobalPath = (p: string): boolean => p.includes("/.bun/bin/");
 
@@ -360,6 +391,11 @@ const isHomebrewPath = (p: string): boolean =>
   p.includes("/caskroom/") ||
   p.startsWith("/opt/homebrew/bin/") ||
   p.startsWith("/usr/local/bin/");
+
+const isConductorManagedCodexPath = (p: string): boolean =>
+  p.endsWith("/application support/com.conductor.app/bin/codex") ||
+  (p.includes("/application support/com.conductor.app/agent-binaries/codex/") &&
+    p.endsWith("/codex"));
 
 // A plain `npm i -g <pkg>@latest` re-install fails with ENOTEMPTY during npm's
 // "retire old dir" rename step when a prior install left files behind (common
@@ -387,6 +423,13 @@ export const buildUpdateCommand = (
     .filter((p) => p.length > 0)
     .map(normalizeCommandPath);
 
+  const conductorManagedCodexPath = candidatePaths.find((p) =>
+    isConductorManagedCodexPath(normalizeCommandPath(p)),
+  );
+  if (providerId === "codex" && conductorManagedCodexPath !== undefined) {
+    return `${shellQuote(conductorManagedCodexPath)} update`;
+  }
+
   if (
     probe.nativeUpdate !== null &&
     norms.some((p) => probe.nativeUpdate!.matches(p))
@@ -407,8 +450,12 @@ export const buildUpdateCommand = (
     if (probe.homebrewFormula !== null && norms.some(isHomebrewPath)) {
       return `brew upgrade ${probe.homebrewFormula}`;
     }
-    // Path didn't reveal the manager (or no path at all): default to npm,
-    // which is how these packages are most commonly installed.
+    if (candidatePaths.some((p) => p.includes("/") || p.includes("\\"))) {
+      return null;
+    }
+    // No path available: default to npm, which is how these packages are most
+    // commonly installed. Unknown absolute paths stay manual-only so we don't
+    // update a different install than the one being probed.
     return npmGlobalUpdate(probe.npmPackage);
   }
 
@@ -1051,19 +1098,9 @@ const probeOne = (
 > =>
   Effect.gen(function* () {
     const lastCheckedAt = new Date();
-    const whichResult = yield* runCapture(
-      Command.make("which", probe.cliBinary),
-    ).pipe(
-      Effect.timeoutOption(PROBE_TIMEOUT),
-      Effect.catchAll(() => Effect.succeedNone),
-    );
+    const cliPath = yield* resolveCliPath(probe.cliBinary);
 
-    const cliPath =
-      whichResult._tag === "Some" && whichResult.value.exitCode === 0
-        ? whichResult.value.stdout
-        : undefined;
-
-    if (cliPath === undefined || cliPath.length === 0) {
+    if (cliPath === null || cliPath.length === 0) {
       return AgentAvailability.make({
         providerId: probe.providerId,
         displayName: probe.displayName,
@@ -1077,7 +1114,7 @@ const probeOne = (
     }
 
     const versionResult = yield* runCapture(
-      Command.make(probe.cliBinary, "--version"),
+      Command.make(cliPath, "--version"),
     ).pipe(
       Effect.timeoutOption(PROBE_TIMEOUT),
       Effect.catchAll(() => Effect.succeedNone),
