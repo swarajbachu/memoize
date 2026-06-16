@@ -201,6 +201,8 @@ export const ProviderServiceLive = Layer.effect(
               apiKey,
               geminiPath,
               sessionId,
+              buildRequestPermission(input.folderId),
+              runtimeModeGetter,
               resumeCursor,
             ).pipe(Effect.provideService(AttachmentService, attachmentService));
           } else if (input.providerId === "grok") {
@@ -226,6 +228,8 @@ export const ProviderServiceLive = Layer.effect(
               apiKey,
               grokPath,
               sessionId,
+              buildRequestPermission(input.folderId),
+              runtimeModeGetter,
               resumeCursor,
             ).pipe(Effect.provideService(AttachmentService, attachmentService));
           } else if (input.providerId === "opencode") {
@@ -279,6 +283,8 @@ export const ProviderServiceLive = Layer.effect(
               apiKey,
               cursorPath,
               sessionId,
+              buildRequestPermission(input.folderId),
+              runtimeModeGetter,
               resumeCursor,
             ).pipe(Effect.provideService(AttachmentService, attachmentService));
           } else if (input.providerId === "claude") {
