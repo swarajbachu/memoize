@@ -1,5 +1,7 @@
 import type { AgentEvent, AgentItemId } from "@memoize/wire";
 
+import { isIgnorableGrokAuthNoise } from "./grok-auth-noise.ts";
+
 /**
  * Shared translator for Agent Client Protocol (ACP) `session/update` frames.
  * Lifted out of grok.ts / gemini.ts / cursor.ts which each carried a near-
@@ -1235,6 +1237,10 @@ export const createAcpTranslator = (provider: AcpProviderTag): AcpTranslator => 
                     ? `${providerLabel} agent reported an error with no detail.`
                     : `${providerLabel} agent error: ${serialized}`;
                 })();
+          if (provider === "grok" && isIgnorableGrokAuthNoise(message)) {
+            trace(provider, `ignored auth noise: ${safePreview(message)}`);
+            return [];
+          }
           return [{ _tag: "Error", message }];
         }
 
