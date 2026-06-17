@@ -445,6 +445,21 @@ const extractPatchEntries = (input: unknown): ReadonlyArray<PatchEntry> => {
   ];
 };
 
+const patchStats = (
+  patches: ReadonlyArray<PatchEntry>,
+): { added: number; removed: number } => {
+  let added = 0;
+  let removed = 0;
+  for (const patch of patches) {
+    for (const line of patch.patch.split("\n")) {
+      if (line.startsWith("+++") || line.startsWith("---")) continue;
+      if (line.startsWith("+")) added += 1;
+      else if (line.startsWith("-")) removed += 1;
+    }
+  }
+  return { added, removed };
+};
+
 // Count the leaf files in a `list_dir` tree (lines that aren't directories).
 const countTreeFiles = (tree: string): number =>
   splitLines(tree).filter((l) => !l.endsWith("/")).length;
@@ -622,15 +637,20 @@ const buildToolView = (
     case "Write":
     case "MultiEdit": {
       const path = asString(obj.file_path);
-      const edits = extractEdits(tool, input);
       const patches = extractPatchEntries(input);
+      const edits = patches.length > 0 ? [] : extractEdits(tool, input);
       const label =
         tool === "Write"
           ? "Write"
           : tool === "MultiEdit"
             ? `MultiEdit (${edits.length || patches.length})`
             : "Edit";
-      const stats = edits.length > 0 ? diffStats(edits) : null;
+      const stats =
+        patches.length > 0
+          ? patchStats(patches)
+          : edits.length > 0
+            ? diffStats(edits)
+            : null;
       return {
         icon: PencilEdit01Icon,
         label,
@@ -647,17 +667,7 @@ const buildToolView = (
             </span>
           ) : undefined,
         fallbackBody:
-          edits.length > 0 ? (
-            <div className="space-y-px">
-              {edits.map((edit, i) => (
-                <EditDiff
-                  key={i}
-                  edit={edit as FileEdit}
-                  showHeader={edits.length > 1}
-                />
-              ))}
-            </div>
-          ) : patches.length > 0 ? (
+          patches.length > 0 ? (
             <div className="space-y-2">
               {patches.map((patch, i) => (
                 <div key={i} className="space-y-1">
@@ -671,6 +681,16 @@ const buildToolView = (
                   </div>
                   <PreBlock text={patch.patch} />
                 </div>
+              ))}
+            </div>
+          ) : edits.length > 0 ? (
+            <div className="space-y-px">
+              {edits.map((edit, i) => (
+                <EditDiff
+                  key={i}
+                  edit={edit as FileEdit}
+                  showHeader={edits.length > 1}
+                />
               ))}
             </div>
           ) : (
