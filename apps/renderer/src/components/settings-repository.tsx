@@ -93,16 +93,35 @@ export function RepositorySettings({ projectId }: { projectId: FolderId }) {
         projectName={folder.name}
       />
 
+      <ScriptsSection
+        setupScript={settings.setupScript}
+        runScript={settings.runScript}
+        archiveScript={settings.archiveCleanupScript}
+        autoRunAfterSetup={settings.autoRunAfterSetup}
+        environmentVariables={settings.environmentVariables}
+        onSetupScriptChange={(value) =>
+          void update(projectId, { setupScript: value })
+        }
+        onRunScriptChange={(value) =>
+          void update(projectId, { runScript: value })
+        }
+        onArchiveScriptChange={(value) =>
+          void update(projectId, { archiveCleanupScript: value })
+        }
+        onAutoRunAfterSetupChange={(value) =>
+          void update(projectId, { autoRunAfterSetup: value })
+        }
+        onEnvironmentVariablesChange={(value) =>
+          void update(projectId, { environmentVariables: value })
+        }
+      />
+
       <WorktreeSection
         projectId={projectId}
         autoCreate={settings.autoCreateWorktree}
-        archiveCleanupScript={settings.archiveCleanupScript}
         archiveRemoveWorktree={settings.archiveRemoveWorktree}
         onAutoCreateChange={(value) =>
           void update(projectId, { autoCreateWorktree: value })
-        }
-        onArchiveCleanupScriptChange={(value) =>
-          void update(projectId, { archiveCleanupScript: value })
         }
         onArchiveRemoveWorktreeChange={(value) =>
           void update(projectId, { archiveRemoveWorktree: value })
@@ -327,18 +346,14 @@ function RuntimeModeOverrideSection({
 function WorktreeSection({
   projectId,
   autoCreate,
-  archiveCleanupScript,
   archiveRemoveWorktree,
   onAutoCreateChange,
-  onArchiveCleanupScriptChange,
   onArchiveRemoveWorktreeChange,
 }: {
   projectId: FolderId;
   autoCreate: boolean;
-  archiveCleanupScript: string | null;
   archiveRemoveWorktree: boolean;
   onAutoCreateChange: (v: boolean) => void;
-  onArchiveCleanupScriptChange: (v: string | null) => void;
   onArchiveRemoveWorktreeChange: (v: boolean) => void;
 }) {
   const worktrees = useWorktreesStore(
@@ -392,12 +407,15 @@ function WorktreeSection({
         }
         description={`When on, the composer's workspace picker pre-selects a fresh worktree. You can still flip back to "Current checkout" before sending the first message.`}
       />
-
-      <ArchiveCleanupSection
-        script={archiveCleanupScript}
-        removeWorktree={archiveRemoveWorktree}
-        onScriptChange={onArchiveCleanupScriptChange}
-        onRemoveWorktreeChange={onArchiveRemoveWorktreeChange}
+      <SettingsFrame
+        title="Remove worktree on archive"
+        trailing={
+          <Switch
+            checked={archiveRemoveWorktree}
+            onCheckedChange={onArchiveRemoveWorktreeChange}
+          />
+        }
+        description="After the archive script succeeds, remove the checkout from disk while preserving the branch."
       />
 
       <Frame>
@@ -493,64 +511,162 @@ function WorktreeSection({
   );
 }
 
-function ArchiveCleanupSection({
-  script,
-  removeWorktree,
-  onScriptChange,
-  onRemoveWorktreeChange,
+function ScriptsSection({
+  setupScript,
+  runScript,
+  archiveScript,
+  autoRunAfterSetup,
+  environmentVariables,
+  onSetupScriptChange,
+  onRunScriptChange,
+  onArchiveScriptChange,
+  onAutoRunAfterSetupChange,
+  onEnvironmentVariablesChange,
 }: {
-  script: string | null;
-  removeWorktree: boolean;
-  onScriptChange: (v: string | null) => void;
-  onRemoveWorktreeChange: (v: boolean) => void;
+  setupScript: string | null;
+  runScript: string | null;
+  archiveScript: string | null;
+  autoRunAfterSetup: boolean;
+  environmentVariables: Readonly<Record<string, string>>;
+  onSetupScriptChange: (v: string | null) => void;
+  onRunScriptChange: (v: string | null) => void;
+  onArchiveScriptChange: (v: string | null) => void;
+  onAutoRunAfterSetupChange: (v: boolean) => void;
+  onEnvironmentVariablesChange: (v: Record<string, string>) => void;
 }) {
-  const [draft, setDraft] = useState(script ?? "");
-
-  useEffect(() => {
-    setDraft(script ?? "");
-  }, [script]);
-
-  const persist = () => {
-    const next = draft.trim().length === 0 ? null : draft;
-    if ((script ?? "") === (next ?? "")) return;
-    onScriptChange(next);
+  const envText = Object.entries(environmentVariables)
+    .map(([key, value]) => `${key}=${value}`)
+    .join("\n");
+  const [envDraft, setEnvDraft] = useState(envText);
+  useEffect(() => setEnvDraft(envText), [envText]);
+  const persistEnv = () => {
+    const next: Record<string, string> = {};
+    for (const line of envDraft.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (trimmed.length === 0 || trimmed.startsWith("#")) continue;
+      const idx = trimmed.indexOf("=");
+      if (idx <= 0) continue;
+      next[trimmed.slice(0, idx).trim()] = trimmed.slice(idx + 1).trim();
+    }
+    onEnvironmentVariablesChange(next);
   };
 
   return (
     <Frame>
-      <FrameHeader className="flex flex-row items-center justify-between px-2 py-2 w-full">
-        <div className="flex min-w-0 flex-col">
-          <p className="text-sm font-semibold text-foreground">
-            Archive cleanup
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Runs only for chats bound to a worktree.
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <span className="text-xs text-muted-foreground">Remove worktree</span>
+      <FrameHeader className="flex flex-col items-start gap-1 px-2 py-2 w-full">
+        <p className="text-lg font-semibold text-foreground">Scripts</p>
+        <p className="text-xs text-muted-foreground">
+          Commands that run when worktrees are set up, run, or archived.
+        </p>
+      </FrameHeader>
+      <Card className="divide-y divide-border/50 p-0">
+        <ScriptEditor
+          title="Setup script"
+          description="Runs when a new worktree is created"
+          value={setupScript}
+          placeholder="bun i"
+          onChange={onSetupScriptChange}
+        />
+        <ScriptEditor
+          title="Run script"
+          description="Runs when you click Run"
+          value={runScript}
+          placeholder="bun run dev"
+          onChange={onRunScriptChange}
+        />
+        <div className="flex items-center justify-between gap-4 px-4 py-4">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-foreground">
+              Auto-run after setup
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Start this repository's run script automatically after setup.
+            </p>
+          </div>
           <Switch
-            checked={removeWorktree}
-            onCheckedChange={onRemoveWorktreeChange}
+            checked={autoRunAfterSetup}
+            onCheckedChange={onAutoRunAfterSetupChange}
           />
         </div>
-      </FrameHeader>
-      <Card className="p-3">
+        <ScriptEditor
+          title="Archive script"
+          description="Runs before a worktree-backed chat is archived"
+          value={archiveScript}
+          placeholder={'rm -rf node_modules .next\npkill -f "next dev" || true'}
+          onChange={onArchiveScriptChange}
+        />
+        <div className="px-4 py-4">
+          <div className="mb-2">
+            <p className="text-sm font-medium text-foreground">
+              Environment variables
+            </p>
+            <p className="text-xs text-muted-foreground">
+              KEY=value pairs passed to setup, run, and archive scripts.
+            </p>
+          </div>
+          <Textarea
+            value={envDraft}
+            onChange={(event) => setEnvDraft(event.currentTarget.value)}
+            onBlur={persistEnv}
+            spellCheck={false}
+            placeholder="MEMOIZE_PORT=5733"
+            className="min-h-20 resize-y font-mono text-xs"
+          />
+        </div>
+      </Card>
+      <FrameFooter className="px-2 py-1 w-full">
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          Want to share scripts with your team? Create a{" "}
+          <span className="font-mono">.memoize/settings.toml</span> file.
+        </p>
+      </FrameFooter>
+    </Frame>
+  );
+}
+
+function ScriptEditor({
+  title,
+  description,
+  value,
+  placeholder,
+  onChange,
+}: {
+  title: string;
+  description: string;
+  value: string | null;
+  placeholder: string;
+  onChange: (v: string | null) => void;
+}) {
+  const [draft, setDraft] = useState(value ?? "");
+  useEffect(() => setDraft(value ?? ""), [value]);
+  const persist = () => {
+    const next = draft.trim().length === 0 ? null : draft;
+    if ((value ?? "") !== (next ?? "")) onChange(next);
+  };
+  const lines = Math.max(1, draft.split(/\r?\n/).length);
+  return (
+    <div className="px-4 py-4">
+      <div className="mb-2">
+        <p className="text-sm font-medium text-foreground">{title}</p>
+        <p className="text-xs text-muted-foreground">{description}</p>
+      </div>
+      <div className="grid grid-cols-[3rem_1fr] overflow-hidden rounded-md border border-border bg-muted/20">
+        <div className="select-none border-r border-border/60 bg-background/40 py-2 text-right font-mono text-xs leading-5 text-muted-foreground">
+          {Array.from({ length: lines }, (_, idx) => (
+            <div key={idx} className="pr-3">
+              {idx + 1}
+            </div>
+          ))}
+        </div>
         <Textarea
           value={draft}
           onChange={(event) => setDraft(event.currentTarget.value)}
           onBlur={persist}
           spellCheck={false}
-          placeholder={'rm -rf node_modules .next\npkill -f "next dev" || true'}
-          className="min-h-28 resize-y font-mono text-xs"
+          placeholder={placeholder}
+          className="min-h-16 resize-y border-0 bg-transparent font-mono text-xs shadow-none focus-visible:ring-0"
         />
-      </Card>
-      <FrameFooter className="px-2 py-1 w-full">
-        <p className="text-xs leading-relaxed text-muted-foreground">
-          Memoize runs this with <span className="font-mono">zsh -lc</span> from
-          the worktree. A non-zero exit keeps the chat unarchived.
-        </p>
-      </FrameFooter>
-    </Frame>
+      </div>
+    </div>
   );
 }

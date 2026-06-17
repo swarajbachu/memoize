@@ -77,6 +77,12 @@ export function ChatCreatingPanel({
           </>
         ),
       });
+      out.push({
+        id: "setup",
+        icon: SparklesIcon,
+        hold: 1800,
+        render: () => <>Running setup script</>,
+      });
     }
     out.push({
       id: "provider",
