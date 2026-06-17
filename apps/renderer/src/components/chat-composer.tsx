@@ -105,6 +105,7 @@ const MAX_ATTACHMENTS_PER_TURN = 20;
 
 export function ChatComposer({ session }: { session: Session }) {
   const sessionId: SessionId = session.id;
+  const [reasoningLevel, setReasoningLevel] = useState<string | null>(null);
   const inFlight = useMessagesStore(
     (s) => s.runningBySession[sessionId] === true,
   );
@@ -548,6 +549,7 @@ export function ChatComposer({ session }: { session: Session }) {
   };
 
   const inPlanMode = session.permissionMode === "plan";
+  const inUltracodeMode = reasoningLevel === "ultracode";
   // Keep the editor mounted at all times. Permissions / questions render as
   // a sibling above it, and we hide the editor block with `display: none`
   // while a card is up. Unmounting the editor branch detaches the CodeMirror
@@ -591,7 +593,9 @@ export function ChatComposer({ session }: { session: Session }) {
                 "rounded-xl min-h-30 transition-colors",
                 inPlanMode
                   ? "border-2 border-dashed border-rose-300/60 dark:border-rose-300/40"
-                  : "border-border/50",
+                  : inUltracodeMode
+                    ? "border-2 border-transparent [background:linear-gradient(var(--color-card),var(--color-card))_padding-box,linear-gradient(90deg,#fb7185,#f97316,#facc15,#22c55e,#06b6d4,#8b5cf6,#d946ef)_border-box]"
+                    : "border-border/50",
               )}
               onDragEnter={onDragEnter}
               onDragOver={onDragOver}
@@ -689,6 +693,7 @@ export function ChatComposer({ session }: { session: Session }) {
                   sessionId={sessionId}
                   providerId={session.providerId}
                   model={session.model}
+                  onLevelChange={setReasoningLevel}
                 />
                 {findModelDescriptor(session.providerId, session.model)
                   ?.optionDescriptors?.some(
@@ -953,10 +958,12 @@ function ReasoningPicker({
   sessionId,
   providerId,
   model,
+  onLevelChange,
 }: {
   sessionId: SessionId;
   providerId: ProviderId;
   model: string;
+  onLevelChange?: (level: string | null) => void;
 }) {
   const opencodeInventory = useOpencodeInventory((s) => s.inventory);
 
@@ -964,7 +971,7 @@ function ReasoningPicker({
   // inventory (`provider.list()` → `model.variants`). For other providers
   // it's the static reasoning/effort descriptor curated in
   // `MODELS_BY_PROVIDER`. Claude's descriptor is keyed `effort` (with
-  // tiers up through ultracode/ultrathink); everything else uses
+  // tiers up through ultracode); everything else uses
   // `reasoning`.
   const resolved = useMemo((): {
     label: string;
@@ -1019,6 +1026,14 @@ function ReasoningPicker({
     if (legacy !== null && legacy.length > 0) return legacy;
     return defaultId;
   });
+
+  useEffect(() => {
+    if (resolved === null || !resolved.options.some((o) => o.id === level)) {
+      onLevelChange?.(null);
+      return;
+    }
+    onLevelChange?.(level);
+  }, [level, onLevelChange, resolved]);
 
   if (resolved === null) return null;
 
