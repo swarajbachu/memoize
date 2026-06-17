@@ -1,7 +1,7 @@
 import { ClipboardIcon, Robot01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { AgentItemId, Message, UserQuestionAnswer } from "@memoize/wire";
 
@@ -9,12 +9,15 @@ import { cn } from "~/lib/utils";
 
 import { CopyButton } from "./copy-button.tsx";
 import { MessageRow, type ToolResultRecord } from "./message-row.tsx";
+import { ThreeDots } from "./ui/loaders";
 
 const MODEL_LABEL: Record<string, string> = {
   "claude-opus-4-7": "Opus 4.7",
   "claude-sonnet-4-6": "Sonnet 4.6",
   "claude-haiku-4-5": "Haiku 4.5",
 };
+
+const AGENT_ACTIVITY_WINDOW_MS = 10_000;
 
 const labelForModel = (model: string | undefined): string => {
   if (!model) return "inherit";
@@ -71,7 +74,6 @@ export function SubagentRow({
   // Auto-expand while running (no summary yet) so the user can watch the
   // sub-agent work. Once finished, collapse to a one-line meta summary.
   const [expanded, setExpanded] = useState<boolean>(summary === null);
-  const Chevron = expanded ? ChevronDown : ChevronRight;
 
   const trailingMeta = useMemo(() => {
     if (summary !== null) {
@@ -79,6 +81,25 @@ export function SubagentRow({
     }
     return labelForModel(modelRequested);
   }, [summary, modelRequested]);
+
+  const latestChildAt = useMemo(() => {
+    let latest = 0;
+    for (const child of children) {
+      latest = Math.max(latest, child.createdAt.getTime());
+    }
+    return latest;
+  }, [children]);
+
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (summary !== null) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [summary]);
+
+  const showActivityLoader =
+    summary === null &&
+    (latestChildAt === 0 || now - latestChildAt < AGENT_ACTIVITY_WINDOW_MS);
 
   void agentToolUseId; // reserved for future deeplink anchor
 
@@ -93,33 +114,33 @@ export function SubagentRow({
         )}
       >
         <div className="relative grid size-4 shrink-0 place-items-center">
-          <HugeiconsIcon
-            icon={Robot01Icon}
-            strokeWidth={2}
-            aria-hidden="true"
-            className={cn(
-              "col-start-1 row-start-1 size-3.5 text-muted-foreground transition-opacity duration-150 ease-out",
-              "group-hover:opacity-0 motion-reduce:transition-none",
-            )}
-          />
-          <Chevron
-            aria-hidden="true"
-            className={cn(
-              "col-start-1 row-start-1 size-3.5 text-muted-foreground opacity-0 transition-opacity duration-150 ease-out",
-              "group-hover:opacity-100 motion-reduce:transition-none",
-            )}
-          />
+          {showActivityLoader ? (
+            <ThreeDots
+              dotSize={2}
+              cellPadding={0.5}
+              speed={1.3}
+              className="text-muted-foreground"
+              aria-label="Agent running"
+            />
+          ) : (
+            <HugeiconsIcon
+              icon={Robot01Icon}
+              strokeWidth={2}
+              aria-hidden="true"
+              className="size-3.5 text-muted-foreground"
+            />
+          )}
         </div>
         <span className="shrink-0 font-medium text-foreground/90">
           Agent · {agentName}
         </span>
         <span
           className={cn(
-            "min-w-0 flex-1 truncate text-muted-foreground",
+            "flex min-w-0 flex-1 items-center gap-1 truncate text-muted-foreground",
             summary?.isError && "text-red-300",
           )}
         >
-          {trailingMeta}
+          <span className="min-w-0 truncate">{trailingMeta}</span>
         </span>
       </button>
       {expanded ? (

@@ -13,6 +13,7 @@ import {
 import { Effect, Fiber, Layer } from "effect";
 import fixPath from "fix-path";
 import { execFile, spawn } from "node:child_process";
+import * as fsSync from "node:fs";
 import * as fs from "node:fs/promises";
 import { homedir } from "node:os";
 import * as Path from "node:path";
@@ -72,6 +73,12 @@ const isDevelopment = Boolean(DEV_SERVER_URL);
 const APP_NAME = isDevelopment ? "memoize Alpha (Dev)" : "memoize Alpha";
 
 app.setName(APP_NAME);
+
+const MEMOIZE_USER_DATA_DIR = process.env.MEMOIZE_USER_DATA_DIR?.trim();
+if (MEMOIZE_USER_DATA_DIR) {
+  fsSync.mkdirSync(MEMOIZE_USER_DATA_DIR, { recursive: true });
+  app.setPath("userData", MEMOIZE_USER_DATA_DIR);
+}
 
 // Lock the app to macOS's dark appearance so the sidebar vibrancy material
 // always renders in its dark variant. Without this, vibrancy follows the

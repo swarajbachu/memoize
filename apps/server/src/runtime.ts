@@ -96,10 +96,16 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(NodeContext.layer),
   );
 
+  // Per-repo settings overrides on top of the global defaults.
+  const RepositorySettingsLayer = RepositorySettingsServiceLive.pipe(
+    Layer.provide(MigratedSqlite),
+  );
+
   // WorktreeService manages memoize-owned `git worktree` checkouts. Same
   // shape as GitLayer + the SqlClient for persisting the rows.
   const WorktreeLayer = WorktreeServiceLive.pipe(
     Layer.provide(WorkspaceLayer),
+    Layer.provide(RepositorySettingsLayer),
     Layer.provide(MigratedSqlite),
     Layer.provide(NodeContext.layer),
   );
@@ -111,11 +117,6 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(WorkspaceLayer),
     Layer.provide(WorktreeLayer),
     Layer.provide(NodeContext.layer),
-  );
-
-  // Per-repo settings overrides on top of the global defaults.
-  const RepositorySettingsLayer = RepositorySettingsServiceLive.pipe(
-    Layer.provide(MigratedSqlite),
   );
 
   const PtyLayer = PtyServiceLive;

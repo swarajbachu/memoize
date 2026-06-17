@@ -51,6 +51,7 @@ export const PtyServiceLive = Layer.effect(
               cwd,
               env: {
                 ...(process.env as Record<string, string>),
+                ...(command?.env ?? {}),
                 TERM: "xterm-256color",
               },
             }),

@@ -4,6 +4,8 @@ import { create } from "zustand";
 import type { FolderId, Worktree, WorktreeId } from "@memoize/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
+import { useRepositorySettingsStore } from "./repository-settings.ts";
+import { terminalsKey, useTerminalsStore } from "./terminals.ts";
 
 type WorktreesByProject = Readonly<Record<string, ReadonlyArray<Worktree>>>;
 
@@ -18,9 +20,22 @@ export const EMPTY_WORKTREES: ReadonlyArray<Worktree> = Object.freeze([]);
 type WorktreesState = {
   readonly byProject: WorktreesByProject;
   readonly loading: ReadonlySet<FolderId>;
+  readonly creatingSetupByProject: ReadonlySet<FolderId>;
+  readonly setupPending: ReadonlySet<WorktreeId>;
   readonly error: string | null;
   readonly refresh: (projectId: FolderId) => Promise<void>;
   readonly create: (projectId: FolderId) => Promise<Worktree | null>;
+  readonly rerunSetup: (
+    projectId: FolderId,
+    worktreeId: WorktreeId,
+  ) => Promise<Worktree | null>;
+  readonly startRun: (
+    worktreeId: WorktreeId,
+  ) => Promise<{
+    readonly cwd: string;
+    readonly script: string;
+    readonly env: Record<string, string>;
+  } | null>;
   readonly remove: (
     projectId: FolderId,
     worktreeId: WorktreeId,
@@ -36,9 +51,27 @@ const formatError = (err: unknown): string => {
   return String(err);
 };
 
+const maybeAutoRun = async (projectId: FolderId, wt: Worktree) => {
+  const settings =
+    useRepositorySettingsStore.getState().byProject[projectId] ??
+    (await useRepositorySettingsStore.getState().refresh(projectId));
+  if (settings?.autoRunAfterSetup !== true) return;
+  if (wt.setupStatus !== "succeeded" && wt.setupStatus !== "skipped") return;
+  const run = await useWorktreesStore.getState().startRun(wt.id);
+  if (run === null) return;
+  useTerminalsStore.getState().addCommand(
+    terminalsKey(projectId, wt.id),
+    run.cwd,
+    "Run",
+    { cmd: "/bin/zsh", args: ["-lc", run.script], env: run.env },
+  );
+};
+
 export const useWorktreesStore = create<WorktreesState>((set, get) => ({
   byProject: {},
   loading: new Set(),
+  creatingSetupByProject: new Set(),
+  setupPending: new Set(),
   error: null,
   refresh: async (projectId) => {
     set((s) => {
@@ -72,6 +105,11 @@ export const useWorktreesStore = create<WorktreesState>((set, get) => ({
     }
   },
   create: async (projectId) => {
+    set((s) => {
+      const next = new Set(s.creatingSetupByProject);
+      next.add(projectId);
+      return { creatingSetupByProject: next };
+    });
     try {
       const client = await getRpcClient();
       const wt = await Effect.runPromise(
@@ -81,10 +119,67 @@ export const useWorktreesStore = create<WorktreesState>((set, get) => ({
         const existing = s.byProject[projectId] ?? [];
         return {
           byProject: { ...s.byProject, [projectId]: [wt, ...existing] },
+          creatingSetupByProject: (() => {
+            const next = new Set(s.creatingSetupByProject);
+            next.delete(projectId);
+            return next;
+          })(),
+          error: null,
+        };
+      });
+      void maybeAutoRun(projectId, wt);
+      return wt;
+    } catch (err) {
+      set((s) => {
+        const next = new Set(s.creatingSetupByProject);
+        next.delete(projectId);
+        return { creatingSetupByProject: next, error: formatError(err) };
+      });
+      return null;
+    }
+  },
+  rerunSetup: async (projectId, worktreeId) => {
+    set((s) => {
+      const next = new Set(s.setupPending);
+      next.add(worktreeId);
+      return { setupPending: next };
+    });
+    try {
+      const client = await getRpcClient();
+      const wt = await Effect.runPromise(
+        client.worktree.rerunSetup({ worktreeId }),
+      );
+      set((s) => {
+        const list = s.byProject[projectId] ?? [];
+        return {
+          byProject: {
+            ...s.byProject,
+            [projectId]: list.map((existing) =>
+              existing.id === wt.id ? wt : existing,
+            ),
+          },
+          setupPending: (() => {
+            const next = new Set(s.setupPending);
+            next.delete(worktreeId);
+            return next;
+          })(),
           error: null,
         };
       });
       return wt;
+    } catch (err) {
+      set((s) => {
+        const next = new Set(s.setupPending);
+        next.delete(worktreeId);
+        return { setupPending: next, error: formatError(err) };
+      });
+      return null;
+    }
+  },
+  startRun: async (worktreeId) => {
+    try {
+      const client = await getRpcClient();
+      return await Effect.runPromise(client.worktree.startRun({ worktreeId }));
     } catch (err) {
       set({ error: formatError(err) });
       return null;

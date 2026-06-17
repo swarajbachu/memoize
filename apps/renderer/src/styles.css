@@ -590,6 +590,126 @@ body,
   .fz-prose .markdown-code-block {
     margin: 0.9em 0;
   }
+  .fz-prose .markdown-mermaid-block {
+    position: relative;
+    margin: 0.9em 0;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid color-mix(in oklch, var(--message-rule) 82%, transparent);
+    border-radius: 0.6rem;
+    background-color: var(--background);
+  }
+  .fz-prose .markdown-mermaid-block-error {
+    padding: 1rem 1rem 0;
+  }
+  .fz-prose .markdown-mermaid-loading,
+  .fz-prose .markdown-mermaid-error {
+    color: var(--text-muted);
+    font-size: 0.9em;
+  }
+  .fz-prose .markdown-mermaid-error {
+    color: color-mix(in oklch, var(--destructive) 78%, var(--foreground));
+  }
+  .markdown-mermaid-svg {
+    min-width: max-content;
+  }
+  .markdown-mermaid-svg svg {
+    display: block;
+    height: auto;
+    max-width: none;
+    margin: 0 auto;
+    overflow: visible;
+    shape-rendering: geometricPrecision;
+    text-rendering: geometricPrecision;
+  }
+  .markdown-mermaid-svg svg text,
+  .markdown-mermaid-svg svg tspan {
+    text-rendering: geometricPrecision;
+  }
+  .markdown-mermaid-zoom-label {
+    display: inline-flex;
+    min-width: 3.3rem;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    line-height: 1;
+  }
+  .markdown-mermaid-shell {
+    position: relative;
+    display: flex;
+    min-height: 0;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+    background-color: #09090b;
+  }
+  .markdown-mermaid-shell-inline {
+    height: min(58vh, 520px);
+    min-height: 260px;
+  }
+  .markdown-mermaid-shell-dialog {
+    min-height: 0;
+  }
+  .markdown-mermaid-viewer-controls {
+    position: absolute;
+    top: 0.55rem;
+    right: 0.55rem;
+    z-index: 2;
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.15rem;
+    border: 1px solid #3f3f46;
+    border-radius: 0.55rem;
+    background-color: #18181b;
+    box-shadow: 0 10px 28px rgb(0 0 0 / 0.28);
+  }
+  .markdown-mermaid-viewer {
+    position: relative;
+    display: grid;
+    min-height: 0;
+    flex: 1;
+    place-items: center;
+    overflow: auto;
+    background-color: #09090b;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+  }
+  .markdown-mermaid-viewer:active {
+    cursor: grabbing;
+  }
+  .markdown-mermaid-viewer-canvas {
+    min-width: max-content;
+    padding: 2rem;
+    border-radius: 0.7rem;
+    background-color: #09090b;
+    zoom: var(--markdown-mermaid-scale);
+  }
+  .markdown-mermaid-viewer-canvas .markdown-mermaid-svg {
+    min-width: 0;
+  }
+  .markdown-mermaid-viewer-canvas svg {
+    max-width: none;
+  }
+  .markdown-mermaid-pan-hint {
+    pointer-events: none;
+    position: absolute;
+    right: 0.9rem;
+    bottom: 0.9rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    border: 1px solid #3f3f46;
+    border-radius: 0.45rem;
+    color: var(--text-muted);
+    background-color: #18181b;
+  }
   .fz-prose .markdown-code-block code,
   .fz-prose .markdown-code-block pre code,
   .fz-prose .code-block-shiki code {

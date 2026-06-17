@@ -37,6 +37,9 @@ export class PtySpawnError extends Schema.TaggedError<PtySpawnError>()(
 export const PtyCommand = Schema.Struct({
   cmd: Schema.String,
   args: Schema.Array(Schema.String),
+  env: Schema.optional(
+    Schema.Record({ key: Schema.String, value: Schema.String }),
+  ),
 });
 export type PtyCommand = typeof PtyCommand.Type;
 

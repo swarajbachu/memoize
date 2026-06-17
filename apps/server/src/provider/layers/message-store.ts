@@ -43,6 +43,7 @@ import { NdjsonLogger } from "../../persistence/ndjson-logger.ts";
 import { PtyService } from "../../pty/services/pty-service.ts";
 import { RepositorySettingsService } from "../../repository-settings/services/repository-settings-service.ts";
 import { TitleGenerator, formatBranchName } from "../title-generator.ts";
+import { isIgnorableGrokAuthNoise } from "../drivers/acp/grok-auth-noise.ts";
 import {
   MessageStore,
   type CreateChatInput,
@@ -587,13 +588,6 @@ export const MessageStoreLive = Layer.scoped(
       }
     >();
 
-    /**
-     * Tracks consecutive times a Grok session died because the internal
-     * agent worker rejected the `cached_token` from `grok login`.
-     * Used to stop hammering restarts when local auth is having issues
-     * with the full coding agent.
-     */
-    const grokAuthWorkerDeathCount = new Map<SessionId, number>();
     const ndjsonAppend = (
       sessionId: SessionId,
       message: Message,
@@ -777,6 +771,7 @@ export const MessageStoreLive = Layer.scoped(
      */
     const startSubscription = (sessionId: SessionId): Effect.Effect<void> =>
       Effect.gen(function* () {
+        const session = yield* lookupSession(sessionId).pipe(Effect.orDie);
         const fiber = yield* Effect.forkDaemon(
           Stream.runForEach(provider.events(sessionId), (event) =>
             Effect.gen(function* () {
@@ -820,6 +815,13 @@ export const MessageStoreLive = Layer.scoped(
                   WHERE id = ${sessionId}
                 `.pipe(Effect.asVoid, Effect.orDie);
                 permissionModeBySession.set(sessionId, event.mode);
+                return;
+              }
+              if (
+                session.providerId === "grok" &&
+                event._tag === "Error" &&
+                isIgnorableGrokAuthNoise(event.message)
+              ) {
                 return;
               }
               const content = eventToContent(event);
@@ -2233,28 +2235,8 @@ export const MessageStoreLive = Layer.scoped(
             );
 
           if (looksLikeGrokAuthWorkerDeath) {
-            const count = (grokAuthWorkerDeathCount.get(sessionId) ?? 0) + 1;
-            grokAuthWorkerDeathCount.set(sessionId, count);
-
-            if (count >= 2) {
-              // Stop auto-restarting. The user is hitting the known
-              // local `grok login` + agent worker auth limitation.
-              const message =
-                `Grok's coding agent worker is repeatedly rejecting the session with AuthorizationRequired, even though your local login appears valid.\n\n` +
-                `This is a known current limitation when using \`grok login\` (cached_token) with the full agent.\n\n` +
-                `You can try:\n` +
-                `• Running \`grok login\` again\n` +
-                `• Temporarily setting an XAI API key in the Grok provider settings\n\n` +
-                `Further automatic restarts have been disabled for this session to avoid spam.`;
-              const persistedError = yield* persistMessage(sessionId, {
-                _tag: "error",
-                message,
-              });
-              yield* broadcastMessage(sessionId, persistedError);
-              yield* ndjsonAppend(sessionId, persistedError);
-              yield* setStatus(sessionId, "idle");
-              return;
-            }
+            yield* setStatus(sessionId, "running");
+            return;
           }
 
           console.log(
@@ -2300,6 +2282,7 @@ export const MessageStoreLive = Layer.scoped(
         yield* provider
           .interrupt(sessionId)
           .pipe(Effect.mapError(() => new SessionNotFoundError({ sessionId })));
+        yield* setStatus(sessionId, "idle");
       });
 
     const getSession: MessageStoreShape["getSession"] = (sessionId) =>

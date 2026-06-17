@@ -9,6 +9,8 @@ describe("isIgnorableGrokAuthNoise", () => {
       "Auth(AuthorizationRequired)",
       "error: AUTHORIZATIONREQUIRED while refreshing token",
       "Grok authentication failed: AuthorizationRequired",
+      "Grok authentication failed (AuthorizationRequired). Run `grok login` again or verify that your account has SuperGrok or X Premium+.",
+      "Grok respawn failed: Grok authentication failed (AuthorizationRequired). Run `grok login` again or verify that your account has SuperGrok or X Premium+.",
       "worker quit with fatal auth error",
       "transport channel closed (auth refresh)",
     ];

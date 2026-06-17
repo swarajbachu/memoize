@@ -8,6 +8,7 @@ import {
   type WorktreeId,
   type WorktreeNotFoundError,
   type WorktreeRemoveError,
+  type WorktreeSetupError,
 } from "@memoize/wire";
 
 export interface WorktreeRestoreSnapshot {
@@ -45,6 +46,22 @@ export interface WorktreeServiceShape {
   ) => Effect.Effect<
     void,
     WorktreeNotFoundError | WorktreeDirtyError | WorktreeRemoveError
+  >;
+  readonly rerunSetup: (
+    worktreeId: WorktreeId,
+  ) => Effect.Effect<
+    Worktree,
+    WorktreeNotFoundError | WorktreeSetupError | WorktreeRemoveError
+  >;
+  readonly startRun: (
+    worktreeId: WorktreeId,
+  ) => Effect.Effect<
+    {
+      readonly cwd: string;
+      readonly script: string;
+      readonly env: Record<string, string>;
+    },
+    WorktreeNotFoundError | WorktreeSetupError
   >;
   readonly restore: (
     snapshot: WorktreeRestoreSnapshot,

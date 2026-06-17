@@ -39,6 +39,13 @@ export class RepositorySettings extends Schema.Class<RepositorySettings>(
    * the checkout from the archived metadata.
    */
   archiveRemoveWorktree: Schema.Boolean,
+  setupScript: Schema.NullOr(Schema.String),
+  runScript: Schema.NullOr(Schema.String),
+  autoRunAfterSetup: Schema.Boolean,
+  environmentVariables: Schema.Record({
+    key: Schema.String,
+    value: Schema.String,
+  }),
 }) {}
 
 /**
@@ -54,6 +61,12 @@ export const RepositorySettingsPatch = Schema.Struct({
   worktreeBaseDir: Schema.optional(Schema.NullOr(Schema.String)),
   archiveCleanupScript: Schema.optional(Schema.NullOr(Schema.String)),
   archiveRemoveWorktree: Schema.optional(Schema.Boolean),
+  setupScript: Schema.optional(Schema.NullOr(Schema.String)),
+  runScript: Schema.optional(Schema.NullOr(Schema.String)),
+  autoRunAfterSetup: Schema.optional(Schema.Boolean),
+  environmentVariables: Schema.optional(
+    Schema.Record({ key: Schema.String, value: Schema.String }),
+  ),
 });
 export type RepositorySettingsPatch = typeof RepositorySettingsPatch.Type;
 
