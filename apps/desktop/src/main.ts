@@ -92,6 +92,16 @@ let runtimeFiber: Fiber.RuntimeFiber<void, never> | null = null;
 const USER_APPLICATIONS_DIR = Path.join(homedir(), "Applications");
 const execFileAsync = promisify(execFile);
 
+const appendAppLog = (fileName: string, line: string): void => {
+  try {
+    const filePath = Path.join(app.getPath("userData"), "logs", fileName);
+    fsSync.mkdirSync(Path.dirname(filePath), { recursive: true });
+    fsSync.appendFileSync(filePath, `${line}\n`, "utf8");
+  } catch {
+    // Logging must never affect app behavior.
+  }
+};
+
 type OpenTargetDefinition = {
   readonly id: string;
   readonly label: string;
@@ -585,15 +595,24 @@ function createMainWindow() {
     ),
   );
 
+  // Persist renderer console output so UI-side races can be diagnosed from
+  // disk after the fact. In dev we also mirror it into the terminal.
+  mainWindow.webContents.on(
+    "console-message",
+    (_event, level, message, line, source) => {
+      const payload = JSON.stringify({
+        ts: new Date().toISOString(),
+        level,
+        message,
+        source,
+        line,
+      });
+      appendAppLog("renderer.log", payload);
+      if (isDevelopment) console.log(`[renderer] ${message}`);
+    },
+  );
+
   if (isDevelopment) {
-    // Mirror renderer console output into the dev terminal so we can see
-    // RPC smoke-test logs without having to open DevTools.
-    mainWindow.webContents.on(
-      "console-message",
-      (_event, _level, message, _line, _source) => {
-        console.log(`[renderer] ${message}`);
-      },
-    );
     void mainWindow.loadURL(DEV_SERVER_URL);
     mainWindow.webContents.openDevTools({ mode: "detach" });
   } else {

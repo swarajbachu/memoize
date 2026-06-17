@@ -15,6 +15,16 @@ export const SubagentPresetState = Schema.Struct({
 });
 export type SubagentPresetState = typeof SubagentPresetState.Type;
 
+export const CompletionSoundPreset = Schema.Literal(
+  "chime",
+  "soft",
+  "pop",
+  "bell",
+  "rise",
+  "bloom",
+);
+export type CompletionSoundPreset = typeof CompletionSoundPreset.Type;
+
 /**
  * Wire-shape of `settings.json`. Owned by the main process; rendered to and
  * mutated from the renderer over RPC. The renderer keeps a hot cache in a
@@ -34,6 +44,8 @@ export class SettingsFile extends Schema.Class<SettingsFile>("SettingsFile")({
   defaultRuntimeMode: RuntimeMode,
   defaultAutoCreateWorktree: Schema.Boolean,
   onboardingCompleted: Schema.Boolean,
+  completionSoundEnabled: Schema.Boolean,
+  completionSoundPreset: CompletionSoundPreset,
   /**
    * Per-provider on/off toggle from the Providers settings card. Defaults
    * to `true` for every provider; flipping it to `false` filters the
@@ -66,6 +78,8 @@ export const SettingsPatch = Schema.Struct({
   defaultRuntimeMode: Schema.optional(RuntimeMode),
   defaultAutoCreateWorktree: Schema.optional(Schema.Boolean),
   onboardingCompleted: Schema.optional(Schema.Boolean),
+  completionSoundEnabled: Schema.optional(Schema.Boolean),
+  completionSoundPreset: Schema.optional(CompletionSoundPreset),
   providerEnabled: Schema.optional(
     Schema.Record({ key: ProviderId, value: Schema.Boolean }),
   ),

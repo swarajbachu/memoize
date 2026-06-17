@@ -169,6 +169,18 @@ export function ChatComposer({ session }: { session: Session }) {
     return out;
   }, [requestsById, sessionId]);
   useEffect(() => {
+    console.info(
+      `[permission-ui] ${JSON.stringify({
+        ts: new Date().toISOString(),
+        event: "composer.pending_permissions_changed",
+        sessionId,
+        inFlight,
+        count: pendingPermissions.length,
+        requestIds: pendingPermissions.map((req) => req.id),
+      })}`,
+    );
+  }, [inFlight, pendingPermissions, sessionId]);
+  useEffect(() => {
     void hydratePermissions(sessionId);
   }, [sessionId, hydratePermissions]);
   // Reconcile permission requests whenever the running flag transitions
@@ -181,6 +193,37 @@ export function ChatComposer({ session }: { session: Session }) {
     void hydratePermissions(sessionId);
   }, [inFlight, sessionId, hydratePermissions]);
   const headPermission = pendingPermissions[0];
+  useEffect(() => {
+    if (!inFlight || headPermission !== undefined) return;
+    console.info(
+      `[permission-ui] ${JSON.stringify({
+        ts: new Date().toISOString(),
+        event: "composer.poll_pending_start",
+        sessionId,
+      })}`,
+    );
+    void hydratePermissions(sessionId);
+    const id = window.setInterval(() => {
+      console.info(
+        `[permission-ui] ${JSON.stringify({
+          ts: new Date().toISOString(),
+          event: "composer.poll_pending_tick",
+          sessionId,
+        })}`,
+      );
+      void hydratePermissions(sessionId);
+    }, 1_000);
+    return () => {
+      console.info(
+        `[permission-ui] ${JSON.stringify({
+          ts: new Date().toISOString(),
+          event: "composer.poll_pending_stop",
+          sessionId,
+        })}`,
+      );
+      window.clearInterval(id);
+    };
+  }, [inFlight, headPermission, sessionId, hydratePermissions]);
 
   const [hasText, setHasText] = useState(false);
   const [trigger, setTrigger] = useState<ActiveTrigger | null>(null);

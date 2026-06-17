@@ -3,6 +3,7 @@ import { create } from "zustand";
 
 import {
   defaultModelFor,
+  type CompletionSoundPreset,
   type ProviderId,
   resolveModelSlug,
   type RuntimeMode,
@@ -57,6 +58,8 @@ const fallbackSnapshot = (): SettingsSlice => ({
   defaultModelByProvider: seedModels(),
   defaultRuntimeMode: DEFAULT_RUNTIME_MODE,
   defaultAutoCreateWorktree: false,
+  completionSoundEnabled: false,
+  completionSoundPreset: "chime",
   onboardingCompleted: false,
   providerEnabled: seedProviderEnabled(),
 });
@@ -76,6 +79,8 @@ const sliceFromFile = (file: SettingsFile): SettingsSlice => {
     defaultModelByProvider: models,
     defaultRuntimeMode: file.defaultRuntimeMode,
     defaultAutoCreateWorktree: file.defaultAutoCreateWorktree,
+    completionSoundEnabled: file.completionSoundEnabled,
+    completionSoundPreset: file.completionSoundPreset,
     onboardingCompleted: file.onboardingCompleted,
     providerEnabled: {
       ...seedProviderEnabled(),
@@ -89,6 +94,8 @@ interface SettingsSlice {
   readonly defaultModelByProvider: Record<ProviderId, string>;
   readonly defaultRuntimeMode: RuntimeMode;
   readonly defaultAutoCreateWorktree: boolean;
+  readonly completionSoundEnabled: boolean;
+  readonly completionSoundPreset: CompletionSoundPreset;
   readonly onboardingCompleted: boolean;
   readonly providerEnabled: Record<ProviderId, boolean>;
 }
@@ -111,6 +118,8 @@ type SettingsState = SettingsSlice & {
   ) => void;
   readonly setDefaultRuntimeMode: (mode: RuntimeMode) => void;
   readonly setDefaultAutoCreateWorktree: (value: boolean) => void;
+  readonly setCompletionSoundEnabled: (value: boolean) => void;
+  readonly setCompletionSoundPreset: (preset: CompletionSoundPreset) => void;
   readonly setOnboardingCompleted: (value: boolean) => void;
   readonly setProviderEnabled: (providerId: ProviderId, value: boolean) => void;
 };
@@ -231,6 +240,24 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         client.settings.update({
           patch: { defaultAutoCreateWorktree: value },
         }),
+      );
+    })();
+  },
+  setCompletionSoundEnabled: (value) => {
+    set({ completionSoundEnabled: value });
+    void (async () => {
+      const client = await getRpcClient();
+      await Effect.runPromise(
+        client.settings.update({ patch: { completionSoundEnabled: value } }),
+      );
+    })();
+  },
+  setCompletionSoundPreset: (preset) => {
+    set({ completionSoundPreset: preset });
+    void (async () => {
+      const client = await getRpcClient();
+      await Effect.runPromise(
+        client.settings.update({ patch: { completionSoundPreset: preset } }),
       );
     })();
   },
