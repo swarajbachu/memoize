@@ -843,6 +843,13 @@ export const MODELS_BY_PROVIDER: Record<
       supportsWebSearch: "native",
     },
     {
+      id: "gpt-5.5",
+      label: "GPT-5.5",
+      optionDescriptors: [reasoningSelectDescriptor("medium")],
+      supportsPlanMode: true,
+      supportsWebSearch: "native",
+    },
+    {
       id: "gpt-5.3-codex",
       label: "GPT-5.3 Codex",
       optionDescriptors: [reasoningSelectDescriptor("medium")],
