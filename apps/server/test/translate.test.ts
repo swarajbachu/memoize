@@ -214,6 +214,14 @@ describe("createAcpTranslator — assistant + thinking coalescing", () => {
     expect(flushed.text).toBe("Hello world");
   });
 
+  it("repairs missing spaces between streamed sentence words", () => {
+    const t = createAcpTranslator("grok");
+    t.translate({ sessionUpdate: "agent_message_chunk", content: "I'll" });
+    t.translate({ sessionUpdate: "agent_message_chunk", content: "Starting now" });
+    const flushed = only(t.flush(), "AssistantMessage");
+    expect(flushed.text).toBe("I'll Starting now");
+  });
+
   it("flushes buffered text before the next non-text event, preserving order", () => {
     const t = createAcpTranslator("grok");
     t.translate({ sessionUpdate: "agent_message_chunk", content: "intro" });
@@ -227,6 +235,30 @@ describe("createAcpTranslator — assistant + thinking coalescing", () => {
     expect((out[0] as Extract<AgentEvent, { _tag: "AssistantMessage" }>).text).toBe(
       "intro",
     );
+  });
+
+  it("does not split Grok streamed text around tool result updates", () => {
+    const t = createAcpTranslator("grok");
+    t.translate({ sessionUpdate: "agent_message_chunk", content: "I'll" });
+
+    const result = only(
+      t.translate({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "tc-stream",
+        status: "completed",
+        rawOutput: { type: "Bash", output: "ok" },
+      }),
+      "ToolResult",
+    );
+    expect(result.itemId).toBe("tc-stream");
+
+    t.translate({
+      sessionUpdate: "agent_message_chunk",
+      content: " keep this joined.",
+    });
+
+    const message = only(t.flush(), "AssistantMessage");
+    expect(message.text).toBe("I'll keep this joined.");
   });
 
   it("coalesces thinking chunks into one Thinking event", () => {
@@ -339,6 +371,266 @@ describe("createAcpTranslator — tool_call_update dedup & re-emit", () => {
 });
 
 describe("createAcpTranslator — per-provider quirks & errors", () => {
+  it("renders Grok collab spawnAgent as a grouped Agent run", () => {
+    const t = createAcpTranslator("grok");
+    const out = t.translate({
+      item: {
+        type: "collabAgentToolCall",
+        id: "spawn-1",
+        tool: "spawnAgent",
+        status: "completed",
+        senderThreadId: "main",
+        receiverThreadIds: ["agent-thread-1"],
+        prompt: "Explore codebase architecture",
+        model: null,
+        reasoningEffort: null,
+        agentsStates: {
+          "agent-thread-1": { status: "running", message: null },
+        },
+      },
+      threadId: "main",
+      turnId: "turn-1",
+    });
+
+    const ev = only(out, "ToolUse");
+    expect(ev.itemId).toBe("spawn-1");
+    expect(ev.tool).toBe("Agent");
+    expect(ev.input).toEqual({
+      subagent_type: "agent",
+      prompt: "Explore codebase architecture",
+      receiverThreadIds: ["agent-thread-1"],
+    });
+  });
+
+  it("groups Grok/Cursor Task child tool batches under the subagent row", () => {
+    const t = createAcpTranslator("grok");
+    const taskId =
+      "call-e9325475-3790-4ba8-b6de-d31ccbe5f0bd-composer_call_RRQI1";
+    t.translate({
+      sessionUpdate: "tool_call",
+      toolCallId: taskId,
+      title: "Task",
+      rawInput: {
+        description: "Task",
+        subagent_type: "generalPurpose",
+        prompt: "Analyze the current state of the branch.",
+      },
+    });
+    const ev = only(
+      t.translate({
+        sessionUpdate: "tool_call_update",
+        toolCallId: taskId,
+        kind: "other",
+        title: "Audit recent branch work",
+        rawInput: {
+          variant: "CursorTask",
+          description: "Audit recent branch work",
+          prompt: "Analyze the current state of the branch.",
+          subagent_type: "generalPurpose",
+        },
+      }),
+      "ToolUse",
+    );
+
+    expect(ev.tool).toBe("Task");
+    expect(ev.input).toEqual({
+      variant: "CursorTask",
+      description: "Audit recent branch work",
+      prompt: "Analyze the current state of the branch.",
+      subagent_type: "generalPurpose",
+    });
+
+    const childUse = only(
+      t.translate({
+        sessionUpdate: "tool_call",
+        toolCallId:
+          "call-6bc3338e-60b3-42c6-b0f8-91cadd4694a7-composer_call_kLDxP",
+        title: "Shell",
+        rawInput: {
+          description: "Commits on branch vs main",
+          command: "git log origin/main..HEAD --oneline",
+        },
+      }),
+      "ToolUse",
+    );
+    expect(childUse.parentItemId).toBe(taskId);
+
+    const summary = only(t.flush(), "SubagentSummary");
+    expect(summary.itemId).toBe(taskId);
+    expect(summary.summary).toBe("Audit recent branch work");
+    expect(summary.isError).toBe(false);
+  });
+
+  it("nests Grok collab agent messages under the spawned Agent row", () => {
+    const t = createAcpTranslator("grok");
+    t.translate({
+      item: {
+        type: "collabAgentToolCall",
+        id: "spawn-1",
+        tool: "spawnAgent",
+        status: "completed",
+        senderThreadId: "main",
+        receiverThreadIds: ["agent-thread-1"],
+        prompt: "Explore codebase architecture",
+        model: "grok-code-fast-1",
+        reasoningEffort: null,
+        agentsStates: {},
+      },
+      threadId: "main",
+      turnId: "turn-1",
+    });
+
+    const out = t.translate({
+      item: {
+        type: "agentMessage",
+        id: "msg-1",
+        text: "Found the server and renderer boundaries.",
+        phase: null,
+        memoryCitation: null,
+      },
+      threadId: "agent-thread-1",
+      turnId: "turn-2",
+    });
+
+    const ev = only(out, "AssistantMessage");
+    expect(ev.parentItemId).toBe("spawn-1");
+    expect(ev.text).toBe("Found the server and renderer boundaries.");
+  });
+
+  it("finishes Grok collab Agent rows from terminal agent state updates", () => {
+    const t = createAcpTranslator("grok");
+    t.translate({
+      item: {
+        type: "collabAgentToolCall",
+        id: "spawn-1",
+        tool: "spawnAgent",
+        status: "completed",
+        senderThreadId: "main",
+        receiverThreadIds: ["agent-thread-1"],
+        prompt: "Explore codebase architecture",
+        model: "grok-code-fast-1",
+        reasoningEffort: null,
+        agentsStates: {},
+      },
+      threadId: "main",
+      turnId: "turn-1",
+    });
+    t.translate({
+      item: {
+        type: "agentMessage",
+        id: "msg-1",
+        text: "Architecture summary.",
+        phase: null,
+        memoryCitation: null,
+      },
+      threadId: "agent-thread-1",
+      turnId: "turn-2",
+    });
+
+    const out = t.translate({
+      item: {
+        type: "collabAgentToolCall",
+        id: "wait-1",
+        tool: "wait",
+        status: "completed",
+        senderThreadId: "main",
+        receiverThreadIds: ["agent-thread-1"],
+        prompt: null,
+        model: null,
+        reasoningEffort: null,
+        agentsStates: {
+          "agent-thread-1": {
+            status: "completed",
+            message: "Done exploring.",
+          },
+        },
+      },
+      threadId: "main",
+      turnId: "turn-1",
+    });
+
+    expect(tags(out)).toEqual(["ToolUse", "ToolResult", "SubagentSummary"]);
+    const summary = out[2] as Extract<AgentEvent, { _tag: "SubagentSummary" }>;
+    expect(summary.itemId).toBe("spawn-1");
+    expect(summary.summary).toBe("Done exploring.");
+    expect(summary.turns).toBe(1);
+  });
+
+  it("finishes Grok collab Agent rows from receiver thread idle status", () => {
+    const t = createAcpTranslator("grok");
+    t.translate({
+      method: "item/started",
+      item: {
+        type: "collabAgentToolCall",
+        id: "spawn-1",
+        tool: "spawnAgent",
+        status: "completed",
+        senderThreadId: "main",
+        receiverThreadIds: ["agent-thread-1"],
+        prompt: "Explore renderer UI",
+        model: null,
+        reasoningEffort: null,
+        agentsStates: {},
+      },
+      threadId: "main",
+      turnId: "turn-1",
+    });
+    t.translate({
+      method: "item/completed",
+      item: {
+        type: "agentMessage",
+        id: "msg-1",
+        text: "Renderer UI is React.",
+        phase: null,
+        memoryCitation: null,
+      },
+      threadId: "agent-thread-1",
+      turnId: "turn-2",
+    });
+
+    const out = t.translate({
+      method: "thread/status/changed",
+      threadId: "agent-thread-1",
+      status: { type: "idle" },
+    });
+
+    const summary = only(out, "SubagentSummary");
+    expect(summary.itemId).toBe("spawn-1");
+    expect(summary.summary).toBe("Renderer UI is React.");
+    expect(summary.isError).toBe(false);
+  });
+
+  it("finishes Grok collab Agent rows from receiver thread close", () => {
+    const t = createAcpTranslator("grok");
+    t.translate({
+      method: "item/started",
+      item: {
+        type: "collabAgentToolCall",
+        id: "spawn-1",
+        tool: "spawnAgent",
+        status: "completed",
+        senderThreadId: "main",
+        receiverThreadIds: ["agent-thread-1"],
+        prompt: "Task",
+        model: null,
+        reasoningEffort: null,
+        agentsStates: {},
+      },
+      threadId: "main",
+      turnId: "turn-1",
+    });
+
+    const out = t.translate({
+      method: "thread/closed",
+      threadId: "agent-thread-1",
+    });
+
+    const summary = only(out, "SubagentSummary");
+    expect(summary.itemId).toBe("spawn-1");
+    expect(summary.summary).toBe("");
+    expect(summary.isError).toBe(false);
+  });
+
   it("skips Gemini's internal `think` tool call (surfaced via thinking chunks)", () => {
     expect(
       translateAcpSessionUpdate(

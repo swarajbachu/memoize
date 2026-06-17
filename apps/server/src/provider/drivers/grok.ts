@@ -1,4 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { appendFileSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
 import * as readline from "node:readline";
 import { Effect, Mailbox, Stream } from "effect";
 
@@ -14,6 +16,7 @@ import {
 } from "@memoize/wire";
 
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
+import { isIgnorableGrokAuthNoise } from "./acp/grok-auth-noise.ts";
 import { createAcpTranslator } from "./acp/translate.ts";
 import { applyPlanModePrefix } from "./planMode.ts";
 import { handleFsRequest } from "./acp/fs.ts";
@@ -116,6 +119,23 @@ const grokDiag = (label: string, data?: unknown): void => {
     } catch {
       process.stderr.write(`${prefix}: (unserialisable)\n`);
     }
+  }
+};
+
+const appendGrokAcpLog = (
+  cwd: string,
+  entry: Record<string, unknown>,
+): void => {
+  try {
+    const dir = join(cwd, ".context");
+    mkdirSync(dir, { recursive: true });
+    appendFileSync(
+      join(dir, "grok-acp.log"),
+      `${JSON.stringify({ ts: new Date().toISOString(), ...entry })}\n`,
+      "utf8",
+    );
+  } catch {
+    // Best-effort local diagnostics only.
   }
 };
 
@@ -407,7 +427,13 @@ export const startGrokSession = (
         if (msg.method === "session/update") {
           const update = msg.params?.update;
           if (update !== undefined) {
-            for (const ev of translator.translate(update)) {
+            const translated = translator.translate(update);
+            appendGrokAcpLog(cwd, {
+              method: msg.method,
+              update,
+              events: translated,
+            });
+            for (const ev of translated) {
               events.unsafeOffer(ev);
             }
           }
@@ -427,7 +453,19 @@ export const startGrokSession = (
             );
           }
           if (msg.params !== undefined) {
-            for (const ev of translator.translate(msg.params)) {
+            const update = {
+              ...(msg.params !== null && typeof msg.params === "object"
+                ? (msg.params as Record<string, unknown>)
+                : { params: msg.params }),
+              method: msg.method,
+            };
+            const translated = translator.translate(update);
+            appendGrokAcpLog(cwd, {
+              method: msg.method,
+              params: msg.params,
+              events: translated,
+            });
+            for (const ev of translated) {
               events.unsafeOffer(ev);
             }
           }
@@ -599,10 +637,6 @@ export const startGrokSession = (
           return;
         }
 
-        dead = true;
-
-        const isCachedToken = authMethodUsed === "cached_token";
-
         // Always log the full diagnostic info (this is what we use for debugging).
         grokDiag("FATAL_AUTH_TRIGGERED", {
           chunkPreview: chunk.slice(0, 800),
@@ -610,26 +644,10 @@ export const startGrokSession = (
           currentPromptRpcId,
           inflightPending: pending.size,
           authMethodUsed,
-          isCachedToken,
         });
 
-        if (currentPromptRpcId !== null) {
-          rejectCurrentPrompt(GROK_AUTH_REQUIRED_MESSAGE);
-        }
-
         if (!closed) {
-          if (isCachedToken) {
-            // For local `grok login` users, the worker sometimes dies with this even
-            // when the session can continue. We suppress the noisy red error card
-            // so it doesn't spam the UI mid-turn. Full details are still in the logs.
-            grokDiag("Suppressed visible Error event for cached_token AuthorizationRequired (session may still continue)");
-          } else {
-            // Real/invalid/expired token cases — still show the hard error.
-            events.unsafeOffer({
-              _tag: "Error",
-              message: GROK_AUTH_REQUIRED_MESSAGE,
-            });
-          }
+          grokDiag("Ignored Grok AuthorizationRequired while keeping turn running");
         }
       }
     });
@@ -670,11 +688,12 @@ export const startGrokSession = (
       }
       pending.clear();
       if (!closed) {
-        // Park in idle and keep the mailbox alive — the next send() will
-        // transparently respawn the child + redo the handshake (see
-        // [[enqueuePrompt]]). The user no longer has to "close this chat
-        // and start a new one" after a single worker death.
-        events.unsafeOffer({ _tag: "Status", status: "idle" });
+        // Keep the mailbox alive — the next send() will transparently respawn
+        // the child + redo the handshake (see [[enqueuePrompt]]). Do not stop
+        // the visible turn for the known Grok AuthorizationRequired noise.
+        if (friendly === null) {
+          events.unsafeOffer({ _tag: "Status", status: "idle" });
+        }
         grokDiag("child closed — keeping mailbox alive for transparent respawn on next send", {
           friendly: friendly ?? null,
         });
@@ -809,11 +828,17 @@ export const startGrokSession = (
               const reason = cause instanceof Error ? cause.message : String(cause);
               grokDiag("respawn failed", { reason });
               if (!closed) {
-                events.unsafeOffer({
-                  _tag: "Error",
-                  message: `Grok respawn failed: ${reason}`,
-                });
-                events.unsafeOffer({ _tag: "Status", status: "idle" });
+                if (isIgnorableGrokAuthNoise(reason)) {
+                  grokDiag("Suppressed visible respawn auth-noise error", {
+                    reason,
+                  });
+                } else {
+                  events.unsafeOffer({
+                    _tag: "Error",
+                    message: `Grok respawn failed: ${reason}`,
+                  });
+                  events.unsafeOffer({ _tag: "Status", status: "idle" });
+                }
               }
               return;
             }
@@ -830,6 +855,7 @@ export const startGrokSession = (
             permissionMode: currentMode,
             model: input.model,
           });
+          let keepRunningAfterIgnoredAuthNoise = false;
           try {
             await request(
               "session/prompt",
@@ -860,7 +886,14 @@ export const startGrokSession = (
             }
             grokDiag("session/prompt failed", { reason });
             const isCancellation = /cancel|interrupt/i.test(reason);
-            if (!closed && !isCancellation) {
+            const isGrokAuthNoise = isIgnorableGrokAuthNoise(reason);
+            if (isGrokAuthNoise) {
+              keepRunningAfterIgnoredAuthNoise = true;
+              grokDiag("Suppressed visible session/prompt auth-noise error", {
+                reason,
+              });
+            }
+            if (!closed && !isCancellation && !isGrokAuthNoise) {
               events.unsafeOffer({
                 _tag: "Error",
                 message: reason,
@@ -873,7 +906,9 @@ export const startGrokSession = (
             // sitting unobserved in memory.
             if (!closed) {
               for (const ev of translator.flush()) events.unsafeOffer(ev);
-              events.unsafeOffer({ _tag: "Status", status: "idle" });
+              if (!keepRunningAfterIgnoredAuthNoise) {
+                events.unsafeOffer({ _tag: "Status", status: "idle" });
+              }
             }
           }
         })
@@ -914,6 +949,7 @@ export const startGrokSession = (
           // Force-reject the in-flight prompt so the inflight chain
           // unblocks even if grok's ACP doesn't honour `session/cancel`.
           rejectCurrentPrompt("Interrupted by user");
+          events.unsafeOffer({ _tag: "Status", status: "idle" });
         }),
       close: () =>
         Effect.gen(function* () {
