@@ -684,9 +684,8 @@ function ProvidersPane() {
             .filter((pid) => {
               // Hide providers the user has toggled off. Cursor is still
               // excluded because it has an unconditional subscription gate.
-              // Grok is allowed once the user has a real login (the probe
-              // now surfaces email from auth.json and does not force a
-              // "Requires..." label).
+              // Grok is allowed once the probe confirms a usable paid tier,
+              // including X Premium+.
               if (providerEnabled[pid] === false) return false;
               if (pid === "cursor") return false;
               return true;

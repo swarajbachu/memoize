@@ -17,6 +17,7 @@ import {
   MessageId,
   WorktreeId,
 } from "./ids.ts";
+import { Worktree } from "./worktree.ts";
 
 export { ChatId } from "./ids.ts";
 
@@ -246,20 +247,17 @@ const UserQuestionContent = Schema.TaggedStruct("user_question", {
  * user typed free-text); `other` is the free-text "Other" entry. Either
  * field may be empty, but never both.
  */
-const UserQuestionAnswerContent = Schema.TaggedStruct(
-  "user_question_answer",
-  {
-    itemId: AgentItemId,
-    answers: Schema.Array(
-      Schema.Struct({
-        questionIndex: Schema.Number,
-        selected: Schema.Array(Schema.Number),
-        other: Schema.optional(Schema.String),
-      }),
-    ),
-    parentItemId: Schema.optional(AgentItemId),
-  },
-);
+const UserQuestionAnswerContent = Schema.TaggedStruct("user_question_answer", {
+  itemId: AgentItemId,
+  answers: Schema.Array(
+    Schema.Struct({
+      questionIndex: Schema.Number,
+      selected: Schema.Array(Schema.Number),
+      other: Schema.optional(Schema.String),
+    }),
+  ),
+  parentItemId: Schema.optional(AgentItemId),
+});
 
 /**
  * Tagged-union of all renderable message payloads. Persisted as the JSON blob
@@ -280,7 +278,8 @@ export const MessageContent = Schema.Union(
   UserQuestionContent,
   UserQuestionAnswerContent,
 );
-export type UserQuestionAnswer = (typeof UserQuestionAnswerContent.Type)["answers"][number];
+export type UserQuestionAnswer =
+  (typeof UserQuestionAnswerContent.Type)["answers"][number];
 export type MessageContent = typeof MessageContent.Type;
 
 export class Message extends Schema.Class<Message>("Message")({
@@ -474,6 +473,51 @@ export class ChatAlreadyStartedError extends Schema.TaggedError<ChatAlreadyStart
   { chatId: ChatId },
 ) {}
 
+export class ChatArchiveScriptError extends Schema.TaggedError<ChatArchiveScriptError>()(
+  "ChatArchiveScriptError",
+  {
+    chatId: ChatId,
+    exitCode: Schema.NullOr(Schema.Number),
+    signal: Schema.NullOr(Schema.String),
+    output: Schema.String,
+  },
+) {}
+
+export class ChatArchiveTimeoutError extends Schema.TaggedError<ChatArchiveTimeoutError>()(
+  "ChatArchiveTimeoutError",
+  { chatId: ChatId, timeoutMs: Schema.Number, output: Schema.String },
+) {}
+
+export class ChatArchiveWorktreeError extends Schema.TaggedError<ChatArchiveWorktreeError>()(
+  "ChatArchiveWorktreeError",
+  { chatId: ChatId, reason: Schema.String },
+) {}
+
+const ChatArchiveErrors = Schema.Union(
+  ChatNotFoundError,
+  ChatArchiveScriptError,
+  ChatArchiveTimeoutError,
+  ChatArchiveWorktreeError,
+);
+
+const ArchiveCleanupSummary = Schema.Struct({
+  ran: Schema.Boolean,
+  output: Schema.String,
+});
+
+export const ChatArchiveResult = Schema.Struct({
+  chat: Chat,
+  cleanup: Schema.NullOr(ArchiveCleanupSummary),
+});
+export type ChatArchiveResult = typeof ChatArchiveResult.Type;
+
+export const ChatUnarchiveResult = Schema.Struct({
+  chat: Chat,
+  sessions: Schema.Array(Session),
+  worktree: Schema.NullOr(Worktree),
+});
+export type ChatUnarchiveResult = typeof ChatUnarchiveResult.Type;
+
 export const ChatListRpc = Rpc.make("chat.list", {
   payload: Schema.Struct({
     projectId: FolderId,
@@ -558,14 +602,14 @@ export const ChatSetActiveSessionRpc = Rpc.make("chat.setActiveSession", {
 
 export const ChatArchiveRpc = Rpc.make("chat.archive", {
   payload: Schema.Struct({ chatId: ChatId }),
-  success: Schema.Void,
-  error: ChatNotFoundError,
+  success: ChatArchiveResult,
+  error: ChatArchiveErrors,
 });
 
 export const ChatUnarchiveRpc = Rpc.make("chat.unarchive", {
   payload: Schema.Struct({ chatId: ChatId }),
-  success: Schema.Void,
-  error: ChatNotFoundError,
+  success: ChatUnarchiveResult,
+  error: Schema.Union(ChatNotFoundError, ChatArchiveWorktreeError),
 });
 
 export const ChatDeleteRpc = Rpc.make("chat.delete", {

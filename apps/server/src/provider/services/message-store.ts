@@ -6,8 +6,13 @@ import type {
   AttachmentRef,
   Chat,
   ChatAlreadyStartedError,
+  ChatArchiveResult,
+  ChatArchiveScriptError,
+  ChatArchiveTimeoutError,
+  ChatArchiveWorktreeError,
   ChatId,
   ChatNotFoundError,
+  ChatUnarchiveResult,
   FileRef,
   FolderId,
   Message,
@@ -135,10 +140,7 @@ export interface MessageStoreShape {
     sessionId: SessionId,
     providerId: ProviderId,
     model: string,
-  ) => Effect.Effect<
-    void,
-    SessionNotFoundError | SessionAlreadyStartedError
-  >;
+  ) => Effect.Effect<void, SessionNotFoundError | SessionAlreadyStartedError>;
 
   /**
    * Update the per-session permission posture. The change applies to the
@@ -180,10 +182,7 @@ export interface MessageStoreShape {
   readonly setWorktree: (
     sessionId: SessionId,
     worktreeId: WorktreeId | null,
-  ) => Effect.Effect<
-    void,
-    SessionNotFoundError | SessionAlreadyStartedError
-  >;
+  ) => Effect.Effect<void, SessionNotFoundError | SessionAlreadyStartedError>;
 
   readonly archiveSession: (
     sessionId: SessionId,
@@ -206,9 +205,7 @@ export interface MessageStoreShape {
     includeArchived: boolean,
   ) => Effect.Effect<ReadonlyArray<Chat>>;
 
-  readonly getChat: (
-    chatId: ChatId,
-  ) => Effect.Effect<Chat, ChatNotFoundError>;
+  readonly getChat: (chatId: ChatId) => Effect.Effect<Chat, ChatNotFoundError>;
 
   /**
    * Creates the chat row AND its initial session in one transaction.
@@ -217,9 +214,7 @@ export interface MessageStoreShape {
    * so the renderer can seed its messages store and skip the empty-state
    * flash while the live stream connects.
    */
-  readonly createChat: (
-    input: CreateChatInput,
-  ) => Effect.Effect<
+  readonly createChat: (input: CreateChatInput) => Effect.Effect<
     {
       readonly chat: Chat;
       readonly initialSession: Session;
@@ -255,11 +250,20 @@ export interface MessageStoreShape {
 
   readonly archiveChat: (
     chatId: ChatId,
-  ) => Effect.Effect<void, ChatNotFoundError>;
+  ) => Effect.Effect<
+    ChatArchiveResult,
+    | ChatNotFoundError
+    | ChatArchiveScriptError
+    | ChatArchiveTimeoutError
+    | ChatArchiveWorktreeError
+  >;
 
   readonly unarchiveChat: (
     chatId: ChatId,
-  ) => Effect.Effect<void, ChatNotFoundError>;
+  ) => Effect.Effect<
+    ChatUnarchiveResult,
+    ChatNotFoundError | ChatArchiveWorktreeError
+  >;
 
   readonly deleteChat: (
     chatId: ChatId,

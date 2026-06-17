@@ -1,19 +1,13 @@
-import {
-  ClipboardIcon,
-  Robot01Icon,
-} from "@hugeicons/core-free-icons";
+import { ClipboardIcon, Robot01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import type {
-  AgentItemId,
-  Message,
-  UserQuestionAnswer,
-} from "@memoize/wire";
+import type { AgentItemId, Message, UserQuestionAnswer } from "@memoize/wire";
 
 import { cn } from "~/lib/utils";
 
+import { CopyButton } from "./copy-button.tsx";
 import { MessageRow, type ToolResultRecord } from "./message-row.tsx";
 
 const MODEL_LABEL: Record<string, string> = {
@@ -190,9 +184,16 @@ function PromptRow({ text }: { text: string }) {
       </button>
       {expanded ? (
         <div className="ml-7 mt-1 max-w-2xl border-l border-border/60 pl-3 pr-1">
-          <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded bg-zinc-900/70 px-3 py-2 font-mono text-[11px] text-foreground/80">
-            {text || "(empty)"}
-          </pre>
+          <div className="group/prompt relative">
+            <CopyButton
+              text={text}
+              label="Copy prompt"
+              className="absolute right-1.5 top-1.5 opacity-60 hover:opacity-100 focus-visible:opacity-100"
+            />
+            <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded border border-message-rule bg-message-pre-bg px-3 py-2 pr-9 font-mono text-[11px] text-foreground/80">
+              {text || "(empty)"}
+            </pre>
+          </div>
         </div>
       ) : null}
     </div>

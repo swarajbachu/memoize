@@ -18,8 +18,6 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 
 import type {
   SessionId,
@@ -223,8 +221,10 @@ function TerminalBlock({
   return (
     <div
       className={cn(
-        "rounded px-3 py-2 font-mono text-[11px] leading-relaxed overflow-x-auto",
-        isError ? "bg-alert-error-bg" : "bg-zinc-900/70",
+        "overflow-x-auto rounded border px-3 py-2 font-mono text-[11px] leading-relaxed",
+        isError
+          ? "border-alert-error-bg bg-alert-error-bg"
+          : "border-message-rule bg-message-pre-bg",
       )}
     >
       {command !== undefined ? (
@@ -294,7 +294,7 @@ function DirTreeBlock({ text }: { text: string }) {
     );
   }
   return (
-    <pre className="overflow-x-auto rounded bg-zinc-900/70 px-3 py-2 font-mono text-[11px] leading-relaxed">
+    <pre className="overflow-x-auto rounded border border-message-rule bg-message-pre-bg px-3 py-2 font-mono text-[11px] leading-relaxed">
       {lines.map((line, i) => {
         const isDir = line.trimEnd().endsWith("/");
         return (
@@ -329,7 +329,7 @@ function GrepGroupsBlock({
         <div key={i} className="space-y-0.5">
           <FileBadge path={g.path} />
           {g.matches.length > 0 ? (
-            <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded bg-zinc-900/70 px-3 py-1.5 font-mono text-[11px] text-foreground/80">
+            <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded border border-message-rule bg-message-pre-bg px-3 py-1.5 font-mono text-[11px] text-foreground/80">
               {g.matches.join("\n")}
             </pre>
           ) : null}
@@ -340,19 +340,17 @@ function GrepGroupsBlock({
 }
 
 function MarkdownBlock({ text }: { text: string }) {
-  return (
-    <div className="prose prose-invert prose-sm max-w-none break-words text-[12px] [&>:first-child]:mt-0 [&>:last-child]:mb-0 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-3 [&_pre>code]:bg-transparent [&_pre>code]:p-0">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
-    </div>
-  );
+  return <MarkdownBody className="text-[12px]">{text}</MarkdownBody>;
 }
 
 function PreBlock({ text, isError }: { text: string; isError?: boolean }) {
   return (
     <pre
       className={cn(
-        "overflow-x-auto whitespace-pre-wrap break-words rounded px-3 py-2 font-mono text-[11px] text-foreground/80",
-        isError ? "bg-alert-error-bg" : "bg-zinc-900/70",
+        "overflow-x-auto whitespace-pre-wrap break-words rounded border px-3 py-2 font-mono text-[11px] text-foreground/80",
+        isError
+          ? "border-alert-error-bg bg-alert-error-bg"
+          : "border-message-rule bg-message-pre-bg",
       )}
     >
       {text || "(empty)"}

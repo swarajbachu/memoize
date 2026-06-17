@@ -19,6 +19,7 @@ import { formatError } from "../lib/format-error.ts";
 import { useMessagesStore } from "./messages.ts";
 import { useSessionsStore } from "./sessions.ts";
 import { useWorkspaceStore } from "./workspace.ts";
+import { useWorktreesStore } from "./worktrees.ts";
 
 /**
  * Sidebar-level chat catalog. A chat is the container that holds one or
@@ -98,8 +99,7 @@ export const useChatsStore = create<ChatsState>((set, get) => ({
     }));
     try {
       const client = await getRpcClient();
-      const includeArchived =
-        get().showArchivedByProject[projectId] === true;
+      const includeArchived = get().showArchivedByProject[projectId] === true;
       const chats = await Effect.runPromise(
         client.chat.list({ projectId, includeArchived }),
       );
@@ -210,7 +210,11 @@ export const useChatsStore = create<ChatsState>((set, get) => ({
           chatsByProject: {
             ...s.chatsByProject,
             [projectId]: chats.map((c) =>
-              c.id === chatId ? Object.assign(Object.create(Object.getPrototypeOf(c)), c, { title }) : c,
+              c.id === chatId
+                ? Object.assign(Object.create(Object.getPrototypeOf(c)), c, {
+                    title,
+                  })
+                : c,
             ),
           },
         };
@@ -246,8 +250,9 @@ export const useChatsStore = create<ChatsState>((set, get) => ({
         return {
           sessionsByProject: {
             ...s.sessionsByProject,
-            [projectId]: list.map((row): Session =>
-              row.chatId === chatId ? { ...row, worktreeId } : row,
+            [projectId]: list.map(
+              (row): Session =>
+                row.chatId === chatId ? { ...row, worktreeId } : row,
             ),
           },
         };
@@ -293,15 +298,30 @@ export const useChatsStore = create<ChatsState>((set, get) => ({
     set({ error: null });
     try {
       const client = await getRpcClient();
-      await Effect.runPromise(client.chat.archive({ chatId }));
+      const result = await Effect.runPromise(client.chat.archive({ chatId }));
       const projectId = findChatProject(get().chatsByProject, chatId);
+      if (projectId !== null) {
+        set((s) => {
+          const chats = s.chatsByProject[projectId] ?? [];
+          return {
+            chatsByProject: {
+              ...s.chatsByProject,
+              [projectId]: chats.map((chat) =>
+                chat.id === chatId ? result.chat : chat,
+              ),
+            },
+          };
+        });
+      }
       if (projectId !== null) await get().hydrate(projectId);
+      if (projectId !== null) {
+        await useWorktreesStore.getState().refresh(projectId);
+      }
       // Drop the chat from the active selection so the chat surface clears.
       set((s) => {
         const wasSelected = s.selectedChatId === chatId;
         const clearPerProject =
-          projectId !== null &&
-          s.selectedChatByProject[projectId] === chatId;
+          projectId !== null && s.selectedChatByProject[projectId] === chatId;
         if (!wasSelected && !clearPerProject) return s;
         return {
           selectedChatId: wasSelected ? null : s.selectedChatId,
@@ -336,8 +356,52 @@ export const useChatsStore = create<ChatsState>((set, get) => ({
     set({ error: null });
     try {
       const client = await getRpcClient();
-      await Effect.runPromise(client.chat.unarchive({ chatId }));
+      const result = await Effect.runPromise(client.chat.unarchive({ chatId }));
       const projectId = findChatProject(get().chatsByProject, chatId);
+      const resolvedProjectId = projectId ?? result.chat.projectId;
+      set((s) => {
+        const chats = s.chatsByProject[resolvedProjectId] ?? [];
+        const nextChats = chats.some((chat) => chat.id === chatId)
+          ? chats.map((chat) => (chat.id === chatId ? result.chat : chat))
+          : [result.chat, ...chats];
+        return {
+          chatsByProject: {
+            ...s.chatsByProject,
+            [resolvedProjectId]: nextChats,
+          },
+          selectedChatId: result.chat.id,
+          selectedChatByProject: {
+            ...s.selectedChatByProject,
+            [resolvedProjectId]: result.chat.id,
+          },
+        };
+      });
+      useSessionsStore.setState((s) => {
+        const existing = s.sessionsByProject[resolvedProjectId] ?? [];
+        const restoredIds = new Set(result.sessions.map((row) => row.id));
+        const landingId =
+          result.chat.activeSessionId !== null &&
+          restoredIds.has(result.chat.activeSessionId)
+            ? result.chat.activeSessionId
+            : (result.sessions[0]?.id ?? null);
+        return {
+          sessionsByProject: {
+            ...s.sessionsByProject,
+            [resolvedProjectId]: [
+              ...result.sessions,
+              ...existing.filter((row) => !restoredIds.has(row.id)),
+            ],
+          },
+          selectedSessionId: landingId ?? s.selectedSessionId,
+          selectedSessionByProject: {
+            ...s.selectedSessionByProject,
+            [resolvedProjectId]: landingId,
+          },
+        };
+      });
+      if (result.worktree !== null) {
+        await useWorktreesStore.getState().refresh(resolvedProjectId);
+      }
       if (projectId !== null) await get().hydrate(projectId);
     } catch (err) {
       set({ error: formatError(err) });
@@ -361,8 +425,7 @@ export const useChatsStore = create<ChatsState>((set, get) => ({
             ...s.chatsByProject,
             [projectId]: chats.filter((c) => c.id !== chatId),
           },
-          selectedChatId:
-            s.selectedChatId === chatId ? null : s.selectedChatId,
+          selectedChatId: s.selectedChatId === chatId ? null : s.selectedChatId,
           selectedChatByProject: perProject,
         };
       });
@@ -428,7 +491,7 @@ export const useChatsStore = create<ChatsState>((set, get) => ({
     const projectSessions =
       projectId === null
         ? []
-        : useSessionsStore.getState().sessionsByProject[projectId] ?? [];
+        : (useSessionsStore.getState().sessionsByProject[projectId] ?? []);
     const liveTabs = projectSessions.filter(
       (row) => row.chatId === chatId && row.archivedAt === null,
     );
@@ -457,8 +520,8 @@ useWorkspaceStore.subscribe((ws, prev) => {
   if (ws.selectedFolderId === prev.selectedFolderId) return;
   const slot =
     ws.selectedFolderId !== null
-      ? useChatsStore.getState().selectedChatByProject[ws.selectedFolderId] ??
-        null
+      ? (useChatsStore.getState().selectedChatByProject[ws.selectedFolderId] ??
+        null)
       : null;
   if (useChatsStore.getState().selectedChatId !== slot) {
     useChatsStore.setState({ selectedChatId: slot });

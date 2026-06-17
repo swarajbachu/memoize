@@ -1,22 +1,14 @@
-import {
-  BubbleChatIcon,
-  Wrench01Icon,
-} from "@hugeicons/core-free-icons";
+import { BubbleChatIcon, Wrench01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useMemo, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 
-import type {
-  AgentItemId,
-  Message,
-  UserQuestionAnswer,
-} from "@memoize/wire";
+import type { AgentItemId, Message, UserQuestionAnswer } from "@memoize/wire";
 
 import { groupMessages } from "../lib/group-messages.ts";
 import { cn } from "~/lib/utils";
 
+import { CopyButton } from "./copy-button.tsx";
 import { FileBadge } from "./file-badge.tsx";
 import {
   diffStats,
@@ -24,6 +16,7 @@ import {
   extractPatchEntries,
   patchStats,
 } from "./inline-diff.tsx";
+import { MarkdownBody } from "./markdown-body.tsx";
 import { MessageRow, type ToolResultRecord } from "./message-row.tsx";
 import { SubagentRow } from "./subagent-row.tsx";
 import { iconForTool } from "./tool-row.tsx";
@@ -74,9 +67,7 @@ const aggregateFileStats = (body: ReadonlyArray<Message>): FileStat[] => {
   return Array.from(map.entries()).map(([path, s]) => ({ path, ...s }));
 };
 
-const findFinalAssistant = (
-  body: ReadonlyArray<Message>,
-): Message | null => {
+const findFinalAssistant = (body: ReadonlyArray<Message>): Message | null => {
   for (let i = body.length - 1; i >= 0; i--) {
     const m = body[i]!;
     if (m.content._tag === "assistant") return m;
@@ -99,10 +90,7 @@ export function TurnSummary({
 }: {
   body: ReadonlyArray<Message>;
   resultsByItemId: ReadonlyMap<AgentItemId, ToolResultRecord>;
-  answersByItemId?: ReadonlyMap<
-    AgentItemId,
-    ReadonlyArray<UserQuestionAnswer>
-  >;
+  answersByItemId?: ReadonlyMap<AgentItemId, ReadonlyArray<UserQuestionAnswer>>;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -113,8 +101,7 @@ export function TurnSummary({
   const messageCount = useMemo(
     () =>
       body.filter(
-        (m) =>
-          m.content._tag === "thinking" || m.content._tag === "assistant",
+        (m) => m.content._tag === "thinking" || m.content._tag === "assistant",
       ).length,
     [body],
   );
@@ -239,12 +226,11 @@ export function TurnSummary({
         </div>
       ) : null}
 
-      {finalAssistant !== null && finalAssistant.content._tag === "assistant" ? (
+      {finalAssistant !== null &&
+      finalAssistant.content._tag === "assistant" ? (
         <div className="px-4 py-2">
-          <div className="fz-prose max-w-[88%]">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {finalAssistant.content.text}
-            </ReactMarkdown>
+          <div className="max-w-[88%]">
+            <MarkdownBody>{finalAssistant.content.text}</MarkdownBody>
           </div>
         </div>
       ) : null}
@@ -256,6 +242,14 @@ export function TurnSummary({
         )}
       >
         <span className="tabular-nums">{formatElapsed(duration)}</span>
+        {finalAssistant !== null &&
+        finalAssistant.content._tag === "assistant" ? (
+          <CopyButton
+            text={finalAssistant.content.text}
+            label="Copy message"
+            className="size-5 rounded opacity-70 hover:opacity-100"
+          />
+        ) : null}
         {fileStats.map((f) => (
           <span key={f.path} className="flex items-center gap-1.5 tabular-nums">
             <FileBadge path={f.path} />
