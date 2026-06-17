@@ -9,8 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.3]
 
+### Added
+- Claude provider updates: Opus 4.8 and Ultracode model options, plus plan mode now always routes edits through prompts. (#111)
+- ACP agents (Grok, Gemini, Cursor) can execute real terminal/output commands instead of rendering terminal requests as inert tool calls. (#112)
+- In-app agent browser control drives the existing Electron webview, so agents can navigate and inspect pages without opening a separate browser surface. (#117)
+- Top bar can now show live CI state and offers direct merge / auto-merge actions. (#113)
+- Provider cards surface available CLI updates for supported providers. (#114)
+- Claude fast mode toggle for faster lower-latency Claude sessions. (#119)
+- Archive cleanup scripts and related repository cleanup controls. (#120)
+- Repository branch toolbar for faster branch/context switching. (#124)
+
+### Changed
+- Markdown rendering is more polished and consistent in chat output. (#121)
+- Grok access detection now accepts X Premium+ / SuperGrok entitlements. (#122)
+
 ### Fixed
 - Grok sessions no longer abort mid-turn when the ACP child surfaces transient `AuthorizationRequired` noise inside `session/update` error frames while the turn is still completing normally. The shared ACP translator now filters that frame on the grok channel so in-flight prompts aren't rejected and the session doesn't flip to idle prematurely.
+- New chats run inside their selected worktree and create branches from a fresh `origin` base. (#115)
+- Codex tool translation handles the current tool event shape correctly. (#123)
 
 ## [0.3.2]
 
