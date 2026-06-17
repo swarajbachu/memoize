@@ -161,6 +161,7 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
   // user isn't re-prompted on resume.
   const PermissionLayer = PermissionServiceLive.pipe(
     Layer.provide(MigratedSqlite),
+    Layer.provide(AppPathsLayer),
   );
 
   // BrowserBridge brokers between the in-process browser MCP tools (driver

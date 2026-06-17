@@ -15,6 +15,16 @@ export const SubagentPresetState = Schema.Struct({
 });
 export type SubagentPresetState = typeof SubagentPresetState.Type;
 
+export const CompletionSoundPreset = Schema.Literal(
+  "chime",
+  "soft",
+  "pop",
+  "bell",
+  "rise",
+  "bloom",
+);
+export type CompletionSoundPreset = typeof CompletionSoundPreset.Type;
+
 /**
  * How the auto-namer (PR: "auto-name chat + branch after first message")
  * shapes a worktree's git branch once it has an LLM-derived title slug.
@@ -51,6 +61,8 @@ export class SettingsFile extends Schema.Class<SettingsFile>("SettingsFile")({
   defaultRuntimeMode: RuntimeMode,
   defaultAutoCreateWorktree: Schema.Boolean,
   onboardingCompleted: Schema.Boolean,
+  completionSoundEnabled: Schema.Boolean,
+  completionSoundPreset: CompletionSoundPreset,
   /**
    * Per-provider on/off toggle from the Providers settings card. Defaults
    * to `true` for every provider; flipping it to `false` filters the
@@ -94,6 +106,8 @@ export const SettingsPatch = Schema.Struct({
   defaultRuntimeMode: Schema.optional(RuntimeMode),
   defaultAutoCreateWorktree: Schema.optional(Schema.Boolean),
   onboardingCompleted: Schema.optional(Schema.Boolean),
+  completionSoundEnabled: Schema.optional(Schema.Boolean),
+  completionSoundPreset: Schema.optional(CompletionSoundPreset),
   providerEnabled: Schema.optional(
     Schema.Record({ key: ProviderId, value: Schema.Boolean }),
   ),

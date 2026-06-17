@@ -58,27 +58,43 @@ let started = false;
 // the in-flight reads drain.
 const decidedRecently = new Set<string>();
 
+const logPermissionUi = (
+  event: string,
+  fields: Record<string, unknown> = {},
+): void => {
+  console.info(
+    `[permission-ui] ${JSON.stringify({
+      ts: new Date().toISOString(),
+      event,
+      ...fields,
+    })}`,
+  );
+};
+
 export const usePermissionsStore = create<PermissionsState>((set, get) => ({
   requestsById: {},
   errorBySession: {},
   decisionsByProject: {},
   loadingDecisionsByProject: {},
   start: () => {
-    if (started) return;
+    if (started) {
+      logPermissionUi("stream.start_skipped_existing");
+      return;
+    }
     started = true;
+    logPermissionUi("stream.start");
     void (async () => {
       let client: Awaited<ReturnType<typeof getRpcClient>>;
       try {
         client = await getRpcClient();
-      } catch {
+      } catch (err) {
+        logPermissionUi("stream.start_failed", { error: formatError(err) });
         // Couldn't get the client at all — allow a later retry.
         started = false;
         return;
       }
-      // The server stream has no replay, so a request published during the
-      // window before our subscription is live only lives in `listPending`.
       // Re-hydrate every session we already know about on each (re)subscribe
-      // to pull those back. No-op on first boot (empty map).
+      // to repair missed/cleared requests. No-op on first boot (empty map).
       const rehydrateKnownSessions = Effect.sync(() => {
         const seen = new Set<SessionId>();
         for (const req of Object.values(get().requestsById)) {
@@ -92,6 +108,12 @@ export const usePermissionsStore = create<PermissionsState>((set, get) => ({
         (req) =>
           Effect.sync(() => {
             if (decidedRecently.has(req.id)) return;
+            logPermissionUi("stream.request_received", {
+              requestId: req.id,
+              sessionId: req.sessionId,
+              kindTag: req.kind._tag,
+              requestedAt: req.requestedAt.toISOString(),
+            });
             set((s) => ({
               requestsById: { ...s.requestsById, [req.id]: req },
             }));
@@ -116,12 +138,21 @@ export const usePermissionsStore = create<PermissionsState>((set, get) => ({
   },
   hydrate: async (sessionId) => {
     try {
+      logPermissionUi("hydrate.start", { sessionId });
       const client = await getRpcClient();
       const pending = await Effect.runPromise(
         client.permission.listPending({ sessionId }),
       );
+      logPermissionUi("hydrate.result", {
+        sessionId,
+        count: pending.length,
+        requestIds: pending.map((req) => req.id),
+      });
       set((s) => {
         const next = { ...s.requestsById };
+        for (const [id, req] of Object.entries(next)) {
+          if (req.sessionId === sessionId) delete next[id];
+        }
         for (const req of pending) {
           if (decidedRecently.has(req.id)) continue;
           next[req.id] = req;
@@ -132,6 +163,10 @@ export const usePermissionsStore = create<PermissionsState>((set, get) => ({
         };
       });
     } catch (err) {
+      logPermissionUi("hydrate.failed", {
+        sessionId,
+        error: formatError(err),
+      });
       set((s) => ({
         errorBySession: {
           ...s.errorBySession,
@@ -141,6 +176,12 @@ export const usePermissionsStore = create<PermissionsState>((set, get) => ({
     }
   },
   decide: async (requestId, decision) => {
+    const req = get().requestsById[requestId];
+    logPermissionUi("decide.start", {
+      requestId,
+      sessionId: req?.sessionId ?? null,
+      decision: decision._tag,
+    });
     decidedRecently.add(requestId);
     // Long enough to outlast any in-flight `listPending` poll / stream echo.
     window.setTimeout(() => decidedRecently.delete(requestId), 5000);
@@ -154,7 +195,17 @@ export const usePermissionsStore = create<PermissionsState>((set, get) => ({
       await Effect.runPromise(
         client.permission.decide({ requestId, decision }),
       );
+      logPermissionUi("decide.success", {
+        requestId,
+        sessionId: req?.sessionId ?? null,
+        decision: decision._tag,
+      });
     } catch {
+      logPermissionUi("decide.failed", {
+        requestId,
+        sessionId: req?.sessionId ?? null,
+        decision: decision._tag,
+      });
       // The server drops the entry on success; a failed decide leaves it in
       // memory and we'll re-hydrate via listPending on the next session
       // mount. No noisy error UI for this case.
@@ -221,4 +272,3 @@ export const usePermissionsStore = create<PermissionsState>((set, get) => ({
     }
   },
 }));
-

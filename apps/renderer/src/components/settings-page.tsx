@@ -12,6 +12,7 @@ import {
   Settings as SettingsIcon,
   Trash2,
   TriangleAlert,
+  Volume2,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -22,6 +23,7 @@ import { getRpcClient } from "../lib/rpc-client.ts";
 import {
   type BranchNamingStyle,
   MODELS_BY_PROVIDER,
+  type CompletionSoundPreset,
   type Folder,
   type FolderId,
   type ProviderId,
@@ -33,6 +35,11 @@ import {
   useRelativeTimeTick,
 } from "~/lib/use-relative-time.ts";
 import { cn } from "~/lib/utils";
+import {
+  COMPLETION_SOUND_PRESETS,
+  playCompletionSound,
+  prepareCompletionSound,
+} from "../lib/completion-sounds.ts";
 import { DEFAULT_SUBAGENT_PRESETS } from "../lib/subagent-presets.ts";
 import { useProvidersStore } from "../store/providers.ts";
 import { useSettingsStore } from "../store/settings.ts";
@@ -525,6 +532,18 @@ function GeneralPane() {
   const setDefaultRuntimeMode = useSettingsStore(
     (s) => s.setDefaultRuntimeMode,
   );
+  const completionSoundEnabled = useSettingsStore(
+    (s) => s.completionSoundEnabled,
+  );
+  const setCompletionSoundEnabled = useSettingsStore(
+    (s) => s.setCompletionSoundEnabled,
+  );
+  const completionSoundPreset = useSettingsStore(
+    (s) => s.completionSoundPreset,
+  );
+  const setCompletionSoundPreset = useSettingsStore(
+    (s) => s.setCompletionSoundPreset,
+  );
   const branchNamingStyle = useSettingsStore((s) => s.branchNamingStyle);
   const setBranchNamingStyle = useSettingsStore((s) => s.setBranchNamingStyle);
   const branchNamingPrefix = useSettingsStore((s) => s.branchNamingPrefix);
@@ -578,6 +597,57 @@ function GeneralPane() {
         }
         description="How the agent handles tool calls in new sessions. Each session can override this from its composer."
       />
+
+      <SettingsFrame
+        title="Agent completion sound"
+        trailing={
+          <Switch
+            checked={completionSoundEnabled}
+            onCheckedChange={(value) => {
+              setCompletionSoundEnabled(value);
+              if (value) void prepareCompletionSound();
+            }}
+          />
+        }
+        description="Play a short sound when any agent turn finishes, including agents working in background chats."
+      >
+        <div className="flex items-center gap-2">
+          <Volume2 className="size-4 shrink-0 text-muted-foreground" />
+          <Select
+            value={completionSoundPreset}
+            onValueChange={(v) =>
+              setCompletionSoundPreset(v as CompletionSoundPreset)
+            }
+            items={COMPLETION_SOUND_PRESETS.map((preset) => ({
+              label: preset.label,
+              value: preset.value,
+            }))}
+          >
+            <SelectTrigger
+              size="sm"
+              className="w-[160px]"
+              disabled={!completionSoundEnabled}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectPopup>
+              {COMPLETION_SOUND_PRESETS.map((preset) => (
+                <SelectItem key={preset.value} value={preset.value}>
+                  {preset.label}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+          <Button
+            variant="settings"
+            size="sm"
+            disabled={!completionSoundEnabled}
+            onClick={() => void playCompletionSound(completionSoundPreset)}
+          >
+            Preview
+          </Button>
+        </div>
+      </SettingsFrame>
 
       <SettingsFrame
         title="Branch naming"

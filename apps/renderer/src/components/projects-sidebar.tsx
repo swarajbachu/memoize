@@ -34,6 +34,7 @@ import {
 } from "~/lib/chat-attention-state";
 import { cn, formatCompactNumber } from "~/lib/utils";
 import { resolveAutoWorktreeId } from "../lib/auto-worktree.ts";
+import { noteSessionStatusForCompletionSound } from "../lib/completion-sounds.ts";
 import { formatShortcut } from "../lib/shortcuts.ts";
 import { getRpcClient } from "../lib/rpc-client.ts";
 import { useChatsStore } from "../store/chats.ts";
@@ -127,6 +128,7 @@ function useSessionRunningSubscriptions(sessionIds: ReadonlyArray<SessionId>) {
               client.session.streamStatus({ sessionId: id }),
               (event) =>
                 Effect.sync(() => {
+                  noteSessionStatusForCompletionSound(id, event.status);
                   useMessagesStore.setState((s) => ({
                     runningBySession: {
                       ...s.runningBySession,

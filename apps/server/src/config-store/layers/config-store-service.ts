@@ -13,6 +13,7 @@ import {
   type ProviderId,
   resolveModelSlug,
   SettingsFile,
+  type CompletionSoundPreset,
   type SettingsPatch,
   type SubagentPresetState,
 } from "@memoize/wire";
@@ -65,6 +66,8 @@ const freshSettings = (): SettingsFile =>
     defaultRuntimeMode: "approval-required",
     defaultAutoCreateWorktree: false,
     onboardingCompleted: false,
+    completionSoundEnabled: false,
+    completionSoundPreset: "chime",
     providerEnabled: seedProviderEnabled(),
     subagents: { enableForNewSessions: true, presets: {} },
     branchNamingStyle: "username-slug",
@@ -91,6 +94,14 @@ const isRuntimeMode = (v: unknown): v is SettingsFile["defaultRuntimeMode"] =>
   v === "auto-accept-edits" ||
   v === "auto-accept-edits-and-bash" ||
   v === "full-access";
+
+const isCompletionSoundPreset = (v: unknown): v is CompletionSoundPreset =>
+  v === "chime" ||
+  v === "soft" ||
+  v === "pop" ||
+  v === "bell" ||
+  v === "rise" ||
+  v === "bloom";
 
 const isBranchNamingStyle = (v: unknown): v is BranchNamingStyle =>
   v === "username-slug" ||
@@ -138,6 +149,17 @@ const coerceSettings = (raw: unknown): SettingsFile => {
     typeof obj.onboardingCompleted === "boolean"
       ? obj.onboardingCompleted
       : base.onboardingCompleted;
+
+  const completionSoundEnabled =
+    typeof obj.completionSoundEnabled === "boolean"
+      ? obj.completionSoundEnabled
+      : base.completionSoundEnabled;
+
+  const completionSoundPreset = isCompletionSoundPreset(
+    obj.completionSoundPreset,
+  )
+    ? obj.completionSoundPreset
+    : base.completionSoundPreset;
 
   const providerEnabled: Record<ProviderId, boolean> = {
     ...base.providerEnabled,
@@ -195,6 +217,8 @@ const coerceSettings = (raw: unknown): SettingsFile => {
     defaultRuntimeMode: runtime,
     defaultAutoCreateWorktree: autoWorktree,
     onboardingCompleted: onboarding,
+    completionSoundEnabled,
+    completionSoundPreset,
     providerEnabled,
     subagents,
     branchNamingStyle,
@@ -441,6 +465,10 @@ export const ConfigStoreServiceLive = Layer.scoped(
             patch.defaultAutoCreateWorktree ?? cur.defaultAutoCreateWorktree,
           onboardingCompleted:
             patch.onboardingCompleted ?? cur.onboardingCompleted,
+          completionSoundEnabled:
+            patch.completionSoundEnabled ?? cur.completionSoundEnabled,
+          completionSoundPreset:
+            patch.completionSoundPreset ?? cur.completionSoundPreset,
           providerEnabled: patch.providerEnabled ?? cur.providerEnabled,
           subagents: patch.subagents ?? cur.subagents,
           branchNamingStyle:
@@ -483,6 +511,8 @@ export const ConfigStoreServiceLive = Layer.scoped(
             cur.defaultRuntimeMode === baseline.defaultRuntimeMode &&
             cur.defaultAutoCreateWorktree ===
               baseline.defaultAutoCreateWorktree &&
+            cur.completionSoundEnabled === baseline.completionSoundEnabled &&
+            cur.completionSoundPreset === baseline.completionSoundPreset &&
             cur.onboardingCompleted === false &&
             Object.keys(cur.subagents.presets).length === 0;
           if (!currentLooksFresh) return cur;
@@ -498,6 +528,8 @@ export const ConfigStoreServiceLive = Layer.scoped(
           let providerEnabled: SettingsFile["providerEnabled"] =
             cur.providerEnabled;
           let subagents: SettingsFile["subagents"] = cur.subagents;
+          let completionSoundEnabled = cur.completionSoundEnabled;
+          let completionSoundPreset = cur.completionSoundPreset;
 
           if (
             payload.settingsV1Raw !== undefined &&
@@ -514,6 +546,8 @@ export const ConfigStoreServiceLive = Layer.scoped(
               runtime = fromLs.defaultRuntimeMode;
               autoWorktree = fromLs.defaultAutoCreateWorktree;
               onboarding = fromLs.onboardingCompleted;
+              completionSoundEnabled = fromLs.completionSoundEnabled;
+              completionSoundPreset = fromLs.completionSoundPreset;
               providerEnabled = fromLs.providerEnabled;
             } catch {
               /* swallow — keep current values */
@@ -544,6 +578,8 @@ export const ConfigStoreServiceLive = Layer.scoped(
             defaultRuntimeMode: runtime,
             defaultAutoCreateWorktree: autoWorktree,
             onboardingCompleted: onboarding,
+            completionSoundEnabled,
+            completionSoundPreset,
             providerEnabled,
             subagents,
             branchNamingStyle: cur.branchNamingStyle,
