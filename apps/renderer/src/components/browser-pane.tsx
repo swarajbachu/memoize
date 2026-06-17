@@ -258,7 +258,7 @@ export function BrowserPane() {
         <webview
           ref={webviewRef as unknown as React.RefObject<HTMLElement>}
           src={url === "" ? "about:blank" : url}
-          allowpopups="true"
+          allowpopups={true}
           style={{
             display: url === "" ? "none" : "flex",
             width: "100%",

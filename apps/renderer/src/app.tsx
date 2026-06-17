@@ -214,6 +214,7 @@ function MainShell() {
   // under the new project's root anyway.
   useEffect(() => {
     if (openFile === null) return;
+    if (openFile.kind !== "text") return;
     if (selectedFolderId !== null && openFile.folderId === selectedFolderId) {
       return;
     }
