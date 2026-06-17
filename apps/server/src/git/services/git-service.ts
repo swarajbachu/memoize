@@ -4,6 +4,7 @@ import {
   type FolderId,
   type GitChange,
   type GitCommandError,
+  type GitBranchInfo,
   type GitCommit,
   type GitDiffResult,
   type GitFailingChecksArtifact,
@@ -31,6 +32,21 @@ export interface GitServiceShape {
   ) => Effect.Effect<ReadonlyArray<GitCommit>, GitFailure>;
   readonly status: (
     folderId: FolderId,
+    worktreeId?: WorktreeId | null,
+  ) => Effect.Effect<GitStatusSummary, GitFailure>;
+  readonly branches: (
+    folderId: FolderId,
+    worktreeId?: WorktreeId | null,
+  ) => Effect.Effect<ReadonlyArray<GitBranchInfo>, GitFailure>;
+  readonly switchBranch: (
+    folderId: FolderId,
+    branch: string,
+    remote?: string | null,
+    worktreeId?: WorktreeId | null,
+  ) => Effect.Effect<GitStatusSummary, GitFailure>;
+  readonly renameBranch: (
+    folderId: FolderId,
+    name: string,
     worktreeId?: WorktreeId | null,
   ) => Effect.Effect<GitStatusSummary, GitFailure>;
   readonly subscribeHeadChanges: (

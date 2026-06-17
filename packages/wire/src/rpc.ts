@@ -39,6 +39,7 @@ import {
   FsWriteFileRpc,
 } from "./fs.ts";
 import {
+  GitBranchesRpc,
   GitChangesRpc,
   GitCommitRpc,
   GitDiffRpc,
@@ -52,7 +53,9 @@ import {
   GitPrDetailsRpc,
   GitPrStateRpc,
   GitPushRpc,
+  GitRenameBranchRpc,
   GitStatusRpc,
+  GitSwitchBranchRpc,
 } from "./git.ts";
 import {
   PermissionDecideRpc,
@@ -161,6 +164,9 @@ export const MemoizeRpcs = RpcGroup.make(
   PtyOutputRpc,
   GitLogRpc,
   GitStatusRpc,
+  GitBranchesRpc,
+  GitSwitchBranchRpc,
+  GitRenameBranchRpc,
   GitHeadChangedRpc,
   GitOriginRpc,
   GitPrStateRpc,

@@ -11,6 +11,7 @@ import {
 } from "effect";
 
 import {
+  GitBranchInfo,
   GitChange,
   GitCommandError,
   GitCommit,
@@ -114,6 +115,53 @@ const parseStatusOutput = (out: string): GitStatusSummary => {
   }
 
   return GitStatusSummary.make({ branch, ahead, behind, dirtyFiles });
+};
+
+const parseBranchRows = (
+  localOut: string,
+  remoteOut: string,
+): ReadonlyArray<GitBranchInfo> => {
+  const sep = "\0";
+  const locals = new Set<string>();
+  const result: GitBranchInfo[] = [];
+
+  for (const line of localOut.split("\n")) {
+    if (line.length === 0) continue;
+    const [name, head, upstream] = line.split(sep);
+    if (name === undefined || name.length === 0) continue;
+    locals.add(name);
+    result.push(
+      GitBranchInfo.make({
+        name,
+        current: head === "*",
+        remote: null,
+        upstream: upstream && upstream.length > 0 ? upstream : null,
+        kind: "local",
+      }),
+    );
+  }
+
+  for (const line of remoteOut.split("\n")) {
+    if (line.length === 0) continue;
+    const [remoteName, head] = line.split(sep);
+    if (remoteName === undefined || remoteName.length === 0) continue;
+    if (remoteName.endsWith("/HEAD")) continue;
+    const slash = remoteName.indexOf("/");
+    if (slash <= 0 || slash === remoteName.length - 1) continue;
+    const branchName = remoteName.slice(slash + 1);
+    if (locals.has(branchName)) continue;
+    result.push(
+      GitBranchInfo.make({
+        name: branchName,
+        current: head === "*",
+        remote: remoteName,
+        upstream: null,
+        kind: "remote",
+      }),
+    );
+  }
+
+  return result;
 };
 
 // Map a single porcelain-v2 status code (per `git status --porcelain=v2`):
@@ -465,6 +513,98 @@ export const GitServiceLive = Layer.effect(
         run(folderId, cwd, ["status", "--porcelain=v2", "--branch"]).pipe(
           Effect.map(parseStatusOutput),
         ),
+      );
+
+    const branches: GitService["Type"]["branches"] = (folderId, worktreeId) =>
+      Effect.flatMap(resolvePathForWorktree(folderId, worktreeId), (cwd) =>
+        Effect.gen(function* () {
+          const format = "%(refname:short)%00%(HEAD)%00%(upstream:short)";
+          const localOut = yield* run(folderId, cwd, [
+            "branch",
+            "--format",
+            format,
+          ]);
+          const remoteOut = yield* run(folderId, cwd, [
+            "branch",
+            "-r",
+            "--format",
+            format,
+          ]).pipe(Effect.catchTag("GitCommandError", () => Effect.succeed("")));
+          return parseBranchRows(localOut, remoteOut);
+        }),
+      );
+
+    const switchBranch: GitService["Type"]["switchBranch"] = (
+      folderId,
+      branch,
+      remote,
+      worktreeId,
+    ) =>
+      Effect.flatMap(resolvePathForWorktree(folderId, worktreeId), (cwd) =>
+        Effect.gen(function* () {
+          const target = branch.trim();
+          if (target.length === 0) {
+            return yield* Effect.fail(
+              new GitCommandError({
+                folderId,
+                reason: "Branch name cannot be empty.",
+              }),
+            );
+          }
+          const remoteTarget = remote?.trim() ?? "";
+          if (remoteTarget.length > 0) {
+            yield* run(folderId, cwd, ["switch", "--track", remoteTarget]);
+          } else {
+            yield* run(folderId, cwd, ["switch", target]);
+          }
+          const out = yield* run(folderId, cwd, [
+            "status",
+            "--porcelain=v2",
+            "--branch",
+          ]);
+          return parseStatusOutput(out);
+        }),
+      );
+
+    const renameBranch: GitService["Type"]["renameBranch"] = (
+      folderId,
+      name,
+      worktreeId,
+    ) =>
+      Effect.flatMap(resolvePathForWorktree(folderId, worktreeId), (cwd) =>
+        Effect.gen(function* () {
+          const next = name.trim();
+          if (next.length === 0) {
+            return yield* Effect.fail(
+              new GitCommandError({
+                folderId,
+                reason: "Branch name cannot be empty.",
+              }),
+            );
+          }
+          const current = (yield* run(folderId, cwd, [
+            "branch",
+            "--show-current",
+          ])).trim();
+          if (current.length === 0) {
+            return yield* Effect.fail(
+              new GitCommandError({
+                folderId,
+                reason: "Cannot rename a detached HEAD.",
+              }),
+            );
+          }
+          yield* run(folderId, cwd, ["check-ref-format", "--branch", next]);
+          if (current !== next) {
+            yield* run(folderId, cwd, ["branch", "-m", current, next]);
+          }
+          const out = yield* run(folderId, cwd, [
+            "status",
+            "--porcelain=v2",
+            "--branch",
+          ]);
+          return parseStatusOutput(out);
+        }),
       );
 
     const headSha = (folderId: FolderId) =>
@@ -1288,6 +1428,9 @@ export const GitServiceLive = Layer.effect(
     return {
       log,
       status,
+      branches,
+      switchBranch,
+      renameBranch,
       subscribeHeadChanges,
       origin,
       prState,

@@ -20,6 +20,19 @@ export interface WindowBridge {
 
 export interface AppBridge {
   readonly openExternal: (url: string) => void;
+  readonly listOpenTargets?: (
+    path: string,
+  ) => Promise<ReadonlyArray<OpenTarget>>;
+  readonly openPathInApp?: (path: string, appId: string) => Promise<void>;
+  readonly revealPath?: (path: string) => Promise<void>;
+  readonly copyPath?: (path: string) => Promise<void>;
+}
+
+export interface OpenTarget {
+  readonly id: string;
+  readonly label: string;
+  readonly available: boolean;
+  readonly iconDataUrl?: string | null;
 }
 
 export interface UpdatesBridge {

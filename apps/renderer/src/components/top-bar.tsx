@@ -2,6 +2,9 @@ import {
   Archive,
   Check,
   ChevronDown,
+  Copy,
+  Edit3,
+  ExternalLink,
   GitBranch,
   GitMerge,
   GitPullRequestArrow,
@@ -16,16 +19,25 @@ import {
   Wrench,
 } from "lucide-react";
 import { Effect } from "effect";
-import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
+import {
+  type CSSProperties,
+  type FormEvent,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 import {
   ComposerInput,
   type FolderId,
+  type GitBranchInfo,
   type GitMergeMethod,
   type WorktreeId,
 } from "@memoize/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
+import type { OpenTarget } from "../lib/bridge.ts";
 import { formatShortcut } from "../lib/shortcuts.ts";
 import {
   GlassActionButton,
@@ -41,7 +53,27 @@ import { useMessagesStore } from "../store/messages.ts";
 import { prStateKey, usePrStateStore } from "../store/pr-state.ts";
 import { useSessionsStore } from "../store/sessions.ts";
 import { useUiStore } from "../store/ui.ts";
-import { Menu, MenuItem, MenuPopup, MenuTrigger } from "./ui/menu.tsx";
+import { useWorkspaceStore } from "../store/workspace.ts";
+import { Button } from "./ui/button.tsx";
+import {
+  Dialog,
+  DialogClose,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+} from "./ui/dialog.tsx";
+import { Input } from "./ui/input.tsx";
+import {
+  Menu,
+  MenuItem,
+  MenuPopup,
+  MenuSeparator,
+  MenuShortcut,
+  MenuTrigger,
+} from "./ui/menu.tsx";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip.tsx";
 
 /**
@@ -128,6 +160,14 @@ export function TopBarMain() {
   const rightSidebarOpen = useUiStore((s) => s.rightSidebarOpen);
   const setRightSidebarOpen = useUiStore((s) => s.setRightSidebarOpen);
   const isFullScreen = useUiStore((s) => s.isFullScreen);
+  const folder = useWorkspaceStore((s) =>
+    folderId ? (s.folders.find((f) => f.id === folderId) ?? null) : null,
+  );
+  const [originLabel, setOriginLabel] = useState<string | null>(null);
+  const [branches, setBranches] = useState<ReadonlyArray<GitBranchInfo>>([]);
+  const [branchesLoading, setBranchesLoading] = useState(false);
+  const [branchError, setBranchError] = useState<string | null>(null);
+  const [renameOpen, setRenameOpen] = useState(false);
 
   // Poll both `git status` (branch / dirty / ahead) and the PR state (CI
   // rollup, mergeable, auto-merge) on the same 5s tick so the top-bar PR
@@ -148,6 +188,7 @@ export function TopBarMain() {
   // until the first refresh lands — which is the correct behavior. No
   // stale-branch flash during the swap.
   const branchLabel = status?.branch ?? null;
+  const repoLabel = originLabel ?? folder?.name ?? "No repository";
   const showLeftToggle = !leftSidebarOpen;
   // When the left panel is open its own header carries the traffic-light
   // gutter, so this section starts flush. When it's collapsed we slide the
@@ -155,6 +196,85 @@ export function TopBarMain() {
   // for the macOS controls. Native fullscreen hides those controls, so we
   // skip the reserve.
   const leftPad = showLeftToggle ? (isFullScreen ? "pl-2" : "pl-20") : "pl-2";
+
+  useEffect(() => {
+    if (folderId === null) {
+      setOriginLabel(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const client = await getRpcClient();
+        const origin = await Effect.runPromise(client.git.origin({ folderId }));
+        if (cancelled) return;
+        setOriginLabel(
+          origin !== null ? `${origin.owner}/${origin.repo}` : null,
+        );
+      } catch {
+        if (!cancelled) setOriginLabel(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [folderId]);
+
+  const refreshBranches = async (): Promise<void> => {
+    if (folderId === null) return;
+    setBranchesLoading(true);
+    setBranchError(null);
+    try {
+      const client = await getRpcClient();
+      const list = await Effect.runPromise(
+        client.git.branches({ folderId, worktreeId }),
+      );
+      setBranches(list);
+    } catch (err) {
+      setBranchError(errorMessage(err));
+    } finally {
+      setBranchesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void refreshBranches();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [folderId, worktreeId, branchLabel]);
+
+  const switchToBranch = async (branch: GitBranchInfo): Promise<void> => {
+    if (folderId === null || branch.current) return;
+    if (
+      status !== null &&
+      status.dirtyFiles > 0 &&
+      !window.confirm(
+        `Switch branches with ${status.dirtyFiles} uncommitted change${
+          status.dirtyFiles === 1 ? "" : "s"
+        }? Git may refuse if the changes conflict.`,
+      )
+    ) {
+      return;
+    }
+    setBranchesLoading(true);
+    setBranchError(null);
+    try {
+      const client = await getRpcClient();
+      await Effect.runPromise(
+        client.git.switchBranch({
+          folderId,
+          worktreeId,
+          branch: branch.name,
+          remote: branch.remote,
+        }),
+      );
+      refreshAfterAction(folderId, worktreeId);
+      await refreshBranches();
+    } catch (err) {
+      setBranchError(errorMessage(err));
+    } finally {
+      setBranchesLoading(false);
+    }
+  };
 
   return (
     <header className={`${SECTION_CLASS} ${leftPad} pr-1`}>
@@ -180,24 +300,45 @@ export function TopBarMain() {
           </TooltipPopup>
         </Tooltip>
       ) : null}
-      <div
-        className={`flex min-w-0 flex-1 items-center gap-1.5 ${ACTION_CLASS}`}
-      >
-        {branchLabel ? (
-          <>
-            <GitBranch className="size-3.5 shrink-0 text-muted-foreground" />
-            <span className="truncate font-medium" title={branchLabel}>
-              {branchLabel}
-            </span>
-            {status && status.dirtyFiles > 0 ? (
-              <span className="shrink-0 text-muted-foreground">
-                · {status.dirtyFiles} change
-                {status.dirtyFiles === 1 ? "" : "s"}
-              </span>
-            ) : null}
-          </>
-        ) : null}
+      <div className={`flex min-w-0 flex-1 items-center ${ACTION_CLASS}`}>
+        <div className="flex min-w-0 max-w-[min(620px,100%)] items-center gap-1.5 text-xs">
+          <span
+            className="truncate font-medium text-foreground"
+            title={repoLabel}
+          >
+            {repoLabel}
+          </span>
+          {branchLabel ? (
+            <>
+              <span className="shrink-0 text-muted-foreground/70">/</span>
+              <BranchMenuButton
+                branchLabel={branchLabel}
+                branches={branches}
+                dirtyFiles={status?.dirtyFiles ?? 0}
+                error={branchError}
+                loading={branchesLoading}
+                onOpen={() => void refreshBranches()}
+                onRename={() => setRenameOpen(true)}
+                onSwitch={(branch) => void switchToBranch(branch)}
+              />
+            </>
+          ) : null}
+        </div>
       </div>
+      {folderId !== null && branchLabel !== null ? (
+        <RenameBranchDialog
+          branchLabel={branchLabel}
+          folderId={folderId}
+          open={renameOpen}
+          onOpenChange={setRenameOpen}
+          onRenamed={async () => {
+            refreshAfterAction(folderId, worktreeId);
+            await refreshBranches();
+          }}
+          worktreeId={worktreeId}
+        />
+      ) : null}
+      <OpenInMenu rootPath={ctx.status === "ready" ? ctx.rootPath : null} />
       <Tooltip>
         <TooltipTrigger
           render={
@@ -226,6 +367,319 @@ export function TopBarMain() {
       </Tooltip>
     </header>
   );
+}
+
+function BranchMenuButton({
+  branchLabel,
+  branches,
+  dirtyFiles,
+  error,
+  loading,
+  onOpen,
+  onRename,
+  onSwitch,
+}: {
+  branchLabel: string;
+  branches: ReadonlyArray<GitBranchInfo>;
+  dirtyFiles: number;
+  error: string | null;
+  loading: boolean;
+  onOpen: () => void;
+  onRename: () => void;
+  onSwitch: (branch: GitBranchInfo) => void;
+}) {
+  const localBranches = branches.filter((b) => b.kind === "local");
+  const remoteBranches = branches.filter((b) => b.kind === "remote");
+
+  return (
+    <Menu>
+      <MenuTrigger
+        onClick={onOpen}
+        className="flex max-w-64 items-center gap-1 rounded-sm px-1.5 py-0.5 font-medium text-foreground outline-none hover:bg-foreground/5 data-[popup-open]:bg-foreground/5"
+        aria-label="Switch branch"
+      >
+        <GitBranch className="size-3.5 shrink-0 text-muted-foreground" />
+        <span className="truncate" title={branchLabel}>
+          {branchLabel}
+        </span>
+        {dirtyFiles > 0 ? (
+          <span className="shrink-0 text-muted-foreground">· {dirtyFiles}</span>
+        ) : null}
+        {loading ? (
+          <Loader2 className="size-3 animate-spin text-muted-foreground" />
+        ) : (
+          <ChevronDown className="size-3 text-muted-foreground" />
+        )}
+      </MenuTrigger>
+      <MenuPopup align="center" className="min-w-64">
+        {error !== null ? (
+          <div className="max-w-72 px-2 py-1.5 text-[11px] leading-snug text-[var(--accent-red)]">
+            {error}
+          </div>
+        ) : null}
+        <MenuItem
+          onClick={onRename}
+          className="flex w-full items-center gap-2.5 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
+        >
+          <Edit3 className="size-3.5" />
+          Rename current branch…
+        </MenuItem>
+        <MenuSeparator />
+        <MenuSectionLabel>Local branches</MenuSectionLabel>
+        {localBranches.length > 0 ? (
+          localBranches.map((branch) => (
+            <MenuItem
+              key={`local:${branch.name}`}
+              disabled={branch.current || loading}
+              onClick={() => onSwitch(branch)}
+              className="flex w-full items-center gap-2.5 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
+            >
+              <Check
+                className={`size-3.5 ${branch.current ? "opacity-100" : "opacity-0"}`}
+              />
+              <span className="min-w-0 flex-1 truncate">{branch.name}</span>
+              {branch.upstream !== null ? (
+                <span className="max-w-28 truncate text-[10px] text-muted-foreground">
+                  {branch.upstream}
+                </span>
+              ) : null}
+            </MenuItem>
+          ))
+        ) : (
+          <div className="px-2 py-1.5 text-xs text-muted-foreground">
+            No local branches
+          </div>
+        )}
+        {remoteBranches.length > 0 ? (
+          <>
+            <MenuSeparator />
+            <MenuSectionLabel>Remote branches</MenuSectionLabel>
+            {remoteBranches.map((branch) => (
+              <MenuItem
+                key={`remote:${branch.remote ?? branch.name}`}
+                disabled={loading}
+                onClick={() => onSwitch(branch)}
+                className="flex w-full items-center gap-2.5 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
+              >
+                <GitBranch className="size-3.5" />
+                <span className="min-w-0 flex-1 truncate">{branch.name}</span>
+                {branch.remote !== null ? (
+                  <span className="max-w-28 truncate text-[10px] text-muted-foreground">
+                    {branch.remote}
+                  </span>
+                ) : null}
+              </MenuItem>
+            ))}
+          </>
+        ) : null}
+      </MenuPopup>
+    </Menu>
+  );
+}
+
+function MenuSectionLabel({ children }: { children: ReactNode }) {
+  return (
+    <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">
+      {children}
+    </div>
+  );
+}
+
+function RenameBranchDialog({
+  branchLabel,
+  folderId,
+  open,
+  onOpenChange,
+  onRenamed,
+  worktreeId,
+}: {
+  branchLabel: string;
+  folderId: FolderId;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onRenamed: () => Promise<void>;
+  worktreeId: WorktreeId | null;
+}) {
+  const [value, setValue] = useState(branchLabel);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setValue(branchLabel);
+    setError(null);
+  }, [branchLabel, open]);
+
+  const submit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
+    const next = value.trim();
+    if (next.length === 0) {
+      setError("Branch name cannot be empty.");
+      return;
+    }
+    if (/\s/.test(next)) {
+      setError("Branch name cannot contain spaces.");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const client = await getRpcClient();
+      await Effect.runPromise(
+        client.git.renameBranch({ folderId, worktreeId, name: next }),
+      );
+      await onRenamed();
+      onOpenChange(false);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogPopup className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Rename branch</DialogTitle>
+          <DialogDescription>
+            Rename the current local branch in this workspace.
+          </DialogDescription>
+        </DialogHeader>
+        <form className="contents" onSubmit={(event) => void submit(event)}>
+          <DialogPanel className="flex flex-col gap-3">
+            <Input
+              autoFocus
+              value={value}
+              onChange={(event) => setValue(event.currentTarget.value)}
+              aria-label="Branch name"
+            />
+            {error !== null ? (
+              <p className="text-[11px] leading-snug text-[var(--accent-red)]">
+                {error}
+              </p>
+            ) : null}
+          </DialogPanel>
+          <DialogFooter>
+            <DialogClose type="button" disabled={loading}>
+              Cancel
+            </DialogClose>
+            <Button type="submit" disabled={loading} loading={loading}>
+              Rename
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogPopup>
+    </Dialog>
+  );
+}
+
+function OpenInMenu({ rootPath }: { rootPath: string | null }) {
+  const [targets, setTargets] = useState<ReadonlyArray<OpenTarget>>([]);
+  const [loading, setLoading] = useState(false);
+  const availableTargets = useMemo(
+    () => targets.filter((target) => target.available),
+    [targets],
+  );
+  const primary = availableTargets.find((target) => target.id === "finder");
+
+  const refreshTargets = async (): Promise<void> => {
+    if (rootPath === null) return;
+    const bridge = window.memoize?.app;
+    if (bridge?.listOpenTargets === undefined) return;
+    setLoading(true);
+    try {
+      setTargets(await bridge.listOpenTargets(rootPath));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void refreshTargets();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rootPath]);
+
+  const openTarget = async (target: OpenTarget): Promise<void> => {
+    if (rootPath === null) return;
+    const bridge = window.memoize?.app;
+    if (target.id === "finder") {
+      await bridge?.revealPath?.(rootPath);
+      return;
+    }
+    await bridge?.openPathInApp?.(rootPath, target.id);
+  };
+
+  const copyPath = async (): Promise<void> => {
+    if (rootPath === null) return;
+    await window.memoize?.app?.copyPath?.(rootPath);
+  };
+
+  return (
+    <Menu>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <MenuTrigger
+              disabled={rootPath === null}
+              onClick={() => void refreshTargets()}
+              className={`${ACTION_CLASS} flex h-7 items-center overflow-hidden rounded-md border border-border/80 text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground disabled:pointer-events-none disabled:opacity-50`}
+              aria-label="Open workspace in app"
+            >
+              <span className="flex size-7 items-center justify-center border-r border-border/80">
+                {loading ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : primary !== undefined ? (
+                  <OpenTargetIcon target={primary} />
+                ) : (
+                  <ExternalLink className="size-3.5" />
+                )}
+              </span>
+              <span className="flex size-7 items-center justify-center">
+                <ChevronDown className="size-3.5" />
+              </span>
+            </MenuTrigger>
+          }
+        />
+        <TooltipPopup>Open in…</TooltipPopup>
+      </Tooltip>
+      <MenuPopup align="end" className="min-w-56">
+        {availableTargets.map((target, index) => (
+          <MenuItem
+            key={target.id}
+            onClick={() => void openTarget(target)}
+            className="flex w-full items-center gap-3 rounded px-2 py-1.5 text-sm hover:bg-sidebar-accent"
+          >
+            <OpenTargetIcon target={target} />
+            <span className="min-w-0 flex-1 truncate">{target.label}</span>
+            <MenuShortcut>{index + 1}</MenuShortcut>
+          </MenuItem>
+        ))}
+        <MenuSeparator />
+        <MenuItem
+          onClick={() => void copyPath()}
+          className="flex w-full items-center gap-2.5 rounded px-2 py-1.5 text-sm hover:bg-sidebar-accent"
+        >
+          <Copy className="size-4" />
+          <span className="min-w-0 flex-1 truncate">Copy path</span>
+          <MenuShortcut>⌘⇧C</MenuShortcut>
+        </MenuItem>
+      </MenuPopup>
+    </Menu>
+  );
+}
+
+function OpenTargetIcon({ target }: { target: OpenTarget }) {
+  if (target.iconDataUrl !== null && target.iconDataUrl !== undefined) {
+    return (
+      <img
+        alt=""
+        src={target.iconDataUrl}
+        className="size-5 shrink-0 rounded-[4px]"
+      />
+    );
+  }
+  return <span className="size-5 shrink-0" />;
 }
 
 type OpenPrWorkflow = {

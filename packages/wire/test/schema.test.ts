@@ -1,7 +1,13 @@
 import { describe, expect, it } from "bun:test";
 import { Schema } from "effect";
 
-import { AgentEvent, Chat, Message, Session } from "../src/index.ts";
+import {
+  AgentEvent,
+  Chat,
+  GitBranchInfo,
+  Message,
+  Session,
+} from "../src/index.ts";
 
 /**
  * These guard the renderer↔server wire contract: every payload that crosses
@@ -20,7 +26,12 @@ describe("AgentEvent round-trips", () => {
   const cases: ReadonlyArray<{ name: string; encoded: unknown }> = [
     {
       name: "Started",
-      encoded: { _tag: "Started", sessionId: "s1", providerId: "claude", mode: "sdk" },
+      encoded: {
+        _tag: "Started",
+        sessionId: "s1",
+        providerId: "claude",
+        mode: "sdk",
+      },
     },
     {
       name: "Status",
@@ -45,7 +56,12 @@ describe("AgentEvent round-trips", () => {
     },
     {
       name: "ToolResult",
-      encoded: { _tag: "ToolResult", itemId: "i4", output: "done", isError: false },
+      encoded: {
+        _tag: "ToolResult",
+        itemId: "i4",
+        output: "done",
+        isError: false,
+      },
     },
     {
       name: "Error",
@@ -75,7 +91,9 @@ describe("AgentEvent round-trips", () => {
   }
 
   it("rejects an event with no _tag", () => {
-    expect(() => Schema.decodeUnknownSync(AgentEvent)({ text: "no tag" })).toThrow();
+    expect(() =>
+      Schema.decodeUnknownSync(AgentEvent)({ text: "no tag" }),
+    ).toThrow();
   });
 
   it("rejects an unknown _tag", () => {
@@ -86,13 +104,20 @@ describe("AgentEvent round-trips", () => {
 
   it("rejects a known event missing a required field", () => {
     expect(() =>
-      Schema.decodeUnknownSync(AgentEvent)({ _tag: "ToolResult", itemId: "i", output: "o" }),
+      Schema.decodeUnknownSync(AgentEvent)({
+        _tag: "ToolResult",
+        itemId: "i",
+        output: "o",
+      }),
     ).toThrow(); // isError missing
   });
 
   it("rejects an invalid enum literal", () => {
     expect(() =>
-      Schema.decodeUnknownSync(AgentEvent)({ _tag: "Status", status: "spinning" }),
+      Schema.decodeUnknownSync(AgentEvent)({
+        _tag: "Status",
+        status: "spinning",
+      }),
     ).toThrow();
   });
 });
@@ -191,6 +216,28 @@ describe("Chat round-trip", () => {
       archivedAt: null,
       createdAt: "2026-06-17T00:00:00.000Z",
       updatedAt: "2026-06-17T00:00:00.000Z",
+    });
+  });
+});
+
+describe("Git branch round-trip", () => {
+  it("round-trips a local branch", () => {
+    roundTrip(GitBranchInfo, {
+      name: "feature/top-bar",
+      current: true,
+      remote: null,
+      upstream: "origin/feature/top-bar",
+      kind: "local" as const,
+    });
+  });
+
+  it("round-trips a remote-only branch", () => {
+    roundTrip(GitBranchInfo, {
+      name: "main",
+      current: false,
+      remote: "origin/main",
+      upstream: null,
+      kind: "remote" as const,
     });
   });
 });

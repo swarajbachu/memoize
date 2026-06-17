@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, RotateCw, Star } from "lucide-react";
 import { Effect, Fiber, Stream } from "effect";
 
-import { BrowserCommandResult, type BrowserCommandRequest } from "@memoize/wire";
+import {
+  BrowserCommandResult,
+  type BrowserCommandRequest,
+} from "@memoize/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
 import { useUiStore } from "../store/ui.ts";
@@ -226,9 +229,7 @@ export function BrowserPane() {
           disabled={url === ""}
           ariaLabel={isLoading ? "Stop" : "Reload"}
         >
-          <RotateCw
-            className={`size-3.5 ${isLoading ? "animate-spin" : ""}`}
-          />
+          <RotateCw className={`size-3.5 ${isLoading ? "animate-spin" : ""}`} />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => {
@@ -257,7 +258,7 @@ export function BrowserPane() {
         <webview
           ref={webviewRef as unknown as React.RefObject<HTMLElement>}
           src={url === "" ? "about:blank" : url}
-          allowpopups={true}
+          allowpopups="true"
           style={{
             display: url === "" ? "none" : "flex",
             width: "100%",
@@ -316,9 +317,13 @@ async function runBrowserCommand(
         await delay(180);
         const image = await wv.capturePage();
         if (image.isEmpty()) {
-          return fail("Screenshot came back empty — the page may still be loading.");
+          return fail(
+            "Screenshot came back empty — the page may still be loading.",
+          );
         }
-        const base64 = image.toDataURL().replace(/^data:image\/png;base64,/, "");
+        const base64 = image
+          .toDataURL()
+          .replace(/^data:image\/png;base64,/, "");
         hooks.flashShutter();
         return BrowserCommandResult.make({
           id: req.id,
@@ -356,7 +361,10 @@ async function runBrowserCommand(
         return resultFromJs(req.id, res, `Typed into ${command.ref}.`);
       }
       case "Wait": {
-        if (typeof command.selector === "string" && command.selector.length > 0) {
+        if (
+          typeof command.selector === "string" &&
+          command.selector.length > 0
+        ) {
           const res = await runJsObject(
             wv,
             `(async () => { const sel = ${JSON.stringify(command.selector)}; const deadline = Date.now() + 10000; while (Date.now() < deadline) { if (document.querySelector(sel)) return JSON.stringify({ ok:true, detail:'Element appeared: ' + sel }); await new Promise(r => setTimeout(r, 150)); } return JSON.stringify({ ok:false, error:'Timed out (10s) waiting for ' + sel }); })()`,
@@ -406,9 +414,9 @@ async function runBrowserCommand(
       case "Press": {
         const refClause =
           typeof command.ref === "string" && command.ref.length > 0
-            ? (isValidRef(command.ref)
-                ? `document.querySelector('[data-mz-ref=${JSON.stringify(command.ref)}]')`
-                : null)
+            ? isValidRef(command.ref)
+              ? `document.querySelector('[data-mz-ref=${JSON.stringify(command.ref)}]')`
+              : null
             : `(document.activeElement || document.body)`;
         if (refClause === null) return fail("Invalid element ref.");
         const res = await runJsObject(
@@ -420,9 +428,9 @@ async function runBrowserCommand(
       case "Read": {
         const refExpr =
           typeof command.ref === "string" && command.ref.length > 0
-            ? (isValidRef(command.ref)
-                ? `document.querySelector('[data-mz-ref=${JSON.stringify(command.ref)}]')`
-                : null)
+            ? isValidRef(command.ref)
+              ? `document.querySelector('[data-mz-ref=${JSON.stringify(command.ref)}]')`
+              : null
             : `document.body`;
         if (refExpr === null) return fail("Invalid element ref.");
         const raw = await wv.executeJavaScript(
@@ -643,8 +651,9 @@ function resolveUrl(input: string): string | null {
   const trimmed = input.trim();
   if (trimmed === "") return null;
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) return trimmed;
-  const isLocal =
-    /^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(:|\/|$)/i.test(trimmed);
+  const isLocal = /^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(:|\/|$)/i.test(
+    trimmed,
+  );
   return `${isLocal ? "http" : "https"}://${trimmed}`;
 }
 

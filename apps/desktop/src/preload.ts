@@ -44,6 +44,21 @@ const bridge = {
     openExternal: (url: string) => {
       ipcRenderer.send("app:openExternal", url);
     },
+    listOpenTargets: (path: string) =>
+      ipcRenderer.invoke("app:listOpenTargets", path) as Promise<
+        ReadonlyArray<{
+          readonly id: string;
+          readonly label: string;
+          readonly available: boolean;
+          readonly iconDataUrl?: string | null;
+        }>
+      >,
+    openPathInApp: (path: string, appId: string) =>
+      ipcRenderer.invoke("app:openPathInApp", path, appId) as Promise<void>,
+    revealPath: (path: string) =>
+      ipcRenderer.invoke("app:revealPath", path) as Promise<void>,
+    copyPath: (path: string) =>
+      ipcRenderer.invoke("app:copyPath", path) as Promise<void>,
   },
   updates: {
     onStatus: (handler: (status: UpdateStatus) => void) => {
