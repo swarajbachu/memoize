@@ -20,8 +20,18 @@ export type RenderGroup =
     };
 
 export const isAgentToolUse = (m: Message): boolean =>
-  m.content._tag === "tool_use" &&
-  (m.content.tool === "Agent" || m.content.tool === "Task");
+  (() => {
+    if (
+      m.content._tag !== "tool_use" ||
+      (m.content.tool !== "Agent" && m.content.tool !== "Task") ||
+      m.content.input === null ||
+      typeof m.content.input !== "object"
+    ) {
+      return false;
+    }
+    const input = m.content.input as Record<string, unknown>;
+    return typeof input.prompt === "string";
+  })();
 
 /**
  * Walk the message log once and produce a flat render order where each
@@ -70,10 +80,17 @@ export function groupMessages(
         c.input !== null && typeof c.input === "object"
           ? (c.input as Record<string, unknown>)
           : {};
+      const description =
+        typeof inputObj.description === "string" &&
+        inputObj.description.trim().length > 0 &&
+        inputObj.description !== "Task"
+          ? (inputObj.description as string)
+          : undefined;
       const subagentType =
         typeof inputObj.subagent_type === "string"
           ? (inputObj.subagent_type as string)
-          : "agent";
+          : undefined;
+      const agentName = description ?? subagentType ?? "agent";
       const modelRequested =
         typeof inputObj.model === "string"
           ? (inputObj.model as string)
@@ -100,7 +117,7 @@ export function groupMessages(
         kind: "subagent",
         parent: m,
         parentItemId: c.itemId,
-        agentName: subagentType,
+        agentName,
         prompt,
         modelRequested,
         children: childrenByParent.get(c.itemId) ?? [],

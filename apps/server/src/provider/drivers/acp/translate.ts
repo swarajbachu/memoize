@@ -469,6 +469,9 @@ const buildCanonicalInput = (
 
   // Generic fallback — preserve whatever the provider sent so the renderer
   // can still render *something* even for tool names we don't recognize.
+  if (rawInput !== null) {
+    return rawInput;
+  }
   if (u["input"] !== undefined) return u["input"];
   if (u["arguments"] !== undefined) {
     const a = u["arguments"];
@@ -889,6 +892,152 @@ interface ToolCallState {
   toolName: string | null;
 }
 
+interface CollabAgentRun {
+  readonly parentItemId: AgentItemId;
+  readonly model: string;
+  readonly startedAt: number;
+  turnCount: number;
+  lastMessage: string;
+  summaryEmitted: boolean;
+}
+
+interface GrokCursorTaskRun {
+  readonly itemId: AgentItemId;
+  readonly description: string;
+  readonly prompt: string;
+  readonly model: string;
+  readonly startedAt: number;
+  readonly scoreText: string;
+  childEventCount: number;
+  lastActivityAt: number;
+  lastMessage: string;
+  summaryEmitted: boolean;
+}
+
+const recordFrom = (value: unknown): Record<string, unknown> | null =>
+  value !== null && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : null;
+
+const stringFrom = (
+  record: Record<string, unknown>,
+  key: string,
+): string | null => {
+  const v = record[key];
+  return typeof v === "string" && v.length > 0 ? v : null;
+};
+
+const collabAgentStateStatus = (value: unknown): string | null => {
+  const state = recordFrom(value);
+  if (state === null) return null;
+  const directType = stringFrom(state, "type");
+  if (directType !== null) return directType;
+  const status = state["status"];
+  if (typeof status === "string") return status;
+  if (status !== null && typeof status === "object") {
+    return stringFrom(status as Record<string, unknown>, "type");
+  }
+  return null;
+};
+
+const collabAgentStateMessage = (value: unknown): string | null => {
+  const state = recordFrom(value);
+  if (state === null) return null;
+  return stringFrom(state, "message");
+};
+
+const isTerminalCollabAgentStatus = (status: string | null): boolean =>
+  status === "completed" ||
+  status === "idle" ||
+  status === "notLoaded" ||
+  status === "errored" ||
+  status === "systemError" ||
+  status === "interrupted" ||
+  status === "shutdown";
+
+const grokCallPrefix = (itemId: string): string | null => {
+  const match = /^call-([0-9a-f-]{36})-composer_call_/i.exec(itemId);
+  return match?.[1] ?? null;
+};
+
+const isGrokCursorTaskInput = (input: unknown): input is Record<string, unknown> => {
+  const record = recordFrom(input);
+  if (record === null) return false;
+  return (
+    record["variant"] === "CursorTask" ||
+    typeof record["subagent_type"] === "string"
+  );
+};
+
+const grokTaskText = (input: Record<string, unknown>): {
+  readonly description: string;
+  readonly prompt: string;
+  readonly model: string;
+} => {
+  const description =
+    typeof input["description"] === "string" ? input["description"] : "agent";
+  const prompt = typeof input["prompt"] === "string" ? input["prompt"] : "";
+  const model = typeof input["model"] === "string" ? input["model"] : "inherit";
+  return { description, prompt, model };
+};
+
+const GROK_TASK_STOP_WORDS = new Set([
+  "about",
+  "after",
+  "again",
+  "available",
+  "check",
+  "code",
+  "current",
+  "files",
+  "from",
+  "into",
+  "local",
+  "return",
+  "status",
+  "task",
+  "tasks",
+  "that",
+  "this",
+  "with",
+  "work",
+]);
+
+const tokenizeForGrokTaskScore = (value: string): Set<string> => {
+  const out = new Set<string>();
+  for (const token of value.toLowerCase().match(/[a-z0-9][a-z0-9_-]{3,}/g) ?? []) {
+    if (!GROK_TASK_STOP_WORDS.has(token)) out.add(token);
+  }
+  return out;
+};
+
+const scoreGrokTaskMatch = (
+  task: GrokCursorTaskRun,
+  text: string,
+): number => {
+  const haystack = text.toLowerCase();
+  const description = task.description.toLowerCase();
+  let score = haystack.includes(description) ? 20 : 0;
+  const taskTokens = tokenizeForGrokTaskScore(task.scoreText);
+  const eventTokens = tokenizeForGrokTaskScore(text);
+  for (const token of eventTokens) {
+    if (taskTokens.has(token)) score += 1;
+  }
+  return score;
+};
+
+const appendStreamText = (buffer: string, text: string): string => {
+  if (
+    buffer.length > 0 &&
+    text.length > 0 &&
+    /[A-Za-z0-9]$/.test(buffer) &&
+    /^[A-Z][a-z]/.test(text)
+  ) {
+    return `${buffer} ${text}`;
+  }
+  return `${buffer}${text}`;
+};
+
 /**
  * Create a per-session translator. Stateful because:
  *   1. ACP's `agent_message_chunk` is a delta protocol — we buffer
@@ -910,14 +1059,23 @@ export const createAcpTranslator = (provider: AcpProviderTag): AcpTranslator => 
   let thinkingItemId: AgentItemId | null = null;
 
   const toolStates = new Map<string, ToolCallState>();
+  const collabAgentsByThread = new Map<string, CollabAgentRun>();
+  const grokCursorTasks = new Map<AgentItemId, GrokCursorTaskRun>();
+  const grokCursorTaskOrder: AgentItemId[] = [];
+  const grokPrefixToTask = new Map<string, AgentItemId>();
+  const grokTaskLaunchPrefixes = new Set<string>();
+  let lastGrokCursorTextParentItemId: AgentItemId | undefined;
 
   const flushAssistant = (): ReadonlyArray<AgentEvent> => {
     if (assistantBuffer.length === 0) return [];
+    const parentItemId = grokCursorTextParentFor(assistantBuffer);
     const ev: AgentEvent = {
       _tag: "AssistantMessage",
       itemId: assistantItemId ?? nextItemId(),
       text: assistantBuffer,
+      parentItemId,
     };
+    noteGrokCursorTaskChild(parentItemId, assistantBuffer);
     trace(
       provider,
       `flush AssistantMessage itemId=${ev.itemId} len=${assistantBuffer.length} preview=${safePreview(assistantBuffer)}`,
@@ -929,12 +1087,15 @@ export const createAcpTranslator = (provider: AcpProviderTag): AcpTranslator => 
 
   const flushThinking = (): ReadonlyArray<AgentEvent> => {
     if (thinkingBuffer.length === 0) return [];
+    const parentItemId = grokCursorTextParentFor(thinkingBuffer);
     const ev: AgentEvent = {
       _tag: "Thinking",
       itemId: thinkingItemId ?? nextItemId(),
       text: thinkingBuffer,
       redacted: false,
+      parentItemId,
     };
+    noteGrokCursorTaskChild(parentItemId);
     trace(
       provider,
       `flush Thinking itemId=${ev.itemId} len=${thinkingBuffer.length} preview=${safePreview(thinkingBuffer)}`,
@@ -970,23 +1131,204 @@ export const createAcpTranslator = (provider: AcpProviderTag): AcpTranslator => 
     return s;
   };
 
+  const parentItemIdForThread = (threadId: unknown): AgentItemId | undefined =>
+    typeof threadId === "string"
+      ? collabAgentsByThread.get(threadId)?.parentItemId
+      : undefined;
+
+  const rememberCollabAgent = (
+    itemId: AgentItemId,
+    threadId: string,
+    model: string,
+  ): CollabAgentRun => {
+    let run = collabAgentsByThread.get(threadId);
+    if (run === undefined) {
+      run = {
+        parentItemId: itemId,
+        model,
+        startedAt: Date.now(),
+        turnCount: 0,
+        lastMessage: "",
+        summaryEmitted: false,
+      };
+      collabAgentsByThread.set(threadId, run);
+    }
+    return run;
+  };
+
+  const maybeFinishCollabAgent = (
+    itemId: AgentItemId,
+    run: CollabAgentRun,
+    state: unknown,
+  ): AgentEvent | null => {
+    const status = collabAgentStateStatus(state);
+    if (!isTerminalCollabAgentStatus(status) || run.summaryEmitted) return null;
+    run.summaryEmitted = true;
+    const message = collabAgentStateMessage(state) ?? run.lastMessage;
+    return {
+      _tag: "SubagentSummary",
+      itemId,
+      agentName: "agent",
+      model: run.model,
+      turns: run.turnCount,
+      durationMs: Date.now() - run.startedAt,
+      summary: message,
+      isError: status === "errored" || status === "interrupted",
+    };
+  };
+
+  const rememberGrokCursorTask = (
+    itemId: AgentItemId,
+    input: Record<string, unknown>,
+  ): void => {
+    if (provider !== "grok" || !isGrokCursorTaskInput(input)) return;
+    const current = grokCursorTasks.get(itemId);
+    const { description, prompt, model } = grokTaskText(input);
+    if (current !== undefined) {
+      current.lastMessage = current.lastMessage || description;
+      return;
+    }
+    grokCursorTasks.set(itemId, {
+      itemId,
+      description,
+      prompt,
+      model,
+      startedAt: Date.now(),
+      scoreText: `${description}\n${prompt}`,
+      childEventCount: 0,
+      lastActivityAt: Date.now(),
+      lastMessage: "",
+      summaryEmitted: false,
+    });
+    grokCursorTaskOrder.push(itemId);
+    const prefix = grokCallPrefix(itemId);
+    if (prefix !== null) grokTaskLaunchPrefixes.add(prefix);
+  };
+
+  const bestGrokCursorTaskForText = (text: string): GrokCursorTaskRun | null => {
+    if (provider !== "grok" || grokCursorTaskOrder.length === 0) return null;
+    let best: GrokCursorTaskRun | null = null;
+    let bestScore = 0;
+    for (const itemId of grokCursorTaskOrder) {
+      const task = grokCursorTasks.get(itemId);
+      if (task === undefined || task.summaryEmitted) continue;
+      const score = scoreGrokTaskMatch(task, text);
+      if (score > bestScore) {
+        best = task;
+        bestScore = score;
+      }
+    }
+    return bestScore > 0 ? best : null;
+  };
+
+  const grokCursorTextParentFor = (
+    text: string,
+  ): AgentItemId | undefined => {
+    if (provider !== "grok") return undefined;
+    const best = bestGrokCursorTaskForText(text);
+    if (best !== null) return best.itemId;
+    if (lastGrokCursorTextParentItemId === undefined) return undefined;
+    const task = grokCursorTasks.get(lastGrokCursorTextParentItemId);
+    return task !== undefined && !task.summaryEmitted ? task.itemId : undefined;
+  };
+
+  const parentGrokCursorTaskForTool = (
+    itemId: AgentItemId,
+    toolName: string,
+    update: Record<string, unknown>,
+    input: unknown,
+  ): AgentItemId | undefined => {
+    if (provider !== "grok" || grokCursorTaskOrder.length === 0) return undefined;
+    if (toolName === "Task" || toolName === "Agent") return undefined;
+    const prefix = grokCallPrefix(itemId);
+    if (prefix === null || grokTaskLaunchPrefixes.has(prefix)) return undefined;
+    const existing = grokPrefixToTask.get(prefix);
+    if (existing !== undefined) return existing;
+
+    const rawInput = recordFrom(update["rawInput"]);
+    const text = safeStringify({
+      title: update["title"],
+      kind: update["kind"],
+      rawInput,
+      input,
+    });
+    const task = bestGrokCursorTaskForText(text);
+    if (task === null) return undefined;
+    grokPrefixToTask.set(prefix, task.itemId);
+    return task.itemId;
+  };
+
+  const noteGrokCursorTaskChild = (
+    parentItemId: AgentItemId | undefined,
+    message?: string,
+  ): void => {
+    if (parentItemId === undefined) return;
+    const task = grokCursorTasks.get(parentItemId);
+    if (task === undefined) return;
+    if (!task.summaryEmitted) {
+      lastGrokCursorTextParentItemId = parentItemId;
+    }
+    task.childEventCount += 1;
+    task.lastActivityAt = Date.now();
+    if (message !== undefined && message.trim().length > 0) {
+      task.lastMessage = message.trim();
+    }
+  };
+
+  const finishGrokCursorTasks = (): ReadonlyArray<AgentEvent> => {
+    if (provider !== "grok") return [];
+    const events: AgentEvent[] = [];
+    for (const itemId of grokCursorTaskOrder) {
+      const task = grokCursorTasks.get(itemId);
+      if (task === undefined || task.summaryEmitted) continue;
+      task.summaryEmitted = true;
+      events.push({
+        _tag: "SubagentSummary",
+        itemId: task.itemId,
+        agentName: task.description,
+        model: task.model,
+        turns: task.childEventCount,
+        durationMs: Math.max(0, task.lastActivityAt - task.startedAt),
+        summary: task.lastMessage || "Completed.",
+        isError: false,
+      });
+    }
+    return events;
+  };
+
   const translateOne = (update: unknown): ReadonlyArray<AgentEvent> => {
     if (update === null || typeof update !== "object") return [];
     const u = update as Record<string, unknown>;
+    const wrappedItem = recordFrom(u["item"]);
     const kind =
       typeof u["sessionUpdate"] === "string"
         ? (u["sessionUpdate"] as string)
         : typeof u["type"] === "string"
           ? (u["type"] as string)
-          : null;
+          : typeof wrappedItem?.["type"] === "string"
+            ? (wrappedItem["type"] as string)
+            : typeof u["method"] === "string"
+              ? (u["method"] as string)
+              : null;
     if (kind === null) return [];
+
+    const shouldFlushBeforeEvent = !(
+      provider === "grok" &&
+      (kind === "tool_call_update" ||
+        kind === "tool_result" ||
+        kind === "tool_output" ||
+        kind === "function_call_output" ||
+        kind === "custom_tool_call_output" ||
+        kind === "tool_search_output")
+    );
 
     // 1. Thinking / reasoning delta — buffer (coalesce) exactly like assistant
     //    text. This is the fix for the "Thinking The user is asking if I can..."
     //    word-by-word explosion the user reported with Grok.
     if (isThinkingChunk(kind)) {
+      const flushed = flushAssistant();
       let text = asText(u["content"]);
-      if (text === null || text.length === 0) return [];
+      if (text === null || text.length === 0) return flushed;
       // Grok often starts its first thinking chunk by literally echoing the
       // user prompt ("The user says: \"...\" First, the user's query...").
       // We aggressively strip this meta-reasoning prefix so the Thinking row
@@ -1001,28 +1343,29 @@ export const createAcpTranslator = (provider: AcpProviderTag): AcpTranslator => 
         }
       }
       if (thinkingItemId === null) thinkingItemId = nextItemId();
-      thinkingBuffer += text;
+      thinkingBuffer = appendStreamText(thinkingBuffer, text);
       trace(provider, `buffer thinking chunk len=${text.length} totalLen=${thinkingBuffer.length}`);
-      return [];
+      return flushed;
     }
 
     // 2. Assistant text delta — buffer, don't emit yet.
     if (isAssistantTextChunk(kind)) {
+      const flushed = flushThinking();
       const text =
         kind === "message"
           ? extractMessageText(u["content"])
           : asText(u["content"]);
-      if (text === null || text.length === 0) return [];
+      if (text === null || text.length === 0) return flushed;
       if (assistantItemId === null) assistantItemId = nextItemId();
-      assistantBuffer += text;
+      assistantBuffer = appendStreamText(assistantBuffer, text);
       trace(provider, `buffer message chunk len=${text.length} totalLen=${assistantBuffer.length}`);
-      return [];
+      return flushed;
     }
 
     // 3. Any other event: flush both pending thinking + assistant text first
     //    so the timeline order stays correct ("reasoning burst → next tool /
     //    final answer").
-    const flushed = flushPending();
+    const flushed = shouldFlushBeforeEvent ? flushPending() : [];
 
     const tail = ((): ReadonlyArray<AgentEvent> => {
       switch (kind) {
@@ -1060,6 +1403,15 @@ export const createAcpTranslator = (provider: AcpProviderTag): AcpTranslator => 
           const toolName = extractToolName(u);
           logUnknownToolIfNeeded(provider, u, toolName, "tool_call");
           const input = buildCanonicalInput(toolName, u);
+          if (input !== null && typeof input === "object") {
+            rememberGrokCursorTask(callId, input as Record<string, unknown>);
+          }
+          const parentItemId = parentGrokCursorTaskForTool(
+            callId,
+            toolName,
+            u,
+            input,
+          );
           const inputJson = safeStringify({ input });
           const state = getOrInitToolState(callId);
           // Pin the canonical tool name on first sight so later update
@@ -1078,6 +1430,7 @@ export const createAcpTranslator = (provider: AcpProviderTag): AcpTranslator => 
           }
           state.useEmitted = true;
           state.lastInputJson = inputJson;
+          noteGrokCursorTaskChild(parentItemId);
           trace(
             provider,
             `emit ToolUse id=${callId} tool=${toolName} input=${safePreview(input)}`,
@@ -1088,6 +1441,7 @@ export const createAcpTranslator = (provider: AcpProviderTag): AcpTranslator => 
               itemId: callId,
               tool: toolName,
               input,
+              parentItemId,
             },
           ];
         }
@@ -1118,16 +1472,41 @@ export const createAcpTranslator = (provider: AcpProviderTag): AcpTranslator => 
           if (state.toolName === null) state.toolName = toolName;
           logUnknownToolIfNeeded(provider, u, toolName, "tool_call_update");
           const input = buildCanonicalInput(toolName, u);
+          if (input !== null && typeof input === "object") {
+            rememberGrokCursorTask(callId, input as Record<string, unknown>);
+          }
+          const parentItemId = parentGrokCursorTaskForTool(
+            callId,
+            toolName,
+            u,
+            input,
+          );
           const events: AgentEvent[] = [];
 
           // Re-emit ToolUse only when input changed substantively —
           // typically when a diff block first appears for an Edit. If the
           // input is identical to what we last emitted, skip.
           if (input !== null) {
+            if (
+              provider === "grok" &&
+              (toolName === "Task" || toolName === "Agent") &&
+              isGrokCursorTaskInput(input) &&
+              state.useEmitted &&
+              state.lastInputJson !== null &&
+              state.lastInputJson.includes('"prompt"') &&
+              !state.lastInputJson.includes('"description":"Task"')
+            ) {
+              trace(
+                provider,
+                `skip duplicate CursorTask update id=${callId} tool=${toolName}`,
+              );
+              return events;
+            }
             const inputJson = safeStringify({ input });
             if (state.lastInputJson !== inputJson) {
               state.lastInputJson = inputJson;
               state.useEmitted = true;
+              noteGrokCursorTaskChild(parentItemId);
               trace(
                 provider,
                 `emit ToolUse(update) id=${callId} tool=${toolName} input=${safePreview(input)}`,
@@ -1137,6 +1516,7 @@ export const createAcpTranslator = (provider: AcpProviderTag): AcpTranslator => 
                 itemId: callId,
                 tool: toolName,
                 input,
+                parentItemId,
               });
             } else {
               trace(
@@ -1177,7 +1557,9 @@ export const createAcpTranslator = (provider: AcpProviderTag): AcpTranslator => 
               itemId: callId,
               output,
               isError,
+              parentItemId,
             });
+            noteGrokCursorTaskChild(parentItemId);
           } else if (state.resultEmitted) {
             trace(
               provider,
@@ -1205,6 +1587,13 @@ export const createAcpTranslator = (provider: AcpProviderTag): AcpTranslator => 
           state.resultEmitted = true;
           const isError = u["isError"] === true || u["is_error"] === true;
           const output = extractOutput(u);
+          const parentItemId = parentGrokCursorTaskForTool(
+            callId,
+            state.toolName ?? extractToolName(u),
+            u,
+            u["input"] ?? u["arguments"] ?? null,
+          );
+          noteGrokCursorTaskChild(parentItemId);
           trace(
             provider,
             `emit ToolResult(${kind}) id=${callId} isError=${isError} output=${safePreview(output)}`,
@@ -1215,6 +1604,7 @@ export const createAcpTranslator = (provider: AcpProviderTag): AcpTranslator => 
               itemId: callId,
               output,
               isError,
+              parentItemId,
             },
           ];
         }
@@ -1244,6 +1634,206 @@ export const createAcpTranslator = (provider: AcpProviderTag): AcpTranslator => 
           return [{ _tag: "Error", message }];
         }
 
+        case "agentMessage": {
+          const item = wrappedItem ?? u;
+          const parentItemId = parentItemIdForThread(u["threadId"]);
+          const text = stringFrom(item, "text");
+          if (parentItemId === undefined || text === null) return [];
+          const itemId = extractCallId(item);
+          const state = getOrInitToolState(itemId as string);
+          if (state.useEmitted) return [];
+          state.useEmitted = true;
+          const threadId = stringFrom(u, "threadId");
+          if (threadId !== null) {
+            const run = collabAgentsByThread.get(threadId);
+            if (run !== undefined) {
+              run.turnCount += 1;
+              run.lastMessage = text;
+            }
+          }
+          return [
+            {
+              _tag: "AssistantMessage",
+              itemId,
+              text,
+              parentItemId,
+            },
+          ];
+        }
+
+        case "reasoning": {
+          const item = wrappedItem ?? u;
+          const parentItemId = parentItemIdForThread(u["threadId"]);
+          if (parentItemId === undefined) return [];
+          const summary = Array.isArray(item["summary"])
+            ? (item["summary"] as unknown[]).filter(
+                (v): v is string => typeof v === "string",
+              )
+            : [];
+          const content = Array.isArray(item["content"])
+            ? (item["content"] as unknown[]).filter(
+                (v): v is string => typeof v === "string",
+              )
+            : [];
+          const text = [...summary, ...content].join("\n").trim();
+          if (text.length === 0) return [];
+          return [
+            {
+              _tag: "Thinking",
+              itemId: extractCallId(item),
+              text,
+              redacted: false,
+              parentItemId,
+            },
+          ];
+        }
+
+        case "commandExecution": {
+          const item = wrappedItem ?? u;
+          const parentItemId = parentItemIdForThread(u["threadId"]);
+          if (parentItemId === undefined) return [];
+          const itemId = extractCallId(item);
+          const command = stringFrom(item, "command") ?? "";
+          const cwd = stringFrom(item, "cwd");
+          const status = stringFrom(item, "status");
+          const output = stringFrom(item, "aggregatedOutput") ?? "";
+          const isTerminal =
+            status === "completed" ||
+            status === "failed" ||
+            item["exitCode"] !== null && item["exitCode"] !== undefined;
+          const state = getOrInitToolState(itemId as string);
+          const events: AgentEvent[] = [];
+          if (!state.useEmitted) {
+            state.useEmitted = true;
+            events.push({
+              _tag: "ToolUse",
+              itemId,
+              tool: "Bash",
+              input: { command, ...(cwd !== null ? { cwd } : {}) },
+              parentItemId,
+            });
+          }
+          if (isTerminal && !state.resultEmitted) {
+            state.resultEmitted = true;
+            events.push({
+              _tag: "ToolResult",
+              itemId,
+              output,
+              isError:
+                status === "failed" ||
+                (typeof item["exitCode"] === "number" && item["exitCode"] !== 0),
+              parentItemId,
+            });
+          }
+          return events;
+        }
+
+        case "fileChange": {
+          const item = wrappedItem ?? u;
+          const parentItemId = parentItemIdForThread(u["threadId"]);
+          if (parentItemId === undefined) return [];
+          const itemId = extractCallId(item);
+          const status = stringFrom(item, "status");
+          const state = getOrInitToolState(itemId as string);
+          const events: AgentEvent[] = [];
+          if (!state.useEmitted) {
+            state.useEmitted = true;
+            events.push({
+              _tag: "ToolUse",
+              itemId,
+              tool: "Edit",
+              input: { changes: item["changes"] ?? [] },
+              parentItemId,
+            });
+          }
+          if (
+            status !== null &&
+            status !== "pending" &&
+            status !== "inProgress" &&
+            !state.resultEmitted
+          ) {
+            state.resultEmitted = true;
+            events.push({
+              _tag: "ToolResult",
+              itemId,
+              output: { status, changes: item["changes"] ?? [] },
+              isError: status === "failed",
+              parentItemId,
+            });
+          }
+          return events;
+        }
+
+        case "mcpToolCall":
+        case "dynamicToolCall": {
+          const item = wrappedItem ?? u;
+          const parentItemId = parentItemIdForThread(u["threadId"]);
+          if (parentItemId === undefined) return [];
+          const itemId = extractCallId(item);
+          const status = stringFrom(item, "status");
+          const namespace = stringFrom(item, "namespace");
+          const server = stringFrom(item, "server");
+          const tool = stringFrom(item, "tool") ?? "Tool";
+          const toolName =
+            namespace !== null
+              ? `${namespace}__${tool}`
+              : server !== null
+                ? `${server}__${tool}`
+                : tool;
+          const state = getOrInitToolState(itemId as string);
+          const events: AgentEvent[] = [];
+          if (!state.useEmitted) {
+            state.useEmitted = true;
+            events.push({
+              _tag: "ToolUse",
+              itemId,
+              tool: toolName,
+              input: item["arguments"] ?? {},
+              parentItemId,
+            });
+          }
+          const terminal =
+            status === "completed" ||
+            status === "failed" ||
+            (item["success"] !== null && item["success"] !== undefined);
+          if (terminal && !state.resultEmitted) {
+            state.resultEmitted = true;
+            events.push({
+              _tag: "ToolResult",
+              itemId,
+              output: item["result"] ?? item["contentItems"] ?? item["error"] ?? null,
+              isError:
+                status === "failed" ||
+                item["success"] === false ||
+                (item["error"] !== null && item["error"] !== undefined),
+              parentItemId,
+            });
+          }
+          return events;
+        }
+
+        case "thread/status/changed":
+        case "thread/closed":
+        case "turn/completed": {
+          const threadId = stringFrom(u, "threadId");
+          if (threadId === null) return [];
+          const run = collabAgentsByThread.get(threadId);
+          if (run === undefined) return [];
+
+          const status =
+            kind === "thread/closed"
+              ? "shutdown"
+              : kind === "turn/completed"
+                ? "idle"
+                : collabAgentStateStatus(u["status"]);
+          if (!isTerminalCollabAgentStatus(status)) return [];
+          const summary = maybeFinishCollabAgent(run.parentItemId, run, {
+            status,
+            message: run.lastMessage,
+          });
+          return summary === null ? [] : [summary];
+        }
+
         case "available_commands_update":
         case "current_mode_update":
           return [];
@@ -1254,16 +1844,10 @@ export const createAcpTranslator = (provider: AcpProviderTag): AcpTranslator => 
         // agent uses spawnAgent / sendInput / closeAgent etc. to orchestrate 10+
         // parallel sub-agents. We surface them as first-class ToolUse rows so the
         // swarm activity is visible immediately; richer SwarmRow UI comes later.
-        case "collabAgentToolCall":
-        case "item_started":
-        case "item_completed": {
+        case "collabAgentToolCall": {
           // The payload may be the collab item directly or wrapped: { item: ThreadItem, threadId, ... }
-          const maybeItem = (u as Record<string, unknown>)["item"];
-          const candidate = (maybeItem && typeof maybeItem === "object" ? maybeItem : u) as Record<string, unknown>;
+          const candidate = wrappedItem ?? u;
           if (candidate["type"] !== "collabAgentToolCall") {
-            // Not a collab item (some other item_started for plan / command etc.) — fall through
-            // but still avoid the generic "unknown" trace for item_* wrappers we don't care about.
-            if (kind === "item_started" || kind === "item_completed") return [];
             return [];
           }
 
@@ -1277,12 +1861,50 @@ export const createAcpTranslator = (provider: AcpProviderTag): AcpTranslator => 
           const prompt = typeof collab["prompt"] === "string" ? (collab["prompt"] as string) : null;
           const model = typeof collab["model"] === "string" ? (collab["model"] as string) : null;
           const agentsStates = (collab["agentsStates"] ?? {}) as Record<string, unknown>;
+          const parentItemId = parentItemIdForThread(collab["senderThreadId"]);
 
-          // Nice label for the tool row (SpawnAgent becomes "Spawn Agent", sendInput becomes "Collab Send Input")
-          const toolName =
-            tool === "spawnAgent"
-              ? "SpawnAgent"
-              : `Collab${tool.charAt(0).toUpperCase()}${tool.slice(1)}`;
+          if (tool === "spawnAgent") {
+            const input = {
+              subagent_type: "agent",
+              prompt: prompt ?? "",
+              ...(model !== null ? { model } : {}),
+              receiverThreadIds,
+            };
+            const state = getOrInitToolState(callId);
+            if (!state.useEmitted) {
+              state.useEmitted = true;
+              state.lastInputJson = JSON.stringify(input);
+              state.toolName = "Agent";
+              for (const threadId of receiverThreadIds) {
+                rememberCollabAgent(
+                  callId,
+                  threadId,
+                  model ?? "inherit",
+                );
+              }
+              const events: AgentEvent[] = [
+                {
+                  _tag: "ToolUse",
+                  itemId: callId,
+                  tool: "Agent",
+                  input,
+                  parentItemId,
+                },
+              ];
+              for (const threadId of receiverThreadIds) {
+                const run = collabAgentsByThread.get(threadId);
+                if (run === undefined) continue;
+                const summary = maybeFinishCollabAgent(
+                  run.parentItemId,
+                  run,
+                  agentsStates[threadId],
+                );
+                if (summary !== null) events.push(summary);
+              }
+              return events;
+            }
+            return [];
+          }
 
           const input: Record<string, unknown> = {
             tool,
@@ -1295,6 +1917,7 @@ export const createAcpTranslator = (provider: AcpProviderTag): AcpTranslator => 
 
           const state = getOrInitToolState(callId);
           const isTerminal = status === "completed" || status === "failed";
+          const toolName = `Collab${tool.charAt(0).toUpperCase()}${tool.slice(1)}`;
 
           // Emit (or re-emit with richer input) on first sight and on terminal transitions
           // so the renderer row can show a final result panel with the ending agentsStates.
@@ -1311,6 +1934,7 @@ export const createAcpTranslator = (provider: AcpProviderTag): AcpTranslator => 
                 itemId: callId,
                 tool: toolName,
                 input,
+                parentItemId,
               },
             ];
             if (isTerminal) {
@@ -1320,8 +1944,19 @@ export const createAcpTranslator = (provider: AcpProviderTag): AcpTranslator => 
                 itemId: callId,
                 output: { status, agentsStates },
                 isError: status === "failed",
+                parentItemId,
               });
               state.resultEmitted = true;
+            }
+            for (const [threadId, agentState] of Object.entries(agentsStates)) {
+              const run = collabAgentsByThread.get(threadId);
+              if (run === undefined) continue;
+              const summary = maybeFinishCollabAgent(
+                run.parentItemId,
+                run,
+                agentState,
+              );
+              if (summary !== null) events.push(summary);
             }
             return events;
           }
@@ -1344,7 +1979,11 @@ export const createAcpTranslator = (provider: AcpProviderTag): AcpTranslator => 
 
   return {
     translate: translateOne,
-    flush: flushPending,
+    flush: () => {
+      const pending = flushPending();
+      const finishedTasks = finishGrokCursorTasks();
+      return finishedTasks.length === 0 ? pending : [...pending, ...finishedTasks];
+    },
   };
 };
 
