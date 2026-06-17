@@ -507,6 +507,7 @@ const BRANCH_STYLE_ORDER: ReadonlyArray<BranchNamingStyle> = [
   "username-slug",
   "slug",
   "feat-slug",
+  "custom",
 ];
 
 const BRANCH_STYLE_META: Record<
@@ -516,6 +517,7 @@ const BRANCH_STYLE_META: Record<
   "username-slug": { label: "username/branch", example: "swarajbachu/dark-mode" },
   slug: { label: "branch only", example: "dark-mode" },
   "feat-slug": { label: "feat/branch", example: "feat/dark-mode" },
+  custom: { label: "custom prefix", example: "prefix/dark-mode" },
 };
 
 function GeneralPane() {
@@ -525,10 +527,21 @@ function GeneralPane() {
   );
   const branchNamingStyle = useSettingsStore((s) => s.branchNamingStyle);
   const setBranchNamingStyle = useSettingsStore((s) => s.setBranchNamingStyle);
+  const branchNamingPrefix = useSettingsStore((s) => s.branchNamingPrefix);
+  const setBranchNamingPrefix = useSettingsStore(
+    (s) => s.setBranchNamingPrefix,
+  );
   const setOnboardingCompleted = useSettingsStore(
     (s) => s.setOnboardingCompleted,
   );
   const setView = useUiStore((s) => s.setView);
+
+  // Local mirror so typing is smooth; persist on blur to avoid an atomic
+  // settings-file write per keystroke.
+  const [prefixDraft, setPrefixDraft] = useState(branchNamingPrefix);
+  useEffect(() => {
+    setPrefixDraft(branchNamingPrefix);
+  }, [branchNamingPrefix]);
 
   return (
     <>
@@ -599,6 +612,28 @@ function GeneralPane() {
         }
         description="When a new chat with its own worktree gets its first message, memoize summarizes it and renames the chat plus its git branch in this shape."
       />
+
+      {branchNamingStyle === "custom" && (
+        <SettingsFrame
+          title="Custom prefix"
+          trailing={
+            <input
+              type="text"
+              value={prefixDraft}
+              placeholder="e.g. swaraj or team/wip"
+              spellCheck={false}
+              onChange={(e) => setPrefixDraft(e.target.value)}
+              onBlur={() => {
+                if (prefixDraft !== branchNamingPrefix) {
+                  setBranchNamingPrefix(prefixDraft);
+                }
+              }}
+              className="w-[220px] rounded-lg border border-border/50 bg-background px-3 py-1.5 text-[13px] text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-border"
+            />
+          }
+          description="Slash-joined before the slug, e.g. prefix “swaraj” → swaraj/dark-mode. Letters, digits, slashes and dashes; leave empty for a bare slug."
+        />
+      )}
 
       <SubagentsSection />
 

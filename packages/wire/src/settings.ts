@@ -21,12 +21,14 @@ export type SubagentPresetState = typeof SubagentPresetState.Type;
  *   - `username-slug` → `<git-user>/<slug>` (e.g. `swarajbachu/dark-mode`)
  *   - `slug`          → `<slug>`            (e.g. `dark-mode`)
  *   - `feat-slug`     → `feat/<slug>`       (e.g. `feat/dark-mode`)
+ *   - `custom`        → `<branchNamingPrefix>/<slug>` (user-defined prefix)
  * Default is `username-slug`, mirroring the convention most teams use.
  */
 export const BranchNamingStyle = Schema.Literal(
   "username-slug",
   "slug",
   "feat-slug",
+  "custom",
 );
 export type BranchNamingStyle = typeof BranchNamingStyle.Type;
 
@@ -70,6 +72,12 @@ export class SettingsFile extends Schema.Class<SettingsFile>("SettingsFile")({
    * worktree branch from the first message. See {@link BranchNamingStyle}.
    */
   branchNamingStyle: BranchNamingStyle,
+  /**
+   * User-defined prefix used only when `branchNamingStyle === "custom"`,
+   * slash-joined before the slug (e.g. prefix `wip` → `wip/dark-mode`).
+   * Empty falls back to a bare slug.
+   */
+  branchNamingPrefix: Schema.String,
 }) {}
 
 /**
@@ -99,6 +107,7 @@ export const SettingsPatch = Schema.Struct({
     }),
   ),
   branchNamingStyle: Schema.optional(BranchNamingStyle),
+  branchNamingPrefix: Schema.optional(Schema.String),
 });
 export type SettingsPatch = typeof SettingsPatch.Type;
 

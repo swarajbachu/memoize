@@ -75,14 +75,31 @@ export const usernameHandle = (username: string): string =>
   username.toLowerCase().replace(/[^a-z0-9]/g, "");
 
 /**
- * Build the new branch name from an LLM title, the (raw) git user name, and
- * the user's chosen style. When the username is unknown, `username-slug`
- * gracefully degrades to a bare slug rather than emitting a leading slash.
+ * Normalize a user-supplied branch prefix into a valid, slash-delimited ref
+ * fragment: lowercase, keep `[a-z0-9/_-]`, collapse repeats, trim stray
+ * leading/trailing separators. Empty when nothing usable remains.
+ */
+export const sanitizePrefix = (prefix: string): string =>
+  prefix
+    .toLowerCase()
+    .replace(/[^a-z0-9/_-]+/g, "-")
+    .replace(/\/{2,}/g, "/")
+    .replace(/-+/g, "-")
+    .replace(/^[-/]+|[-/]+$/g, "")
+    .slice(0, 40)
+    .replace(/[-/]+$/g, "");
+
+/**
+ * Build the new branch name from an LLM title, the (raw) git user name, the
+ * chosen style, and (for `custom`) a user-defined prefix. `username-slug` and
+ * `custom` gracefully degrade to a bare slug when their prefix is empty,
+ * rather than emitting a leading slash.
  */
 export const formatBranchName = (
   title: string,
   username: string,
   style: BranchNamingStyle,
+  customPrefix: string,
 ): string => {
   const slug = slugify(title);
   switch (style) {
@@ -93,6 +110,10 @@ export const formatBranchName = (
     case "username-slug": {
       const handle = usernameHandle(username);
       return handle.length === 0 ? slug : `${handle}/${slug}`;
+    }
+    case "custom": {
+      const prefix = sanitizePrefix(customPrefix);
+      return prefix.length === 0 ? slug : `${prefix}/${slug}`;
     }
   }
 };

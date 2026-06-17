@@ -62,6 +62,7 @@ const fallbackSnapshot = (): SettingsSlice => ({
   onboardingCompleted: false,
   providerEnabled: seedProviderEnabled(),
   branchNamingStyle: DEFAULT_BRANCH_NAMING_STYLE,
+  branchNamingPrefix: "",
 });
 
 const sliceFromFile = (file: SettingsFile): SettingsSlice => {
@@ -85,6 +86,7 @@ const sliceFromFile = (file: SettingsFile): SettingsSlice => {
       ...file.providerEnabled,
     },
     branchNamingStyle: file.branchNamingStyle,
+    branchNamingPrefix: file.branchNamingPrefix,
   };
 };
 
@@ -96,6 +98,7 @@ interface SettingsSlice {
   readonly onboardingCompleted: boolean;
   readonly providerEnabled: Record<ProviderId, boolean>;
   readonly branchNamingStyle: BranchNamingStyle;
+  readonly branchNamingPrefix: string;
 }
 
 type SettingsState = SettingsSlice & {
@@ -119,6 +122,7 @@ type SettingsState = SettingsSlice & {
   readonly setOnboardingCompleted: (value: boolean) => void;
   readonly setProviderEnabled: (providerId: ProviderId, value: boolean) => void;
   readonly setBranchNamingStyle: (style: BranchNamingStyle) => void;
+  readonly setBranchNamingPrefix: (prefix: string) => void;
 };
 
 let streamFiber: Fiber.RuntimeFiber<unknown, unknown> | null = null;
@@ -265,6 +269,15 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const client = await getRpcClient();
       await Effect.runPromise(
         client.settings.update({ patch: { branchNamingStyle: style } }),
+      );
+    })();
+  },
+  setBranchNamingPrefix: (prefix) => {
+    set({ branchNamingPrefix: prefix });
+    void (async () => {
+      const client = await getRpcClient();
+      await Effect.runPromise(
+        client.settings.update({ patch: { branchNamingPrefix: prefix } }),
       );
     })();
   },

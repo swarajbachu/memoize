@@ -1655,6 +1655,7 @@ export const MessageStoreLive = Layer.scoped(
           title,
           username,
           settings.branchNamingStyle,
+          settings.branchNamingPrefix,
         );
         // Rename the git branch, then mirror it onto the worktree row so the
         // DB and git agree. updateBranch only runs if the rename succeeded.
