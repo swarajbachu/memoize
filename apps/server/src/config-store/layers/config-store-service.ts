@@ -5,6 +5,7 @@ import { FileSystem, Path } from "@effect/platform";
 import { Effect, Layer, PubSub, Ref, Stream } from "effect";
 
 import {
+  type BranchNamingStyle,
   defaultModelFor,
   type KeybindingRule,
   KeybindingsFile,
@@ -66,6 +67,8 @@ const freshSettings = (): SettingsFile =>
     onboardingCompleted: false,
     providerEnabled: seedProviderEnabled(),
     subagents: { enableForNewSessions: true, presets: {} },
+    branchNamingStyle: "username-slug",
+    branchNamingPrefix: "",
   });
 
 const freshKeybindings = (): KeybindingsFile =>
@@ -88,6 +91,12 @@ const isRuntimeMode = (v: unknown): v is SettingsFile["defaultRuntimeMode"] =>
   v === "auto-accept-edits" ||
   v === "auto-accept-edits-and-bash" ||
   v === "full-access";
+
+const isBranchNamingStyle = (v: unknown): v is BranchNamingStyle =>
+  v === "username-slug" ||
+  v === "slug" ||
+  v === "feat-slug" ||
+  v === "custom";
 
 /**
  * Re-shape an arbitrary parsed JSON value onto a `SettingsFile`, falling
@@ -170,6 +179,15 @@ const coerceSettings = (raw: unknown): SettingsFile => {
     subagents = { enableForNewSessions: enable, presets };
   }
 
+  const branchNamingStyle = isBranchNamingStyle(obj.branchNamingStyle)
+    ? obj.branchNamingStyle
+    : base.branchNamingStyle;
+
+  const branchNamingPrefix =
+    typeof obj.branchNamingPrefix === "string"
+      ? obj.branchNamingPrefix
+      : base.branchNamingPrefix;
+
   return SettingsFile.make({
     schemaVersion: 1,
     defaultProviderId: provider,
@@ -179,6 +197,8 @@ const coerceSettings = (raw: unknown): SettingsFile => {
     onboardingCompleted: onboarding,
     providerEnabled,
     subagents,
+    branchNamingStyle,
+    branchNamingPrefix,
   });
 };
 
@@ -423,6 +443,10 @@ export const ConfigStoreServiceLive = Layer.scoped(
             patch.onboardingCompleted ?? cur.onboardingCompleted,
           providerEnabled: patch.providerEnabled ?? cur.providerEnabled,
           subagents: patch.subagents ?? cur.subagents,
+          branchNamingStyle:
+            patch.branchNamingStyle ?? cur.branchNamingStyle,
+          branchNamingPrefix:
+            patch.branchNamingPrefix ?? cur.branchNamingPrefix,
         });
         const serialized = serialize(next);
         yield* writeAtomically(settingsPath, serialized);
@@ -522,6 +546,8 @@ export const ConfigStoreServiceLive = Layer.scoped(
             onboardingCompleted: onboarding,
             providerEnabled,
             subagents,
+            branchNamingStyle: cur.branchNamingStyle,
+            branchNamingPrefix: cur.branchNamingPrefix,
           });
 
           const serialized = serialize(merged);

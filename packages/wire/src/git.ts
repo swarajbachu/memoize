@@ -110,6 +110,17 @@ export const GitRenameBranchRpc = Rpc.make("git.renameBranch", {
   error: GitErrors,
 });
 
+/**
+ * `git config user.name` for the folder, trimmed. Returns an empty string
+ * when unset. Used by the auto-namer to build `username/<slug>` branch names
+ * (the name is slugified before use).
+ */
+export const GitUserNameRpc = Rpc.make("git.userName", {
+  payload: Schema.Struct({ folderId: FolderId }),
+  success: Schema.Struct({ userName: Schema.String }),
+  error: GitErrors,
+});
+
 export const GitHeadChangedRpc = Rpc.make("git.headChanged", {
   payload: Schema.Struct({ folderId: FolderId }),
   success: Schema.Struct({ sha: Schema.String }),

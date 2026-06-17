@@ -192,6 +192,14 @@ const ChatRename = MemoizeRpcs.toLayerHandler(
     Effect.flatMap(MessageStore, (svc) => svc.renameChat(chatId, title)),
 );
 
+const ChatStreamChanges = MemoizeRpcs.toLayerHandler(
+  "chat.streamChanges",
+  ({ projectId }) =>
+    Stream.unwrap(
+      Effect.map(MessageStore, (svc) => svc.streamChatChanges(projectId)),
+    ),
+);
+
 const ChatSetWorktree = MemoizeRpcs.toLayerHandler(
   "chat.setWorktree",
   ({ chatId, worktreeId }) =>
@@ -472,6 +480,7 @@ export const ProviderHandlersLayer = Layer.mergeAll(
   ChatGet,
   ChatCreate,
   ChatRename,
+  ChatStreamChanges,
   ChatSetWorktree,
   ChatSetActiveSession,
   ChatArchive,

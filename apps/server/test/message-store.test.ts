@@ -37,6 +37,9 @@ import { ProviderService } from "../src/provider/services/provider-service.ts";
 import { MessageStoreLive } from "../src/provider/layers/message-store.ts";
 import { PtyService } from "../src/pty/services/pty-service.ts";
 import { RepositorySettingsService } from "../src/repository-settings/services/repository-settings-service.ts";
+import { GitService } from "../src/git/services/git-service.ts";
+import { TitleGenerator } from "../src/provider/title-generator.ts";
+import { ConfigStoreService } from "../src/config-store/services/config-store-service.ts";
 
 const PROJECT_ID = "proj-test" as FolderId;
 
@@ -69,7 +72,46 @@ const StubWorktreeLive = Layer.succeed(WorktreeService, {
   create: () => Effect.die("not used"),
   list: () => Effect.succeed([]),
   get: () => Effect.succeed(null),
+  updateBranch: () => Effect.void,
   remove: () => Effect.void,
+});
+
+// The first-message auto-namer only fires for chats with a worktree; these
+// tests run worktreeId=null so none of these stubs are exercised — they exist
+// solely so MessageStoreLive's layer build resolves.
+const StubGitLive = Layer.succeed(GitService, {
+  log: () => Effect.die("not used"),
+  status: () => Effect.die("not used"),
+  branches: () => Effect.die("not used"),
+  switchBranch: () => Effect.die("not used"),
+  renameBranch: () => Effect.die("not used"),
+  getUserName: () => Effect.succeed(""),
+  subscribeHeadChanges: () => Stream.die("not used"),
+  origin: () => Effect.die("not used"),
+  prState: () => Effect.die("not used"),
+  prDetails: () => Effect.die("not used"),
+  changes: () => Effect.die("not used"),
+  diff: () => Effect.die("not used"),
+  commit: () => Effect.die("not used"),
+  push: () => Effect.die("not used"),
+  mergePr: () => Effect.die("not used"),
+  markReady: () => Effect.die("not used"),
+  init: () => Effect.die("not used"),
+  fixFailingChecks: () => Effect.die("not used"),
+});
+
+const StubTitleGeneratorLive = Layer.succeed(TitleGenerator, {
+  generate: () => Effect.die("not used"),
+});
+
+const StubConfigStoreLive = Layer.succeed(ConfigStoreService, {
+  getSettings: () => Effect.die("not used"),
+  updateSettings: () => Effect.die("not used"),
+  settingsChanges: () => Stream.die("not used"),
+  migrateLocalStorage: () => Effect.die("not used"),
+  getKeybindings: () => Effect.die("not used"),
+  replaceKeybindings: () => Effect.die("not used"),
+  keybindingsChanges: () => Stream.die("not used"),
 });
 
 /** Chat archive cleanup is out of scope for MessageStore persistence tests. */
@@ -151,6 +193,9 @@ const makeRuntime = (dbPath: string) => {
     Layer.provide(StubRepositorySettingsLive),
     Layer.provide(StubPtyLive),
     Layer.provide(StubNdjsonLive),
+    Layer.provide(StubGitLive),
+    Layer.provide(StubTitleGeneratorLive),
+    Layer.provide(StubConfigStoreLive),
     // provideMerge (not provide) so SqlClient stays in the runtime context —
     // the test seeds the `projects` row through it directly.
     Layer.provideMerge(Migrated),
