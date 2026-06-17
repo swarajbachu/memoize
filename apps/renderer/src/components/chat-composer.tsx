@@ -180,6 +180,22 @@ export function ChatComposer({ session }: { session: Session }) {
     if (inFlight) return;
     void hydratePermissions(sessionId);
   }, [inFlight, sessionId, hydratePermissions]);
+  // Deterministic fallback delivery. The reconcile hydrate above is gated off
+  // while a turn is in flight, yet that's exactly when the agent blocks on a
+  // permission request. If the live `permission.requests` stream ever drops
+  // the request (subscribe race / stream death), the card would never appear
+  // and the agent hangs invisibly. Poll `listPending` (the server's durable
+  // truth) while running so the card always surfaces within ~2s. Idempotent —
+  // `requestsById` is keyed by id, so it's a no-op merge when the stream is
+  // healthy. The interval is cleared the instant the turn ends or the session
+  // changes.
+  useEffect(() => {
+    if (!inFlight) return;
+    const id = window.setInterval(() => {
+      void hydratePermissions(sessionId);
+    }, 2000);
+    return () => window.clearInterval(id);
+  }, [inFlight, sessionId, hydratePermissions]);
   const headPermission = pendingPermissions[0];
 
   const [hasText, setHasText] = useState(false);
