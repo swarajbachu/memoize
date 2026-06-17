@@ -1,19 +1,22 @@
-import { useEffect, useRef } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Effect, Fiber, Stream } from "effect";
-import { Plus, SquareTerminal, X } from "lucide-react";
+import { Loader2, Play, Plus, RefreshCw, SquareTerminal, X } from "lucide-react";
 
-import type { FolderId, PtyId } from "@memoize/wire";
+import type { FolderId, PtyId, Worktree, WorktreeId } from "@memoize/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
-import { useActiveContext } from "../store/active-workspace.ts";
+import { type ActiveContext, useActiveContext } from "../store/active-workspace.ts";
+import { useRepositorySettingsStore } from "../store/repository-settings.ts";
 import {
   EMPTY_TERMINALS,
   type TerminalInstance,
   terminalsKey,
   useTerminalsStore,
 } from "../store/terminals.ts";
+import { EMPTY_WORKTREES, useWorktreesStore } from "../store/worktrees.ts";
+import { Button } from "./ui/button.tsx";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip.tsx";
 
 /**
@@ -29,26 +32,6 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip.tsx";
 export function TerminalPane() {
   const ctx = useActiveContext();
   const ready = ctx.status === "ready" && !ctx.worktreePending;
-  const key = ready ? terminalsKey(ctx.folderId, ctx.worktreeId) : null;
-  const list = useTerminalsStore((s) =>
-    key === null ? EMPTY_TERMINALS : s.byKey[key] ?? EMPTY_TERMINALS,
-  );
-  const activeId = useTerminalsStore((s) =>
-    key === null ? null : s.activeByKey[key] ?? null,
-  );
-  const ensureSeed = useTerminalsStore((s) => s.ensureSeed);
-  const add = useTerminalsStore((s) => s.add);
-  const remove = useTerminalsStore((s) => s.remove);
-  const setActive = useTerminalsStore((s) => s.setActive);
-
-  // Seed a first terminal whenever we land on a workspace with an empty
-  // list. Done in an effect (not render) so we don't call set() during
-  // another component's render.
-  const seedCwd = ctx.status === "ready" ? ctx.rootPath : null;
-  useEffect(() => {
-    if (key === null || !ready || seedCwd === null) return;
-    if (list.length === 0) ensureSeed(key, seedCwd);
-  }, [key, ready, list.length, ensureSeed, seedCwd]);
 
   if (ctx.status === "loading") {
     return (
@@ -74,18 +57,54 @@ export function TerminalPane() {
       </div>
     );
   }
-  if (key === null) return null;
+  if (!ready) return null;
+  if (ctx.worktreeId !== null) {
+    return <WorktreeTerminalPane ctx={ctx} worktreeId={ctx.worktreeId} />;
+  }
+
+  return (
+    <TerminalWorkspace
+      folderId={ctx.folderId}
+      worktreeId={ctx.worktreeId}
+      rootPath={ctx.rootPath}
+      showFloatingAdd
+    />
+  );
+}
+
+function TerminalWorkspace({
+  folderId,
+  worktreeId,
+  rootPath,
+  showFloatingAdd = false,
+}: {
+  folderId: FolderId;
+  worktreeId: WorktreeId | null;
+  rootPath: string;
+  showFloatingAdd?: boolean;
+}) {
+  const key = terminalsKey(folderId, worktreeId);
+  const list = useTerminalsStore((s) => s.byKey[key] ?? EMPTY_TERMINALS);
+  const activeId = useTerminalsStore((s) => s.activeByKey[key] ?? null);
+  const ensureSeed = useTerminalsStore((s) => s.ensureSeed);
+  const add = useTerminalsStore((s) => s.add);
+  const remove = useTerminalsStore((s) => s.remove);
+  const setActive = useTerminalsStore((s) => s.setActive);
 
   const handleAdd = () => {
-    add(key, ctx.rootPath);
+    add(key, rootPath);
   };
   const handleClose = (id: string) => {
     remove(key, id);
     // If the user closed the last one, seed a fresh terminal so the pane
     // is never empty — matches what a developer expects from a terminal
     // dock: there's always a shell waiting.
-    if (list.length === 1) ensureSeed(key, ctx.rootPath);
+    if (list.length === 1) ensureSeed(key, rootPath);
   };
+
+  useEffect(() => {
+    if (list.length === 0) ensureSeed(key, rootPath);
+  }, [key, list.length, ensureSeed, rootPath]);
 
   // A single terminal gets the full pane — the list sidebar only earns its
   // width once there's more than one shell to switch between. When it's
@@ -105,7 +124,7 @@ export function TerminalPane() {
         />
       )}
       <div className="relative flex min-w-0 flex-1 flex-col bg-background">
-        {single ? (
+        {single && showFloatingAdd ? (
           <Tooltip>
             <TooltipTrigger
               render={
@@ -129,13 +148,211 @@ export function TerminalPane() {
             className="absolute inset-0 flex"
           >
             <PtyTerminal
-              folderId={ctx.folderId}
+              folderId={folderId}
               cwd={inst.cwd}
               instanceId={inst.id}
+              command={inst.command}
             />
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function WorktreeTerminalPane({
+  ctx,
+  worktreeId,
+}: {
+  ctx: Extract<ActiveContext, { status: "ready" }>;
+  worktreeId: WorktreeId;
+}) {
+  const [tab, setTab] = useState<"setup" | "run" | "terminal">("setup");
+  const worktree = useWorktreesStore((s) => {
+    const list = s.byProject[ctx.folderId] ?? EMPTY_WORKTREES;
+    return list.find((w) => w.id === worktreeId) ?? null;
+  });
+  const setupPending = useWorktreesStore((s) => s.setupPending.has(worktreeId));
+  const rerunSetup = useWorktreesStore((s) => s.rerunSetup);
+  const startRun = useWorktreesStore((s) => s.startRun);
+  const addTerminal = useTerminalsStore((s) => s.add);
+  const addCommand = useTerminalsStore((s) => s.addCommand);
+  const refreshSettings = useRepositorySettingsStore((s) => s.refresh);
+  const settings = useRepositorySettingsStore(
+    (s) => s.byProject[ctx.folderId] ?? null,
+  );
+
+  useEffect(() => {
+    if (settings === null) void refreshSettings(ctx.folderId);
+  }, [ctx.folderId, refreshSettings, settings]);
+
+  const onRun = async () => {
+    const run = await startRun(worktreeId);
+    if (run === null) return;
+    addCommand(terminalsKey(ctx.folderId, worktreeId), run.cwd, "Run", {
+      cmd: "/bin/zsh",
+      args: ["-lc", run.script],
+      env: run.env,
+    });
+    setTab("run");
+  };
+
+  const onRerunSetup = async () => {
+    if (setupPending || worktree?.setupStatus === "running") return;
+    const wt = await rerunSetup(ctx.folderId, worktreeId);
+    if (wt?.setupStatus === "succeeded" && settings?.autoRunAfterSetup) {
+      await onRun();
+    }
+  };
+
+  const onAddTerminal = () => {
+    addTerminal(terminalsKey(ctx.folderId, worktreeId), ctx.rootPath);
+    setTab("terminal");
+  };
+
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-background">
+      <div className="flex h-10 shrink-0 items-center border-b border-border bg-background text-sm">
+        <TabButton active={tab === "setup"} onClick={() => setTab("setup")}>
+          {(setupPending || worktree?.setupStatus === "running") && (
+            <Loader2 className="size-3.5 animate-spin" />
+          )}
+          Setup
+        </TabButton>
+        <TabButton active={tab === "run"} onClick={() => setTab("run")}>
+          Run
+        </TabButton>
+        <TabButton active={tab === "terminal"} onClick={() => setTab("terminal")}>
+          Terminal
+        </TabButton>
+        <button
+          type="button"
+          onClick={onAddTerminal}
+          className="ml-1 flex h-full w-10 items-center justify-center text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+          aria-label="New terminal"
+          title="New terminal"
+        >
+          <Plus className="size-4" />
+        </button>
+      </div>
+      <div className="min-h-0 flex-1">
+        {tab === "setup" ? (
+          <SetupOutput
+            worktree={worktree}
+            running={setupPending || worktree?.setupStatus === "running"}
+            onRerunSetup={onRerunSetup}
+          />
+        ) : tab === "run" ? (
+          <RunPane ctx={ctx} worktreeId={worktreeId} onRun={onRun} />
+        ) : (
+          <TerminalWorkspace
+            folderId={ctx.folderId}
+            worktreeId={worktreeId}
+            rootPath={ctx.rootPath}
+            showFloatingAdd={false}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex h-full items-center gap-1.5 border-b-2 px-4 text-[13px] transition-colors ${
+        active
+          ? "border-foreground text-foreground"
+          : "border-transparent text-muted-foreground hover:text-foreground"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function SetupOutput({
+  worktree,
+  running,
+  onRerunSetup,
+}: {
+  worktree: Worktree | null;
+  running: boolean;
+  onRerunSetup: () => void;
+}) {
+  const output =
+    running && (worktree === null || worktree.setupOutput.trim().length === 0)
+      ? "Running setup..."
+      : worktree === null
+      ? "Loading setup state..."
+      : worktree.setupOutput.trim().length > 0
+        ? worktree.setupOutput
+        : `Setup ${worktree.setupStatus}`;
+  return (
+    <div className="relative h-full bg-background">
+      {running && (
+        <div className="absolute left-4 top-3 z-10 flex items-center gap-2 rounded border border-border bg-background/90 px-2.5 py-1.5 text-xs text-muted-foreground shadow-sm">
+          <Loader2 className="size-3.5 animate-spin" />
+          Running setup
+        </div>
+      )}
+      <pre className="h-full overflow-auto p-4 font-mono text-sm leading-6 text-foreground whitespace-pre-wrap">
+        {output}
+      </pre>
+      <Button
+        variant="settings"
+        size="sm"
+        onClick={onRerunSetup}
+        disabled={running}
+        className="absolute bottom-3 right-3 gap-2"
+      >
+        {running ? (
+          <Loader2 className="size-3.5 animate-spin" />
+        ) : (
+          <RefreshCw className="size-3.5" />
+        )}
+        {running ? "Running..." : "Rerun setup"}
+      </Button>
+    </div>
+  );
+}
+
+function RunPane({
+  ctx,
+  worktreeId,
+  onRun,
+}: {
+  ctx: Extract<ActiveContext, { status: "ready" }>;
+  worktreeId: WorktreeId;
+  onRun: () => void;
+}) {
+  return (
+    <div className="relative h-full">
+      <TerminalWorkspace
+        folderId={ctx.folderId}
+        worktreeId={worktreeId}
+        rootPath={ctx.rootPath}
+        showFloatingAdd={false}
+      />
+      <Button
+        variant="settings"
+        size="sm"
+        onClick={onRun}
+        className="absolute right-3 top-3 z-10 gap-2"
+      >
+        <Play className="size-3.5" />
+        Run
+      </Button>
     </div>
   );
 }
@@ -234,10 +451,12 @@ function PtyTerminal({
   folderId,
   cwd,
   instanceId,
+  command,
 }: {
   folderId: FolderId;
   cwd: string;
   instanceId: string;
+  command?: TerminalInstance["command"];
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -289,6 +508,7 @@ function PtyTerminal({
 
     const observer = new ResizeObserver(safeFit);
     observer.observe(container);
+    window.requestAnimationFrame(safeFit);
 
     void (async () => {
       try {
@@ -300,6 +520,14 @@ function PtyTerminal({
             cwd,
             cols: term.cols,
             rows: term.rows,
+            command:
+              command === undefined
+                ? undefined
+                : {
+                    cmd: command.cmd,
+                    args: [...command.args],
+                    env: command.env,
+                  },
           }),
         );
         if (cancelled) {
@@ -307,6 +535,12 @@ function PtyTerminal({
           return;
         }
         ptyId = id;
+        safeFit();
+        void Effect.runPromise(
+          client.pty.resize({ ptyId: id, cols: term.cols, rows: term.rows }),
+        ).catch(() => {
+          // ignore
+        });
 
         // Pump output stream into xterm.
         streamFiber = Effect.runFork(

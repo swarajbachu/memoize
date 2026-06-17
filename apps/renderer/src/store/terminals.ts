@@ -15,6 +15,11 @@ export type TerminalInstance = {
   readonly id: string;
   readonly title: string;
   readonly cwd: string;
+  readonly command?: {
+    readonly cmd: string;
+    readonly args: ReadonlyArray<string>;
+    readonly env?: Readonly<Record<string, string>>;
+  };
 };
 
 type TerminalsState = {
@@ -22,6 +27,12 @@ type TerminalsState = {
   readonly activeByKey: Readonly<Record<string, string | null>>;
   readonly ensureSeed: (key: string, cwd: string) => void;
   readonly add: (key: string, cwd: string) => string;
+  readonly addCommand: (
+    key: string,
+    cwd: string,
+    title: string,
+    command: TerminalInstance["command"],
+  ) => string;
   readonly remove: (key: string, id: string) => void;
   readonly setActive: (key: string, id: string) => void;
 };
@@ -64,6 +75,18 @@ export const useTerminalsStore = create<TerminalsState>((set) => ({
     set((state) => {
       const list = state.byKey[key] ?? [];
       const instance: TerminalInstance = { id, title: nextTitle(list), cwd };
+      return {
+        byKey: { ...state.byKey, [key]: [...list, instance] },
+        activeByKey: { ...state.activeByKey, [key]: id },
+      };
+    });
+    return id;
+  },
+  addCommand: (key, cwd, title, command) => {
+    const id = newId();
+    set((state) => {
+      const list = state.byKey[key] ?? [];
+      const instance: TerminalInstance = { id, title, cwd, command };
       return {
         byKey: { ...state.byKey, [key]: [...list, instance] },
         activeByKey: { ...state.activeByKey, [key]: id },

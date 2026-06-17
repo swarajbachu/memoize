@@ -1,0 +1,6 @@
+"$schema" = "https://conductor.build/schemas/settings.repo.schema.json"
+
+[scripts]
+setup = "node scripts/conductor-setup.mjs"
+run = "PORT=${CONDUCTOR_PORT:-5733} MEMOIZE_USER_DATA_DIR=\"$PWD/.context/user-data\" bun run dev:desktop"
+run_mode = "concurrent"
