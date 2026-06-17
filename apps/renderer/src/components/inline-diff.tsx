@@ -5,6 +5,8 @@ import { useMemo } from "react";
 import { cn } from "~/lib/utils";
 import { FileIcon } from "./file-icon.tsx";
 
+const UNIFIED_DIFF_OPTIONS = { diffStyle: "unified" } as const;
+
 export interface FileEdit {
   readonly path: string;
   readonly oldText: string;
@@ -239,7 +241,11 @@ export function DiffBody({
           {edit.mode === "create" ? "create" : "edit"} · {edit.path}
         </div>
       ) : null}
-      <PatchDiff patch={patchText} disableWorkerPool />
+      <PatchDiff
+        patch={patchText}
+        options={UNIFIED_DIFF_OPTIONS}
+        disableWorkerPool
+      />
     </div>
   );
 }
@@ -329,6 +335,22 @@ const basename = (p: string): string => {
   return i === -1 ? p : p.slice(i + 1);
 };
 
+const normalizePatchForDiffViewer = (path: string, patch: string): string => {
+  const trimmed = patch.trimStart();
+  if (trimmed.startsWith("diff --git") || trimmed.startsWith("--- ")) {
+    return patch;
+  }
+  if (!trimmed.startsWith("@@")) return patch;
+  const displayPath = path.length > 0 ? path : "file";
+  const body = patch.endsWith("\n") ? patch : `${patch}\n`;
+  return [
+    `diff --git a/${displayPath} b/${displayPath}`,
+    `--- a/${displayPath}`,
+    `+++ b/${displayPath}`,
+    body,
+  ].join("\n");
+};
+
 export function UnifiedPatchDiff({
   path,
   patch,
@@ -349,6 +371,7 @@ export function UnifiedPatchDiff({
   }
 
   const name = basename(path);
+  const normalizedPatch = normalizePatchForDiffViewer(path, patch);
   return (
     <div className="overflow-hidden rounded-md border border-border/60">
       {showHeader ? (
@@ -367,7 +390,11 @@ export function UnifiedPatchDiff({
         className="fz-diff code-block-scroll overflow-auto bg-muted/15 text-[12px] leading-[1.45]"
         style={{ maxHeight: 420 }}
       >
-        <PatchDiff patch={patch} disableWorkerPool />
+        <PatchDiff
+          patch={normalizedPatch}
+          options={UNIFIED_DIFF_OPTIONS}
+          disableWorkerPool
+        />
       </div>
     </div>
   );
