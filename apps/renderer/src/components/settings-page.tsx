@@ -20,6 +20,7 @@ import { Effect } from "effect";
 import { getRpcClient } from "../lib/rpc-client.ts";
 
 import {
+  type BranchNamingStyle,
   MODELS_BY_PROVIDER,
   type Folder,
   type FolderId,
@@ -502,11 +503,28 @@ function CredInput({
   );
 }
 
+const BRANCH_STYLE_ORDER: ReadonlyArray<BranchNamingStyle> = [
+  "username-slug",
+  "slug",
+  "feat-slug",
+];
+
+const BRANCH_STYLE_META: Record<
+  BranchNamingStyle,
+  { label: string; example: string }
+> = {
+  "username-slug": { label: "username/branch", example: "swarajbachu/dark-mode" },
+  slug: { label: "branch only", example: "dark-mode" },
+  "feat-slug": { label: "feat/branch", example: "feat/dark-mode" },
+};
+
 function GeneralPane() {
   const defaultRuntimeMode = useSettingsStore((s) => s.defaultRuntimeMode);
   const setDefaultRuntimeMode = useSettingsStore(
     (s) => s.setDefaultRuntimeMode,
   );
+  const branchNamingStyle = useSettingsStore((s) => s.branchNamingStyle);
+  const setBranchNamingStyle = useSettingsStore((s) => s.setBranchNamingStyle);
   const setOnboardingCompleted = useSettingsStore(
     (s) => s.setOnboardingCompleted,
   );
@@ -546,6 +564,40 @@ function GeneralPane() {
           </Select>
         }
         description="How the agent handles tool calls in new sessions. Each session can override this from its composer."
+      />
+
+      <SettingsFrame
+        title="Branch naming"
+        trailing={
+          <Select
+            value={branchNamingStyle}
+            onValueChange={(v) => setBranchNamingStyle(v as BranchNamingStyle)}
+            items={BRANCH_STYLE_ORDER.map((s) => ({
+              label: BRANCH_STYLE_META[s].label,
+              value: s,
+            }))}
+          >
+            <SelectTrigger size="sm" className="w-[180px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectPopup>
+              {BRANCH_STYLE_ORDER.map((style) => {
+                const m = BRANCH_STYLE_META[style];
+                return (
+                  <SelectItem key={style} value={style}>
+                    <div className="flex flex-col">
+                      <span>{m.label}</span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {m.example}
+                      </span>
+                    </div>
+                  </SelectItem>
+                );
+              })}
+            </SelectPopup>
+          </Select>
+        }
+        description="When a new chat with its own worktree gets its first message, memoize summarizes it and renames the chat plus its git branch in this shape."
       />
 
       <SubagentsSection />

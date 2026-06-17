@@ -2,6 +2,7 @@ import { Effect, Fiber, Stream } from "effect";
 import { create } from "zustand";
 
 import {
+  type BranchNamingStyle,
   defaultModelFor,
   type ProviderId,
   resolveModelSlug,
@@ -24,6 +25,7 @@ import { getRpcClient } from "../lib/rpc-client";
 
 const DEFAULT_PROVIDER: ProviderId = "claude";
 const DEFAULT_RUNTIME_MODE: RuntimeMode = "approval-required";
+const DEFAULT_BRANCH_NAMING_STYLE: BranchNamingStyle = "username-slug";
 
 const PROVIDER_IDS: ReadonlyArray<ProviderId> = [
   "claude",
@@ -59,6 +61,7 @@ const fallbackSnapshot = (): SettingsSlice => ({
   defaultAutoCreateWorktree: false,
   onboardingCompleted: false,
   providerEnabled: seedProviderEnabled(),
+  branchNamingStyle: DEFAULT_BRANCH_NAMING_STYLE,
 });
 
 const sliceFromFile = (file: SettingsFile): SettingsSlice => {
@@ -81,6 +84,7 @@ const sliceFromFile = (file: SettingsFile): SettingsSlice => {
       ...seedProviderEnabled(),
       ...file.providerEnabled,
     },
+    branchNamingStyle: file.branchNamingStyle,
   };
 };
 
@@ -91,6 +95,7 @@ interface SettingsSlice {
   readonly defaultAutoCreateWorktree: boolean;
   readonly onboardingCompleted: boolean;
   readonly providerEnabled: Record<ProviderId, boolean>;
+  readonly branchNamingStyle: BranchNamingStyle;
 }
 
 type SettingsState = SettingsSlice & {
@@ -113,6 +118,7 @@ type SettingsState = SettingsSlice & {
   readonly setDefaultAutoCreateWorktree: (value: boolean) => void;
   readonly setOnboardingCompleted: (value: boolean) => void;
   readonly setProviderEnabled: (providerId: ProviderId, value: boolean) => void;
+  readonly setBranchNamingStyle: (style: BranchNamingStyle) => void;
 };
 
 let streamFiber: Fiber.RuntimeFiber<unknown, unknown> | null = null;
@@ -250,6 +256,15 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const client = await getRpcClient();
       await Effect.runPromise(
         client.settings.update({ patch: { providerEnabled: next } }),
+      );
+    })();
+  },
+  setBranchNamingStyle: (style) => {
+    set({ branchNamingStyle: style });
+    void (async () => {
+      const client = await getRpcClient();
+      await Effect.runPromise(
+        client.settings.update({ patch: { branchNamingStyle: style } }),
       );
     })();
   },

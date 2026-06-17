@@ -117,6 +117,14 @@ export const WorktreeServiceLive = Layer.effect(
         return rows.length > 0 ? rowToWorktree(rows[0]!) : null;
       });
 
+    const updateBranch: WorktreeService["Type"]["updateBranch"] = (
+      worktreeId,
+      branch,
+    ) =>
+      sql`
+        UPDATE worktrees SET branch = ${branch} WHERE id = ${worktreeId}
+      `.pipe(Effect.asVoid, Effect.orDie);
+
     const create: WorktreeService["Type"]["create"] = (projectId) =>
       Effect.gen(function* () {
         const folder = yield* workspace.findById(projectId);
@@ -400,6 +408,6 @@ export const WorktreeServiceLive = Layer.effect(
         });
       });
 
-    return { create, list, get, remove, restore } as const;
+    return { create, list, get, updateBranch, remove, restore } as const;
   }),
 );

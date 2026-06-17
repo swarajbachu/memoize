@@ -20,6 +20,7 @@ import { CredentialsServiceLive } from "./provider/layers/credentials-service.ts
 import { MessageStoreLive } from "./provider/layers/message-store.ts";
 import { PermissionServiceLive } from "./provider/layers/permission-service.ts";
 import { ProviderServiceLive } from "./provider/layers/provider-service.ts";
+import { TitleGeneratorLive } from "./provider/title-generator.ts";
 import { PtyServiceLive } from "./pty/layers/pty-service.ts";
 import { SkillBridgeLive } from "./skill/layers/skill-bridge.ts";
 import { SkillDiscoveryServiceLive } from "./skill/layers/skill-discovery.ts";
@@ -202,11 +203,24 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
   // messages tables. The chat-MVP RPC surface (session.* / messages.*) talks
   // through this; legacy agent.* handlers stay bound to ProviderService for
   // low-level testing.
+  // TitleGenerator names a chat from its first message by running one
+  // throwaway turn through the chat's OWN provider (via ProviderService), so
+  // it reuses whatever auth that provider has — a Grok-only user is never
+  // forced onto Claude.
+  const TitleGeneratorLayer = TitleGeneratorLive.pipe(
+    Layer.provide(ProviderLayer),
+  );
+
   const MessageStoreLayer = MessageStoreLive.pipe(
     Layer.provide(ProviderLayer),
     Layer.provide(WorktreeLayer),
     Layer.provide(RepositorySettingsLayer),
     Layer.provide(PtyLayer),
+    // GitService + ConfigStore + TitleGenerator back the first-message
+    // auto-namer (rename chat + branch); see message-store `autoNameChat`.
+    Layer.provide(GitLayer),
+    Layer.provide(ConfigStoreLayer),
+    Layer.provide(TitleGeneratorLayer),
     Layer.provide(MigratedSqlite),
     Layer.provide(NdjsonLoggerLayer),
   );

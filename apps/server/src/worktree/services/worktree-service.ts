@@ -28,6 +28,17 @@ export interface WorktreeServiceShape {
     projectId: FolderId,
   ) => Effect.Effect<ReadonlyArray<Worktree>>;
   readonly get: (worktreeId: WorktreeId) => Effect.Effect<Worktree | null>;
+  /**
+   * Update the stored `branch` for a worktree row so it tracks a `git branch
+   * -m` performed elsewhere (the auto-namer renames the branch via
+   * `GitService`, then calls this to keep the DB in lockstep). The on-disk
+   * directory and `name` are left untouched — only the branch label moves.
+   * No-op when the worktree row is absent.
+   */
+  readonly updateBranch: (
+    worktreeId: WorktreeId,
+    branch: string,
+  ) => Effect.Effect<void>;
   readonly remove: (
     worktreeId: WorktreeId,
     force: boolean,

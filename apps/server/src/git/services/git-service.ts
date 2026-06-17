@@ -49,6 +49,13 @@ export interface GitServiceShape {
     name: string,
     worktreeId?: WorktreeId | null,
   ) => Effect.Effect<GitStatusSummary, GitFailure>;
+  /**
+   * `git config user.name`, trimmed (empty string when unset). Feeds the
+   * auto-namer's `username/<slug>` branch convention.
+   */
+  readonly getUserName: (
+    folderId: FolderId,
+  ) => Effect.Effect<string, GitFailure>;
   readonly subscribeHeadChanges: (
     folderId: FolderId,
   ) => Stream.Stream<{ readonly sha: string }, GitFailure>;

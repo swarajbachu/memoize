@@ -56,6 +56,7 @@ import {
   GitRenameBranchRpc,
   GitStatusRpc,
   GitSwitchBranchRpc,
+  GitUserNameRpc,
 } from "./git.ts";
 import {
   PermissionDecideRpc,
@@ -94,6 +95,7 @@ import {
   ChatGetRpc,
   ChatListRpc,
   ChatRenameRpc,
+  ChatStreamChangesRpc,
   ChatSetActiveSessionRpc,
   ChatSetWorktreeRpc,
   ChatUnarchiveRpc,
@@ -167,6 +169,7 @@ export const MemoizeRpcs = RpcGroup.make(
   GitBranchesRpc,
   GitSwitchBranchRpc,
   GitRenameBranchRpc,
+  GitUserNameRpc,
   GitHeadChangedRpc,
   GitOriginRpc,
   GitPrStateRpc,
@@ -198,6 +201,7 @@ export const MemoizeRpcs = RpcGroup.make(
   ChatGetRpc,
   ChatCreateRpc,
   ChatRenameRpc,
+  ChatStreamChangesRpc,
   ChatSetWorktreeRpc,
   ChatSetActiveSessionRpc,
   ChatArchiveRpc,
