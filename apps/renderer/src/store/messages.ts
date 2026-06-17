@@ -43,7 +43,7 @@ const NETWORK_PATTERN =
  *
  * Multiple keys are supported — the Claude provider uses `effort` for
  * its reasoning tier (with values `low | medium | high | xhigh | max |
- * ultracode | ultrathink`), `fastMode` / `thinking` booleans, and
+ * ultracode`), `fastMode` / `thinking` booleans, and
  * `contextWindow` (`200k | 1m`). Non-Claude providers use `reasoning`.
  * Returns `null` when nothing has been set so the RPC payload stays
  * clean (drivers default to model presets).

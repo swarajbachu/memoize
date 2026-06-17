@@ -573,6 +573,18 @@ export const ChatRenameRpc = Rpc.make("chat.rename", {
 });
 
 /**
+ * Live feed of chat-row changes (title / worktree binding) for one project.
+ * Carries only live patches — no backfill — so the renderer keeps its
+ * `chat.list` snapshot and patches it as updates arrive (e.g. the background
+ * auto-namer rewriting a new chat's title after its first message).
+ */
+export const ChatStreamChangesRpc = Rpc.make("chat.streamChanges", {
+  payload: Schema.Struct({ projectId: FolderId }),
+  success: Chat,
+  stream: true,
+});
+
+/**
  * Change the chat's worktree. Allowed only when no session in the chat has
  * any user message yet — fails with `ChatAlreadyStartedError` otherwise.
  * Updates `chat.worktreeId` AND mirrors the change onto every member

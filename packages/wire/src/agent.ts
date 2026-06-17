@@ -86,8 +86,6 @@ export const DEFAULT_PERMISSION_MODE: PermissionMode = "default";
  *   - Claude → `maxThinkingTokens` (low=5k, medium=15k, high=60k) + SDK
  *     `effort` enum (low/medium/high/xhigh/max). `ultracode` is a Claude
  *     Code preset that normalizes to `xhigh` + `settings.ultracode: true`.
- *     `ultrathink` is prompt-injected (the literal word is prepended to the
- *     user prompt); SDK `effort` stays unset.
  *   - Codex → `reasoning_effort` enum (low/medium/high pass through; higher
  *     tiers fall back to `high`).
  *   - Gemini Pro → `thinkingConfig.thinkingBudget` (low=4k, medium=16k, high=32k)
@@ -102,7 +100,6 @@ export const ReasoningLevel = Schema.Literal(
   "xhigh",
   "max",
   "ultracode",
-  "ultrathink",
 );
 export type ReasoningLevel = typeof ReasoningLevel.Type;
 
@@ -122,9 +119,8 @@ export const SelectOptionDescriptor = Schema.Struct({
   /**
    * Option ids in this list are *prompt-injected* rather than forwarded to
    * the SDK as a knob value. The driver prepends the option id (e.g. the
-   * literal word `"ultrathink"`) to the user prompt and unsets the
-   * underlying SDK field. Used by Claude's `effort` descriptor for the
-   * `ultrathink` tier.
+   * literal word for a prompt-only mode) to the user prompt and unsets the
+   * underlying SDK field.
    */
   promptInjectedValues: Schema.optional(Schema.Array(Schema.String)),
 });
@@ -639,15 +635,6 @@ export interface ModelOption {
   readonly optionDescriptors?: ReadonlyArray<OptionDescriptor>;
   readonly supportsPlanMode?: boolean;
   readonly supportsWebSearch?: "native" | "queryOnly";
-  /**
-   * When set, the renderer renders a rainbow "Ultracode" chip + info icon on
-   * this model's picker row, and the composer footer surfaces an Ultracode
-   * toggle pill. Server-side, picking this model defaults
-   * `modelOptions.effort = "ultracode"`, which the Claude driver normalizes
-   * to `effort: "xhigh"` + `settings.ultracode: true` on the SDK options.
-   * Today only Opus 4.8 advertises this.
-   */
-  readonly ultracode?: { readonly available: true };
 }
 
 /**
@@ -672,7 +659,7 @@ const reasoningSelectDescriptor = (
 /**
  * Per-model effort descriptor for the Claude provider. Each model declares
  * its own supported tiers (see `MODELS_BY_PROVIDER.claude` below); `ultracode`
- * and `ultrathink` are special — see `ReasoningLevel` docs. The knob id is
+ * is special — see `ReasoningLevel` docs. The knob id is
  * `effort` (matching the Claude SDK + t3code reference) rather than
  * `reasoning` to make driver-side mapping explicit.
  */
@@ -744,17 +731,14 @@ export const MODELS_BY_PROVIDER: Record<
             { id: "xhigh", label: "Extra High" },
             { id: "max", label: "Max" },
             { id: "ultracode", label: "Ultracode" },
-            { id: "ultrathink", label: "Ultrathink" },
           ],
           defaultId: "high",
-          promptInjectedValues: ["ultrathink"],
         }),
         claudeBooleanDescriptor("fastMode", "Fast Mode"),
         claudeContextWindowDescriptor(),
       ],
       supportsPlanMode: true,
       supportsWebSearch: "native",
-      ultracode: { available: true },
     },
     {
       id: "claude-opus-4-7",
@@ -767,10 +751,9 @@ export const MODELS_BY_PROVIDER: Record<
             { id: "high", label: "High" },
             { id: "xhigh", label: "Extra High" },
             { id: "max", label: "Max" },
-            { id: "ultrathink", label: "Ultrathink" },
+            { id: "ultracode", label: "Ultracode" },
           ],
           defaultId: "xhigh",
-          promptInjectedValues: ["ultrathink"],
         }),
         claudeBooleanDescriptor("fastMode", "Fast Mode"),
         claudeContextWindowDescriptor(),
@@ -788,10 +771,9 @@ export const MODELS_BY_PROVIDER: Record<
             { id: "medium", label: "Medium" },
             { id: "high", label: "High" },
             { id: "max", label: "Max" },
-            { id: "ultrathink", label: "Ultrathink" },
+            { id: "ultracode", label: "Ultracode" },
           ],
           defaultId: "high",
-          promptInjectedValues: ["ultrathink"],
         }),
         claudeBooleanDescriptor("fastMode", "Fast Mode"),
         claudeContextWindowDescriptor(),
@@ -809,10 +791,9 @@ export const MODELS_BY_PROVIDER: Record<
             { id: "medium", label: "Medium" },
             { id: "high", label: "High" },
             { id: "max", label: "Max" },
-            { id: "ultrathink", label: "Ultrathink" },
+            { id: "ultracode", label: "Ultracode" },
           ],
           defaultId: "high",
-          promptInjectedValues: ["ultrathink"],
         }),
         claudeContextWindowDescriptor(),
       ],
@@ -838,6 +819,13 @@ export const MODELS_BY_PROVIDER: Record<
     {
       id: "gpt-5.4-mini",
       label: "GPT-5.4 mini",
+      optionDescriptors: [reasoningSelectDescriptor("medium")],
+      supportsPlanMode: true,
+      supportsWebSearch: "native",
+    },
+    {
+      id: "gpt-5.5",
+      label: "GPT-5.5",
       optionDescriptors: [reasoningSelectDescriptor("medium")],
       supportsPlanMode: true,
       supportsWebSearch: "native",

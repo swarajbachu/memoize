@@ -39,6 +39,12 @@ const RenameBranch = MemoizeRpcs.toLayerHandler(
     ),
 );
 
+const UserName = MemoizeRpcs.toLayerHandler("git.userName", ({ folderId }) =>
+  Effect.flatMap(GitService, (svc) =>
+    svc.getUserName(folderId).pipe(Effect.map((userName) => ({ userName }))),
+  ),
+);
+
 const HeadChanged = MemoizeRpcs.toLayerHandler(
   "git.headChanged",
   ({ folderId }) =>
@@ -131,6 +137,7 @@ export const GitHandlersLayer = Layer.mergeAll(
   Branches,
   SwitchBranch,
   RenameBranch,
+  UserName,
   HeadChanged,
   Origin,
   PrState,

@@ -229,6 +229,16 @@ export interface MessageStoreShape {
   ) => Effect.Effect<void, ChatNotFoundError>;
 
   /**
+   * Live feed of chat-row changes (title / worktree) for one project. Emits
+   * only live patches — no backfill — so the renderer keeps its `chat.list`
+   * snapshot and applies updates (e.g. the background auto-namer rewriting a
+   * title) on top. Never fails.
+   */
+  readonly streamChatChanges: (
+    projectId: FolderId,
+  ) => Stream.Stream<Chat>;
+
+  /**
    * Update the chat's worktree. Allowed only when no session in the chat
    * has any user message yet. Mirrors the new value onto every member
    * session's `worktreeId` in the same transaction.
