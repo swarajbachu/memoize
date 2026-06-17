@@ -12,6 +12,12 @@ export interface FileEdit {
   readonly mode: "edit" | "create";
 }
 
+export interface PatchEntry {
+  readonly file_path: string;
+  readonly kind?: string;
+  readonly patch: string;
+}
+
 /**
  * Best-effort extraction of a `(path, old, new)` triple from a Claude
  * `Edit` / `Write` / `MultiEdit` tool input. Tools we can't parse fall back
@@ -104,6 +110,56 @@ export const diffStats = (
         if (m === "+") added += 1;
         else if (m === "-") removed += 1;
       }
+    }
+  }
+  return { added, removed };
+};
+
+export const extractPatchEntries = (
+  input: unknown,
+): ReadonlyArray<PatchEntry> => {
+  if (input === null || typeof input !== "object") return [];
+  const obj = input as Record<string, unknown>;
+  const patches = Array.isArray(obj.patches) ? obj.patches : null;
+  if (patches !== null) {
+    return patches
+      .map((raw): PatchEntry | null => {
+        if (raw === null || typeof raw !== "object") return null;
+        const patch = raw as Record<string, unknown>;
+        const filePath =
+          typeof patch.file_path === "string" ? patch.file_path : null;
+        const text = typeof patch.patch === "string" ? patch.patch : null;
+        if (filePath === null || text === null) return null;
+        return {
+          file_path: filePath,
+          kind: typeof patch.kind === "string" ? patch.kind : undefined,
+          patch: text,
+        };
+      })
+      .filter((entry): entry is PatchEntry => entry !== null);
+  }
+  const path = typeof obj.file_path === "string" ? obj.file_path : null;
+  const patch = typeof obj.patch === "string" ? obj.patch : null;
+  if (path === null || patch === null) return [];
+  return [
+    {
+      file_path: path,
+      kind: typeof obj.kind === "string" ? obj.kind : undefined,
+      patch,
+    },
+  ];
+};
+
+export const patchStats = (
+  patches: ReadonlyArray<PatchEntry>,
+): { added: number; removed: number } => {
+  let added = 0;
+  let removed = 0;
+  for (const patch of patches) {
+    for (const line of patch.patch.split("\n")) {
+      if (line.startsWith("+++") || line.startsWith("---")) continue;
+      if (line.startsWith("+")) added += 1;
+      else if (line.startsWith("-")) removed += 1;
     }
   }
   return { added, removed };
