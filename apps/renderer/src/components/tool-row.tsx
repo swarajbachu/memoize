@@ -38,6 +38,7 @@ import {
   EditDiff,
   extractEdits,
   type FileEdit,
+  UnifiedPatchDiff,
 } from "./inline-diff.tsx";
 
 type IconHandle = Parameters<typeof HugeiconsIcon>[0]["icon"];
@@ -670,17 +671,13 @@ const buildToolView = (
           patches.length > 0 ? (
             <div className="space-y-2">
               {patches.map((patch, i) => (
-                <div key={i} className="space-y-1">
-                  <div className="flex items-center gap-2 text-[11px]">
-                    <FileBadge path={patch.file_path} view="diff" />
-                    {patch.kind !== undefined ? (
-                      <span className="text-muted-foreground">
-                        {patch.kind}
-                      </span>
-                    ) : null}
-                  </div>
-                  <PreBlock text={patch.patch} />
-                </div>
+                <UnifiedPatchDiff
+                  key={i}
+                  path={patch.file_path}
+                  patch={patch.patch}
+                  kind={patch.kind}
+                  showHeader={patches.length > 1}
+                />
               ))}
             </div>
           ) : edits.length > 0 ? (

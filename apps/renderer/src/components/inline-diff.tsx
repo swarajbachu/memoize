@@ -273,6 +273,104 @@ const basename = (p: string): string => {
   return i === -1 ? p : p.slice(i + 1);
 };
 
+const parseUnifiedPatch = (patchText: string): ReadonlyArray<DiffLine> => {
+  const lines: DiffLine[] = [];
+  let oldLn = 0;
+  let newLn = 0;
+  let inHunk = false;
+
+  for (const raw of patchText.split("\n")) {
+    const hunk = raw.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+    if (hunk !== null) {
+      oldLn = Number(hunk[1]);
+      newLn = Number(hunk[2]);
+      inHunk = true;
+      lines.push({
+        kind: "hunk",
+        text: raw,
+        oldLine: null,
+        newLine: null,
+      });
+      continue;
+    }
+    if (!inHunk) continue;
+    if (raw.startsWith("\\ No newline")) continue;
+    if (raw.startsWith("+") && !raw.startsWith("+++")) {
+      lines.push({
+        kind: "add",
+        text: raw.slice(1),
+        oldLine: null,
+        newLine: newLn,
+      });
+      newLn += 1;
+      continue;
+    }
+    if (raw.startsWith("-") && !raw.startsWith("---")) {
+      lines.push({
+        kind: "del",
+        text: raw.slice(1),
+        oldLine: oldLn,
+        newLine: null,
+      });
+      oldLn += 1;
+      continue;
+    }
+    const text = raw.startsWith(" ") ? raw.slice(1) : raw;
+    lines.push({ kind: "context", text, oldLine: oldLn, newLine: newLn });
+    oldLn += 1;
+    newLn += 1;
+  }
+
+  return lines;
+};
+
+export function UnifiedPatchDiff({
+  path,
+  patch,
+  kind = "edit",
+  showHeader = false,
+}: {
+  path: string;
+  patch: string;
+  kind?: string;
+  showHeader?: boolean;
+}) {
+  const lines = useMemo(() => parseUnifiedPatch(patch), [patch]);
+  if (lines.length === 0) {
+    return (
+      <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
+        (no textual change)
+      </div>
+    );
+  }
+
+  const name = basename(path);
+  return (
+    <div className="overflow-hidden rounded-md border border-border/60">
+      {showHeader ? (
+        <div className="flex items-center gap-2 border-b border-border/40 bg-muted/30 px-2 py-1 text-[11px] text-muted-foreground">
+          <FileIcon
+            name={name}
+            kind="file"
+            className="inline-flex size-3.5 shrink-0"
+          />
+          <span className="truncate font-mono text-foreground/80">{name}</span>
+          <span className="text-muted-foreground">{kind}</span>
+        </div>
+      ) : null}
+
+      <div
+        className="code-block-scroll overflow-auto bg-muted/15 text-[12px] leading-[1.45]"
+        style={{ maxHeight: 420 }}
+      >
+        {lines.map((line, idx) => (
+          <EditDiffRow key={idx} line={line} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function EditDiff({
   edit,
   showHeader = false,
