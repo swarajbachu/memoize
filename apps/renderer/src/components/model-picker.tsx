@@ -3,7 +3,6 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
-  Info,
   Search as SearchIcon,
 } from "lucide-react";
 import {
@@ -72,8 +71,6 @@ interface ModelPickerEntry {
   providerId: ProviderId;
   modelId: string;
   label: string;
-  /** When true, render the rainbow Ultracode chip on this row. */
-  ultracode?: boolean;
   /**
    * When set, render a small context-window pill on this row. We only show
    * a pill when the model's `contextWindow` descriptor defaults to `"1m"`
@@ -229,7 +226,6 @@ export function ModelPicker(props: ModelPickerProps) {
           providerId: pid,
           modelId: m.id,
           label: m.label,
-          ultracode: descriptor?.ultracode?.available === true,
           ...(contextWindowLabel !== undefined ? { contextWindowLabel } : {}),
         });
       }
@@ -288,19 +284,6 @@ export function ModelPicker(props: ModelPickerProps) {
       .filter((g) => g.models.length > 0);
   }, [scope, query, allModels, pickableProviders, providerId]);
 
-  // When the user picks an Ultracode-eligible model (today: Opus 4.8), seed
-  // the per-session `effort` to `"ultracode"` so the rainbow chip lights up
-  // out of the box. Skipped if the user has already picked an effort for
-  // this session — their explicit choice wins.
-  const seedUltracodeDefault = (sessionId: SessionId, modelId: string) => {
-    if (typeof window === "undefined") return;
-    const descriptor = findModelDescriptor("claude", modelId);
-    if (descriptor?.ultracode?.available !== true) return;
-    const key = `memoize.modelOptions.${sessionId}.effort`;
-    if (window.sessionStorage.getItem(key) !== null) return;
-    window.sessionStorage.setItem(key, "ultracode");
-  };
-
   const handlePick = async (pid: ProviderId, modelId: string) => {
     if (isDefault) {
       setDefaultProviderAndModel(pid, modelId);
@@ -344,7 +327,6 @@ export function ModelPicker(props: ModelPickerProps) {
           return;
         }
       }
-      seedUltracodeDefault(sessionId, modelId);
       pushModelPickerEvent({ providerId: pid, modelId });
       setOpen(false);
     } finally {
@@ -738,15 +720,6 @@ function ModelRow({
         />
       )}
       <span className="truncate">{entry.label}</span>
-      {entry.ultracode === true && (
-        <span
-          title="Ultracode — max reasoning + automatic workflow orchestration."
-          className="flex items-center gap-0.5 rounded-md bg-gradient-to-r from-rose-400 via-amber-300 via-emerald-400 via-sky-400 to-violet-400 px-1.5 py-px text-[10px] font-medium text-white shadow-sm/10"
-        >
-          Ultracode
-          <Info className="size-2.5 opacity-80" aria-hidden />
-        </span>
-      )}
       {entry.contextWindowLabel !== undefined && (
         <span
           title={`${entry.contextWindowLabel} context window`}
