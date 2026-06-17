@@ -81,6 +81,8 @@ const COMMANDS: readonly BuiltinCommand[] = [
   { name: "experimental", description: "List Codex experimental features.", kind: "forward", appliesTo: "codex" },
   { name: "status", description: "Show Codex thread status.", kind: "forward", appliesTo: "codex" },
   { name: "debug-config", description: "Show Codex config details.", kind: "forward", appliesTo: "codex" },
+  { name: "tool-log", description: "Show the Codex tool translation log path.", kind: "forward", appliesTo: "codex" },
+  { name: "debug-tools", description: "Show the Codex tool translation log path.", kind: "forward", appliesTo: "codex" },
   { name: "statusline", description: "Configure statusline fields.", kind: "client", appliesTo: "codex" },
   { name: "title", description: "Configure terminal title fields.", kind: "client", appliesTo: "codex" },
   { name: "ps", description: "Check background Codex processes.", kind: "forward", appliesTo: "codex" },

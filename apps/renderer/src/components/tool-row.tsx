@@ -35,7 +35,10 @@ import {
   diffStats,
   EditDiff,
   extractEdits,
+  extractPatchEntries,
   type FileEdit,
+  patchStats,
+  UnifiedPatchDiff,
 } from "./inline-diff.tsx";
 
 type IconHandle = Parameters<typeof HugeiconsIcon>[0]["icon"];
@@ -581,14 +584,20 @@ const buildToolView = (
     case "Write":
     case "MultiEdit": {
       const path = asString(obj.file_path);
-      const edits = extractEdits(tool, input);
+      const patches = extractPatchEntries(input);
+      const edits = patches.length > 0 ? [] : extractEdits(tool, input);
       const label =
         tool === "Write"
           ? "Write"
           : tool === "MultiEdit"
-            ? `MultiEdit (${edits.length})`
+            ? `MultiEdit (${edits.length || patches.length})`
             : "Edit";
-      const stats = edits.length > 0 ? diffStats(edits) : null;
+      const stats =
+        patches.length > 0
+          ? patchStats(patches)
+          : edits.length > 0
+            ? diffStats(edits)
+            : null;
       return {
         icon: PencilEdit01Icon,
         label,
@@ -605,7 +614,19 @@ const buildToolView = (
             </span>
           ) : undefined,
         fallbackBody:
-          edits.length > 0 ? (
+          patches.length > 0 ? (
+            <div className="space-y-2">
+              {patches.map((patch, i) => (
+                <UnifiedPatchDiff
+                  key={i}
+                  path={patch.file_path}
+                  patch={patch.patch}
+                  kind={patch.kind}
+                  showHeader={patches.length > 1}
+                />
+              ))}
+            </div>
+          ) : edits.length > 0 ? (
             <div className="space-y-px">
               {edits.map((edit, i) => (
                 <EditDiff

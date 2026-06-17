@@ -5,11 +5,19 @@ import { useMemo } from "react";
 import { cn } from "~/lib/utils";
 import { FileIcon } from "./file-icon.tsx";
 
+const UNIFIED_DIFF_OPTIONS = { diffStyle: "unified" } as const;
+
 export interface FileEdit {
   readonly path: string;
   readonly oldText: string;
   readonly newText: string;
   readonly mode: "edit" | "create";
+}
+
+export interface PatchEntry {
+  readonly file_path: string;
+  readonly kind?: string;
+  readonly patch: string;
 }
 
 /**
@@ -109,6 +117,56 @@ export const diffStats = (
   return { added, removed };
 };
 
+export const extractPatchEntries = (
+  input: unknown,
+): ReadonlyArray<PatchEntry> => {
+  if (input === null || typeof input !== "object") return [];
+  const obj = input as Record<string, unknown>;
+  const patches = Array.isArray(obj.patches) ? obj.patches : null;
+  if (patches !== null) {
+    return patches
+      .map((raw): PatchEntry | null => {
+        if (raw === null || typeof raw !== "object") return null;
+        const patch = raw as Record<string, unknown>;
+        const filePath =
+          typeof patch.file_path === "string" ? patch.file_path : null;
+        const text = typeof patch.patch === "string" ? patch.patch : null;
+        if (filePath === null || text === null) return null;
+        return {
+          file_path: filePath,
+          kind: typeof patch.kind === "string" ? patch.kind : undefined,
+          patch: text,
+        };
+      })
+      .filter((entry): entry is PatchEntry => entry !== null);
+  }
+  const path = typeof obj.file_path === "string" ? obj.file_path : null;
+  const patch = typeof obj.patch === "string" ? obj.patch : null;
+  if (path === null || patch === null) return [];
+  return [
+    {
+      file_path: path,
+      kind: typeof obj.kind === "string" ? obj.kind : undefined,
+      patch,
+    },
+  ];
+};
+
+export const patchStats = (
+  patches: ReadonlyArray<PatchEntry>,
+): { added: number; removed: number } => {
+  let added = 0;
+  let removed = 0;
+  for (const patch of patches) {
+    for (const line of patch.patch.split("\n")) {
+      if (line.startsWith("+++") || line.startsWith("---")) continue;
+      if (line.startsWith("+")) added += 1;
+      else if (line.startsWith("-")) removed += 1;
+    }
+  }
+  return { added, removed };
+};
+
 const buildDiff = (edit: FileEdit): ReadonlyArray<DiffLine> => {
   const patch = structuredPatch(
     edit.path,
@@ -183,7 +241,11 @@ export function DiffBody({
           {edit.mode === "create" ? "create" : "edit"} · {edit.path}
         </div>
       ) : null}
-      <PatchDiff patch={patchText} disableWorkerPool />
+      <PatchDiff
+        patch={patchText}
+        options={UNIFIED_DIFF_OPTIONS}
+        disableWorkerPool
+      />
     </div>
   );
 }
@@ -272,6 +334,71 @@ const basename = (p: string): string => {
   const i = p.lastIndexOf("/");
   return i === -1 ? p : p.slice(i + 1);
 };
+
+const normalizePatchForDiffViewer = (path: string, patch: string): string => {
+  const trimmed = patch.trimStart();
+  if (trimmed.startsWith("diff --git") || trimmed.startsWith("--- ")) {
+    return patch;
+  }
+  if (!trimmed.startsWith("@@")) return patch;
+  const displayPath = path.length > 0 ? path : "file";
+  const body = patch.endsWith("\n") ? patch : `${patch}\n`;
+  return [
+    `diff --git a/${displayPath} b/${displayPath}`,
+    `--- a/${displayPath}`,
+    `+++ b/${displayPath}`,
+    body,
+  ].join("\n");
+};
+
+export function UnifiedPatchDiff({
+  path,
+  patch,
+  kind = "edit",
+  showHeader = false,
+}: {
+  path: string;
+  patch: string;
+  kind?: string;
+  showHeader?: boolean;
+}) {
+  if (patch.trim().length === 0) {
+    return (
+      <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
+        (no textual change)
+      </div>
+    );
+  }
+
+  const name = basename(path);
+  const normalizedPatch = normalizePatchForDiffViewer(path, patch);
+  return (
+    <div className="overflow-hidden rounded-md border border-border/60">
+      {showHeader ? (
+        <div className="flex items-center gap-2 border-b border-border/40 bg-muted/30 px-2 py-1 text-[11px] text-muted-foreground">
+          <FileIcon
+            name={name}
+            kind="file"
+            className="inline-flex size-3.5 shrink-0"
+          />
+          <span className="truncate font-mono text-foreground/80">{name}</span>
+          <span className="text-muted-foreground">{kind}</span>
+        </div>
+      ) : null}
+
+      <div
+        className="fz-diff code-block-scroll overflow-auto bg-muted/15 text-[12px] leading-[1.45]"
+        style={{ maxHeight: 420 }}
+      >
+        <PatchDiff
+          patch={normalizedPatch}
+          options={UNIFIED_DIFF_OPTIONS}
+          disableWorkerPool
+        />
+      </div>
+    </div>
+  );
+}
 
 export function EditDiff({
   edit,
