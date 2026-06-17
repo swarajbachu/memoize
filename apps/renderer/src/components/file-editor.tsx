@@ -15,11 +15,7 @@ import {
 } from "../lib/codemirror/setup.ts";
 import { languageForFile } from "../lib/codemirror/languages.ts";
 import { useKeybindingsStore } from "../store/keybindings.ts";
-import {
-  useUiStore,
-  type FileView,
-  type OpenFile,
-} from "../store/ui.ts";
+import { useUiStore, type FileView, type OpenFile } from "../store/ui.ts";
 
 import type { EditorView } from "@codemirror/view";
 
@@ -35,7 +31,7 @@ const formatError = (err: unknown): string => {
     if (tag === "FsPathOutsideError") {
       const p =
         "path" in (err as Record<string, unknown>)
-          ? String((err as { path: unknown }).path)
+          ? String((err as unknown as { path: unknown }).path)
           : null;
       return p === null
         ? "This file is outside the current project."

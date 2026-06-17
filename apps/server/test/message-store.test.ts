@@ -16,6 +16,7 @@ import type {
   FolderId,
   SessionId,
 } from "@memoize/wire";
+import { RepositorySettings } from "@memoize/wire";
 
 import { NdjsonLogger } from "../src/persistence/ndjson-logger.ts";
 import { Migration0001Initial } from "../src/persistence/migrations/0001_initial.ts";
@@ -34,6 +35,8 @@ import { WorktreeService } from "../src/worktree/services/worktree-service.ts";
 import { MessageStore } from "../src/provider/services/message-store.ts";
 import { ProviderService } from "../src/provider/services/provider-service.ts";
 import { MessageStoreLive } from "../src/provider/layers/message-store.ts";
+import { PtyService } from "../src/pty/services/pty-service.ts";
+import { RepositorySettingsService } from "../src/repository-settings/services/repository-settings-service.ts";
 
 const PROJECT_ID = "proj-test" as FolderId;
 
@@ -49,7 +52,9 @@ let scriptedEvents: ReadonlyArray<AgentEvent> = [];
 const StubProviderLive = Layer.succeed(ProviderService, {
   availability: () => Effect.succeed([]),
   start: (input) =>
-    Effect.succeed({ sessionId: input.sessionId ?? ("stub" as AgentSessionId) }),
+    Effect.succeed({
+      sessionId: input.sessionId ?? ("stub" as AgentSessionId),
+    }),
   send: () => Effect.void,
   interrupt: () => Effect.void,
   close: () => Effect.void,
@@ -65,6 +70,46 @@ const StubWorktreeLive = Layer.succeed(WorktreeService, {
   list: () => Effect.succeed([]),
   get: () => Effect.succeed(null),
   remove: () => Effect.void,
+});
+
+/** Chat archive cleanup is out of scope for MessageStore persistence tests. */
+const StubRepositorySettingsLive = Layer.succeed(RepositorySettingsService, {
+  get: (projectId) =>
+    Effect.succeed(
+      RepositorySettings.make({
+        projectId,
+        defaultProviderId: null,
+        defaultModel: null,
+        defaultRuntimeMode: null,
+        autoCreateWorktree: false,
+        worktreeBaseDir: null,
+        archiveCleanupScript: null,
+        archiveRemoveWorktree: false,
+      }),
+    ),
+  update: (projectId, patch) =>
+    Effect.succeed(
+      RepositorySettings.make({
+        projectId,
+        defaultProviderId: patch.defaultProviderId ?? null,
+        defaultModel: patch.defaultModel ?? null,
+        defaultRuntimeMode: patch.defaultRuntimeMode ?? null,
+        autoCreateWorktree: patch.autoCreateWorktree ?? false,
+        worktreeBaseDir: patch.worktreeBaseDir ?? null,
+        archiveCleanupScript: patch.archiveCleanupScript ?? null,
+        archiveRemoveWorktree: patch.archiveRemoveWorktree ?? false,
+      }),
+    ),
+});
+
+/** PTYs are only touched during worktree cleanup; these tests use no worktrees. */
+const StubPtyLive = Layer.succeed(PtyService, {
+  open: () => Effect.die("not used"),
+  write: () => Effect.die("not used"),
+  resize: () => Effect.die("not used"),
+  close: () => Effect.die("not used"),
+  closeByCwdPrefix: () => Effect.void,
+  subscribe: () => Stream.die("not used"),
 });
 
 /** NdjsonLogger writes audit lines; in tests we swallow them. */
@@ -103,6 +148,8 @@ const makeRuntime = (dbPath: string) => {
   const TestLayer = MessageStoreLive.pipe(
     Layer.provide(StubProviderLive),
     Layer.provide(StubWorktreeLive),
+    Layer.provide(StubRepositorySettingsLive),
+    Layer.provide(StubPtyLive),
     Layer.provide(StubNdjsonLive),
     // provideMerge (not provide) so SqlClient stays in the runtime context —
     // the test seeds the `projects` row through it directly.
@@ -112,13 +159,18 @@ const makeRuntime = (dbPath: string) => {
 };
 
 const withRuntime = async <A>(
-  fn: (run: <X>(eff: Effect.Effect<X, unknown, MessageStore | SqlClient.SqlClient>) => Promise<X>) => Promise<A>,
+  fn: (
+    run: <X>(
+      eff: Effect.Effect<X, unknown, MessageStore | SqlClient.SqlClient>,
+    ) => Promise<X>,
+  ) => Promise<A>,
 ): Promise<A> => {
   const dir = mkdtempSync(join(tmpdir(), "mz-msgstore-"));
   const dbPath = join(dir, "test.sqlite");
   const runtime = makeRuntime(dbPath);
-  const run = <X>(eff: Effect.Effect<X, unknown, MessageStore | SqlClient.SqlClient>): Promise<X> =>
-    runtime.runPromise(eff as Effect.Effect<X, unknown, never>);
+  const run = <X>(
+    eff: Effect.Effect<X, unknown, MessageStore | SqlClient.SqlClient>,
+  ): Promise<X> => runtime.runPromise(eff as Effect.Effect<X, unknown, never>);
   try {
     // Seed the project row through the runtime's own SqlClient.
     await run(

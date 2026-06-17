@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3]
+
 ### Fixed
 - Grok sessions no longer abort mid-turn when the ACP child surfaces transient `AuthorizationRequired` noise inside `session/update` error frames while the turn is still completing normally. The shared ACP translator now filters that frame on the grok channel so in-flight prompts aren't rejected and the session doesn't flip to idle prematurely.
 
