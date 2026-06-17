@@ -15,6 +15,30 @@ const Status = MemoizeRpcs.toLayerHandler(
     ),
 );
 
+const Branches = MemoizeRpcs.toLayerHandler(
+  "git.branches",
+  ({ folderId, worktreeId }) =>
+    Effect.flatMap(GitService, (svc) =>
+      svc.branches(folderId, worktreeId ?? null),
+    ),
+);
+
+const SwitchBranch = MemoizeRpcs.toLayerHandler(
+  "git.switchBranch",
+  ({ folderId, worktreeId, branch, remote }) =>
+    Effect.flatMap(GitService, (svc) =>
+      svc.switchBranch(folderId, branch, remote ?? null, worktreeId ?? null),
+    ),
+);
+
+const RenameBranch = MemoizeRpcs.toLayerHandler(
+  "git.renameBranch",
+  ({ folderId, worktreeId, name }) =>
+    Effect.flatMap(GitService, (svc) =>
+      svc.renameBranch(folderId, name, worktreeId ?? null),
+    ),
+);
+
 const HeadChanged = MemoizeRpcs.toLayerHandler(
   "git.headChanged",
   ({ folderId }) =>
@@ -104,6 +128,9 @@ const FixFailingChecks = MemoizeRpcs.toLayerHandler(
 export const GitHandlersLayer = Layer.mergeAll(
   Log,
   Status,
+  Branches,
+  SwitchBranch,
+  RenameBranch,
   HeadChanged,
   Origin,
   PrState,

@@ -21,6 +21,19 @@ export class GitStatusSummary extends Schema.Class<GitStatusSummary>(
   dirtyFiles: Schema.Number,
 }) {}
 
+export const GitBranchKind = Schema.Literal("local", "remote");
+export type GitBranchKind = typeof GitBranchKind.Type;
+
+export class GitBranchInfo extends Schema.Class<GitBranchInfo>("GitBranchInfo")(
+  {
+    name: Schema.String,
+    current: Schema.Boolean,
+    remote: Schema.NullOr(Schema.String),
+    upstream: Schema.NullOr(Schema.String),
+    kind: GitBranchKind,
+  },
+) {}
+
 export class GitNotARepoError extends Schema.TaggedError<GitNotARepoError>()(
   "GitNotARepoError",
   { folderId: FolderId },
@@ -62,6 +75,36 @@ export const GitStatusRpc = Rpc.make("git.status", {
      * dirty/ahead counts reflect the worktree, not the main checkout.
      */
     worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
+  }),
+  success: GitStatusSummary,
+  error: GitErrors,
+});
+
+export const GitBranchesRpc = Rpc.make("git.branches", {
+  payload: Schema.Struct({
+    folderId: FolderId,
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
+  }),
+  success: Schema.Array(GitBranchInfo),
+  error: GitErrors,
+});
+
+export const GitSwitchBranchRpc = Rpc.make("git.switchBranch", {
+  payload: Schema.Struct({
+    folderId: FolderId,
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
+    branch: Schema.String,
+    remote: Schema.optional(Schema.NullOr(Schema.String)),
+  }),
+  success: GitStatusSummary,
+  error: GitErrors,
+});
+
+export const GitRenameBranchRpc = Rpc.make("git.renameBranch", {
+  payload: Schema.Struct({
+    folderId: FolderId,
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
+    name: Schema.String,
   }),
   success: GitStatusSummary,
   error: GitErrors,
