@@ -87,23 +87,23 @@ export const Hero = () => {
                   Alpha
                 </div>
                 <div className="text-natural-white rounded-full pr-2 text-[10px] sm:text-xs">
-                  Now in public alpha — free to use
+                  Public alpha — built for token maxing
                 </div>
               </div>
             </Link>
             <div className="mt-6 flex flex-col items-start gap-6 md:mt-10 lg:flex-row lg:gap-10">
               <h1 className="text-natural-white -tracking-xl text-3xl font-semibold text-balance sm:text-4xl md:text-5xl lg:text-7xl">
-                Every AI coding agent, one chat-first workspace.
+                Token max every coding agent.
               </h1>
               <div className="lg:max-w-md">
                 <h2 className="text-sm font-medium text-balance text-neutral-300 sm:text-base lg:text-lg">
-                  Run Claude Code, Codex, Cursor, Gemini, Grok and OpenCode side
-                  by side on your Mac — a real chat timeline, git worktrees, and
-                  one-click PRs. Bring your own keys.
+                  For developers who want to code all day, keep every agent
+                  working, and squeeze real progress out of every subscription
+                  they pay for. More attempts, cleaner branches, faster shipping.
                 </h2>
                 <Button containerClassName="mt-6 md:mt-8" />
                 <p className="text-natural-white/50 mt-3 text-xs">
-                  Requires macOS · Apple Silicon &amp; Intel
+                  macOS app · BYOK · no token markup
                 </p>
               </div>
             </div>

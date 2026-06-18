@@ -11,7 +11,7 @@ export const GITHUB_URL = "https://github.com/swarajbachu/memoize";
 export const DOWNLOAD_URL = `${GITHUB_URL}/releases/latest`;
 
 export const TAGLINE =
-  "Every AI coding agent, one chat-first workspace on your Mac.";
+  "Token max every coding agent from one local Mac workspace.";
 
 // The coding agents memoize wraps. Used by the logo cloud / brands marquee.
 export const AGENTS = [

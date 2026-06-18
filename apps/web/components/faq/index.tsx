@@ -13,6 +13,16 @@ import Link from "next/link";
 
 const data = [
   {
+    question: "What do you mean by token maxing?",
+    answer:
+      "Token maxing means using the model access you already pay for on more real work: parallel feature attempts, bug fixes, refactors, and reviews. memoize makes that sane by keeping each run visible, isolated, and reviewable.",
+  },
+  {
+    question: "Who is memoize for?",
+    answer:
+      "memoize is for developers who want to become power users: people trying to code all day, keep multiple projects moving, max out their AI subscriptions, and still review exactly what ships.",
+  },
+  {
     question: "Which agents are supported?",
     answer:
       "memoize wraps six coding agent CLIs in one workspace: Claude Code, Codex, Cursor, Gemini, Grok, and OpenCode. You can run them side by side and switch providers without leaving the app.",
@@ -20,7 +30,7 @@ const data = [
   {
     question: "Do I need my own API keys or subscriptions?",
     answer:
-      "Yes. memoize is bring your own keys. You plug in your own provider keys or subscription, and memoize talks to them directly. It never resells tokens and adds $0 markup, so you only ever pay the agent providers.",
+      "Yes. memoize is bring your own keys. You plug in your own provider keys or subscriptions, and memoize talks to them directly. It never resells tokens and adds $0 markup, so you only pay the agent providers.",
   },
   {
     question: "Is my code or data sent anywhere?",
@@ -55,7 +65,7 @@ export const FAQ = () => {
       <Container className="grid grid-cols-1 gap-15 py-20 md:py-30 lg:grid-cols-2">
         <div className="flex flex-col gap-15 pt-8">
           <div className="flex flex-col gap-4">
-            <Header>Frequently Asked Questions</Header>
+            <Header>Questions power users ask first</Header>
             <div className="-tracking-xs text-muted-foreground text-base leading-6 font-medium">
               More questions? See the project on{" "}
               <Link

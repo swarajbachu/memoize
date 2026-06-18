@@ -19,19 +19,19 @@ import { Button } from "@/components/button";
 
 const cardsData: InfoCardsProps[] = [
   {
-    title: "One workspace, every agent",
+    title: "Max out the tools you already have",
     description:
-      "Claude Code, Codex, Cursor, Gemini, Grok, and OpenCode in a single project-aware app. No tab juggling.",
+      "Run Claude Code, Codex, Cursor, Gemini, Grok, and OpenCode from one project-aware app.",
     icon: <DoorsOpenIcon />,
   },
   {
-    title: "Bring your own keys",
+    title: "No token resale",
     description:
-      "Use your own API keys or subscription. memoize never resells tokens, so there is $0 markup on what you run.",
+      "Use your own API keys or subscriptions. memoize adds $0 markup to the model usage you run.",
     icon: <DocsIcon />,
   },
   {
-    title: "Local-first by default",
+    title: "Local-first control",
     description:
       "Chats and worktrees persist in local SQLite. Your keys live in the macOS Keychain, not our servers.",
     icon: <HandsIcon />,
@@ -40,27 +40,27 @@ const cardsData: InfoCardsProps[] = [
 
 const comparisonData: ComparisonData[] = [
   {
-    title: "Where work happens",
-    memoize: "One unified, streaming chat timeline",
-    traditional: "A pile of scattered terminal tabs",
+    title: "Token maxing",
+    memoize: "Multiple useful agent runs, visible in one workspace",
+    traditional: "One terminal session at a time, or chaos",
     icon: <MessageIcon />,
   },
   {
-    title: "Switching providers",
-    memoize: "Swap Claude, Codex, Gemini, Grok instantly",
-    traditional: "Re-learn flags and relaunch each CLI",
+    title: "Subscriptions",
+    memoize: "Use the provider plans and keys you already pay for",
+    traditional: "Pay another product to resell model credits",
     icon: <ChipIcon />,
   },
   {
     title: "Isolation",
-    memoize: "A git worktree per chat, no clobbering",
+    memoize: "A git worktree per serious chat, no clobbering",
     traditional: "Agents fighting over one working tree",
     icon: <CubeIcon />,
   },
   {
     title: "Reviewing changes",
-    memoize: "Built-in PR / diff pane and commit composer",
-    traditional: "git diff piped through your memory",
+    memoize: "Built-in diff pane and commit composer",
+    traditional: "Terminal output plus memory",
     icon: <NodeLines />,
   },
   {
@@ -70,15 +70,15 @@ const comparisonData: ComparisonData[] = [
     icon: <HandShakeIocn />,
   },
   {
-    title: "Tool output",
-    memoize: "Readable tool calls, thinking, and diffs",
-    traditional: "Raw text scrolling past in the buffer",
+    title: "Context",
+    memoize: "Readable tool calls, thinking, files, and diffs",
+    traditional: "Raw text scrolling past in a buffer",
     icon: <MessageSend />,
   },
   {
-    title: "Cost",
-    memoize: "Sub-agents delegate to cheaper models",
-    traditional: "One expensive model doing everything",
+    title: "Parallel work",
+    memoize: "More attempts without losing reviewability",
+    traditional: "More attempts means more cleanup",
     icon: <DimondIcon />,
   },
 ];
@@ -88,7 +88,11 @@ export const Comparison = () => {
     <section id="compare" className="w-full scroll-mt-24">
       <Container className="flex flex-col gap-15 py-20 md:py-30">
         <div className="flex flex-col gap-6">
-          <Header>memoize vs a pile of terminal tabs</Header>
+          <Header>Token maxing without terminal chaos.</Header>
+          <p className="text-muted-foreground max-w-3xl text-base leading-6 font-medium md:text-lg md:leading-7">
+            The point is not more output. The point is more useful attempts,
+            clearer branches, and fewer wasted subscriptions.
+          </p>
           <div className="block lg:hidden">
             <Button />
           </div>

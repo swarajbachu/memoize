@@ -35,11 +35,17 @@ export const LogoCloud = () => {
 
   return (
     <Container className="max-w-7xl py-20">
-      <h2 className="font-dm-mono -tracking-xs text-muted-foreground text-center text-sm leading-4 font-normal uppercase">
-        Works with every coding agent
-      </h2>
+      <div className="mx-auto flex max-w-3xl flex-col items-center gap-3 text-center">
+        <h2 className="font-dm-mono -tracking-xs text-primary text-sm leading-4 font-semibold uppercase">
+          Use the subscriptions you already pay for
+        </h2>
+        <p className="text-muted-foreground text-base leading-6 font-medium">
+          memoize does not sell model credits. Bring your own keys, run the
+          agents you already trust, and push more useful work through them.
+        </p>
+      </div>
 
-      <div className="mx-auto mt-12 flex max-w-6xl flex-wrap items-center justify-center gap-x-4 gap-y-4 md:gap-x-12 md:gap-y-8">
+      <div className="mx-auto mt-10 flex max-w-5xl flex-wrap items-center justify-center gap-3 md:gap-4">
         {displayedAgents.map((agent, index) => (
           <motion.div
             key={agent.id}
@@ -58,7 +64,7 @@ export const LogoCloud = () => {
                   ease: "easeInOut",
                 }}
               >
-                <span className="bg-card flex items-center rounded-full border border-white/10 px-4 py-1.5 text-sm font-medium whitespace-nowrap text-foreground transition-colors hover:border-primary/40">
+                <span className="bg-primary flex items-center rounded-full px-4 py-1.5 text-sm font-semibold whitespace-nowrap text-primary-foreground">
                   {agent.name}
                 </span>
               </motion.div>

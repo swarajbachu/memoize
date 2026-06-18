@@ -1,17 +1,16 @@
 import { getSEO } from "@/lib/seo";
 import { AboutSection } from "@/components/about";
 import { BentoOne } from "@/components/bento-one";
-import { BentoTwo } from "@/components/bento-two";
 import { Comparison } from "@/components/comparison";
 import { FAQ } from "@/components/faq";
-import { Feedbacks } from "@/components/feedbacks";
 import { Hero } from "@/components/hero";
 import { LogoCloud } from "@/components/logo-cloud";
 import { Projects } from "@/components/projects";
-import { Testimonials } from "@/components/testimonials";
 
 export const metadata = getSEO({
-  title: "Every AI coding agent, one workspace",
+  title: "Token max every coding agent",
+  description:
+    "memoize is a local-first macOS workspace for developers who want to code all day, max out their AI subscriptions, and ship more parallel attempts safely.",
   path: "/",
 });
 
@@ -22,11 +21,8 @@ export default function Home() {
       <LogoCloud />
       <BentoOne />
       <Projects />
-      <Testimonials />
-      <BentoTwo />
       <Comparison />
       <AboutSection />
-      <Feedbacks />
       <FAQ />
     </section>
   );

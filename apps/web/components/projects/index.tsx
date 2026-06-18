@@ -6,7 +6,7 @@ import Image from "next/image";
 import { cn } from "@/lib/utils";
 
 import { Container } from "@/components/container";
-import { PageHeader } from "@/components/page-header";
+import { Header } from "@/components/header";
 
 type WorkflowCard = {
   id: string;
@@ -22,11 +22,11 @@ type WorkflowCard = {
 const showcases = [
   {
     id: "chat-timeline",
-    label: "Full workspace",
+    label: "Workspace",
     caption:
-      "Streaming tool calls, thinking blocks, diffs, and errors in one readable thread.",
+      "One place to run agents, inspect context, and keep long sessions understandable.",
     className: "col-span-14",
-    heightClassName: "h-[520px] md:h-[620px]",
+    heightClassName: "h-[380px] md:h-[620px]",
     screenshot: "/assets/product/memoize-workspace.png",
     imageClassName: "object-contain object-center p-3 md:object-cover md:object-top md:p-0",
     priority: true,
@@ -34,18 +34,18 @@ const showcases = [
   {
     id: "pr-changes",
     label: "PR & Changes pane",
-    caption: "Review diffs and compose commits without leaving the workspace.",
+    caption: "Turn agent work into commits only after the diff makes sense.",
     className: "col-span-14 md:col-span-7 lg:col-span-5",
-    heightClassName: "h-[360px]",
+    heightClassName: "h-[280px] md:h-[360px]",
     screenshot: "/assets/product/memoize-changes.png",
     imageClassName: "object-contain object-center p-4",
   },
   {
     id: "worktrees",
     label: "Worktrees",
-    caption: "A git worktree per chat keeps every agent on its own branch.",
+    caption: "Every serious attempt gets its own branch and working tree.",
     className: "col-span-14 md:col-span-7 lg:col-span-4",
-    heightClassName: "h-[360px]",
+    heightClassName: "h-[280px] md:h-[360px]",
     screenshot: "/assets/product/memoize-sidebar.png",
     imageClassName: "object-contain object-center p-4",
   },
@@ -53,9 +53,9 @@ const showcases = [
     id: "permissions",
     label: "Composer",
     caption:
-      "Attach files, run slash commands, and steer agents from one composer.",
+      "Attach files, call slash commands, and steer the next useful run.",
     className: "col-span-14 md:col-span-14 lg:col-span-5",
-    heightClassName: "h-[360px]",
+    heightClassName: "h-[280px] md:h-[360px]",
     screenshot: "/assets/product/memoize-composer.png",
     imageClassName: "object-contain object-center p-4",
   },
@@ -77,13 +77,16 @@ export const Projects = ({
 }) => {
   return (
     <section className="w-full">
-      <Container className="relative flex w-full flex-col gap-20 overflow-hidden pt-40 pb-20 md:pt-65 md:pb-30 lg:pt-80 lg:pb-30">
+      <Container className="relative flex w-full flex-col gap-10 overflow-hidden py-20 md:gap-14 md:py-30">
         {!disabelHeader && (
-          <div>
-            <PageHeader>See memoize in action</PageHeader>
+          <div className="z-10 flex max-w-3xl flex-col gap-4">
+            <Header>One app for the full token-maxing loop.</Header>
+            <p className="text-muted-foreground text-base leading-6 font-medium md:text-lg md:leading-7">
+              Start more useful work, keep attempts isolated, and review the
+              result before it touches your main checkout.
+            </p>
           </div>
         )}
-        {/* grids */}
         <div
           className={cn(
             "z-10 grid grid-cols-14 gap-6",

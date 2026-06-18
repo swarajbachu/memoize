@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 export const siteConfig = {
   name: "memoize",
   description:
-    "memoize runs Claude Code, Codex, Cursor, Gemini, Grok and OpenCode side by side on your Mac — a chat-first workspace with a real timeline, git worktrees, and one-click PRs.",
+    "memoize helps power users token max Claude Code, Codex, Cursor, Gemini, Grok and OpenCode from one local Mac workspace with worktrees, diffs, and no token markup.",
   // Override in production via NEXT_PUBLIC_SITE_URL.
   url: process.env.NEXT_PUBLIC_SITE_URL ?? "https://memoize.dev",
   ogImage: "/og.png",

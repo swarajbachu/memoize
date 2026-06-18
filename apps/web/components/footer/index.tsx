@@ -63,7 +63,7 @@ export const Footer = () => {
           <div className="relative z-10 grid min-h-112 grid-cols-1 gap-8 px-6 py-10 md:px-15 md:py-16 lg:grid-cols-[1fr_520px] lg:items-start">
             <div className="flex flex-col gap-8">
               <div className="text-natural-white -tracking-lg w-full max-w-135 justify-center text-[32px] font-medium md:text-5xl md:leading-14 lg:text-[56px] lg:leading-16">
-                Ship faster with every agent in one place
+                Token max every coding agent from one Mac app
               </div>
               <Button text="Download for Mac" />
             </div>
@@ -83,7 +83,7 @@ export const Footer = () => {
                       memoize workspace
                     </div>
                     <div className="text-muted-foreground text-xs">
-                      6 agents ready
+                      subscriptions ready
                     </div>
                   </div>
                 </div>
@@ -98,7 +98,7 @@ export const Footer = () => {
                 </Link>
               </div>
               <div className="relative z-10 mt-8 grid grid-cols-3 gap-3">
-                {["Claude Code", "Codex", "Gemini"].map((agent) => (
+                {["parallel runs", "worktrees", "diff review"].map((agent) => (
                   <div
                     key={agent}
                     className="rounded-xl bg-primary px-3 py-2 text-center text-xs font-semibold text-primary-foreground"
@@ -109,9 +109,9 @@ export const Footer = () => {
               </div>
               <div className="relative z-10 mt-6 flex flex-col gap-3">
                 {[
-                  ["chat timeline", "Streaming tool calls and diffs"],
+                  ["agent runs", "Keep useful work moving"],
                   ["worktree", "Branch isolated for review"],
-                  ["PR pane", "Commit ready to ship"],
+                  ["diff pane", "Only ship what you approve"],
                 ].map(([title, detail]) => (
                   <div key={title} className="rounded-2xl bg-white/8 px-4 py-3">
                     <div className="flex items-center justify-between gap-4">
@@ -134,7 +134,7 @@ export const Footer = () => {
             <div className="flex flex-col gap-4">
               <Logo className="size-8" />
               <span className="text-muted-foreground text-sm leading-5">
-                Every AI coding agent, one chat-first workspace on your Mac.
+                Token max every coding agent from one local Mac workspace.
               </span>
               <div>
                 <Button text="Download for Mac" />
