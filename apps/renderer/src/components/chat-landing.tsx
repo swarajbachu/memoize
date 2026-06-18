@@ -1,7 +1,7 @@
 import { Check, ChevronDown, FolderClosed, FolderPlus, Send, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 
-import type { FolderId } from "@memoize/wire";
+import { ComposerInput, type FolderId } from "@memoize/wire";
 
 import { cn } from "~/lib/utils";
 import { Button } from "~/components/ui/button";
@@ -21,6 +21,8 @@ import {
 } from "~/components/ui/tooltip";
 import { resolveAutoWorktreeId } from "~/lib/auto-worktree";
 import { useChatsStore } from "~/store/chats";
+import { useMessagesStore } from "~/store/messages";
+import { useSessionsStore } from "~/store/sessions";
 import { useSettingsStore } from "~/store/settings";
 import { useWorkspaceStore } from "~/store/workspace";
 import { ChatCreatingPanel } from "./chat-creating-panel.tsx";
@@ -109,7 +111,6 @@ export function ChatLanding() {
     // ChatCreatingPanel below) but stranded the agent in the main checkout.
     const worktreeId = await resolveAutoWorktreeId(selectedFolderId);
     const result = await create(selectedFolderId, defaultProviderId, model, {
-      initialPrompt: trimmed,
       runtimeMode: defaultRuntimeMode,
       worktreeId,
     });
@@ -120,6 +121,17 @@ export function ChatLanding() {
       setSubmitError(reason);
       setPendingPrompt(null);
       return;
+    }
+    const sessionId = useSessionsStore.getState().selectedSessionId;
+    if (sessionId !== null) {
+      const input = new ComposerInput({
+        text: trimmed,
+        attachments: [],
+        fileRefs: [],
+        skillRefs: [],
+      });
+      useMessagesStore.getState().queue(sessionId, input);
+      useMessagesStore.getState().flushQueue(sessionId);
     }
     setText("");
     // Don't clear pendingPrompt — the parent will unmount us when the

@@ -607,6 +607,17 @@ export const GitServiceLive = Layer.effect(
         }),
       );
 
+    // `git config user.name` exits non-zero (code 1) when the key is unset.
+    // We don't want that to read as a hard failure — an empty author name is
+    // a legitimate state — so a GitCommandError collapses to "".
+    const getUserName: GitService["Type"]["getUserName"] = (folderId) =>
+      Effect.flatMap(resolvePath(folderId), (cwd) =>
+        run(folderId, cwd, ["config", "user.name"]).pipe(
+          Effect.map((s) => s.trim()),
+          Effect.catchTag("GitCommandError", () => Effect.succeed("")),
+        ),
+      );
+
     const headSha = (folderId: FolderId) =>
       Effect.flatMap(resolvePath(folderId), (cwd) =>
         run(folderId, cwd, ["rev-parse", "HEAD"]).pipe(
@@ -1431,6 +1442,7 @@ export const GitServiceLive = Layer.effect(
       branches,
       switchBranch,
       renameBranch,
+      getUserName,
       subscribeHeadChanges,
       origin,
       prState,

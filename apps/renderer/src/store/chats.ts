@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Fiber, Stream } from "effect";
 import { create } from "zustand";
 
 import type {
@@ -110,6 +110,48 @@ const findChatProject = (
   return null;
 };
 
+/**
+ * Live `chat.streamChanges` subscription per project — one long-lived fiber
+ * keyed by projectId. Carries server-side chat-row patches (notably the
+ * background auto-namer rewriting a new chat's title after its first
+ * message) so the sidebar updates without a manual refetch.
+ */
+const changeFibers = new Map<string, Fiber.RuntimeFiber<unknown, unknown>>();
+
+const ensureChangeStream = (projectId: FolderId): void => {
+  if (changeFibers.has(projectId)) return;
+  // Reserve the slot synchronously so concurrent hydrate() calls don't race
+  // two subscriptions onto the same project.
+  changeFibers.set(
+    projectId,
+    Effect.runFork(
+      Effect.flatMap(
+        Effect.promise(() => getRpcClient()),
+        (client) =>
+          Stream.runForEach(
+            client.chat.streamChanges({ projectId }),
+            (chat) =>
+              Effect.sync(() => {
+                useChatsStore.setState((s) => {
+                  const chats = s.chatsByProject[projectId];
+                  if (chats === undefined) return s;
+                  if (!chats.some((c) => c.id === chat.id)) return s;
+                  return {
+                    chatsByProject: {
+                      ...s.chatsByProject,
+                      [projectId]: chats.map((c) =>
+                        c.id === chat.id ? chat : c,
+                      ),
+                    },
+                  };
+                });
+              }),
+          ),
+      ),
+    ),
+  );
+};
+
 export const useChatsStore = create<ChatsState>((set, get) => ({
   chatsByProject: {},
   selectedChatId: null,
@@ -133,6 +175,9 @@ export const useChatsStore = create<ChatsState>((set, get) => ({
         chatsByProject: { ...s.chatsByProject, [projectId]: chats },
         loadingByProject: { ...s.loadingByProject, [projectId]: false },
       }));
+      // Begin (or keep) the live change subscription now that the list is
+      // seeded — patches only land for chats already in the list.
+      ensureChangeStream(projectId);
     } catch (err) {
       set((s) => ({
         error: formatError(err),

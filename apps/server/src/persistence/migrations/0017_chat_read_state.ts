@@ -12,7 +12,7 @@ import { Effect } from "effect";
  *
  * `updated_at` (and therefore sidebar ordering) is intentionally left alone.
  */
-export const Migration0015ChatReadState = Effect.gen(function* () {
+export const Migration0017ChatReadState = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
 
   const chatColumns = yield* sql<{ readonly name: string }>`

@@ -1,5 +1,7 @@
 import { SqlClient } from "@effect/sql";
 import { Deferred, Effect, Layer, PubSub, Ref, Schema, Stream } from "effect";
+import { appendFileSync, mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 import {
   PermissionKind,
@@ -11,6 +13,7 @@ import {
   type SessionId,
 } from "@memoize/wire";
 
+import { AppPaths } from "../../app-paths.ts";
 import {
   PermissionService,
   type PermissionServiceShape,
@@ -101,10 +104,28 @@ export const PermissionServiceLive = Layer.scoped(
   PermissionService,
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
+    const paths = yield* AppPaths;
     const pubsub = yield* PubSub.unbounded<PermissionRequest>();
     const pending = yield* Ref.make<ReadonlyMap<string, PendingEntry>>(
       new Map(),
     );
+    const logPath = join(paths.userData, "logs", "permissions.log");
+
+    const log = (event: string, fields: Record<string, unknown> = {}): void => {
+      try {
+        mkdirSync(dirname(logPath), { recursive: true });
+        appendFileSync(
+          logPath,
+          `${JSON.stringify({
+            ts: new Date().toISOString(),
+            event,
+            ...fields,
+          })}\n`,
+        );
+      } catch {
+        // Permission logging must never affect permission handling.
+      }
+    };
 
     const findExistingAllow = (
       sessionId: SessionId,
@@ -174,6 +195,12 @@ export const PermissionServiceLive = Layer.scoped(
             kind,
           );
           if (allowed) {
+            log("request.auto_allowed", {
+              sessionId,
+              projectId: options.projectId,
+              kindTag: kind._tag,
+              kindKey: kindKey(kind),
+            });
             return { _tag: "AllowOnce" } as PermissionDecision;
           }
         }
@@ -195,10 +222,29 @@ export const PermissionServiceLive = Layer.scoped(
         yield* Ref.update(pending, (m) => {
           const next = new Map(m);
           next.set(id, { request: req, deferred });
+          log("request.pending_added", {
+            requestId: id,
+            sessionId,
+            projectId: options.projectId,
+            kindTag: kind._tag,
+            kindKey: kindKey(kind),
+            forcePrompt: req.forcePrompt,
+            pendingCount: next.size,
+          });
           return next;
         });
-        yield* PubSub.publish(pubsub, req);
+        const published = yield* PubSub.publish(pubsub, req);
+        log("request.published", {
+          requestId: id,
+          sessionId,
+          published,
+        });
         const decision = yield* Deferred.await(deferred);
+        log("request.resolved", {
+          requestId: id,
+          sessionId,
+          decision: decision._tag,
+        });
         return decision;
       });
 
@@ -207,6 +253,11 @@ export const PermissionServiceLive = Layer.scoped(
         const map = yield* Ref.get(pending);
         const entry = map.get(requestId);
         if (entry === undefined) {
+          log("decide.not_found", {
+            requestId,
+            decision: decision._tag,
+            pendingCount: map.size,
+          });
           return yield* Effect.fail(
             new PermissionRequestNotFoundError({ requestId }),
           );
@@ -216,6 +267,13 @@ export const PermissionServiceLive = Layer.scoped(
         yield* Ref.update(pending, (m) => {
           const next = new Map(m);
           next.delete(requestId);
+          log("decide.pending_removed", {
+            requestId,
+            sessionId: entry.request.sessionId,
+            decision: decision._tag,
+            projectId: projectId ?? null,
+            pendingCount: next.size,
+          });
           return next;
         });
         yield* Ref.update(projectByRequest, (m) => {
@@ -236,6 +294,11 @@ export const PermissionServiceLive = Layer.scoped(
         for (const entry of map.values()) {
           if (entry.request.sessionId === sessionId) out.push(entry.request);
         }
+        log("list_pending", {
+          sessionId,
+          count: out.length,
+          requestIds: out.map((req) => req.id),
+        });
         return out;
       });
 
@@ -243,7 +306,18 @@ export const PermissionServiceLive = Layer.scoped(
       Stream.unwrapScoped(
         Effect.gen(function* () {
           const dequeue = yield* pubsub.subscribe;
-          return Stream.fromQueue(dequeue);
+          const map = yield* Ref.get(pending);
+          const current = Array.from(map.values()).map(
+            (entry) => entry.request,
+          );
+          log("stream.subscribe", {
+            replayCount: current.length,
+            requestIds: current.map((req) => req.id),
+          });
+          return Stream.concat(
+            Stream.fromIterable(current),
+            Stream.fromQueue(dequeue),
+          );
         }),
       );
 

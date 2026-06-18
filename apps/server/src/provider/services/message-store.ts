@@ -13,11 +13,13 @@ import type {
   ChatId,
   ChatNotFoundError,
   ChatUnarchiveResult,
+  ComposerInput,
   FileRef,
   FolderId,
   Message,
   PermissionMode,
   ProviderId,
+  QueuedMessage,
   RuntimeMode,
   Session,
   SessionAlreadyStartedError,
@@ -237,6 +239,14 @@ export interface MessageStoreShape {
   ) => Effect.Effect<Chat, ChatNotFoundError>;
 
   /**
+   * Live feed of chat-row changes (title / worktree) for one project. Emits
+   * only live patches — no backfill — so the renderer keeps its `chat.list`
+   * snapshot and applies updates (e.g. the background auto-namer rewriting a
+   * title) on top. Never fails.
+   */
+  readonly streamChatChanges: (projectId: FolderId) => Stream.Stream<Chat>;
+
+  /**
    * Update the chat's worktree. Allowed only when no session in the chat
    * has any user message yet. Mirrors the new value onto every member
    * session's `worktreeId` in the same transaction.
@@ -311,6 +321,44 @@ export interface MessageStoreShape {
   ) => Effect.Effect<void, SessionNotFoundError>;
 
   readonly interruptSession: (
+    sessionId: SessionId,
+  ) => Effect.Effect<void, SessionNotFoundError>;
+
+  readonly listQueuedMessages: (
+    sessionId: SessionId,
+  ) => Effect.Effect<ReadonlyArray<QueuedMessage>, SessionNotFoundError>;
+
+  readonly streamQueuedMessages: (
+    sessionId: SessionId,
+  ) => Stream.Stream<ReadonlyArray<QueuedMessage>, SessionNotFoundError>;
+
+  readonly addQueuedMessage: (
+    sessionId: SessionId,
+    input: ComposerInput,
+  ) => Effect.Effect<QueuedMessage, SessionNotFoundError>;
+
+  readonly updateQueuedMessage: (
+    sessionId: SessionId,
+    queueId: string,
+    input: ComposerInput,
+  ) => Effect.Effect<QueuedMessage, SessionNotFoundError>;
+
+  readonly deleteQueuedMessage: (
+    sessionId: SessionId,
+    queueId: string,
+  ) => Effect.Effect<void, SessionNotFoundError>;
+
+  readonly sendQueuedMessageNow: (
+    sessionId: SessionId,
+    queueId: string,
+  ) => Effect.Effect<void, SessionNotFoundError>;
+
+  readonly reorderQueuedMessages: (
+    sessionId: SessionId,
+    queueIds: ReadonlyArray<string>,
+  ) => Effect.Effect<ReadonlyArray<QueuedMessage>, SessionNotFoundError>;
+
+  readonly flushQueuedMessages: (
     sessionId: SessionId,
   ) => Effect.Effect<void, SessionNotFoundError>;
 }

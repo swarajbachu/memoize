@@ -12,6 +12,7 @@ import {
   Settings as SettingsIcon,
   Trash2,
   TriangleAlert,
+  Volume2,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -20,7 +21,9 @@ import { Effect } from "effect";
 import { getRpcClient } from "../lib/rpc-client.ts";
 
 import {
+  type BranchNamingStyle,
   MODELS_BY_PROVIDER,
+  type CompletionSoundPreset,
   type Folder,
   type FolderId,
   type ProviderId,
@@ -32,6 +35,11 @@ import {
   useRelativeTimeTick,
 } from "~/lib/use-relative-time.ts";
 import { cn } from "~/lib/utils";
+import {
+  COMPLETION_SOUND_PRESETS,
+  playCompletionSound,
+  prepareCompletionSound,
+} from "../lib/completion-sounds.ts";
 import { DEFAULT_SUBAGENT_PRESETS } from "../lib/subagent-presets.ts";
 import { useProvidersStore } from "../store/providers.ts";
 import { useSettingsStore } from "../store/settings.ts";
@@ -502,15 +510,57 @@ function CredInput({
   );
 }
 
+const BRANCH_STYLE_ORDER: ReadonlyArray<BranchNamingStyle> = [
+  "username-slug",
+  "slug",
+  "feat-slug",
+  "custom",
+];
+
+const BRANCH_STYLE_META: Record<
+  BranchNamingStyle,
+  { label: string; example: string }
+> = {
+  "username-slug": { label: "username/branch", example: "swarajbachu/dark-mode" },
+  slug: { label: "branch only", example: "dark-mode" },
+  "feat-slug": { label: "feat/branch", example: "feat/dark-mode" },
+  custom: { label: "custom prefix", example: "prefix/dark-mode" },
+};
+
 function GeneralPane() {
   const defaultRuntimeMode = useSettingsStore((s) => s.defaultRuntimeMode);
   const setDefaultRuntimeMode = useSettingsStore(
     (s) => s.setDefaultRuntimeMode,
   );
+  const completionSoundEnabled = useSettingsStore(
+    (s) => s.completionSoundEnabled,
+  );
+  const setCompletionSoundEnabled = useSettingsStore(
+    (s) => s.setCompletionSoundEnabled,
+  );
+  const completionSoundPreset = useSettingsStore(
+    (s) => s.completionSoundPreset,
+  );
+  const setCompletionSoundPreset = useSettingsStore(
+    (s) => s.setCompletionSoundPreset,
+  );
+  const branchNamingStyle = useSettingsStore((s) => s.branchNamingStyle);
+  const setBranchNamingStyle = useSettingsStore((s) => s.setBranchNamingStyle);
+  const branchNamingPrefix = useSettingsStore((s) => s.branchNamingPrefix);
+  const setBranchNamingPrefix = useSettingsStore(
+    (s) => s.setBranchNamingPrefix,
+  );
   const setOnboardingCompleted = useSettingsStore(
     (s) => s.setOnboardingCompleted,
   );
   const setView = useUiStore((s) => s.setView);
+
+  // Local mirror so typing is smooth; persist on blur to avoid an atomic
+  // settings-file write per keystroke.
+  const [prefixDraft, setPrefixDraft] = useState(branchNamingPrefix);
+  useEffect(() => {
+    setPrefixDraft(branchNamingPrefix);
+  }, [branchNamingPrefix]);
 
   return (
     <>
@@ -547,6 +597,113 @@ function GeneralPane() {
         }
         description="How the agent handles tool calls in new sessions. Each session can override this from its composer."
       />
+
+      <SettingsFrame
+        title="Agent completion sound"
+        trailing={
+          <Switch
+            checked={completionSoundEnabled}
+            onCheckedChange={(value) => {
+              setCompletionSoundEnabled(value);
+              if (value) void prepareCompletionSound();
+            }}
+          />
+        }
+        description="Play a short sound when any agent turn finishes, including agents working in background chats."
+      >
+        <div className="flex items-center gap-2">
+          <Volume2 className="size-4 shrink-0 text-muted-foreground" />
+          <Select
+            value={completionSoundPreset}
+            onValueChange={(v) =>
+              setCompletionSoundPreset(v as CompletionSoundPreset)
+            }
+            items={COMPLETION_SOUND_PRESETS.map((preset) => ({
+              label: preset.label,
+              value: preset.value,
+            }))}
+          >
+            <SelectTrigger
+              size="sm"
+              className="w-[160px]"
+              disabled={!completionSoundEnabled}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectPopup>
+              {COMPLETION_SOUND_PRESETS.map((preset) => (
+                <SelectItem key={preset.value} value={preset.value}>
+                  {preset.label}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+          <Button
+            variant="settings"
+            size="sm"
+            disabled={!completionSoundEnabled}
+            onClick={() => void playCompletionSound(completionSoundPreset)}
+          >
+            Preview
+          </Button>
+        </div>
+      </SettingsFrame>
+
+      <SettingsFrame
+        title="Branch naming"
+        trailing={
+          <Select
+            value={branchNamingStyle}
+            onValueChange={(v) => setBranchNamingStyle(v as BranchNamingStyle)}
+            items={BRANCH_STYLE_ORDER.map((s) => ({
+              label: BRANCH_STYLE_META[s].label,
+              value: s,
+            }))}
+          >
+            <SelectTrigger size="sm" className="w-[180px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectPopup>
+              {BRANCH_STYLE_ORDER.map((style) => {
+                const m = BRANCH_STYLE_META[style];
+                return (
+                  <SelectItem key={style} value={style}>
+                    <div className="flex flex-col">
+                      <span>{m.label}</span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {m.example}
+                      </span>
+                    </div>
+                  </SelectItem>
+                );
+              })}
+            </SelectPopup>
+          </Select>
+        }
+        description="When a new chat with its own worktree gets its first message, memoize summarizes it and renames the chat plus its git branch in this shape."
+      />
+
+      {branchNamingStyle === "custom" && (
+        <SettingsFrame
+          title="Custom prefix"
+          trailing={
+            <input
+              type="text"
+              value={prefixDraft}
+              placeholder="e.g. swaraj or team/wip"
+              spellCheck={false}
+              onChange={(e) => setPrefixDraft(e.target.value)}
+              onBlur={() => {
+                if (prefixDraft !== branchNamingPrefix) {
+                  setBranchNamingPrefix(prefixDraft);
+                }
+              }}
+              className="w-[220px] rounded-lg border border-border/50 bg-background px-3 py-1.5 text-[13px] text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-border"
+            />
+          }
+          description="Slash-joined before the slug, e.g. prefix “swaraj” → swaraj/dark-mode. Letters, digits, slashes and dashes; leave empty for a bare slug."
+        />
+      )}
 
       <SubagentsSection />
 

@@ -5,6 +5,8 @@ import {
   ComposerInput,
   type Message,
   type ProviderId,
+  type QueuedMessage,
+  type SessionStatus,
   type SessionId,
 } from "@memoize/wire";
 
@@ -43,7 +45,7 @@ const NETWORK_PATTERN =
  *
  * Multiple keys are supported — the Claude provider uses `effort` for
  * its reasoning tier (with values `low | medium | high | xhigh | max |
- * ultracode | ultrathink`), `fastMode` / `thinking` booleans, and
+ * ultracode`), `fastMode` / `thinking` booleans, and
  * `contextWindow` (`200k | 1m`). Non-Claude providers use `reasoning`.
  * Returns `null` when nothing has been set so the RPC payload stays
  * clean (drivers default to model presets).
@@ -120,12 +122,6 @@ const lookupSessionProvider = (sessionId: SessionId): ProviderId | undefined => 
  * flight; we hold the input here until the turn ends (auto-flush) or the
  * user clicks the Steer arrow on the chip.
  */
-export interface QueuedMessage {
-  readonly id: string;
-  readonly input: ComposerInput;
-  readonly createdAt: Date;
-}
-
 type MessagesState = {
   readonly messagesBySession: Record<string, ReadonlyArray<Message>>;
   readonly errorBySession: Record<string, ChatError | null>;
@@ -150,6 +146,16 @@ type MessagesState = {
   readonly interrupt: (sessionId: SessionId) => Promise<void>;
   /** Append `input` to this session's queue. */
   readonly queue: (sessionId: SessionId, input: ComposerInput) => void;
+  readonly updateQueued: (
+    sessionId: SessionId,
+    queueId: string,
+    input: ComposerInput,
+  ) => void;
+  readonly reorderQueue: (
+    sessionId: SessionId,
+    queueIds: ReadonlyArray<string>,
+  ) => void;
+  readonly flushQueue: (sessionId: SessionId) => void;
   /** Interrupt the running turn, then send `queueId` as the next user turn. */
   readonly steerFromQueue: (
     sessionId: SessionId,
@@ -158,6 +164,10 @@ type MessagesState = {
   /** Silently drop a queue chip — no RPC call. */
   readonly dropFromQueue: (sessionId: SessionId, queueId: string) => void;
   readonly clearError: (sessionId: SessionId) => void;
+  readonly observeSessionStatus: (
+    sessionId: SessionId,
+    status: SessionStatus,
+  ) => void;
   /**
    * Re-send the most recent user turn. Used by the error-bubble Retry button
    * after the user fixed the underlying issue (re-auth, network back up).
@@ -168,7 +178,15 @@ type MessagesState = {
 
 let liveFiber: Fiber.RuntimeFiber<unknown, unknown> | null = null;
 let statusFiber: Fiber.RuntimeFiber<unknown, unknown> | null = null;
+let queueFiber: Fiber.RuntimeFiber<unknown, unknown> | null = null;
 let liveSessionId: SessionId | null = null;
+const handoffRunningSessions = new Set<SessionId>();
+const lastStatusBySession = new Map<SessionId, SessionStatus>();
+const statusWaiters = new Map<
+  SessionId,
+  Set<(status: SessionStatus) => void>
+>();
+const handoffReleaseTimers = new Map<SessionId, number>();
 
 const stopLiveFiber = async () => {
   const tasks: Array<Promise<unknown>> = [];
@@ -180,6 +198,10 @@ const stopLiveFiber = async () => {
     tasks.push(Effect.runPromise(Fiber.interrupt(statusFiber)));
     statusFiber = null;
   }
+  if (queueFiber !== null) {
+    tasks.push(Effect.runPromise(Fiber.interrupt(queueFiber)));
+    queueFiber = null;
+  }
   liveSessionId = null;
   await Promise.all(tasks);
   // We intentionally do NOT clear the prior session's `runningBySession`
@@ -190,33 +212,62 @@ const stopLiveFiber = async () => {
   // the next transition event.
 };
 
-const newQueueId = (): string =>
-  `q_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-
 /**
  * Resolve when `runningBySession[sessionId]` becomes false (or stays false),
  * or when `timeoutMs` elapses. Used by steer to wait for the SDK's
  * post-interrupt cleanup before issuing the next send.
  */
+const publishObservedStatus = (sessionId: SessionId, status: SessionStatus) => {
+  lastStatusBySession.set(sessionId, status);
+  const waiters = statusWaiters.get(sessionId);
+  if (waiters === undefined) return;
+  for (const waiter of waiters) waiter(status);
+};
+
+const holdRunningUntilNextTurn = (sessionId: SessionId) => {
+  handoffRunningSessions.add(sessionId);
+  const existingTimer = handoffReleaseTimers.get(sessionId);
+  if (existingTimer !== undefined) window.clearTimeout(existingTimer);
+  const timer = window.setTimeout(() => {
+    handoffReleaseTimers.delete(sessionId);
+    if (
+      handoffRunningSessions.has(sessionId) &&
+      lastStatusBySession.get(sessionId) !== "running"
+    ) {
+      handoffRunningSessions.delete(sessionId);
+      useMessagesStore.setState((s) => ({
+        runningBySession: { ...s.runningBySession, [sessionId]: false },
+      }));
+    }
+  }, 5_000);
+  handoffReleaseTimers.set(sessionId, timer);
+  useMessagesStore.setState((s) => ({
+    runningBySession: { ...s.runningBySession, [sessionId]: true },
+  }));
+};
+
 const waitUntilIdle = (sessionId: SessionId, timeoutMs: number): Promise<void> =>
   new Promise((resolve) => {
-    if (useMessagesStore.getState().runningBySession[sessionId] !== true) {
+    if (lastStatusBySession.get(sessionId) !== "running") {
       resolve();
       return;
     }
+    const waiters = statusWaiters.get(sessionId) ?? new Set();
+    statusWaiters.set(sessionId, waiters);
     const timeout = window.setTimeout(() => {
-      unsub();
+      waiters.delete(onStatus);
+      if (waiters.size === 0) statusWaiters.delete(sessionId);
       resolve();
     }, timeoutMs);
-    const unsub = useMessagesStore.subscribe((state, prev) => {
-      const now = state.runningBySession[sessionId] === true;
-      const before = prev.runningBySession[sessionId] === true;
-      if (before && !now) {
+    const onStatus = (status: SessionStatus) => {
+      if (status !== "running") {
         window.clearTimeout(timeout);
-        unsub();
+        waiters.delete(onStatus);
+        if (waiters.size === 0) statusWaiters.delete(sessionId);
         resolve();
       }
-    });
+    };
+    waiters.add(onStatus);
   });
 
 export const useMessagesStore = create<MessagesState>((set, get) => ({
@@ -311,7 +362,12 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
       const resetOnStreamEnd = Effect.sync(() => {
         if (liveSessionId !== sessionId) return;
         useMessagesStore.setState((s) => {
-          if (s.runningBySession[sessionId] !== true) return s;
+          if (
+            s.runningBySession[sessionId] !== true ||
+            handoffRunningSessions.has(sessionId)
+          ) {
+            return s;
+          }
           return {
             runningBySession: { ...s.runningBySession, [sessionId]: false },
           };
@@ -338,14 +394,8 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
             // own those transitions.
             if (liveSessionId !== sessionId) return;
             const wasRunning = get().runningBySession[sessionId] === true;
-            const isRunning = event.status === "running";
-            set((s) => ({
-              runningBySession: {
-                ...s.runningBySession,
-                [sessionId]: isRunning,
-              },
-            }));
-            if (wasRunning && !isRunning) {
+            get().observeSessionStatus(sessionId, event.status);
+            if (wasRunning && event.status !== "running") {
               // Refresh PR state for this session's specific (project,
               // worktree) pair — a turn that pushed commits on a worktree's
               // branch shouldn't touch the main checkout's cache entry.
@@ -363,36 +413,24 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
                 }
               }
 
-              // Auto-flush: when a turn lands and the queue is non-empty,
-              // send the queued items in order. Each send awaits the
-              // previous so the provider sees a single linear chain.
-              const queued = get().queueBySession[sessionId] ?? [];
-              if (queued.length > 0) {
-                void (async () => {
-                  for (const q of queued) {
-                    try {
-                      await get().send(sessionId, q.input);
-                    } catch {
-                      // Stop on first error; remaining chips stay in the
-                      // queue and the user can retry by clicking Steer
-                      // (which is a no-op send when no turn is running).
-                      return;
-                    }
-                    set((s) => ({
-                      queueBySession: {
-                        ...s.queueBySession,
-                        [sessionId]: (s.queueBySession[sessionId] ?? []).filter(
-                          (it) => it.id !== q.id,
-                        ),
-                      },
-                    }));
-                  }
-                })();
+              if (event.status === "idle" || event.status === "closed") {
+                get().flushQueue(sessionId);
               }
             }
           }),
       ).pipe(Effect.ensuring(resetOnStreamEnd));
       statusFiber = Effect.runFork(statusProgram);
+      queueFiber = Effect.runFork(
+        Stream.runForEach(
+          client.messages["queue.stream"]({ sessionId }),
+          (items) =>
+            Effect.sync(() => {
+              set((s) => ({
+                queueBySession: { ...s.queueBySession, [sessionId]: items },
+              }));
+            }),
+        ),
+      );
     } catch (err) {
       set((s) => ({
         errorBySession: {
@@ -449,22 +487,112 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
       }));
     }
   },
-  queue: (sessionId, input) =>
+  queue: (sessionId, input) => {
+    void (async () => {
+      try {
+        const client = await getRpcClient();
+        const item = await Effect.runPromise(
+          client.messages["queue.add"]({ sessionId, input }),
+        );
+        set((s) => {
+          const existing = s.queueBySession[sessionId] ?? [];
+          if (existing.some((q) => q.id === item.id)) return s;
+          return {
+            queueBySession: {
+              ...s.queueBySession,
+              [sessionId]: [...existing, item],
+            },
+          };
+        });
+      } catch (err) {
+        set((s) => ({
+          errorBySession: {
+            ...s.errorBySession,
+            [sessionId]: classifyError(err, lookupSessionProvider(sessionId)),
+          },
+        }));
+      }
+    })();
+  },
+  updateQueued: (sessionId, queueId, input) => {
+    set((s) => ({
+      queueBySession: {
+        ...s.queueBySession,
+        [sessionId]: (s.queueBySession[sessionId] ?? []).map((item) =>
+          item.id === queueId ? { ...item, input, updatedAt: new Date() } : item,
+        ),
+      },
+    }));
+    void (async () => {
+      try {
+        const client = await getRpcClient();
+        await Effect.runPromise(
+          client.messages["queue.update"]({ sessionId, queueId, input }),
+        );
+      } catch (err) {
+        set((s) => ({
+          errorBySession: {
+            ...s.errorBySession,
+            [sessionId]: classifyError(err, lookupSessionProvider(sessionId)),
+          },
+        }));
+      }
+    })();
+  },
+  reorderQueue: (sessionId, queueIds) => {
     set((s) => {
-      const item: QueuedMessage = {
-        id: newQueueId(),
-        input,
-        createdAt: new Date(),
-      };
-      const existing = s.queueBySession[sessionId] ?? [];
+      const current = s.queueBySession[sessionId] ?? [];
+      const byId = new Map(current.map((item) => [item.id, item]));
+      const ordered = [
+        ...queueIds.flatMap((id) => {
+          const item = byId.get(id);
+          if (item === undefined) return [];
+          byId.delete(id);
+          return [item];
+        }),
+        ...current.filter((item) => byId.has(item.id)),
+      ].map((item, position) => ({ ...item, position }));
       return {
-        queueBySession: {
-          ...s.queueBySession,
-          [sessionId]: [...existing, item],
-        },
+        queueBySession: { ...s.queueBySession, [sessionId]: ordered },
       };
-    }),
-  dropFromQueue: (sessionId, queueId) =>
+    });
+    void (async () => {
+      try {
+        const client = await getRpcClient();
+        await Effect.runPromise(
+          client.messages["queue.reorder"]({ sessionId, queueIds }),
+        );
+      } catch (err) {
+        set((s) => ({
+          errorBySession: {
+            ...s.errorBySession,
+            [sessionId]: classifyError(err, lookupSessionProvider(sessionId)),
+          },
+        }));
+      }
+    })();
+  },
+  flushQueue: (sessionId) => {
+    void (async () => {
+      try {
+        if ((get().queueBySession[sessionId] ?? []).length > 0) {
+          holdRunningUntilNextTurn(sessionId);
+        }
+        const client = await getRpcClient();
+        await Effect.runPromise(client.messages["queue.flush"]({ sessionId }));
+      } catch (err) {
+        handoffRunningSessions.delete(sessionId);
+        set((s) => ({
+          errorBySession: {
+            ...s.errorBySession,
+            [sessionId]: classifyError(err, lookupSessionProvider(sessionId)),
+          },
+          runningBySession: { ...s.runningBySession, [sessionId]: false },
+        }));
+      }
+    })();
+  },
+  dropFromQueue: (sessionId, queueId) => {
     set((s) => ({
       queueBySession: {
         ...s.queueBySession,
@@ -472,7 +600,23 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
           (q) => q.id !== queueId,
         ),
       },
-    })),
+    }));
+    void (async () => {
+      try {
+        const client = await getRpcClient();
+        await Effect.runPromise(
+          client.messages["queue.delete"]({ sessionId, queueId }),
+        );
+      } catch (err) {
+        set((s) => ({
+          errorBySession: {
+            ...s.errorBySession,
+            [sessionId]: classifyError(err, lookupSessionProvider(sessionId)),
+          },
+        }));
+      }
+    })();
+  },
   steerFromQueue: async (sessionId, queueId) => {
     const queue = get().queueBySession[sessionId] ?? [];
     const item = queue.find((q) => q.id === queueId);
@@ -494,17 +638,43 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
     // a stuck driver from hanging the queue forever.
     try {
       const wasRunning = get().runningBySession[sessionId] === true;
+      if (wasRunning) {
+        holdRunningUntilNextTurn(sessionId);
+      }
       await get().interrupt(sessionId);
       if (wasRunning) await waitUntilIdle(sessionId, 4_000);
-      await get().send(sessionId, item.input);
+      const client = await getRpcClient();
+      await Effect.runPromise(
+        client.messages["queue.sendNow"]({ sessionId, queueId }),
+      );
     } catch (err) {
+      handoffRunningSessions.delete(sessionId);
       set((s) => ({
         errorBySession: {
           ...s.errorBySession,
           [sessionId]: classifyError(err, lookupSessionProvider(sessionId)),
         },
+        runningBySession: { ...s.runningBySession, [sessionId]: false },
       }));
     }
+  },
+  observeSessionStatus: (sessionId, status) => {
+    publishObservedStatus(sessionId, status);
+    const isRunning = status === "running";
+    if (isRunning) {
+      handoffRunningSessions.delete(sessionId);
+      const timer = handoffReleaseTimers.get(sessionId);
+      if (timer !== undefined) {
+        window.clearTimeout(timer);
+        handoffReleaseTimers.delete(sessionId);
+      }
+    }
+    set((s) => ({
+      runningBySession: {
+        ...s.runningBySession,
+        [sessionId]: isRunning || handoffRunningSessions.has(sessionId),
+      },
+    }));
   },
   clearError: (sessionId) =>
     set((s) => ({

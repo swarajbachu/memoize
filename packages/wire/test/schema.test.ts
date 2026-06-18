@@ -6,6 +6,7 @@ import {
   Chat,
   GitBranchInfo,
   Message,
+  SettingsFile,
   Session,
 } from "../src/index.ts";
 
@@ -217,6 +218,72 @@ describe("Chat round-trip", () => {
       createdAt: "2026-06-17T00:00:00.000Z",
       updatedAt: "2026-06-17T00:00:00.000Z",
     });
+  });
+});
+
+describe("SettingsFile round-trip", () => {
+  it("round-trips completion sound settings", () => {
+    roundTrip(SettingsFile, {
+      schemaVersion: 1,
+      defaultProviderId: "claude",
+      defaultModelByProvider: {
+        claude: "claude-opus-4-8",
+        codex: "gpt-5-codex",
+        grok: "grok-code-fast-1",
+        cursor: "cursor-agent",
+        gemini: "gemini-3-pro",
+        opencode: "sonnet",
+      },
+      defaultRuntimeMode: "approval-required",
+      defaultAutoCreateWorktree: false,
+      onboardingCompleted: true,
+      completionSoundEnabled: true,
+      completionSoundPreset: "bloom",
+      providerEnabled: {
+        claude: true,
+        codex: true,
+        grok: true,
+        cursor: true,
+        gemini: true,
+        opencode: true,
+      },
+      subagents: { enableForNewSessions: true, presets: {} },
+      branchNamingStyle: "username-slug",
+      branchNamingPrefix: "",
+    });
+  });
+
+  it("rejects an unknown completion sound preset", () => {
+    expect(() =>
+      Schema.decodeUnknownSync(SettingsFile)({
+        schemaVersion: 1,
+        defaultProviderId: "claude",
+        defaultModelByProvider: {
+          claude: "claude-opus-4-8",
+          codex: "gpt-5-codex",
+          grok: "grok-code-fast-1",
+          cursor: "cursor-agent",
+          gemini: "gemini-3-pro",
+          opencode: "sonnet",
+        },
+        defaultRuntimeMode: "approval-required",
+        defaultAutoCreateWorktree: false,
+        onboardingCompleted: true,
+        completionSoundEnabled: true,
+        completionSoundPreset: "airhorn",
+        providerEnabled: {
+          claude: true,
+          codex: true,
+          grok: true,
+          cursor: true,
+          gemini: true,
+          opencode: true,
+        },
+        subagents: { enableForNewSessions: true, presets: {} },
+        branchNamingStyle: "username-slug",
+        branchNamingPrefix: "",
+      }),
+    ).toThrow();
   });
 });
 
