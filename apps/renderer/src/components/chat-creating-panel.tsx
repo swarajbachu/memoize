@@ -11,7 +11,7 @@ import type { ProviderId } from "@memoize/wire";
 
 import { cn } from "~/lib/utils";
 import { PROVIDER_LABEL } from "./settings-page";
-import { ThreeDots } from "./ui/loaders";
+import { Beacon } from "./ui/loaders";
 
 /**
  * Step-by-step progress shown while `chat.create` is in flight. The RPC
@@ -159,7 +159,7 @@ export function ChatCreatingPanel({
               <span className="min-w-0 truncate">{stage.render()}</span>
               {state === "active" && (
                 <span className="ml-1 inline-flex items-center text-muted-foreground">
-                  <ThreeDots dotSize={2.5} cellPadding={1} />
+                  <Beacon dotSize={2.5} cellPadding={1} />
                 </span>
               )}
             </li>

@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 
 import type { Message, SessionId } from "@memoize/wire";
 
-import { Spinner } from "~/components/ui/spinner";
+import { Beacon } from "~/components/ui/loaders";
 import { cn } from "~/lib/utils";
 
 import { useMessagesStore } from "../../store/messages.ts";
@@ -136,7 +136,7 @@ export function ProjectPlanTray({ sessionId }: { sessionId: SessionId }) {
           {done} of {total} Done
         </span>
         {running && !allDone ? (
-          <Spinner className="size-3.5 shrink-0 text-muted-foreground" />
+          <Beacon dotSize={2} cellPadding={1} color="currentColor" className="shrink-0 text-muted-foreground" />
         ) : null}
         <ChevronDown
           className={cn(
@@ -201,7 +201,8 @@ function TodoStatusIcon({
     // spinning loader would imply work is still happening when it isn't — and
     // makes the whole composer read as "busy". Show a static filled ring
     // instead to mark "current step, not running".
-    if (running) return <Spinner className="size-3.5 text-primary" />;
+    if (running)
+      return <Beacon dotSize={2} cellPadding={1} color="currentColor" className="text-primary" />;
     return (
       <span
         className="flex size-3.5 items-center justify-center rounded-full border-2 border-primary"
