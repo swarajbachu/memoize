@@ -124,7 +124,7 @@ export function App() {
   if (!onboardingCompleted) {
     return (
       <TooltipProvider>
-        <div className="dark relative flex h-dvh max-h-dvh min-h-0 w-screen overflow-hidden bg-background/40 text-foreground">
+        <div className="dark relative flex h-dvh max-h-dvh min-h-0 w-screen overflow-hidden bg-background text-foreground">
           <OnboardingWizard />
         </div>
       </TooltipProvider>
@@ -134,7 +134,7 @@ export function App() {
   if (view === "settings") {
     return (
       <TooltipProvider>
-        <div className="dark flex h-dvh max-h-dvh min-h-0 w-screen overflow-hidden bg-background/70 text-foreground">
+        <div className="dark flex h-dvh max-h-dvh min-h-0 w-screen overflow-hidden bg-background text-foreground">
           <SettingsPage />
         </div>
       </TooltipProvider>
@@ -312,7 +312,7 @@ function MainShell() {
             if (open !== leftSidebarOpen) setLeftSidebarOpen(open);
           }}
         >
-          <div className="flex h-full min-h-0 flex-col bg-background/20">
+          <div className="flex h-full min-h-0 flex-col bg-background">
             <TopBarLeft />
             <div className="flex min-h-0 flex-1 flex-col">
               <ProjectsSidebar />
@@ -321,7 +321,7 @@ function MainShell() {
         </Panel>
         <Separator className="w-px bg-border transition-colors hover:bg-foreground/20 active:bg-foreground/30" />
         <Panel id="main" minSize="30%">
-          <main className="flex h-full min-h-0 min-w-0 flex-col bg-background/70 backdrop-blur-3xl">
+          <main className="flex h-full min-h-0 min-w-0 flex-col bg-background">
             <TopBarMain />
             <UpdateBanner />
             <ProviderUpdatesToast />
@@ -409,7 +409,7 @@ function MainShell() {
             if (open !== rightSidebarOpen) setRightSidebarOpen(open);
           }}
         >
-          <div className="flex h-full min-h-0 flex-col bg-sidebar/40 backdrop-blur-3xl">
+          <div className="flex h-full min-h-0 flex-col bg-sidebar">
             <TopBarRight />
             <div className="flex min-h-0 flex-1 flex-col">
               <RightPane />

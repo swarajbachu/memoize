@@ -193,7 +193,7 @@ function Rail({
   folders: ReadonlyArray<Folder>;
 }) {
   return (
-    <nav className="flex w-56 shrink-0 flex-col gap-6 border-r border-border/40 bg-sidebar/40 px-3 py-6 text-sm text-sidebar-foreground">
+    <nav className="flex w-56 shrink-0 flex-col gap-6 border-r border-border/40 bg-sidebar px-3 py-6 text-sm text-sidebar-foreground">
       <div className="flex flex-col gap-0.5">
         {VISIBLE_RAIL.map((item) => {
           const active =
@@ -1105,7 +1105,7 @@ export function SettingsCard({
   return (
     <div
       className={cn(
-        "flex flex-col divide-y divide-border/40 overflow-hidden rounded-2xl border border-border/40 bg-muted/30",
+        "flex flex-col divide-y divide-border/40 overflow-hidden rounded-lg border border-border/60 bg-muted/30",
         className,
       )}
     >
@@ -1459,7 +1459,7 @@ export function OverrideField({
   return (
     <div className="flex flex-col gap-2.5">
       <div className="flex items-center gap-2">
-        <div className="inline-flex rounded-md border border-border/50 bg-muted/30 p-0.5 text-xs">
+        <div className="inline-flex rounded-md border border-border/50 bg-muted p-0.5 text-xs">
           <button
             type="button"
             onClick={onClear}
