@@ -4,6 +4,8 @@ import {
   ArchiveRestore,
   ChevronDown,
   ChevronRight,
+  CircleQuestionMark,
+  ClipboardCheck,
   Pencil,
   Settings,
   SquarePen,
@@ -25,8 +27,14 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
 import { Menu, MenuItem, MenuPopup } from "~/components/ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
+import {
+  deriveChatAttentionState,
+  type ChatAttentionState,
+  mergeChatAttentionStates,
+} from "~/lib/chat-attention-state";
 import { cn, formatCompactNumber } from "~/lib/utils";
 import { resolveAutoWorktreeId } from "../lib/auto-worktree.ts";
+import { noteSessionStatusForCompletionSound } from "../lib/completion-sounds.ts";
 import { formatShortcut } from "../lib/shortcuts.ts";
 import { getRpcClient } from "../lib/rpc-client.ts";
 import { useChatsStore } from "../store/chats.ts";
@@ -35,6 +43,10 @@ import { prStateKey, usePrStateStore } from "../store/pr-state.ts";
 import { useProvidersStore } from "../store/providers.ts";
 import { useSessionsStore } from "../store/sessions.ts";
 import { useSettingsStore } from "../store/settings.ts";
+import {
+  useSidebarMessageStatusStore,
+  useSidebarMessageStatusSubscriptions,
+} from "../store/sidebar-message-status.ts";
 import { useUiStore } from "../store/ui.ts";
 import { useWorkspaceStore } from "../store/workspace.ts";
 import { BranchIcon, type BranchState } from "./branch-icon.tsx";
@@ -116,6 +128,7 @@ function useSessionRunningSubscriptions(sessionIds: ReadonlyArray<SessionId>) {
               client.session.streamStatus({ sessionId: id }),
               (event) =>
                 Effect.sync(() => {
+                  noteSessionStatusForCompletionSound(id, event.status);
                   useMessagesStore
                     .getState()
                     .observeSessionStatus(id, event.status);
@@ -256,6 +269,7 @@ export function ProjectsSidebar() {
     return ids;
   }, [folders, sessionsByProject]);
   useSessionRunningSubscriptions(allSessionIds);
+  useSidebarMessageStatusSubscriptions(allSessionIds);
 
   const onToggleExpanded = (id: FolderId) =>
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -395,16 +409,31 @@ function ProjectGroup({
     [chats],
   );
 
-  // Surface a busy hint on the collapsed project header when any session
-  // inside any of this project's live chats is running.
+  // Surface the highest-priority attention hint on the collapsed project
+  // header when any session inside this project needs attention.
   const liveSessionIds = useMemo(
     () => projectSessions.filter((s) => s.archivedAt === null).map((s) => s.id),
     [projectSessions],
   );
-  const anyRunning = useMessagesStore((s) =>
-    liveSessionIds.some((id) => s.runningBySession[id] === true),
+  const headerRunning = useMessagesStore((s) =>
+    mergeChatAttentionStates(
+      liveSessionIds.map((id) =>
+        s.runningBySession[id] === true ? "running" : "idle",
+      ),
+    ),
   );
-  const showHeaderBusy = anyRunning && !isExpanded;
+  const headerMessageAttention = useSidebarMessageStatusStore((s) =>
+    mergeChatAttentionStates(
+      liveSessionIds.map((id) =>
+        deriveChatAttentionState(s.messagesBySession[id] ?? [], false),
+      ),
+    ),
+  );
+  const headerAttention = mergeChatAttentionStates([
+    headerRunning,
+    headerMessageAttention,
+  ]);
+  const showHeaderAttention = headerAttention !== "idle" && !isExpanded;
 
   const Chevron = isExpanded ? ChevronDown : ChevronRight;
 
@@ -439,7 +468,7 @@ function ProjectGroup({
               className={cn(
                 "col-start-1 row-start-1 size-5 rounded transition-opacity duration-150 ease-out",
                 "group-hover:opacity-0 motion-reduce:transition-none",
-                showHeaderBusy && "opacity-0",
+                showHeaderAttention && "opacity-0",
               )}
             >
               {avatarUrl !== null && (
@@ -449,22 +478,15 @@ function ProjectGroup({
                 {fallbackText}
               </AvatarFallback>
             </Avatar>
-            {showHeaderBusy && (
-              <span
+            {showHeaderAttention && (
+              <ChatAttentionIcon
+                state={headerAttention}
                 className={cn(
-                  "col-start-1 row-start-1 inline-flex size-3.5 items-center justify-center text-foreground transition-opacity duration-150 ease-out",
+                  "col-start-1 row-start-1 transition-opacity duration-150 ease-out",
                   "group-hover:opacity-0 motion-reduce:transition-none",
                 )}
-                aria-label="Agent is working in a session"
-                title="Agent is working in a session"
-              >
-                <Beacon
-                  dotSize={3}
-                  cellPadding={0.75}
-                  speed={1.8}
-                  color="currentColor"
-                />
-              </span>
+                context="project"
+              />
             )}
             <Chevron
               aria-hidden="true"
@@ -711,12 +733,24 @@ function ChatRow({ chat }: { chat: Chat }) {
     [sessionsByProject, chat.projectId, chat.id],
   );
 
-  const isRunning = useMessagesStore((s) => {
-    for (const id of sessionIds) {
-      if (s.runningBySession[id] === true) return true;
-    }
-    return false;
-  });
+  const runningAttention = useMessagesStore((s) =>
+    mergeChatAttentionStates(
+      sessionIds.map((id) =>
+        s.runningBySession[id] === true ? "running" : "idle",
+      ),
+    ),
+  );
+  const messageAttention = useSidebarMessageStatusStore((s) =>
+    mergeChatAttentionStates(
+      sessionIds.map((id) =>
+        deriveChatAttentionState(s.messagesBySession[id] ?? [], false),
+      ),
+    ),
+  );
+  const attentionState = mergeChatAttentionStates([
+    runningAttention,
+    messageAttention,
+  ]);
 
   // Highlight this row when its own chat is selected, OR when the active
   // session (any tab inside this chat) lives in it. Covers the transient
@@ -796,22 +830,12 @@ function ChatRow({ chat }: { chat: Chat }) {
         )}
         title={chat.title}
       >
-        {isRunning ? (
-          <span
-            className={cn(
-              "ml-3 inline-flex size-3.5 shrink-0 items-center justify-center",
-              isSelected ? "text-sidebar-accent-foreground" : "text-foreground",
-            )}
-            aria-label="Agent is working"
-            title="Agent is working"
-          >
-            <Beacon
-              dotSize={3}
-              cellPadding={0.75}
-              speed={1.8}
-              color="currentColor"
-            />
-          </span>
+        {attentionState !== "idle" ? (
+          <ChatAttentionIcon
+            state={attentionState}
+            selected={isSelected}
+            className="ml-3"
+          />
         ) : (
           <BranchIcon
             state={branchState}
@@ -890,5 +914,64 @@ function ChatRow({ chat }: { chat: Chat }) {
         </MenuPopup>
       </Menu>
     </>
+  );
+}
+
+function ChatAttentionIcon({
+  state,
+  selected = false,
+  className,
+  context = "chat",
+}: {
+  state: ChatAttentionState;
+  selected?: boolean;
+  className?: string;
+  context?: "chat" | "project";
+}) {
+  if (state === "idle") return null;
+
+  const color = selected
+    ? "text-sidebar-accent-foreground"
+    : state === "question"
+      ? "text-amber-300"
+      : state === "planReady"
+        ? "text-emerald-300"
+        : "text-foreground";
+  const label =
+    state === "question"
+      ? context === "project"
+        ? "A chat is waiting for your answer"
+        : "Waiting for your answer"
+      : state === "planReady"
+        ? context === "project"
+          ? "A chat has a plan ready to approve"
+          : "Plan ready to approve"
+        : context === "project"
+          ? "Agent is working in a session"
+          : "Agent is working";
+
+  return (
+    <span
+      className={cn(
+        "inline-flex size-3.5 shrink-0 items-center justify-center",
+        color,
+        className,
+      )}
+      aria-label={label}
+      title={label}
+    >
+      {state === "running" ? (
+        <Beacon
+          dotSize={3}
+          cellPadding={0.75}
+          speed={1.8}
+          color="currentColor"
+        />
+      ) : state === "question" ? (
+        <CircleQuestionMark className="size-3.5" />
+      ) : (
+        <ClipboardCheck className="size-3.5" />
+      )}
+    </span>
   );
 }

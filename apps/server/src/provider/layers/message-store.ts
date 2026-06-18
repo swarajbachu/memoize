@@ -39,9 +39,12 @@ import {
 
 import { WorktreeService } from "../../worktree/services/worktree-service.ts";
 
+import { ConfigStoreService } from "../../config-store/services/config-store-service.ts";
+import { GitService } from "../../git/services/git-service.ts";
 import { NdjsonLogger } from "../../persistence/ndjson-logger.ts";
 import { PtyService } from "../../pty/services/pty-service.ts";
 import { RepositorySettingsService } from "../../repository-settings/services/repository-settings-service.ts";
+import { TitleGenerator, formatBranchName } from "../title-generator.ts";
 import { isIgnorableGrokAuthNoise } from "../drivers/acp/grok-auth-noise.ts";
 import {
   MessageStore,
@@ -444,6 +447,9 @@ export const MessageStoreLive = Layer.scoped(
     const worktrees = yield* WorktreeService;
     const repositorySettings = yield* RepositorySettingsService;
     const ptys = yield* PtyService;
+    const git = yield* GitService;
+    const titleGen = yield* TitleGenerator;
+    const configStore = yield* ConfigStoreService;
 
     const chatColumns = yield* sql<{ readonly name: string }>`
       PRAGMA table_info(chats)
@@ -646,6 +652,22 @@ export const MessageStoreLive = Layer.scoped(
     const queuePubsubs = yield* Ref.make<
       ReadonlyMap<SessionId, PubSub.PubSub<ReadonlyArray<QueuedMessage>>>
     >(new Map());
+
+    // Single hub for chat-row changes (title / worktree binding). Unlike the
+    // per-session message/status pubsubs, chats are few and updates rare, so
+    // one project-filtered hub keeps it simple. The renderer already holds
+    // the chat list via `chat.list`; this stream only carries live patches
+    // (e.g. the background auto-namer rewriting a title), so there's no
+    // backfill on subscribe.
+    const chatChangesHub = yield* PubSub.unbounded<Chat>();
+    const broadcastChat = (chat: Chat): Effect.Effect<void> =>
+      PubSub.publish(chatChangesHub, chat).pipe(Effect.asVoid);
+
+    // Chats whose first-message auto-name is in flight, so a second message
+    // arriving mid-rename can't kick off a duplicate pass. One-shot per chat
+    // per process — entries are never removed because the triggering hooks
+    // only fire on the first user message anyway.
+    const autoNamingChats = new Set<string>();
 
     const getOrMakePubsub = (sessionId: SessionId) =>
       Effect.gen(function* () {
@@ -1672,6 +1694,16 @@ export const MessageStoreLive = Layer.scoped(
               ),
             )
           : null;
+        // Path 1: the chat was created WITH its first message (the common
+        // composer flow). Kick off the background auto-name now — it no-ops
+        // unless the chat has its own worktree.
+        if (
+          hasInitial &&
+          chat.worktreeId !== null &&
+          input.initialPrompt !== undefined
+        ) {
+          yield* forkAutoName(chat.id, initialSession.id, input.initialPrompt);
+        }
         return { chat, initialSession, initialMessage };
       });
 
@@ -1683,7 +1715,100 @@ export const MessageStoreLive = Layer.scoped(
           UPDATE chats SET title = ${title}, updated_at = ${nowIso}
           WHERE id = ${chatId}
         `.pipe(Effect.asVoid, Effect.orDie);
+        // Push the new title to any renderer subscribed via
+        // `chat.streamChanges` so the sidebar updates without a refetch.
+        const updated = yield* lookupChat(chatId);
+        yield* broadcastChat(updated);
       });
+
+    const streamChatChanges: MessageStoreShape["streamChatChanges"] = (
+      projectId,
+    ) =>
+      Stream.unwrapScoped(
+        Effect.gen(function* () {
+          const sub = yield* chatChangesHub.subscribe;
+          return Stream.fromQueue(sub).pipe(
+            Stream.filter((chat) => chat.projectId === projectId),
+          );
+        }),
+      );
+
+    /**
+     * Conductor-style auto-name: on a chat's first user message, summarize it
+     * into a short title (LLM, with truncation fallback) and use that to
+     * rename both the chat and — when the chat has its own worktree — the
+     * worktree's git branch per the user's `branchNamingStyle`. Runs on a
+     * background fiber so the agent's first reply is never delayed; swallows
+     * every failure so a flaky title call can't wedge the session.
+     *
+     * Only chats WITH a worktree are renamed (a bare main-checkout chat keeps
+     * the cheap first-line title set elsewhere).
+     */
+    const autoNameChat = (
+      chatId: ChatId,
+      sessionId: SessionId,
+      firstText: string,
+    ): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        if (autoNamingChats.has(chatId)) return;
+        autoNamingChats.add(chatId);
+        const chat = yield* lookupChat(chatId).pipe(
+          Effect.catchAll(() => Effect.succeed(null)),
+        );
+        if (chat === null || chat.worktreeId === null) return;
+        const worktreeId = chat.worktreeId;
+        const wt = yield* worktrees.get(worktreeId);
+        if (wt === null) return;
+
+        // Name the chat with the SAME provider/model the session uses, so a
+        // user without Claude auth (e.g. Grok-only) still gets an LLM title.
+        const session = yield* lookupSession(sessionId).pipe(
+          Effect.catchAll(() => Effect.succeed(null)),
+        );
+        if (session === null) return;
+        const title = yield* titleGen.generate({
+          folderId: chat.projectId,
+          providerId: session.providerId,
+          model: session.model,
+          firstMessage: firstText,
+        });
+        if (title.length === 0 || title === "New chat") return;
+
+        // Title first — cheap, and the user sees the sidebar update even if
+        // the branch rename below is skipped or fails.
+        yield* renameChat(chatId, title);
+        yield* sql`
+          UPDATE sessions SET title = ${title} WHERE id = ${sessionId}
+        `.pipe(Effect.ignoreLogged);
+
+        const settings = yield* configStore.getSettings();
+        const username = yield* git
+          .getUserName(chat.projectId)
+          .pipe(Effect.catchAll(() => Effect.succeed("")));
+        const branch = formatBranchName(
+          title,
+          username,
+          settings.branchNamingStyle,
+          settings.branchNamingPrefix,
+        );
+        // Rename the git branch, then mirror it onto the worktree row so the
+        // DB and git agree. updateBranch only runs if the rename succeeded.
+        yield* git
+          .renameBranch(chat.projectId, branch, worktreeId)
+          .pipe(
+            Effect.flatMap(() => worktrees.updateBranch(worktreeId, branch)),
+            Effect.catchAll(() => Effect.void),
+          );
+      }).pipe(Effect.catchAllCause(() => Effect.void));
+
+    const forkAutoName = (
+      chatId: ChatId,
+      sessionId: SessionId,
+      firstText: string,
+    ): Effect.Effect<void> =>
+      Effect.forkDaemon(autoNameChat(chatId, sessionId, firstText)).pipe(
+        Effect.asVoid,
+      );
 
     /**
      * Worktrees are immutable past the first user message in any of the
@@ -2187,8 +2312,8 @@ export const MessageStoreLive = Layer.scoped(
         }
         yield* broadcastMessage(sessionId, persisted);
         // Auto-title: if the session is still on its placeholder title, derive
-        // one from the user's first real message. Cheaper and more accurate
-        // than a separate LLM summarization step.
+        // a cheap first-line title immediately so the tab never reads
+        // "New chat" while the richer LLM pass (below) runs.
         if (session.title === "New chat") {
           const derived = titleFromInitial(text);
           if (derived !== "New chat") {
@@ -2197,6 +2322,21 @@ export const MessageStoreLive = Layer.scoped(
               WHERE id = ${sessionId} AND title = 'New chat'
             `.pipe(Effect.orDie);
           }
+        }
+        // Path 2: an empty chat (no initialPrompt) receiving its first user
+        // message via messages.send. When this is the chat's first user
+        // message, kick off the Conductor-style auto-name in the background
+        // (no-ops unless the chat has its own worktree).
+        const firstUserCount = yield* sql<{ readonly c: number }>`
+          SELECT COUNT(*) AS c FROM messages m
+          INNER JOIN sessions s ON s.id = m.session_id
+          WHERE s.chat_id = ${session.chatId} AND m.role = 'user'
+        `.pipe(
+          Effect.map((rows) => rows[0]?.c ?? 0),
+          Effect.catchAll(() => Effect.succeed(0)),
+        );
+        if (firstUserCount === 1 && text.trim().length > 0) {
+          yield* forkAutoName(session.chatId, sessionId, text);
         }
         // First attempt: push into the existing provider session. If that
         // session is gone (provider dropped it across an app restart) start
@@ -2555,6 +2695,7 @@ export const MessageStoreLive = Layer.scoped(
       getChat,
       createChat,
       renameChat,
+      streamChatChanges,
       setChatWorktree,
       setChatActiveSession,
       archiveChat,
