@@ -15,6 +15,7 @@ import { importWorkspacesJson } from "./persistence/import-workspaces.ts";
 import { MigrationsLive } from "./persistence/migrations.ts";
 import { NdjsonLoggerLive } from "./persistence/ndjson-logger.ts";
 import { SqliteLive } from "./persistence/sqlite.ts";
+import { PokemonServiceLive } from "./pokemon/layers/pokemon-service.ts";
 import { BrowserBridgeServiceLive } from "./provider/layers/browser-bridge-service.ts";
 import { CredentialsServiceLive } from "./provider/layers/credentials-service.ts";
 import { MessageStoreLive } from "./provider/layers/message-store.ts";
@@ -101,11 +102,18 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(MigratedSqlite),
   );
 
+  const PokemonLayer = PokemonServiceLive.pipe(
+    Layer.provide(MigratedSqlite),
+    Layer.provide(AppPathsLayer),
+    Layer.provide(NodeContext.layer),
+  );
+
   // WorktreeService manages memoize-owned `git worktree` checkouts. Same
   // shape as GitLayer + the SqlClient for persisting the rows.
   const WorktreeLayer = WorktreeServiceLive.pipe(
     Layer.provide(WorkspaceLayer),
     Layer.provide(RepositorySettingsLayer),
+    Layer.provide(PokemonLayer),
     Layer.provide(MigratedSqlite),
     Layer.provide(NodeContext.layer),
   );
@@ -246,6 +254,7 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(GitLayer),
     Layer.provide(WorktreeLayer),
     Layer.provide(RepositorySettingsLayer),
+    Layer.provide(PokemonLayer),
     Layer.provide(ConfigStoreLayer),
     Layer.provide(FsLayer),
     Layer.provide(FileSearchLayer),

@@ -13,6 +13,7 @@ import { BrowserPane } from "./browser-pane.tsx";
 import { DiffPane } from "./diff-pane.tsx";
 import { FileTree } from "./file-tree.tsx";
 import { PrPane } from "./pr-pane.tsx";
+import { PokemonRarityText, PokemonSprite } from "./pokemon.tsx";
 import { RightPaneHeader } from "./right-pane-header.tsx";
 import { TerminalPane } from "./terminal-pane.tsx";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip.tsx";
@@ -141,11 +142,21 @@ function ActiveWorkspaceChip() {
   const onWorktree = ctx.rootKind === "worktree";
   const icon = onWorktree ? GitBranchIcon : Folder01Icon;
   const label = onWorktree ? (worktree?.name ?? "Worktree") : "Main checkout";
-  const sub = onWorktree ? worktree?.branch ?? null : null;
+  const sub = onWorktree ? (worktree?.branch ?? null) : null;
   return (
     <div className="flex shrink-0 items-center gap-1.5 border-b border-border/40 px-3 py-1.5 text-[11px] text-muted-foreground">
-      <HugeiconsIcon icon={icon} className="size-3.5 shrink-0 opacity-70" />
+      {worktree?.pokemon ? (
+        <PokemonSprite pokemon={worktree.pokemon} className="size-4" />
+      ) : (
+        <HugeiconsIcon icon={icon} className="size-3.5 shrink-0 opacity-70" />
+      )}
       <span className="truncate font-medium text-foreground/80">{label}</span>
+      {worktree?.pokemon ? (
+        <PokemonRarityText
+          rarity={worktree.pokemon.rarity}
+          className="shrink-0 text-[10px]"
+        />
+      ) : null}
       {sub !== null ? (
         <span className="truncate font-mono opacity-70">· {sub}</span>
       ) : null}
@@ -172,19 +183,20 @@ function renderPrBadge(
     checks: string;
     mergeable: string;
   } | null,
-  details:
-    | {
-        comments: ReadonlyArray<unknown>;
-        reviews: ReadonlyArray<unknown>;
-        checkRuns: ReadonlyArray<{ conclusion: string | null; status: string }>;
-      }
-    | null,
+  details: {
+    comments: ReadonlyArray<unknown>;
+    reviews: ReadonlyArray<unknown>;
+    checkRuns: ReadonlyArray<{ conclusion: string | null; status: string }>;
+  } | null,
 ): React.ReactNode {
   if (pr === null || pr.state === "none") return null;
   if (pr.state === "open" && !pr.isDraft) {
     if (pr.mergeable === "conflicting") {
       return (
-        <span className="flex items-center text-rose-300" title="Merge conflicts">
+        <span
+          className="flex items-center text-rose-300"
+          title="Merge conflicts"
+        >
           <span className="size-2 rounded-full bg-rose-400" />
         </span>
       );

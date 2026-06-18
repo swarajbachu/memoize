@@ -17,6 +17,7 @@ import { Migration0014ScriptsAndSetup } from "./migrations/0014_scripts_and_setu
 import { Migration0015QueuedMessages } from "./migrations/0015_queued_messages.ts";
 import { Migration0016QueuedMessagesQueueOrderRepair } from "./migrations/0016_queued_messages_queue_order_repair.ts";
 import { Migration0017ChatReadState } from "./migrations/0017_chat_read_state.ts";
+import { Migration0018PokemonWorktrees } from "./migrations/0018_pokemon_worktrees.ts";
 
 /**
  * Runs every numbered migration on boot. `fromRecord` keys must match
@@ -47,5 +48,6 @@ export const MigrationsLive = SqliteMigrator.layer({
     "0016_queued_messages_queue_order_repair":
       Migration0016QueuedMessagesQueueOrderRepair,
     "0017_chat_read_state": Migration0017ChatReadState,
+    "0018_pokemon_worktrees": Migration0018PokemonWorktrees,
   }),
 });

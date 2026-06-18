@@ -1,12 +1,21 @@
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowDown01Icon, AttachmentIcon, DashboardSpeedIcon, FlashIcon, Folder01Icon, GitBranchIcon, InformationCircleIcon, LockIcon, MapsIcon, SentIcon, SquareIcon, Tick01Icon, Upload01Icon } from "@hugeicons-pro/core-bulk-rounded";
-import type { EditorView } from "@codemirror/view";
 import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+  ArrowDown01Icon,
+  AttachmentIcon,
+  DashboardSpeedIcon,
+  FlashIcon,
+  Folder01Icon,
+  GitBranchIcon,
+  InformationCircleIcon,
+  LockIcon,
+  MapsIcon,
+  SentIcon,
+  SquareIcon,
+  Tick01Icon,
+  Upload01Icon,
+} from "@hugeicons-pro/core-bulk-rounded";
+import type { EditorView } from "@codemirror/view";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   findModelDescriptor,
@@ -83,12 +92,12 @@ import { EMPTY_WORKTREES, useWorktreesStore } from "../store/worktrees.ts";
 import { PermissionCard } from "./permission-card.tsx";
 import { QuestionCard } from "./question-card.tsx";
 import { ProviderIcon } from "./provider-icons.tsx";
+import { PokemonRarityText, PokemonSprite } from "./pokemon.tsx";
 import { MODES_ORDER, MODE_META } from "./runtime-mode-meta.ts";
 
 const MIN_HEIGHT = 56;
 const MAX_HEIGHT = 240;
 const MAX_ATTACHMENTS_PER_TURN = 20;
-
 
 export function ChatComposer({ session }: { session: Session }) {
   const sessionId: SessionId = session.id;
@@ -389,9 +398,12 @@ export function ChatComposer({ session }: { session: Session }) {
         setActiveRightTab("changes");
         break;
       case "copy": {
-        const latest = [...(sessionMessages ?? [])].reverse().find((m) =>
-          m.content._tag === "assistant" || m.content._tag === "thinking"
-        );
+        const latest = [...(sessionMessages ?? [])]
+          .reverse()
+          .find(
+            (m) =>
+              m.content._tag === "assistant" || m.content._tag === "thinking",
+          );
         const text =
           latest?.content._tag === "assistant" ||
           latest?.content._tag === "thinking"
@@ -718,7 +730,10 @@ export function ChatComposer({ session }: { session: Session }) {
                         aria-label="Attach files"
                         className="flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/60 hover:text-foreground"
                       >
-                        <HugeiconsIcon icon={AttachmentIcon} className="size-3.5" />
+                        <HugeiconsIcon
+                          icon={AttachmentIcon}
+                          className="size-3.5"
+                        />
                       </button>
                     }
                   />
@@ -741,13 +756,16 @@ export function ChatComposer({ session }: { session: Session }) {
                   model={session.model}
                   onLevelChange={setReasoningLevel}
                 />
-                {findModelDescriptor(session.providerId, session.model)
-                  ?.optionDescriptors?.some(
-                    (d): d is BooleanOptionDescriptor =>
-                      d.kind === "boolean" && d.id === "fastMode",
-                  ) === true && <FastModeToggle sessionId={sessionId} />}
+                {findModelDescriptor(
+                  session.providerId,
+                  session.model,
+                )?.optionDescriptors?.some(
+                  (d): d is BooleanOptionDescriptor =>
+                    d.kind === "boolean" && d.id === "fastMode",
+                ) === true && <FastModeToggle sessionId={sessionId} />}
                 {(findModelDescriptor(session.providerId, session.model)
-                  ?.supportsPlanMode ?? true) && (
+                  ?.supportsPlanMode ??
+                  true) && (
                   <PlanModeToggle
                     sessionId={sessionId}
                     current={session.permissionMode}
@@ -770,7 +788,10 @@ export function ChatComposer({ session }: { session: Session }) {
                           onClick={() => void interrupt(sessionId)}
                           aria-label="Interrupt"
                         >
-                          <HugeiconsIcon icon={SquareIcon} className="size-3.5" />
+                          <HugeiconsIcon
+                            icon={SquareIcon}
+                            className="size-3.5"
+                          />
                         </Button>
                       }
                     />
@@ -855,9 +876,17 @@ function RuntimeModeToggle({
               )}
             >
               <span className="col-start-1 row-start-1 flex h-5 items-center justify-center">
-                {active && <HugeiconsIcon icon={Tick01Icon} className="size-3.5 opacity-90" />}
+                {active && (
+                  <HugeiconsIcon
+                    icon={Tick01Icon}
+                    className="size-3.5 opacity-90"
+                  />
+                )}
               </span>
-              <HugeiconsIcon icon={itemIcon} className="col-start-2 row-start-1 mt-0.5 size-4 shrink-0" />
+              <HugeiconsIcon
+                icon={itemIcon}
+                className="col-start-2 row-start-1 mt-0.5 size-4 shrink-0"
+              />
               <div className="col-start-3 row-start-1 flex flex-col gap-0.5">
                 <span className="font-medium leading-none">{m.label}</span>
                 <span className="text-xs text-muted-foreground leading-snug">
@@ -985,9 +1014,6 @@ function PlanModeToggle({
   );
 }
 
-
-
-
 /**
  * Reasoning / variant selector. For non-opencode providers this reads
  * the static `reasoning` SelectOptionDescriptor from `MODELS_BY_PROVIDER`.
@@ -1114,7 +1140,13 @@ function ReasoningPicker({
       >
         <HugeiconsIcon icon={DashboardSpeedIcon} className="size-3" />
         <span>{activeLabel}</span>
-        {isUltracode && <HugeiconsIcon icon={InformationCircleIcon} className="size-3 opacity-90" aria-hidden />}
+        {isUltracode && (
+          <HugeiconsIcon
+            icon={InformationCircleIcon}
+            className="size-3 opacity-90"
+            aria-hidden
+          />
+        )}
         <HugeiconsIcon icon={ArrowDown01Icon} className="size-3 opacity-60" />
       </MenuTrigger>
       <MenuPopup side="top" align="start" className="w-44">
@@ -1246,14 +1278,14 @@ function WorkspacePicker({ session }: { session: Session }) {
     () =>
       session.worktreeId === null
         ? null
-        : worktrees.find((w) => w.id === session.worktreeId) ?? null,
+        : (worktrees.find((w) => w.id === session.worktreeId) ?? null),
     [session.worktreeId, worktrees],
   );
 
   const triggerLabel =
     session.worktreeId === null
       ? "Current checkout"
-      : current?.name ?? "Worktree";
+      : (current?.name ?? "Worktree");
   const triggerIcon =
     session.worktreeId === null ? Folder01Icon : GitBranchIcon;
 
@@ -1263,7 +1295,11 @@ function WorkspacePicker({ session }: { session: Session }) {
         className="flex items-center gap-1.5 rounded-md px-2 py-1"
         title="Workspace locked — first message already sent"
       >
-        <HugeiconsIcon icon={triggerIcon} className="size-3.5" />
+        {current?.pokemon ? (
+          <PokemonSprite pokemon={current.pokemon} className="size-4" />
+        ) : (
+          <HugeiconsIcon icon={triggerIcon} className="size-3.5" />
+        )}
         <span>{triggerLabel}</span>
         <HugeiconsIcon icon={LockIcon} className="size-3 opacity-60" />
       </span>
@@ -1287,7 +1323,11 @@ function WorkspacePicker({ session }: { session: Session }) {
         aria-label="Change workspace"
         title="Change workspace — locks once the first message is sent"
       >
-        <HugeiconsIcon icon={triggerIcon} className="size-3.5" />
+        {current?.pokemon ? (
+          <PokemonSprite pokemon={current.pokemon} className="size-4" />
+        ) : (
+          <HugeiconsIcon icon={triggerIcon} className="size-3.5" />
+        )}
         <span>{triggerLabel}</span>
         <HugeiconsIcon icon={ArrowDown01Icon} className="size-3 opacity-60" />
       </MenuTrigger>
@@ -1303,10 +1343,16 @@ function WorkspacePicker({ session }: { session: Session }) {
         >
           <span className="col-start-1 row-start-1 flex h-5 items-center justify-center">
             {session.worktreeId === null && (
-              <HugeiconsIcon icon={Tick01Icon} className="size-3.5 opacity-90" />
+              <HugeiconsIcon
+                icon={Tick01Icon}
+                className="size-3.5 opacity-90"
+              />
             )}
           </span>
-          <HugeiconsIcon icon={Folder01Icon} className="col-start-2 row-start-1 mt-0.5 size-4 shrink-0" />
+          <HugeiconsIcon
+            icon={Folder01Icon}
+            className="col-start-2 row-start-1 mt-0.5 size-4 shrink-0"
+          />
           <div className="col-start-3 row-start-1 flex flex-col gap-0.5">
             <span className="font-medium leading-none">Current checkout</span>
             <span className="text-xs text-muted-foreground leading-snug">
@@ -1320,10 +1366,16 @@ function WorkspacePicker({ session }: { session: Session }) {
         >
           <span className="col-start-1 row-start-1 flex h-5 items-center justify-center">
             {session.worktreeId !== null && (
-              <HugeiconsIcon icon={Tick01Icon} className="size-3.5 opacity-90" />
+              <HugeiconsIcon
+                icon={Tick01Icon}
+                className="size-3.5 opacity-90"
+              />
             )}
           </span>
-          <HugeiconsIcon icon={GitBranchIcon} className="col-start-2 row-start-1 mt-0.5 size-4 shrink-0" />
+          <HugeiconsIcon
+            icon={GitBranchIcon}
+            className="col-start-2 row-start-1 mt-0.5 size-4 shrink-0"
+          />
           <div className="col-start-3 row-start-1 flex flex-col gap-0.5">
             <span className="font-medium leading-none">New worktree</span>
             <span className="text-xs text-muted-foreground leading-snug">
@@ -1353,8 +1405,18 @@ function WorkspaceBranchLabel({ session }: { session: Session }) {
       className="flex items-center gap-1 truncate font-mono text-foreground/80"
       title={`Branch ${wt.branch}`}
     >
-      <HugeiconsIcon icon={GitBranchIcon} className="size-3 shrink-0 opacity-70" />
+      {wt.pokemon ? (
+        <PokemonSprite pokemon={wt.pokemon} className="size-4" />
+      ) : (
+        <HugeiconsIcon
+          icon={GitBranchIcon}
+          className="size-3 shrink-0 opacity-70"
+        />
+      )}
       <span className="truncate font-medium">{wt.branch}</span>
+      {wt.pokemon ? (
+        <PokemonRarityText rarity={wt.pokemon.rarity} className="text-[10px]" />
+      ) : null}
     </span>
   );
 }
