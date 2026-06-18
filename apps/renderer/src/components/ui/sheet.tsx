@@ -100,7 +100,7 @@ export function SheetPopup({
             side === "right" &&
               "col-start-2 w-[calc(100%-(--spacing(12)))] max-w-md border-s data-ending-style:translate-x-8 data-starting-style:translate-x-8",
             variant === "inset" &&
-              "before:hidden sm:rounded-2xl sm:border sm:before:rounded-[calc(var(--radius-2xl)-1px)] sm:**:data-[slot=sheet-footer]:rounded-b-[calc(var(--radius-2xl)-1px)]",
+              "before:hidden sm:rounded-lg sm:border sm:border-border/70 sm:before:rounded-[calc(var(--radius-lg)-1px)] sm:**:data-[slot=sheet-footer]:rounded-b-[calc(var(--radius-lg)-1px)]",
             className,
           )}
           data-slot="sheet-popup"
@@ -154,7 +154,7 @@ export function SheetFooter({
   const defaultProps = {
     className: cn(
       "flex flex-col-reverse gap-2 px-6 sm:flex-row sm:justify-end",
-      variant === "default" && "border-t bg-muted/72 py-4",
+      variant === "default" && "border-t border-border/60 bg-muted py-4",
       variant === "bare" &&
         "in-[[data-slot=sheet-popup]:has([data-slot=sheet-panel])]:pt-3 pt-4 pb-6",
       className,
