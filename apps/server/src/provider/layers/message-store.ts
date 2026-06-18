@@ -87,6 +87,8 @@ interface ChatRow {
   readonly active_session_id: string | null;
   readonly archived_at: string | null;
   readonly archived_worktree_json: string | null;
+  readonly last_message_at: string | null;
+  readonly last_read_at: string | null;
   readonly created_at: string;
   readonly updated_at: string;
 }
@@ -99,7 +101,7 @@ const SESSION_COLUMNS =
 
 const CHAT_COLUMNS =
   "id, project_id, worktree_id, title, active_session_id, " +
-  "archived_at, archived_worktree_json, created_at, updated_at";
+  "archived_at, archived_worktree_json, last_message_at, last_read_at, created_at, updated_at";
 
 const ARCHIVE_SCRIPT_TIMEOUT_MS = 10 * 60 * 1000;
 const ARCHIVE_OUTPUT_LIMIT = 12_000;
@@ -253,6 +255,9 @@ const chatFromRow = (row: ChatRow): Chat =>
         ? null
         : SessionId.make(row.active_session_id),
     archivedAt: row.archived_at === null ? null : new Date(row.archived_at),
+    lastMessageAt:
+      row.last_message_at === null ? null : new Date(row.last_message_at),
+    lastReadAt: row.last_read_at === null ? null : new Date(row.last_read_at),
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   });
@@ -768,6 +773,13 @@ export const MessageStoreLive = Layer.scoped(
         yield* sql`
           UPDATE sessions SET updated_at = ${nowIso} WHERE id = ${sessionId}
         `.pipe(Effect.orDie);
+        // Advance the owning chat's activity clock so the sidebar can mark it
+        // unread. `updated_at` (and sidebar ordering) is intentionally left
+        // untouched — `last_message_at` is a separate read/unread signal.
+        yield* sql`
+          UPDATE chats SET last_message_at = ${nowIso}
+          WHERE id = (SELECT chat_id FROM sessions WHERE id = ${sessionId})
+        `.pipe(Effect.orDie);
         return Message.make({
           id,
           sessionId,
@@ -778,8 +790,9 @@ export const MessageStoreLive = Layer.scoped(
       });
 
     const flushingQueues = yield* Ref.make<ReadonlySet<SessionId>>(new Set());
-    let flushQueueAfterIdle: (sessionId: SessionId) => Effect.Effect<void> =
-      () => Effect.void;
+    let flushQueueAfterIdle: (
+      sessionId: SessionId,
+    ) => Effect.Effect<void> = () => Effect.void;
 
     const setStatus = (
       sessionId: SessionId,
@@ -1098,7 +1111,7 @@ export const MessageStoreLive = Layer.scoped(
       Effect.gen(function* () {
         const rows = yield* sql<ChatRow>`
           SELECT id, project_id, worktree_id, title, active_session_id,
-                 archived_at, archived_worktree_json, created_at, updated_at
+                 archived_at, archived_worktree_json, last_message_at, last_read_at, created_at, updated_at
           FROM chats WHERE id = ${chatId} LIMIT 1
         `.pipe(Effect.orDie);
         const row = rows[0];
@@ -1591,7 +1604,7 @@ export const MessageStoreLive = Layer.scoped(
       Effect.gen(function* () {
         const rows = yield* sql<ChatRow>`
           SELECT id, project_id, worktree_id, title, active_session_id,
-                 archived_at, archived_worktree_json, created_at, updated_at
+                 archived_at, archived_worktree_json, last_message_at, last_read_at, created_at, updated_at
           FROM chats WHERE id = ${chatId} LIMIT 1
         `.pipe(Effect.orDie);
         if (rows.length === 0) {
@@ -1608,13 +1621,13 @@ export const MessageStoreLive = Layer.scoped(
         const rows = includeArchived
           ? yield* sql<ChatRow>`
               SELECT id, project_id, worktree_id, title, active_session_id,
-                     archived_at, archived_worktree_json, created_at, updated_at
+                     archived_at, archived_worktree_json, last_message_at, last_read_at, created_at, updated_at
               FROM chats WHERE project_id = ${projectId}
               ORDER BY updated_at DESC
             `.pipe(Effect.orDie)
           : yield* sql<ChatRow>`
               SELECT id, project_id, worktree_id, title, active_session_id,
-                     archived_at, archived_worktree_json, created_at, updated_at
+                     archived_at, archived_worktree_json, last_message_at, last_read_at, created_at, updated_at
               FROM chats
               WHERE project_id = ${projectId} AND archived_at IS NULL
               ORDER BY updated_at DESC
@@ -1644,10 +1657,10 @@ export const MessageStoreLive = Layer.scoped(
         yield* sql`
           INSERT INTO chats
             (id, project_id, worktree_id, title, active_session_id,
-             archived_at, created_at, updated_at)
+             archived_at, last_message_at, last_read_at, created_at, updated_at)
           VALUES
             (${chatId}, ${input.projectId}, ${worktreeId}, ${title}, NULL,
-             NULL, ${nowIso}, ${nowIso})
+             NULL, NULL, ${nowIso}, ${nowIso}, ${nowIso})
         `.pipe(Effect.asVoid, Effect.orDie);
         const initialSession = yield* createSession({
           chatId,
@@ -1719,6 +1732,17 @@ export const MessageStoreLive = Layer.scoped(
         // `chat.streamChanges` so the sidebar updates without a refetch.
         const updated = yield* lookupChat(chatId);
         yield* broadcastChat(updated);
+      });
+
+    const markChatRead: MessageStoreShape["markChatRead"] = (chatId) =>
+      Effect.gen(function* () {
+        yield* lookupChat(chatId);
+        const nowIso = new Date().toISOString();
+        // Read state only — leave `updated_at` (sidebar ordering) untouched.
+        yield* sql`
+          UPDATE chats SET last_read_at = ${nowIso} WHERE id = ${chatId}
+        `.pipe(Effect.asVoid, Effect.orDie);
+        return yield* lookupChat(chatId);
       });
 
     const streamChatChanges: MessageStoreShape["streamChatChanges"] = (
@@ -1793,12 +1817,10 @@ export const MessageStoreLive = Layer.scoped(
         );
         // Rename the git branch, then mirror it onto the worktree row so the
         // DB and git agree. updateBranch only runs if the rename succeeded.
-        yield* git
-          .renameBranch(chat.projectId, branch, worktreeId)
-          .pipe(
-            Effect.flatMap(() => worktrees.updateBranch(worktreeId, branch)),
-            Effect.catchAll(() => Effect.void),
-          );
+        yield* git.renameBranch(chat.projectId, branch, worktreeId).pipe(
+          Effect.flatMap(() => worktrees.updateBranch(worktreeId, branch)),
+          Effect.catchAll(() => Effect.void),
+        );
       }).pipe(Effect.catchAllCause(() => Effect.void));
 
     const forkAutoName = (
@@ -1980,7 +2002,7 @@ export const MessageStoreLive = Layer.scoped(
       Effect.gen(function* () {
         const chatRows = yield* sql<ChatRow>`
           SELECT id, project_id, worktree_id, title, active_session_id,
-                 archived_at, archived_worktree_json, created_at, updated_at
+                 archived_at, archived_worktree_json, last_message_at, last_read_at, created_at, updated_at
           FROM chats WHERE id = ${chatId} LIMIT 1
         `.pipe(Effect.orDie);
         const chatRow = chatRows[0];
@@ -2578,9 +2600,7 @@ export const MessageStoreLive = Layer.scoped(
         return item;
       });
 
-    const restoreQueuedMessage = (
-      item: QueuedMessage,
-    ): Effect.Effect<void> =>
+    const restoreQueuedMessage = (item: QueuedMessage): Effect.Effect<void> =>
       Effect.gen(function* () {
         yield* ensureQueuedMessagesSchema;
         const existing = yield* sql<{ readonly count: number }>`
@@ -2695,6 +2715,7 @@ export const MessageStoreLive = Layer.scoped(
       getChat,
       createChat,
       renameChat,
+      markChatRead,
       streamChatChanges,
       setChatWorktree,
       setChatActiveSession,

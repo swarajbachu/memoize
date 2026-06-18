@@ -465,6 +465,15 @@ export class Chat extends Schema.Class<Chat>("Chat")({
   title: Schema.String,
   activeSessionId: Schema.NullOr(SessionId),
   archivedAt: Schema.NullOr(Schema.DateFromString),
+  /**
+   * Read/unread tracking. `lastMessageAt` advances every time a message is
+   * persisted in any of the chat's sessions; `lastReadAt` advances when the
+   * user views the chat. A chat is unread when `lastMessageAt > lastReadAt`.
+   * `lastMessageAt` is null until the first message; `lastReadAt` is seeded to
+   * the creation time so a freshly created chat starts read.
+   */
+  lastMessageAt: Schema.NullOr(Schema.DateFromString),
+  lastReadAt: Schema.NullOr(Schema.DateFromString),
   createdAt: Schema.DateFromString,
   updatedAt: Schema.DateFromString,
 }) {}
@@ -602,6 +611,16 @@ export const ChatStreamChangesRpc = Rpc.make("chat.streamChanges", {
  * session's `worktreeId` so renderer reads of `session.worktreeId` stay
  * accurate without a second round-trip.
  */
+/**
+ * Mark a chat read by stamping `last_read_at` to "now". Returns the refreshed
+ * chat so the renderer can reconcile its optimistic patch. Idempotent.
+ */
+export const ChatMarkReadRpc = Rpc.make("chat.markRead", {
+  payload: Schema.Struct({ chatId: ChatId }),
+  success: Chat,
+  error: ChatNotFoundError,
+});
+
 export const ChatSetWorktreeRpc = Rpc.make("chat.setWorktree", {
   payload: Schema.Struct({
     chatId: ChatId,
