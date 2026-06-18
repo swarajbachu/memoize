@@ -16,7 +16,7 @@ import type {
   FolderId,
   SessionId,
 } from "@memoize/wire";
-import { RepositorySettings } from "@memoize/wire";
+import { ComposerInput, RepositorySettings } from "@memoize/wire";
 
 import { NdjsonLogger } from "../src/persistence/ndjson-logger.ts";
 import { Migration0001Initial } from "../src/persistence/migrations/0001_initial.ts";
@@ -31,6 +31,10 @@ import { Migration0009PermissionModeAndToolSearch } from "../src/persistence/mig
 import { Migration0010NestedSessions } from "../src/persistence/migrations/0010_nested_sessions.ts";
 import { Migration0011ChatsTable } from "../src/persistence/migrations/0011_chats_table.ts";
 import { Migration0012ChatIdNotNull } from "../src/persistence/migrations/0012_chat_id_not_null.ts";
+import { Migration0013ArchiveCleanup } from "../src/persistence/migrations/0013_archive_cleanup.ts";
+import { Migration0014ScriptsAndSetup } from "../src/persistence/migrations/0014_scripts_and_setup.ts";
+import { Migration0015QueuedMessages } from "../src/persistence/migrations/0015_queued_messages.ts";
+import { Migration0016QueuedMessagesQueueOrderRepair } from "../src/persistence/migrations/0016_queued_messages_queue_order_repair.ts";
 import { WorktreeService } from "../src/worktree/services/worktree-service.ts";
 import { MessageStore } from "../src/provider/services/message-store.ts";
 import { ProviderService } from "../src/provider/services/provider-service.ts";
@@ -135,6 +139,10 @@ const runAllMigrations = Effect.all(
     Migration0010NestedSessions,
     Migration0011ChatsTable,
     Migration0012ChatIdNotNull,
+    Migration0013ArchiveCleanup,
+    Migration0014ScriptsAndSetup,
+    Migration0015QueuedMessages,
+    Migration0016QueuedMessagesQueueOrderRepair,
   ],
   { discard: true },
 );
@@ -191,6 +199,51 @@ const withRuntime = async <A>(
 };
 
 const store = MessageStore;
+
+describe("MessageStore migrations", () => {
+  it("0016 repairs queued_messages rows from the old position column", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "mz-queue-migration-"));
+    const dbPath = join(dir, "test.sqlite");
+    const runtime = ManagedRuntime.make(SqliteClient.layer({ filename: dbPath }));
+    try {
+      await runtime.runPromise(
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`
+            CREATE TABLE queued_messages (
+              id TEXT PRIMARY KEY,
+              session_id TEXT NOT NULL,
+              position INTEGER NOT NULL,
+              input_json TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            )
+          `;
+          yield* sql`
+            INSERT INTO queued_messages
+              (id, session_id, position, input_json, created_at, updated_at)
+            VALUES
+              ('q1', 's1', 7, '{"text":"x","attachments":[],"fileRefs":[],"skillRefs":[]}', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')
+          `;
+          yield* Migration0016QueuedMessagesQueueOrderRepair;
+          const columns = yield* sql<{ readonly name: string }>`
+            PRAGMA table_info(queued_messages)
+          `;
+          expect(columns.map((column) => column.name)).toContain(
+            "queue_order",
+          );
+          const rows = yield* sql<{ readonly queue_order: number }>`
+            SELECT queue_order FROM queued_messages WHERE id = 'q1'
+          `;
+          expect(rows[0]?.queue_order).toBe(7);
+        }),
+      );
+    } finally {
+      await runtime.dispose();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("MessageStore — chat & session lifecycle", () => {
   it("createChat persists a chat, an initial session, and the user message", async () => {
@@ -314,6 +367,225 @@ describe("MessageStore — chat & session lifecycle", () => {
         _tag: "user",
         text: "hello there",
       });
+    });
+  });
+
+  it("queued messages persist, update, delete, and reorder", async () => {
+    await withRuntime(async (run) => {
+      const { initialSession } = await run(
+        Effect.flatMap(store, (s) =>
+          s.createChat({
+            projectId: PROJECT_ID,
+            providerId: "claude",
+            model: "claude-opus-4-8",
+          }),
+        ),
+      );
+      const first = new ComposerInput({
+        text: "first",
+        attachments: [],
+        fileRefs: [],
+        skillRefs: [],
+      });
+      const second = new ComposerInput({
+        text: "second",
+        attachments: [],
+        fileRefs: [],
+        skillRefs: [],
+      });
+
+      const [a, b] = await run(
+        Effect.flatMap(store, (s) =>
+          Effect.all([
+            s.addQueuedMessage(initialSession.id, first),
+            s.addQueuedMessage(initialSession.id, second),
+          ]),
+        ),
+      );
+      expect(a.position).toBe(0);
+      expect(b.position).toBe(1);
+
+      await run(
+        Effect.flatMap(store, (s) =>
+          s.updateQueuedMessage(
+            initialSession.id,
+            a.id,
+            new ComposerInput({
+              text: "first edited",
+              attachments: [],
+              fileRefs: [],
+              skillRefs: [],
+            }),
+          ),
+        ),
+      );
+      const reordered = await run(
+        Effect.flatMap(store, (s) =>
+          s.reorderQueuedMessages(initialSession.id, [b.id, a.id]),
+        ),
+      );
+      expect(reordered.map((item) => item.input.text)).toEqual([
+        "second",
+        "first edited",
+      ]);
+
+      await run(
+        Effect.flatMap(store, (s) =>
+          s.deleteQueuedMessage(initialSession.id, b.id),
+        ),
+      );
+      const remaining = await run(
+        Effect.flatMap(store, (s) => s.listQueuedMessages(initialSession.id)),
+      );
+      expect(remaining.map((item) => item.input.text)).toEqual([
+        "first edited",
+      ]);
+      expect(remaining[0]?.position).toBe(0);
+    });
+  });
+
+  it("flushQueuedMessages sends only the head queued item when idle", async () => {
+    await withRuntime(async (run) => {
+      const { initialSession } = await run(
+        Effect.flatMap(store, (s) =>
+          s.createChat({
+            projectId: PROJECT_ID,
+            providerId: "claude",
+            model: "claude-opus-4-8",
+          }),
+        ),
+      );
+      await run(
+        Effect.flatMap(store, (s) =>
+          Effect.all([
+            s.addQueuedMessage(
+              initialSession.id,
+              new ComposerInput({
+                text: "queued one",
+                attachments: [],
+                fileRefs: [],
+                skillRefs: [],
+              }),
+            ),
+            s.addQueuedMessage(
+              initialSession.id,
+              new ComposerInput({
+                text: "queued two",
+                attachments: [],
+                fileRefs: [],
+                skillRefs: [],
+              }),
+            ),
+          ]),
+        ),
+      );
+
+      await run(
+        Effect.flatMap(store, (s) => s.flushQueuedMessages(initialSession.id)),
+      );
+
+      const queue = await run(
+        Effect.flatMap(store, (s) => s.listQueuedMessages(initialSession.id)),
+      );
+      expect(queue.map((item) => item.input.text)).toEqual(["queued two"]);
+      const messages = await run(
+        Effect.flatMap(store, (s) => s.listMessages(initialSession.id)),
+      );
+      expect(messages.at(-1)?.content).toMatchObject({
+        _tag: "user",
+        text: "queued one",
+      });
+    });
+  });
+
+  it("flushQueuedMessages does nothing while the session is running", async () => {
+    await withRuntime(async (run) => {
+      const { initialSession } = await run(
+        Effect.flatMap(store, (s) =>
+          s.createChat({
+            projectId: PROJECT_ID,
+            providerId: "claude",
+            model: "claude-opus-4-8",
+            initialPrompt: "already running",
+          }),
+        ),
+      );
+      await run(
+        Effect.flatMap(store, (s) =>
+          s.addQueuedMessage(
+            initialSession.id,
+            new ComposerInput({
+              text: "wait",
+              attachments: [],
+              fileRefs: [],
+              skillRefs: [],
+            }),
+          ),
+        ),
+      );
+
+      await run(
+        Effect.flatMap(store, (s) => s.flushQueuedMessages(initialSession.id)),
+      );
+
+      const queue = await run(
+        Effect.flatMap(store, (s) => s.listQueuedMessages(initialSession.id)),
+      );
+      expect(queue.map((item) => item.input.text)).toEqual(["wait"]);
+    });
+  });
+
+  it("sendQueuedMessageNow and flush do not duplicate the same queued row", async () => {
+    await withRuntime(async (run) => {
+      const { initialSession } = await run(
+        Effect.flatMap(store, (s) =>
+          s.createChat({
+            projectId: PROJECT_ID,
+            providerId: "claude",
+            model: "claude-opus-4-8",
+          }),
+        ),
+      );
+      const item = await run(
+        Effect.flatMap(store, (s) =>
+          s.addQueuedMessage(
+            initialSession.id,
+            new ComposerInput({
+              text: "send me once",
+              attachments: [],
+              fileRefs: [],
+              skillRefs: [],
+            }),
+          ),
+        ),
+      );
+
+      await run(
+        Effect.flatMap(store, (s) =>
+          Effect.all(
+            [
+              s.sendQueuedMessageNow(initialSession.id, item.id),
+              s.flushQueuedMessages(initialSession.id),
+            ],
+            { concurrency: "unbounded" },
+          ),
+        ),
+      );
+
+      const queue = await run(
+        Effect.flatMap(store, (s) => s.listQueuedMessages(initialSession.id)),
+      );
+      expect(queue).toHaveLength(0);
+      const messages = await run(
+        Effect.flatMap(store, (s) => s.listMessages(initialSession.id)),
+      );
+      const matching = messages.filter(
+        (message) =>
+          (message.content._tag === "user" ||
+            message.content._tag === "user_rich") &&
+          message.content.text === "send me once",
+      );
+      expect(matching).toHaveLength(1);
     });
   });
 
