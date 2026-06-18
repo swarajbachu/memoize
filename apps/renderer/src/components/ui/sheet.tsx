@@ -1,10 +1,9 @@
 "use client";
 
-import { HugeiconsIcon } from "@hugeicons/react";
-import { Cancel01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import { Dialog as SheetPrimitive } from "@base-ui/react/dialog";
 import { mergeProps } from "@base-ui/react/merge-props";
 import { useRender } from "@base-ui/react/use-render";
+import { X } from "lucide-react";
 import type React from "react";
 import { cn } from "~/lib/utils";
 import { Button } from "~/components/ui/button";
@@ -114,7 +113,7 @@ export function SheetPopup({
               render={<Button size="icon" variant="ghost" />}
               {...closeProps}
             >
-              <HugeiconsIcon icon={Cancel01Icon} />
+              <X />
             </SheetPrimitive.Close>
           )}
         </SheetPrimitive.Popup>

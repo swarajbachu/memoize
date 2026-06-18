@@ -2,9 +2,9 @@ import {
   ArrowLeft01Icon,
   ArrowRight01Icon,
   ArrowUp01Icon,
-  Cancel01Icon,
 } from "@hugeicons-pro/core-bulk-rounded";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { X } from "lucide-react";
 import type React from "react";
 import { useMemo, useState } from "react";
 
@@ -195,7 +195,7 @@ function InteractiveQuestionCard({
             );
           }}
         >
-          <HugeiconsIcon icon={Cancel01Icon} size={16} strokeWidth={2} />
+          <X size={16} strokeWidth={1.8} />
         </button>
       </div>
 

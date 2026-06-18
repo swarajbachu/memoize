@@ -1,7 +1,6 @@
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { IconSvgElement } from "@hugeicons/react";
 import {
-  Add01Icon,
   Alert01Icon,
   ArrowLeft01Icon,
   Delete02Icon,
@@ -17,6 +16,7 @@ import {
   Tick01Icon,
   VolumeHighIcon,
 } from "@hugeicons-pro/core-bulk-rounded";
+import { Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Effect } from "effect";
@@ -495,7 +495,7 @@ function BrowserSettingsPane() {
                 onClick={() => void add()}
                 disabled={busy || origin.trim() === "" || password === ""}
               >
-                <HugeiconsIcon icon={Add01Icon} className="size-3.5" />
+                <Plus className="size-3.5" strokeWidth={1.8} />
                 Add login
               </Button>
             </div>

@@ -1,5 +1,6 @@
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowDown01Icon, Cancel01Icon, Folder01Icon, FolderAddIcon, SentIcon, Tick01Icon } from "@hugeicons-pro/core-bulk-rounded";
+import { ArrowDown01Icon, Folder01Icon, FolderAddIcon, SentIcon, Tick01Icon } from "@hugeicons-pro/core-bulk-rounded";
+import { X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 
 import { ComposerInput, type FolderId } from "@memoize/wire";
@@ -168,7 +169,7 @@ export function ChatLanding() {
               aria-label="Dismiss error"
               className="-mr-1 shrink-0 rounded p-0.5 text-rose-200/80 hover:bg-rose-500/[0.12] hover:text-rose-100"
             >
-              <HugeiconsIcon icon={Cancel01Icon} className="size-3.5" />
+              <X className="size-3.5" strokeWidth={1.8} />
             </button>
           </div>
         )}

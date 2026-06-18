@@ -1,5 +1,6 @@
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Alert01Icon, GitMergeIcon, GitPullRequestIcon, Upload01Icon, Wrench01Icon } from "@hugeicons-pro/core-bulk-rounded";
+import { Alert01Icon, GitMergeIcon, Upload01Icon, Wrench01Icon } from "@hugeicons-pro/core-bulk-rounded";
+import { GitPullRequestIcon } from "@hugeicons-pro/core-solid-rounded";
 import {
   GlassActionButton,
   GlassChip,

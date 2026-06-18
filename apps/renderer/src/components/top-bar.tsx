@@ -1,5 +1,6 @@
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Alert01Icon, ArchiveIcon, ArrowDown01Icon, Copy01Icon, GitBranchIcon, GitMergeIcon, GitPullRequestIcon, LinkSquare01Icon, Loading02Icon, MagicWand01Icon, PanelLeftCloseIcon, PanelLeftOpenIcon, PanelRightCloseIcon, PanelRightOpenIcon, PencilEdit01Icon, Tick01Icon, Upload01Icon, Wrench01Icon } from "@hugeicons-pro/core-bulk-rounded";
+import { Alert01Icon, ArrowDown01Icon, Copy01Icon, GitBranchIcon, GitMergeIcon, LinkSquare01Icon, Loading02Icon, MagicWand01Icon, PanelLeftCloseIcon, PanelLeftOpenIcon, PanelRightCloseIcon, PanelRightOpenIcon, PencilEdit01Icon, Tick01Icon, Upload01Icon, Wrench01Icon } from "@hugeicons-pro/core-bulk-rounded";
+import { ArchiveArrowDownIcon, GitPullRequestIcon } from "@hugeicons-pro/core-solid-rounded";
 import { Effect } from "effect";
 import {
   type CSSProperties,
@@ -859,7 +860,7 @@ export function TopBarRight() {
         {workflow.kind === "merged-pr" && selectedChatId !== null ? (
           <DirectActionButton
             tone="zinc"
-            icon={<HugeiconsIcon icon={ArchiveIcon} />}
+            icon={<HugeiconsIcon icon={ArchiveArrowDownIcon} />}
             label="Archive chat"
             loadingLabel="Archiving…"
             run={() => archiveChat(selectedChatId)}
