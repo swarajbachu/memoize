@@ -129,18 +129,18 @@ function useSessionRunningSubscriptions(sessionIds: ReadonlyArray<SessionId>) {
               (event) =>
                 Effect.sync(() => {
                   noteSessionStatusForCompletionSound(id, event.status);
-                  useMessagesStore.setState((s) => ({
-                    runningBySession: {
-                      ...s.runningBySession,
-                      [id]: event.status === "running",
-                    },
-                  }));
+                  useMessagesStore
+                    .getState()
+                    .observeSessionStatus(id, event.status);
                   // Mirror the full status into the session row so the
                   // chat surface can branch on `booting` (loading panel)
                   // vs `idle` (composer ready) without a second stream.
                   useSessionsStore
                     .getState()
                     .setSessionStatus(id, event.status);
+                  if (event.status === "idle" || event.status === "closed") {
+                    useMessagesStore.getState().flushQueue(id);
+                  }
                 }),
             ),
           );

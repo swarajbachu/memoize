@@ -13,11 +13,13 @@ import type {
   ChatId,
   ChatNotFoundError,
   ChatUnarchiveResult,
+  ComposerInput,
   FileRef,
   FolderId,
   Message,
   PermissionMode,
   ProviderId,
+  QueuedMessage,
   RuntimeMode,
   Session,
   SessionAlreadyStartedError,
@@ -313,6 +315,44 @@ export interface MessageStoreShape {
   ) => Effect.Effect<void, SessionNotFoundError>;
 
   readonly interruptSession: (
+    sessionId: SessionId,
+  ) => Effect.Effect<void, SessionNotFoundError>;
+
+  readonly listQueuedMessages: (
+    sessionId: SessionId,
+  ) => Effect.Effect<ReadonlyArray<QueuedMessage>, SessionNotFoundError>;
+
+  readonly streamQueuedMessages: (
+    sessionId: SessionId,
+  ) => Stream.Stream<ReadonlyArray<QueuedMessage>, SessionNotFoundError>;
+
+  readonly addQueuedMessage: (
+    sessionId: SessionId,
+    input: ComposerInput,
+  ) => Effect.Effect<QueuedMessage, SessionNotFoundError>;
+
+  readonly updateQueuedMessage: (
+    sessionId: SessionId,
+    queueId: string,
+    input: ComposerInput,
+  ) => Effect.Effect<QueuedMessage, SessionNotFoundError>;
+
+  readonly deleteQueuedMessage: (
+    sessionId: SessionId,
+    queueId: string,
+  ) => Effect.Effect<void, SessionNotFoundError>;
+
+  readonly sendQueuedMessageNow: (
+    sessionId: SessionId,
+    queueId: string,
+  ) => Effect.Effect<void, SessionNotFoundError>;
+
+  readonly reorderQueuedMessages: (
+    sessionId: SessionId,
+    queueIds: ReadonlyArray<string>,
+  ) => Effect.Effect<ReadonlyArray<QueuedMessage>, SessionNotFoundError>;
+
+  readonly flushQueuedMessages: (
     sessionId: SessionId,
   ) => Effect.Effect<void, SessionNotFoundError>;
 }

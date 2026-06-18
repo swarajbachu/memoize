@@ -290,6 +290,17 @@ export class Message extends Schema.Class<Message>("Message")({
   createdAt: Schema.DateFromString,
 }) {}
 
+export class QueuedMessage extends Schema.Class<QueuedMessage>(
+  "QueuedMessage",
+)({
+  id: Schema.String,
+  sessionId: SessionId,
+  input: ComposerInput,
+  position: Schema.Number,
+  createdAt: Schema.DateFromString,
+  updatedAt: Schema.DateFromString,
+}) {}
+
 export class SessionNotFoundError extends Schema.TaggedError<SessionNotFoundError>()(
   "SessionNotFoundError",
   { sessionId: SessionId },
@@ -670,6 +681,71 @@ export const MessagesSendRpc = Rpc.make("messages.send", {
 });
 
 export const MessagesInterruptRpc = Rpc.make("messages.interrupt", {
+  payload: Schema.Struct({ sessionId: SessionId }),
+  success: Schema.Void,
+  error: SessionNotFoundError,
+});
+
+export const MessagesQueueListRpc = Rpc.make("messages.queue.list", {
+  payload: Schema.Struct({ sessionId: SessionId }),
+  success: Schema.Array(QueuedMessage),
+  error: SessionNotFoundError,
+});
+
+export const MessagesQueueStreamRpc = Rpc.make("messages.queue.stream", {
+  payload: Schema.Struct({ sessionId: SessionId }),
+  success: Schema.Array(QueuedMessage),
+  error: SessionNotFoundError,
+  stream: true,
+});
+
+export const MessagesQueueAddRpc = Rpc.make("messages.queue.add", {
+  payload: Schema.Struct({
+    sessionId: SessionId,
+    input: ComposerInput,
+  }),
+  success: QueuedMessage,
+  error: SessionNotFoundError,
+});
+
+export const MessagesQueueUpdateRpc = Rpc.make("messages.queue.update", {
+  payload: Schema.Struct({
+    sessionId: SessionId,
+    queueId: Schema.String,
+    input: ComposerInput,
+  }),
+  success: QueuedMessage,
+  error: SessionNotFoundError,
+});
+
+export const MessagesQueueDeleteRpc = Rpc.make("messages.queue.delete", {
+  payload: Schema.Struct({
+    sessionId: SessionId,
+    queueId: Schema.String,
+  }),
+  success: Schema.Void,
+  error: SessionNotFoundError,
+});
+
+export const MessagesQueueSendNowRpc = Rpc.make("messages.queue.sendNow", {
+  payload: Schema.Struct({
+    sessionId: SessionId,
+    queueId: Schema.String,
+  }),
+  success: Schema.Void,
+  error: SessionNotFoundError,
+});
+
+export const MessagesQueueReorderRpc = Rpc.make("messages.queue.reorder", {
+  payload: Schema.Struct({
+    sessionId: SessionId,
+    queueIds: Schema.Array(Schema.String),
+  }),
+  success: Schema.Array(QueuedMessage),
+  error: SessionNotFoundError,
+});
+
+export const MessagesQueueFlushRpc = Rpc.make("messages.queue.flush", {
   payload: Schema.Struct({ sessionId: SessionId }),
   success: Schema.Void,
   error: SessionNotFoundError,

@@ -365,6 +365,66 @@ const MessagesInterrupt = MemoizeRpcs.toLayerHandler(
     Effect.flatMap(MessageStore, (svc) => svc.interruptSession(sessionId)),
 );
 
+const MessagesQueueList = MemoizeRpcs.toLayerHandler(
+  "messages.queue.list",
+  ({ sessionId }) =>
+    Effect.flatMap(MessageStore, (svc) => svc.listQueuedMessages(sessionId)),
+);
+
+const MessagesQueueStream = MemoizeRpcs.toLayerHandler(
+  "messages.queue.stream",
+  ({ sessionId }) =>
+    Stream.unwrap(
+      Effect.map(MessageStore, (svc) => svc.streamQueuedMessages(sessionId)),
+    ),
+);
+
+const MessagesQueueAdd = MemoizeRpcs.toLayerHandler(
+  "messages.queue.add",
+  ({ sessionId, input }) =>
+    Effect.flatMap(MessageStore, (svc) =>
+      svc.addQueuedMessage(sessionId, input),
+    ),
+);
+
+const MessagesQueueUpdate = MemoizeRpcs.toLayerHandler(
+  "messages.queue.update",
+  ({ sessionId, queueId, input }) =>
+    Effect.flatMap(MessageStore, (svc) =>
+      svc.updateQueuedMessage(sessionId, queueId, input),
+    ),
+);
+
+const MessagesQueueDelete = MemoizeRpcs.toLayerHandler(
+  "messages.queue.delete",
+  ({ sessionId, queueId }) =>
+    Effect.flatMap(MessageStore, (svc) =>
+      svc.deleteQueuedMessage(sessionId, queueId),
+    ),
+);
+
+const MessagesQueueSendNow = MemoizeRpcs.toLayerHandler(
+  "messages.queue.sendNow",
+  ({ sessionId, queueId }) =>
+    Effect.flatMap(MessageStore, (svc) =>
+      svc.sendQueuedMessageNow(sessionId, queueId),
+    ),
+);
+
+const MessagesQueueReorder = MemoizeRpcs.toLayerHandler(
+  "messages.queue.reorder",
+  ({ sessionId, queueIds }) =>
+    Effect.flatMap(MessageStore, (svc) =>
+      svc.reorderQueuedMessages(sessionId, queueIds),
+    ),
+);
+
+const MessagesQueueFlush = MemoizeRpcs.toLayerHandler(
+  "messages.queue.flush",
+  ({ sessionId }) =>
+    Effect.flatMap(MessageStore, (svc) => svc.flushQueuedMessages(sessionId)),
+);
+
 // ---------------------------------------------------------------------------
 // permission.* — Phase 4 surface. The renderer subscribes to
 // `permission.requests`, shows a toast, and posts back via `permission.decide`.
@@ -496,6 +556,14 @@ export const ProviderHandlersLayer = Layer.mergeAll(
   MessagesStream,
   MessagesSend,
   MessagesInterrupt,
+  MessagesQueueList,
+  MessagesQueueStream,
+  MessagesQueueAdd,
+  MessagesQueueUpdate,
+  MessagesQueueDelete,
+  MessagesQueueSendNow,
+  MessagesQueueReorder,
+  MessagesQueueFlush,
   PermissionRequests,
   PermissionDecide,
   PermissionListPending,
