@@ -1,19 +1,6 @@
-import {
-  ArrowLeft,
-  Box,
-  Check,
-  FlaskConical,
-  FolderClosed,
-  GitBranch,
-  Globe,
-  Keyboard,
-  Plus,
-  RotateCw,
-  Settings as SettingsIcon,
-  Trash2,
-  TriangleAlert,
-  Volume2,
-} from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import type { IconSvgElement } from "@hugeicons/react";
+import { Add01Icon, Alert01Icon, ArrowLeft01Icon, Delete02Icon, Folder01Icon, GitBranchIcon, GlobeIcon, KeyboardIcon, PackageIcon, RotateRight01Icon, Settings01Icon, TestTubeIcon, Tick01Icon, VolumeHighIcon } from "@hugeicons-pro/core-bulk-rounded";
 import { useEffect, useMemo, useState } from "react";
 
 import { Effect } from "effect";
@@ -76,7 +63,7 @@ const PROVIDER_LABEL: Record<ProviderId, string> = {
 type RailItemBase = {
   readonly id: string;
   readonly label: string;
-  readonly Icon: React.ComponentType<{ className?: string }>;
+  readonly Icon: IconSvgElement;
   readonly section: SettingsSection;
 };
 
@@ -84,31 +71,31 @@ const TOP_RAIL: ReadonlyArray<RailItemBase> = [
   {
     id: "general",
     label: "General",
-    Icon: SettingsIcon,
+    Icon: Settings01Icon,
     section: { kind: "general" },
   },
   {
     id: "providers",
     label: "Providers",
-    Icon: Box,
+    Icon: PackageIcon,
     section: { kind: "providers" },
   },
   {
     id: "workspace",
     label: "Workspace",
-    Icon: GitBranch,
+    Icon: GitBranchIcon,
     section: { kind: "workspace" },
   },
   {
     id: "browser",
     label: "Browser",
-    Icon: Globe,
+    Icon: GlobeIcon,
     section: { kind: "browser" },
   },
   {
     id: "shortcuts",
     label: "Keyboard shortcuts",
-    Icon: Keyboard,
+    Icon: KeyboardIcon,
     section: { kind: "shortcuts" },
   },
   // Dev-only visual playground (accent swatches + workflow chip/button
@@ -116,7 +103,7 @@ const TOP_RAIL: ReadonlyArray<RailItemBase> = [
   {
     id: "developer",
     label: "Developer",
-    Icon: FlaskConical,
+    Icon: TestTubeIcon,
     section: { kind: "developer" },
   },
 ];
@@ -151,7 +138,7 @@ export function SettingsPage() {
           aria-label="Back to app"
           className="flex items-center gap-1 rounded p-1 text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground [-webkit-app-region:no-drag]"
         >
-          <ArrowLeft className="size-3.5" />
+          <HugeiconsIcon icon={ArrowLeft01Icon} className="size-3.5" />
           <span>Back to app</span>
         </button>
       </header>
@@ -220,7 +207,7 @@ function Rail({
                   onClick={() =>
                     onSelect({ kind: "repository", projectId: f.id })
                   }
-                  icon={FolderClosed}
+                  icon={Folder01Icon}
                   label={f.name}
                   title={f.path}
                   truncate
@@ -244,7 +231,7 @@ function RailButton({
 }: {
   active: boolean;
   onClick: () => void;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: IconSvgElement;
   label: string;
   title?: string;
   truncate?: boolean;
@@ -261,7 +248,7 @@ function RailButton({
           : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
       )}
     >
-      <Icon className="size-4 shrink-0" />
+      <HugeiconsIcon icon={Icon} className="size-4 shrink-0" />
       <span className={cn(truncate && "truncate")}>{label}</span>
     </button>
   );
@@ -406,7 +393,7 @@ function BrowserSettingsPane() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-start gap-2 rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2.5 text-[12px] leading-relaxed text-amber-200">
-        <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+        <HugeiconsIcon icon={Alert01Icon} className="mt-0.5 size-4 shrink-0" />
         <span>
           <strong className="font-semibold">Dummy / test logins only.</strong>{" "}
           Never store a real or production password here. These are for seeded
@@ -445,7 +432,7 @@ function BrowserSettingsPane() {
                     aria-label={`Remove login for ${c.origin}`}
                     className="flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
                   >
-                    <Trash2 className="size-3.5" />
+                    <HugeiconsIcon icon={Delete02Icon} className="size-3.5" />
                   </button>
                 </li>
               ))}
@@ -475,7 +462,7 @@ function BrowserSettingsPane() {
                 onClick={() => void add()}
                 disabled={busy || origin.trim() === "" || password === ""}
               >
-                <Plus className="size-3.5" />
+                <HugeiconsIcon icon={Add01Icon} className="size-3.5" />
                 Add login
               </Button>
             </div>
@@ -612,7 +599,7 @@ function GeneralPane() {
         description="Play a short sound when any agent turn finishes, including agents working in background chats."
       >
         <div className="flex items-center gap-2">
-          <Volume2 className="size-4 shrink-0 text-muted-foreground" />
+          <HugeiconsIcon icon={VolumeHighIcon} className="size-4 shrink-0 text-muted-foreground" />
           <Select
             value={completionSoundPreset}
             onValueChange={(v) =>
@@ -799,10 +786,7 @@ function ProvidersPane() {
               disabled={loading}
               aria-label="Refresh provider status"
             >
-              <RotateCw
-                className={cn("size-3.5", loading && "animate-spin")}
-                aria-hidden
-              />
+              <HugeiconsIcon icon={RotateRight01Icon} className={cn("size-3.5", loading && "animate-spin")} aria-hidden />
             </Button>
           </div>
         </FrameHeader>
@@ -1097,13 +1081,13 @@ export function SettingsCardHeader({
   title,
   trailing,
 }: {
-  icon?: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
+  icon?: IconSvgElement;
   title: string;
   trailing?: React.ReactNode;
 }) {
   return (
     <header className="flex h-10 shrink-0 items-center gap-2 px-4 text-muted-foreground">
-      {Icon && <Icon className="size-3.5" aria-hidden />}
+      {Icon && <HugeiconsIcon icon={Icon} className="size-3.5" aria-hidden />}
       <span className="min-w-0 flex-1 truncate text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">
         {title}
       </span>
@@ -1126,7 +1110,7 @@ export function SettingsRow({
   action,
   children,
 }: {
-  icon?: React.ComponentType<{ className?: string }>;
+  icon?: IconSvgElement;
   title: string;
   description?: string;
   action?: React.ReactNode;
@@ -1136,7 +1120,7 @@ export function SettingsRow({
     <div className="flex flex-col gap-3 px-4 py-3.5">
       <div className="flex items-center gap-3">
         {Icon && (
-          <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          <HugeiconsIcon icon={Icon} className="size-4 shrink-0 text-muted-foreground" aria-hidden />
         )}
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <div className="text-sm font-medium text-foreground">{title}</div>
@@ -1207,7 +1191,7 @@ export function OptionCard({
   onClick,
   disabled,
 }: {
-  icon?: React.ComponentType<{ className?: string }>;
+  icon?: IconSvgElement;
   iconNode?: React.ReactNode;
   title: string;
   description?: string;
@@ -1239,7 +1223,7 @@ export function OptionCard({
             !compact && "mt-0.5",
           )}
         >
-          {iconNode ?? (Icon ? <Icon className="size-4" /> : null)}
+          {iconNode ?? (Icon ? <HugeiconsIcon icon={Icon} className="size-4" /> : null)}
         </span>
       )}
       <span className="flex min-w-0 flex-1 flex-col gap-1">
@@ -1307,11 +1291,7 @@ export function RadioCheck({
       )}
     >
       {active && (
-        <Check
-          className="size-2.5 text-primary-foreground"
-          strokeWidth={3.5}
-          aria-hidden
-        />
+        <HugeiconsIcon icon={Tick01Icon} className="size-2.5 text-primary-foreground" strokeWidth={3.5} aria-hidden />
       )}
     </span>
   );
@@ -1394,11 +1374,7 @@ export function CheckboxInput({
         )}
       >
         {checked && (
-          <Check
-            className="size-3 text-background"
-            strokeWidth={3.5}
-            aria-hidden
-          />
+          <HugeiconsIcon icon={Tick01Icon} className="size-3 text-background" strokeWidth={3.5} aria-hidden />
         )}
       </span>
     </span>

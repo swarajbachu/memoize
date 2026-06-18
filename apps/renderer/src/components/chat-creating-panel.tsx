@@ -3,7 +3,7 @@ import {
   MessageAdd01Icon,
   Rocket01Icon,
   SparklesIcon,
-} from "@hugeicons/core-free-icons";
+} from "@hugeicons-pro/core-bulk-rounded";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useMemo, useState } from "react";
 

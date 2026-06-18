@@ -1,4 +1,5 @@
-import { GitBranchPlus, Loader2 } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { GitBranchIcon, Loading02Icon } from "@hugeicons-pro/core-bulk-rounded";
 import { useState } from "react";
 
 import type { FolderId, WorktreeId } from "@memoize/wire";
@@ -68,9 +69,9 @@ export function GitInitCta({
         className="flex items-center gap-1.5 rounded-sm bg-emerald-500/15 px-2 py-1 text-[11px] font-medium text-emerald-200 transition-colors hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-40"
       >
         {busy ? (
-          <Loader2 className="size-3 animate-spin" />
+          <HugeiconsIcon icon={Loading02Icon} className="size-3 animate-spin" />
         ) : (
-          <GitBranchPlus className="size-3" />
+          <HugeiconsIcon icon={GitBranchIcon} className="size-3" />
         )}
         Initialize Git repository
       </button>

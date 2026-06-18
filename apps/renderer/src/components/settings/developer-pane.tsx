@@ -1,11 +1,5 @@
-import {
-  GitMerge,
-  GitPullRequestArrow,
-  TriangleAlert,
-  Upload,
-  Wrench,
-} from "lucide-react";
-
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Alert01Icon, GitMergeIcon, GitPullRequestIcon, Upload01Icon, Wrench01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import {
   GlassActionButton,
   GlassChip,
@@ -93,37 +87,37 @@ const WORKFLOW_DEMOS: ReadonlyArray<WorkflowDemo> = [
     label: "dirty",
     tone: "amber",
     chip: "1 change",
-    action: { label: "Commit & push", icon: <Upload /> },
+    action: { label: "Commit & push", icon: <HugeiconsIcon icon={Upload01Icon} /> },
   },
   {
     label: "ahead",
     tone: "pink",
     chip: "2 ahead",
-    action: { label: "Create PR", icon: <GitPullRequestArrow /> },
+    action: { label: "Create PR", icon: <HugeiconsIcon icon={GitPullRequestIcon} /> },
   },
   {
     label: "open-pr",
     tone: "green",
     chip: "#142",
-    action: { label: "Merge", icon: <GitMerge /> },
+    action: { label: "Merge", icon: <HugeiconsIcon icon={GitMergeIcon} /> },
   },
   {
     label: "open-pr · draft",
     tone: "zinc",
     chip: "#142",
-    action: { label: "Mark ready", icon: <GitMerge /> },
+    action: { label: "Mark ready", icon: <HugeiconsIcon icon={GitMergeIcon} /> },
   },
   {
     label: "open-pr · checks failing",
     tone: "red",
     chip: "#142",
-    action: { label: "Fix actions", icon: <Wrench /> },
+    action: { label: "Fix actions", icon: <HugeiconsIcon icon={Wrench01Icon} /> },
   },
   {
     label: "open-pr · conflicts",
     tone: "red",
     chip: "#142",
-    action: { label: "Resolve conflicts", icon: <TriangleAlert /> },
+    action: { label: "Resolve conflicts", icon: <HugeiconsIcon icon={Alert01Icon} /> },
   },
 ];
 

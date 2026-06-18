@@ -1,4 +1,5 @@
-import { AlertTriangle, ArrowUpCircle, CheckCircle2, X } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Alert01Icon, Cancel01Icon, CheckmarkCircle02Icon, CircleArrowUp01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -104,11 +105,11 @@ export function UpdateBanner() {
       <div className="flex items-start gap-3">
         <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
           {status.kind === "ready" ? (
-            <CheckCircle2 className="size-4" />
+            <HugeiconsIcon icon={CheckmarkCircle02Icon} className="size-4" />
           ) : status.kind === "error" ? (
-            <AlertTriangle className="size-4" />
+            <HugeiconsIcon icon={Alert01Icon} className="size-4" />
           ) : (
-            <ArrowUpCircle className="size-4" />
+            <HugeiconsIcon icon={CircleArrowUp01Icon} className="size-4" />
           )}
         </span>
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -138,7 +139,7 @@ export function UpdateBanner() {
           className="text-muted-foreground hover:text-foreground"
           aria-label="Dismiss update toast"
         >
-          <X className="size-3.5" />
+          <HugeiconsIcon icon={Cancel01Icon} className="size-3.5" />
         </button>
       </div>
 

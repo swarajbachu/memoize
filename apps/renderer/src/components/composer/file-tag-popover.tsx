@@ -1,6 +1,7 @@
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Folder01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import type { EditorView } from "@codemirror/view";
 import { Effect } from "effect";
-import { Folder } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import type { FolderId, WorktreeId } from "@memoize/wire";
@@ -180,7 +181,7 @@ export function FileTagPopover({
             {iconUrl !== null ? (
               <img src={iconUrl} alt="" className="size-3.5 shrink-0" />
             ) : (
-              <Folder className="size-3.5 shrink-0 opacity-80" />
+              <HugeiconsIcon icon={Folder01Icon} className="size-3.5 shrink-0 opacity-80" />
             )}
             <span className="truncate font-medium">{name}</span>
             {parent !== null && (

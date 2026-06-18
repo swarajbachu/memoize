@@ -1,10 +1,5 @@
-import {
-  ArrowUpRight,
-  Check,
-  ChevronDown,
-  ChevronRight,
-  Search as SearchIcon,
-} from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ArrowDown01Icon, ArrowRight01Icon, ArrowUpRight01Icon, Search01Icon, Tick01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import {
   Fragment,
   useCallback,
@@ -416,7 +411,7 @@ export function ModelPicker(props: ModelPickerProps) {
       >
         <ProviderIcon providerId={providerId} className="size-3" />
         <span>{currentLabel}</span>
-        <ChevronDown className="size-3 opacity-60" />
+        <HugeiconsIcon icon={ArrowDown01Icon} className="size-3 opacity-60" />
       </PopoverTrigger>
       <PopoverPrimitive.Portal>
         <PopoverPrimitive.Positioner
@@ -528,9 +523,9 @@ export function ModelPicker(props: ModelPickerProps) {
                         >
                           <span className="flex size-3 items-center justify-center text-muted-foreground">
                             {expanded ? (
-                              <ChevronDown className="size-3" />
+                              <HugeiconsIcon icon={ArrowDown01Icon} className="size-3" />
                             ) : (
-                              <ChevronRight className="size-3" />
+                              <HugeiconsIcon icon={ArrowRight01Icon} className="size-3" />
                             )}
                           </span>
                           <ProviderIcon
@@ -613,7 +608,7 @@ function SearchField({
       : `in ${PROVIDER_CHIP_LABEL[scope]}…`;
   return (
     <div className="flex items-center gap-2 rounded-lg border bg-background px-2.5 py-1.5 focus-within:border-foreground/60 focus-within:ring-2 focus-within:ring-primary/30">
-      <SearchIcon className="size-3.5 text-muted-foreground" />
+      <HugeiconsIcon icon={Search01Icon} className="size-3.5 text-muted-foreground" />
       <input
         type="text"
         value={value}
@@ -730,10 +725,7 @@ function ModelRow({
       )}
       <span className="flex-1" />
       {opensNewTab && (
-        <ArrowUpRight
-          className="size-3 text-muted-foreground/70"
-          aria-label="Open in new tab"
-        />
+        <HugeiconsIcon icon={ArrowUpRight01Icon} className="size-3 text-muted-foreground/70" aria-label="Open in new tab" />
       )}
       {countSuffix !== undefined && (
         <span className="text-[11px] text-muted-foreground tabular-nums">

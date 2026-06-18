@@ -1,17 +1,6 @@
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ArchiveArrowUpIcon, ArchiveIcon, ArrowDown01Icon, ArrowRight01Icon, Delete02Icon, Edit01Icon, HelpCircleIcon, PencilIcon, Settings01Icon, TaskDone01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import { Effect, Fiber, Stream } from "effect";
-import {
-  Archive,
-  ArchiveRestore,
-  ChevronDown,
-  ChevronRight,
-  CircleQuestionMark,
-  ClipboardCheck,
-  Pencil,
-  Settings,
-  SquarePen,
-  Trash2,
-} from "lucide-react";
-
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -331,7 +320,7 @@ function SidebarFooter() {
                   "bg-sidebar-accent/60 text-sidebar-accent-foreground",
               )}
             >
-              <Settings className="size-3.5" />
+              <HugeiconsIcon icon={Settings01Icon} className="size-3.5" />
               <span>Settings</span>
             </button>
           }
@@ -435,7 +424,7 @@ function ProjectGroup({
   ]);
   const showHeaderAttention = headerAttention !== "idle" && !isExpanded;
 
-  const Chevron = isExpanded ? ChevronDown : ChevronRight;
+  const chevron = isExpanded ? ArrowDown01Icon : ArrowRight01Icon;
 
   return (
     <Fragment>
@@ -488,7 +477,8 @@ function ProjectGroup({
                 context="project"
               />
             )}
-            <Chevron
+            <HugeiconsIcon
+              icon={chevron}
               aria-hidden="true"
               className={cn(
                 "col-start-1 row-start-1 size-3.5 text-muted-foreground opacity-0 transition-opacity duration-150 ease-out",
@@ -512,7 +502,7 @@ function ProjectGroup({
             aria-label={`Settings for ${displayName}`}
             title="Repository settings"
           >
-            <Settings className="size-3.5" />
+            <HugeiconsIcon icon={Settings01Icon} className="size-3.5" />
           </button>
           <NewChatButton projectId={id} />
         </div>
@@ -570,21 +560,21 @@ function ProjectContextMenu({
           onClick={onOpenSettings}
           className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
         >
-          <Settings className="size-3.5" />
+          <HugeiconsIcon icon={Settings01Icon} className="size-3.5" />
           Settings
         </MenuItem>
         <MenuItem
           onClick={onOpenArchives}
           className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
         >
-          <Archive className="size-3.5" />
+          <HugeiconsIcon icon={ArchiveIcon} className="size-3.5" />
           Archived chats
         </MenuItem>
         <MenuItem
           onClick={onRemove}
           className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-red-300 hover:bg-red-500/20"
         >
-          <Trash2 className="size-3.5" />
+          <HugeiconsIcon icon={Delete02Icon} className="size-3.5" />
           Remove project
         </MenuItem>
       </MenuPopup>
@@ -665,7 +655,7 @@ function NewChatButton({ projectId }: { projectId: FolderId }) {
                 <Diffusion dotSize={3} cellPadding={1} />
               </span>
             ) : (
-              <SquarePen className="size-3.5" />
+              <HugeiconsIcon icon={Edit01Icon} className="size-3.5" />
             )}
           </button>
         }
@@ -804,7 +794,7 @@ function ChatRow({ chat }: { chat: Chat }) {
     setMenuOpen(true);
   };
 
-  const PrimaryActionIcon = isArchived ? ArchiveRestore : Archive;
+  const primaryActionIcon = isArchived ? ArchiveArrowUpIcon : ArchiveIcon;
   const primaryActionLabel = isArchived ? "Unarchive" : "Archive";
 
   return (
@@ -869,7 +859,7 @@ function ChatRow({ chat }: { chat: Chat }) {
             aria-label={`${primaryActionLabel} ${chat.title}`}
             title={primaryActionLabel}
           >
-            <PrimaryActionIcon className="size-3.5" />
+            <HugeiconsIcon icon={primaryActionIcon} className="size-3.5" />
           </button>
         </div>
       </li>
@@ -884,7 +874,7 @@ function ChatRow({ chat }: { chat: Chat }) {
             onClick={onRename}
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
           >
-            <Pencil className="size-3.5" />
+            <HugeiconsIcon icon={PencilIcon} className="size-3.5" />
             Rename
           </MenuItem>
           {isArchived ? (
@@ -892,7 +882,7 @@ function ChatRow({ chat }: { chat: Chat }) {
               onClick={() => void unarchiveChat(chat.id)}
               className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
             >
-              <ArchiveRestore className="size-3.5" />
+              <HugeiconsIcon icon={ArchiveArrowUpIcon} className="size-3.5" />
               Unarchive
             </MenuItem>
           ) : (
@@ -900,7 +890,7 @@ function ChatRow({ chat }: { chat: Chat }) {
               onClick={() => void archiveChat(chat.id)}
               className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
             >
-              <Archive className="size-3.5" />
+              <HugeiconsIcon icon={ArchiveIcon} className="size-3.5" />
               Archive
             </MenuItem>
           )}
@@ -908,7 +898,7 @@ function ChatRow({ chat }: { chat: Chat }) {
             onClick={onDelete}
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-red-300 hover:bg-red-500/20"
           >
-            <Trash2 className="size-3.5" />
+            <HugeiconsIcon icon={Delete02Icon} className="size-3.5" />
             Delete
           </MenuItem>
         </MenuPopup>
@@ -968,9 +958,9 @@ function ChatAttentionIcon({
           color="currentColor"
         />
       ) : state === "question" ? (
-        <CircleQuestionMark className="size-3.5" />
+        <HugeiconsIcon icon={HelpCircleIcon} className="size-3.5" />
       ) : (
-        <ClipboardCheck className="size-3.5" />
+        <HugeiconsIcon icon={TaskDone01Icon} className="size-3.5" />
       )}
     </span>
   );

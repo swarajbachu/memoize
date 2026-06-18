@@ -1,13 +1,5 @@
-import {
-  ArrowUp,
-  Check,
-  ChevronDown,
-  ChevronUp,
-  GripVertical,
-  Pencil,
-  Trash2,
-  X,
-} from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ArrowDown01Icon, ArrowUp01Icon, Cancel01Icon, Delete02Icon, DragDropVerticalIcon, PencilIcon, Tick01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import { useState } from "react";
 
 import { ComposerInput, type QueuedMessage, type SessionId } from "@memoize/wire";
@@ -102,7 +94,7 @@ export function QueueChip({
         className="mt-0.5 flex size-6 shrink-0 cursor-grab items-center justify-center rounded text-muted-foreground hover:bg-background hover:text-foreground active:cursor-grabbing"
         aria-label="Drag queued message"
       >
-        <GripVertical className="size-3.5" />
+        <HugeiconsIcon icon={DragDropVerticalIcon} className="size-3.5" />
       </button>
       <div className="min-w-0 flex-1">
         {editing ? (
@@ -140,7 +132,7 @@ export function QueueChip({
               <TooltipTrigger
                 render={
                   <button type="button" onClick={save} className={iconButton} aria-label="Save">
-                    <Check className="size-3.5" />
+                    <HugeiconsIcon icon={Tick01Icon} className="size-3.5" />
                   </button>
                 }
               />
@@ -155,7 +147,7 @@ export function QueueChip({
               className={iconButton}
               aria-label="Cancel"
             >
-              <X className="size-3.5" />
+              <HugeiconsIcon icon={Cancel01Icon} className="size-3.5" />
             </button>
           </>
         ) : (
@@ -167,7 +159,7 @@ export function QueueChip({
               className={iconButton}
               aria-label="Move up"
             >
-              <ChevronUp className="size-3.5" />
+              <HugeiconsIcon icon={ArrowUp01Icon} className="size-3.5" />
             </button>
             <button
               type="button"
@@ -176,7 +168,7 @@ export function QueueChip({
               className={iconButton}
               aria-label="Move down"
             >
-              <ChevronDown className="size-3.5" />
+              <HugeiconsIcon icon={ArrowDown01Icon} className="size-3.5" />
             </button>
             <Tooltip>
               <TooltipTrigger
@@ -187,7 +179,7 @@ export function QueueChip({
                     className={iconButton}
                     aria-label="Edit queued message"
                   >
-                    <Pencil className="size-3.5" />
+                    <HugeiconsIcon icon={PencilIcon} className="size-3.5" />
                   </button>
                 }
               />
@@ -202,7 +194,7 @@ export function QueueChip({
                     className={iconButton}
                     aria-label="Send now"
                   >
-                    <ArrowUp className="size-3.5" />
+                    <HugeiconsIcon icon={ArrowUp01Icon} className="size-3.5" />
                   </button>
                 }
               />
@@ -214,7 +206,7 @@ export function QueueChip({
               className={iconButton}
               aria-label="Delete queued message"
             >
-              <Trash2 className="size-3.5" />
+              <HugeiconsIcon icon={Delete02Icon} className="size-3.5" />
             </button>
           </>
         )}
