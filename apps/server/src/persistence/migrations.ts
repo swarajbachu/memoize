@@ -14,6 +14,7 @@ import { Migration0011ChatsTable } from "./migrations/0011_chats_table.ts";
 import { Migration0012ChatIdNotNull } from "./migrations/0012_chat_id_not_null.ts";
 import { Migration0013ArchiveCleanup } from "./migrations/0013_archive_cleanup.ts";
 import { Migration0014ScriptsAndSetup } from "./migrations/0014_scripts_and_setup.ts";
+import { Migration0015ChatReadState } from "./migrations/0015_chat_read_state.ts";
 
 /**
  * Runs every numbered migration on boot. `fromRecord` keys must match
@@ -40,5 +41,6 @@ export const MigrationsLive = SqliteMigrator.layer({
     "0012_chat_id_not_null": Migration0012ChatIdNotNull,
     "0013_archive_cleanup": Migration0013ArchiveCleanup,
     "0014_scripts_and_setup": Migration0014ScriptsAndSetup,
+    "0015_chat_read_state": Migration0015ChatReadState,
   }),
 });

@@ -29,7 +29,7 @@ import { cn, formatCompactNumber } from "~/lib/utils";
 import { resolveAutoWorktreeId } from "../lib/auto-worktree.ts";
 import { formatShortcut } from "../lib/shortcuts.ts";
 import { getRpcClient } from "../lib/rpc-client.ts";
-import { useChatsStore } from "../store/chats.ts";
+import { isChatUnread, useChatsStore } from "../store/chats.ts";
 import { useMessagesStore } from "../store/messages.ts";
 import { prStateKey, usePrStateStore } from "../store/pr-state.ts";
 import { useProvidersStore } from "../store/providers.ts";
@@ -65,6 +65,16 @@ const formatRelative = (iso: Date): string => {
   if (hr < 24) return `${hr}h ago`;
   const day = Math.floor(hr / 24);
   return `${day}d ago`;
+};
+
+/** Resolve the chat that owns a session from the renderer session cache. */
+const chatIdForSession = (sessionId: SessionId): ChatId | null => {
+  const buckets = useSessionsStore.getState().sessionsByProject;
+  for (const list of Object.values(buckets)) {
+    const row = list.find((r) => r.id === sessionId);
+    if (row !== undefined) return row.chatId;
+  }
+  return null;
 };
 
 /**
@@ -116,10 +126,13 @@ function useSessionRunningSubscriptions(sessionIds: ReadonlyArray<SessionId>) {
               client.session.streamStatus({ sessionId: id }),
               (event) =>
                 Effect.sync(() => {
+                  const wasRunning =
+                    useMessagesStore.getState().runningBySession[id] === true;
+                  const isRunning = event.status === "running";
                   useMessagesStore.setState((s) => ({
                     runningBySession: {
                       ...s.runningBySession,
-                      [id]: event.status === "running",
+                      [id]: isRunning,
                     },
                   }));
                   // Mirror the full status into the session row so the
@@ -128,6 +141,22 @@ function useSessionRunningSubscriptions(sessionIds: ReadonlyArray<SessionId>) {
                   useSessionsStore
                     .getState()
                     .setSessionStatus(id, event.status);
+                  // running→idle = the agent just produced new output. Light
+                  // the owning chat unread — unless the user is looking at it,
+                  // in which case stamp it read instead. This is the live
+                  // signal that covers every hydrated session, even in
+                  // collapsed/background chats.
+                  if (wasRunning && !isRunning) {
+                    const chatId = chatIdForSession(id);
+                    if (chatId !== null) {
+                      const chats = useChatsStore.getState();
+                      if (chats.selectedChatId === chatId) {
+                        void chats.markRead(chatId);
+                      } else {
+                        chats.noteChatActivity(chatId);
+                      }
+                    }
+                  }
                 }),
             ),
           );
@@ -209,6 +238,17 @@ export function ProjectsSidebar() {
     hydrateChats,
     hydrateSessions,
   ]);
+
+  // Eagerly hydrate the (lightweight) chat list for EVERY project, regardless
+  // of expansion. This is what lets read/unread — and the cross-project "Next
+  // unread" button — see chats in collapsed/unvisited projects on startup.
+  // Sessions stay lazy (above); the live unread signal only needs them for
+  // projects the user actually opens.
+  useEffect(() => {
+    for (const folder of folders) {
+      if (!(folder.id in chatsByProject)) void hydrateChats(folder.id);
+    }
+  }, [folders, chatsByProject, hydrateChats]);
 
   // PR state is keyed per-session by `(folderId, worktreeId)` because each
   // worktree has its own branch and therefore its own PR. Hydration happens
@@ -727,6 +767,8 @@ function ChatRow({ chat }: { chat: Chat }) {
   }, [selectedSessionId, sessionIds]);
   const isSelected = selectedChatId === chat.id || sessionBelongsToChat;
   const isArchived = chat.archivedAt !== null;
+  // Unread = new activity the user hasn't seen. Never on the selected row.
+  const isUnread = !isSelected && isChatUnread(chat, selectedChatId);
 
   const branchState: BranchState =
     prInfo === null
@@ -792,7 +834,15 @@ function ChatRow({ chat }: { chat: Chat }) {
           !isSelected &&
             isArchived &&
             "text-muted-foreground hover:bg-sidebar-accent/40",
-          !isSelected && !isArchived && "hover:bg-sidebar-accent/40",
+          // Read rows sit dim; unread rows brighten + bold so new activity pops.
+          !isSelected &&
+            !isArchived &&
+            !isUnread &&
+            "text-muted-foreground hover:bg-sidebar-accent/40",
+          !isSelected &&
+            !isArchived &&
+            isUnread &&
+            "font-medium text-foreground hover:bg-sidebar-accent/40",
         )}
         title={chat.title}
       >

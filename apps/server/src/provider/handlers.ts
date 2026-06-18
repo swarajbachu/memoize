@@ -192,6 +192,10 @@ const ChatRename = MemoizeRpcs.toLayerHandler(
     Effect.flatMap(MessageStore, (svc) => svc.renameChat(chatId, title)),
 );
 
+const ChatMarkRead = MemoizeRpcs.toLayerHandler("chat.markRead", ({ chatId }) =>
+  Effect.flatMap(MessageStore, (svc) => svc.markChatRead(chatId)),
+);
+
 const ChatSetWorktree = MemoizeRpcs.toLayerHandler(
   "chat.setWorktree",
   ({ chatId, worktreeId }) =>
@@ -402,9 +406,7 @@ const PermissionRevokeDecision = MemoizeRpcs.toLayerHandler(
 // ---------------------------------------------------------------------------
 
 const BrowserCommands = MemoizeRpcs.toLayerHandler("browser.commands", () =>
-  Stream.unwrap(
-    Effect.map(BrowserBridgeService, (svc) => svc.commands()),
-  ),
+  Stream.unwrap(Effect.map(BrowserBridgeService, (svc) => svc.commands())),
 );
 
 const BrowserRespond = MemoizeRpcs.toLayerHandler(
@@ -472,6 +474,7 @@ export const ProviderHandlersLayer = Layer.mergeAll(
   ChatGet,
   ChatCreate,
   ChatRename,
+  ChatMarkRead,
   ChatSetWorktree,
   ChatSetActiveSession,
   ChatArchive,

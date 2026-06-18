@@ -229,6 +229,14 @@ export interface MessageStoreShape {
   ) => Effect.Effect<void, ChatNotFoundError>;
 
   /**
+   * Mark a chat read by stamping `last_read_at` to "now". Returns the
+   * refreshed chat. Idempotent.
+   */
+  readonly markChatRead: (
+    chatId: ChatId,
+  ) => Effect.Effect<Chat, ChatNotFoundError>;
+
+  /**
    * Update the chat's worktree. Allowed only when no session in the chat
    * has any user message yet. Mirrors the new value onto every member
    * session's `worktreeId` in the same transaction.

@@ -71,7 +71,33 @@ type ChatsState = {
   readonly unarchive: (chatId: ChatId) => Promise<void>;
   readonly remove: (chatId: ChatId) => Promise<void>;
   readonly select: (chatId: ChatId | null) => void;
+  /**
+   * Stamp the chat read (clears its unread style). Optimistic — patches the
+   * cached `lastReadAt` immediately, then persists via `chat.markRead`.
+   */
+  readonly markRead: (chatId: ChatId) => Promise<void>;
+  /**
+   * Optimistically advance a chat's cached `lastMessageAt` to "now". Driven
+   * by the live per-session status signal so a background chat lights up
+   * unread the instant its agent finishes a turn, without a chat re-hydrate.
+   */
+  readonly noteChatActivity: (chatId: ChatId) => void;
   readonly toggleShowArchived: (projectId: FolderId) => void;
+};
+
+/**
+ * A chat is unread when it has message activity the user hasn't seen since
+ * last viewing it. The currently-selected chat is always treated as read.
+ */
+export const isChatUnread = (
+  chat: Chat,
+  selectedChatId: ChatId | null,
+): boolean => {
+  if (chat.id === selectedChatId) return false;
+  if (chat.archivedAt !== null) return false;
+  if (chat.lastMessageAt === null) return false;
+  if (chat.lastReadAt === null) return true;
+  return chat.lastMessageAt.getTime() > chat.lastReadAt.getTime();
 };
 
 const findChatProject = (
@@ -502,7 +528,68 @@ export const useChatsStore = create<ChatsState>((set, get) => ({
     const fallback = liveTabs[0] ?? null;
     const landingId = memoSession?.id ?? fallback?.id ?? null;
     useSessionsStore.getState().select(landingId);
+    // Viewing a chat marks it read. `markRead` no-ops for archived chats.
+    void get().markRead(chatId);
   },
+  markRead: async (chatId) => {
+    const projectId = findChatProject(get().chatsByProject, chatId);
+    if (projectId === null) return;
+    const chat = (get().chatsByProject[projectId] ?? []).find(
+      (c) => c.id === chatId,
+    );
+    if (chat === undefined || chat.archivedAt !== null) return;
+    // Already read and no fresh activity — skip the round-trip.
+    if (!isChatUnread(chat, null)) return;
+    const now = new Date();
+    const patch = (target: Chat, lastReadAt: Date): Chat =>
+      Object.assign(Object.create(Object.getPrototypeOf(target)), target, {
+        lastReadAt,
+      });
+    set((s) => {
+      const chats = s.chatsByProject[projectId] ?? [];
+      return {
+        chatsByProject: {
+          ...s.chatsByProject,
+          [projectId]: chats.map((c) => (c.id === chatId ? patch(c, now) : c)),
+        },
+      };
+    });
+    try {
+      const client = await getRpcClient();
+      const updated = await Effect.runPromise(client.chat.markRead({ chatId }));
+      set((s) => {
+        const chats = s.chatsByProject[projectId] ?? [];
+        return {
+          chatsByProject: {
+            ...s.chatsByProject,
+            [projectId]: chats.map((c) => (c.id === chatId ? updated : c)),
+          },
+        };
+      });
+    } catch (err) {
+      // Non-fatal — the optimistic stamp already cleared the unread style.
+      set({ error: formatError(err) });
+    }
+  },
+  noteChatActivity: (chatId) =>
+    set((s) => {
+      const projectId = findChatProject(s.chatsByProject, chatId);
+      if (projectId === null) return s;
+      const chats = s.chatsByProject[projectId] ?? [];
+      const now = new Date();
+      return {
+        chatsByProject: {
+          ...s.chatsByProject,
+          [projectId]: chats.map((c) =>
+            c.id === chatId
+              ? Object.assign(Object.create(Object.getPrototypeOf(c)), c, {
+                  lastMessageAt: now,
+                })
+              : c,
+          ),
+        },
+      };
+    }),
   toggleShowArchived: (projectId) => {
     set((s) => ({
       showArchivedByProject: {
