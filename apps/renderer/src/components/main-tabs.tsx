@@ -1,4 +1,4 @@
-import { ChevronRight, Plus, X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { useMemo } from "react";
 
 import {
@@ -10,7 +10,7 @@ import {
   type SessionId,
 } from "@memoize/wire";
 
-import { isChatUnread, useChatsStore } from "../store/chats.ts";
+import { useChatsStore } from "../store/chats.ts";
 import { useMessagesStore } from "../store/messages.ts";
 import { useProvidersStore } from "../store/providers.ts";
 import { useSessionsStore } from "../store/sessions.ts";
@@ -18,7 +18,6 @@ import { useSettingsStore } from "../store/settings.ts";
 import { useUiStore } from "../store/ui.ts";
 import { FileIcon } from "./file-icon.tsx";
 import { ProviderIcon } from "./provider-icons.tsx";
-import { Button } from "./ui/button";
 import { Beacon, Diffusion } from "./ui/loaders";
 
 type Props = {
@@ -164,53 +163,8 @@ export function MainTabs({ projectId, emptyLabel }: Props) {
           />
         )}
       </div>
-      <div className="flex flex-1 items-center justify-end pr-2">
-        <NextUnreadButton />
-      </div>
+      <div className="flex-1" />
     </header>
-  );
-}
-
-/**
- * Jumps to the freshest chat with unread activity, across every project. Only
- * renders when something other than the current chat is unread. `select`
- * switches the workspace project if needed, lands on the chat's active tab,
- * and marks it read — so repeated clicks walk through the unread set.
- */
-function NextUnreadButton() {
-  const chatsByProject = useChatsStore((s) => s.chatsByProject);
-  const selectedChatId = useChatsStore((s) => s.selectedChatId);
-  const selectChat = useChatsStore((s) => s.select);
-
-  const nextUnread = useMemo(() => {
-    let best: import("@memoize/wire").Chat | null = null;
-    let bestTs = -1;
-    for (const list of Object.values(chatsByProject)) {
-      for (const chat of list) {
-        if (!isChatUnread(chat, selectedChatId)) continue;
-        const ts = chat.lastMessageAt?.getTime() ?? 0;
-        if (ts > bestTs) {
-          best = chat;
-          bestTs = ts;
-        }
-      }
-    }
-    return best;
-  }, [chatsByProject, selectedChatId]);
-
-  if (nextUnread === null) return null;
-
-  return (
-    <Button
-      variant="outline"
-      size="xs"
-      className="text-muted-foreground"
-      onClick={() => selectChat(nextUnread.id)}
-      title="Jump to the next chat with unread activity"
-    >
-      Next unread
-      <ChevronRight />
-    </Button>
   );
 }
 
