@@ -1,15 +1,6 @@
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Add01Icon, Alert01Icon, ArrowRight01Icon, ArrowTurnDownIcon, Loading02Icon, MinusSignIcon, RotateLeft01Icon, Tick02Icon, Upload01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import { Effect } from "effect";
-import {
-  AlertTriangle,
-  ArrowRight,
-  Check,
-  CornerDownLeft,
-  Loader2,
-  Minus,
-  Plus,
-  RotateCcw,
-  Upload,
-} from "lucide-react";
 import { useEffect, useState } from "react";
 
 import type {
@@ -252,7 +243,7 @@ export function DiffPane({
                 className="flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-destructive"
                 title="Discard every uncommitted change"
               >
-                <RotateCcw className="size-2.5" strokeWidth={2} />
+                <HugeiconsIcon icon={RotateLeft01Icon} className="size-2.5" strokeWidth={2} />
                 Revert all
               </button>
             ) : null
@@ -452,7 +443,7 @@ function FileRow({
                 : "Revert changes to this file"
             }
           >
-            <RotateCcw className="size-3" strokeWidth={2} />
+            <HugeiconsIcon icon={RotateLeft01Icon} className="size-3" strokeWidth={2} />
           </button>
         ) : null}
         <KindBox kind={kind} />
@@ -489,7 +480,7 @@ function RenameLabel({ oldPath, newPath }: { oldPath: string; newPath: string })
     <>
       <span className="flex min-w-0 items-baseline gap-1 truncate font-mono text-xs text-foreground">
         <span className="truncate">{oldName}</span>
-        <ArrowRight className="size-3 shrink-0 text-muted-foreground" />
+        <HugeiconsIcon icon={ArrowRight01Icon} className="size-3 shrink-0 text-muted-foreground" />
         <span className="truncate">{newName}</span>
       </span>
       <span className="truncate font-mono text-[11px] text-muted-foreground">
@@ -513,13 +504,13 @@ function KindBox({ kind }: { kind: GitChangeKind }) {
     case "untracked":
       return (
         <Box tone="emerald">
-          <Plus className="size-2.5" strokeWidth={3} />
+          <HugeiconsIcon icon={Add01Icon} className="size-2.5" strokeWidth={3} />
         </Box>
       );
     case "deleted":
       return (
         <Box tone="rose">
-          <Minus className="size-2.5" strokeWidth={3} />
+          <HugeiconsIcon icon={MinusSignIcon} className="size-2.5" strokeWidth={3} />
         </Box>
       );
     case "modified":
@@ -534,7 +525,7 @@ function KindBox({ kind }: { kind: GitChangeKind }) {
     case "unmerged":
       return (
         <Box tone="rose">
-          <AlertTriangle className="size-2.5" strokeWidth={2.5} />
+          <HugeiconsIcon icon={Alert01Icon} className="size-2.5" strokeWidth={2.5} />
         </Box>
       );
     case "ignored":
@@ -606,9 +597,9 @@ function CheckBox({
       }`}
     >
       {indeterminate ? (
-        <Minus className="size-2" strokeWidth={3.5} />
+        <HugeiconsIcon icon={MinusSignIcon} className="size-2" strokeWidth={3.5} />
       ) : (
-        <Check className="size-2" strokeWidth={3.5} />
+        <HugeiconsIcon icon={Tick02Icon} className="size-2" strokeWidth={3.5} />
       )}
     </button>
   );
@@ -704,9 +695,9 @@ function CommitComposer({
           title={canPush ? "Push commits to origin" : "No commits ahead of upstream"}
         >
           {busy === "push" ? (
-            <Loader2 className="size-3 animate-spin" />
+            <HugeiconsIcon icon={Loading02Icon} className="size-3 animate-spin" />
           ) : (
-            <Upload className="size-3" />
+            <HugeiconsIcon icon={Upload01Icon} className="size-3" />
           )}
           Push
         </button>
@@ -744,9 +735,9 @@ function CommitComposer({
           className="flex items-center gap-1.5 rounded-sm bg-success/15 px-2 py-1 text-[11px] font-medium text-success transition-colors hover:bg-success/25 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {busy === "commit" ? (
-            <Loader2 className="size-3 animate-spin" />
+            <HugeiconsIcon icon={Loading02Icon} className="size-3 animate-spin" />
           ) : (
-            <CornerDownLeft className="size-3" />
+            <HugeiconsIcon icon={ArrowTurnDownIcon} className="size-3" />
           )}
           {selectedCount > 0 ? `Commit ${selectedCount}` : "Commit"}
         </button>
@@ -791,7 +782,7 @@ function Section({
         >
           {leading ?? null}
           {tone === "warning" ? (
-            <AlertTriangle className="size-3" strokeWidth={2.5} />
+            <HugeiconsIcon icon={Alert01Icon} className="size-3" strokeWidth={2.5} />
           ) : null}
           {title}
           {typeof counter === "number" ? (

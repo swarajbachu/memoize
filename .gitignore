@@ -50,3 +50,8 @@ yarn-error.log*
 .context
 .notes
 
+.gstack/
+
+# Hugeicons migrate CLI artifacts (backups + HTML reports)
+apps/renderer/hugeicons-migrate-backup-*/
+apps/renderer/hugeicons-migration-report-*.html

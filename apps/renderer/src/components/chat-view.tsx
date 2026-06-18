@@ -1,4 +1,5 @@
-import { MessageSquare } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Message01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import {
   Fragment,
   useEffect,
@@ -23,7 +24,7 @@ import { FileChipProvider } from "./file-chip.tsx";
 import { ErrorBubble, MessageRow, type ToolResultRecord } from "./message-row.tsx";
 import { SubagentRow } from "./subagent-row.tsx";
 import { TurnSummary } from "./turn-summary.tsx";
-import { TokenStream } from "./ui/loaders";
+import { Beacon } from "./ui/loaders";
 
 const NEAR_BOTTOM_PX = 80;
 
@@ -165,7 +166,7 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
     >
       {messages.length === 0 ? (
         <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-muted-foreground">
-          <MessageSquare className="size-10 opacity-40" />
+          <HugeiconsIcon icon={Message01Icon} className="size-10 opacity-40" />
           <div>
             <p className="text-sm">
               {session?.title ?? "New chat"}
@@ -332,7 +333,7 @@ function WorkingRow({ messages }: { messages: ReadonlyArray<Message> }) {
 
   return (
     <div className="flex items-center gap-2 px-4 py-2 text-[11px] text-muted-foreground">
-      <TokenStream dotSize={2.5} cellPadding={0.75} speed={1.2} />
+      <Beacon dotSize={2.5} cellPadding={0.75} speed={1.2} />
       <span className="tabular-nums">{formatElapsed(elapsed)}</span>
     </div>
   );

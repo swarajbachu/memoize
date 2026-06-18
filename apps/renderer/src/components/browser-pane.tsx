@@ -1,5 +1,6 @@
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ArrowLeft01Icon, ArrowRight01Icon, RotateRight01Icon, StarIcon } from "@hugeicons-pro/core-bulk-rounded";
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, RotateCw, Star } from "lucide-react";
 import { Effect, Fiber, Stream } from "effect";
 
 import {
@@ -215,21 +216,21 @@ export function BrowserPane() {
           disabled={!canGoBack}
           ariaLabel="Back"
         >
-          <ArrowLeft className="size-3.5" />
+          <HugeiconsIcon icon={ArrowLeft01Icon} className="size-3.5" />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => go("forward")}
           disabled={!canGoForward}
           ariaLabel="Forward"
         >
-          <ArrowRight className="size-3.5" />
+          <HugeiconsIcon icon={ArrowRight01Icon} className="size-3.5" />
         </ToolbarButton>
         <ToolbarButton
           onClick={reload}
           disabled={url === ""}
           ariaLabel={isLoading ? "Stop" : "Reload"}
         >
-          <RotateCw className={`size-3.5 ${isLoading ? "animate-spin" : ""}`} />
+          <HugeiconsIcon icon={RotateRight01Icon} className={`size-3.5 ${isLoading ? "animate-spin" : ""}`} />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => {
@@ -238,7 +239,7 @@ export function BrowserPane() {
           disabled={true}
           ariaLabel="Bookmark"
         >
-          <Star className="size-3.5" />
+          <HugeiconsIcon icon={StarIcon} className="size-3.5" />
         </ToolbarButton>
         <input
           type="text"

@@ -13,6 +13,7 @@ import { ChatCreatingPanel } from "./components/chat-creating-panel.tsx";
 import { ChatLanding } from "./components/chat-landing.tsx";
 import { ArchivedChatsPage } from "./components/archived-chats-page.tsx";
 import { CliUpgradeBanner } from "./components/cli-upgrade-banner.tsx";
+import { NextUnreadButton } from "./components/next-unread-button.tsx";
 import { IndexProgressBanner } from "./components/index-progress-banner.tsx";
 import { TooltipProvider } from "./components/ui/tooltip.tsx";
 import { ChatView } from "./components/chat-view";
@@ -366,6 +367,7 @@ function MainShell() {
                   <ChatView sessionId={selectedSessionId} />
                   <CostFooter sessionId={selectedSessionId} />
                   <CliUpgradeBanner providerId={selectedSession.providerId} />
+                  <NextUnreadButton />
                   <ChatComposer session={selectedSession} />
                 </>
               ) : (

@@ -1,4 +1,5 @@
-import { Globe, Pencil, Shield, Terminal, Trash2, Wrench } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Delete02Icon, GlobeIcon, PencilIcon, Shield01Icon, TerminalIcon, Wrench01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import { useEffect, useMemo, useState } from "react";
 
 import type {
@@ -20,13 +21,13 @@ import { usePermissionsStore } from "../store/permissions.ts";
 const kindIcon = (kind: PermissionKind) => {
   switch (kind._tag) {
     case "Bash":
-      return <Terminal className="size-3.5 text-amber-300" />;
+      return <HugeiconsIcon icon={TerminalIcon} className="size-3.5 text-amber-300" />;
     case "FileWrite":
-      return <Pencil className="size-3.5 text-emerald-300" />;
+      return <HugeiconsIcon icon={PencilIcon} className="size-3.5 text-emerald-300" />;
     case "Network":
-      return <Globe className="size-3.5 text-sky-300" />;
+      return <HugeiconsIcon icon={GlobeIcon} className="size-3.5 text-sky-300" />;
     case "Other":
-      return <Wrench className="size-3.5 text-zinc-300" />;
+      return <HugeiconsIcon icon={Wrench01Icon} className="size-3.5 text-zinc-300" />;
   }
 };
 
@@ -126,7 +127,7 @@ export function PermissionsInspector({
             showCloseButton
           >
             <div className="flex items-center gap-2 px-6 pt-6">
-              <Shield className="size-4 text-violet-300" />
+              <HugeiconsIcon icon={Shield01Icon} className="size-4 text-violet-300" />
               <DialogTitle className="text-base">
                 Permissions — {projectName}
               </DialogTitle>
@@ -281,7 +282,7 @@ function DecisionRow({
           aria-label="Revoke"
           title="Revoke this decision"
         >
-          <Trash2 className="size-3.5" />
+          <HugeiconsIcon icon={Delete02Icon} className="size-3.5" />
         </button>
       )}
     </li>

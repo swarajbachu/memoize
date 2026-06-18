@@ -1,13 +1,5 @@
-import {
-  Check,
-  Circle,
-  CircleDashed,
-  ExternalLink,
-  GitPullRequest,
-  Loader2,
-  MinusCircle,
-  X,
-} from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Cancel01Icon, CircleIcon, GitPullRequestIcon, LinkSquare01Icon, Loading02Icon, MinusSignCircleIcon, Tick01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import { useEffect } from "react";
 
 import type {
@@ -192,7 +184,7 @@ function PrBody({
     <>
       <Section>
         <div className="flex items-start gap-2">
-          <GitPullRequest className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+          <HugeiconsIcon icon={GitPullRequestIcon} className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <div className="flex items-baseline gap-2">
               {number !== null ? (
@@ -224,7 +216,7 @@ function PrBody({
             onClick={() => openExternal(url)}
             className="-mx-1 mt-1 flex items-center gap-1.5 rounded-sm px-1 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
           >
-            <ExternalLink className="size-3" />
+            <HugeiconsIcon icon={LinkSquare01Icon} className="size-3" />
             Open in browser
           </button>
         ) : null}
@@ -286,13 +278,13 @@ function PrBody({
           >
             {pr.isDraft ? (
               <Indicator
-                icon={<CircleDashed className="size-4 text-zinc-400" />}
+                icon={<HugeiconsIcon icon={CircleIcon} className="size-4 text-zinc-400" />}
                 title="Draft"
                 body="Mark the PR as ready for review to start running checks."
               />
             ) : orderedChecks.length === 0 ? (
               <Indicator
-                icon={<Circle className="size-4 text-muted-foreground" />}
+                icon={<HugeiconsIcon icon={CircleIcon} className="size-4 text-muted-foreground" />}
                 title="No checks configured"
                 body="There aren't any required status checks on this branch."
               />
@@ -402,7 +394,7 @@ function CheckRunRow({ run }: { run: GitPrCheckRun }) {
         {run.name}
       </span>
       {run.url !== null ? (
-        <ExternalLink className="size-3 shrink-0 text-muted-foreground" />
+        <HugeiconsIcon icon={LinkSquare01Icon} className="size-3 shrink-0 text-muted-foreground" />
       ) : null}
     </div>
   );
@@ -425,23 +417,23 @@ function CheckRunRow({ run }: { run: GitPrCheckRun }) {
 function checkIcon(run: GitPrCheckRun) {
   if (run.status !== "completed") {
     if (run.status === "queued" || run.status === "pending") {
-      return <Circle className="size-4 text-muted-foreground" />;
+      return <HugeiconsIcon icon={CircleIcon} className="size-4 text-muted-foreground" />;
     }
-    return <Loader2 className="size-4 animate-spin text-amber-300" />;
+    return <HugeiconsIcon icon={Loading02Icon} className="size-4 animate-spin text-amber-300" />;
   }
   switch (run.conclusion) {
     case "success":
-      return <Check className="size-3 text-emerald-400" strokeWidth={3} />;
+      return <HugeiconsIcon icon={Tick01Icon} className="size-3 text-emerald-400" />;
     case "failure":
     case "cancelled":
     case "timed_out":
     case "action_required":
-      return <X className="size-3 text-rose-300" strokeWidth={3} />;
+      return <HugeiconsIcon icon={Cancel01Icon} className="size-3 text-rose-300" />;
     case "skipped":
     case "neutral":
-      return <MinusCircle className="size-3.5 text-muted-foreground" />;
+      return <HugeiconsIcon icon={MinusSignCircleIcon} className="size-3.5 text-muted-foreground" />;
     default:
-      return <Circle className="size-3.5 text-muted-foreground" />;
+      return <HugeiconsIcon icon={CircleIcon} className="size-3.5 text-muted-foreground" />;
   }
 }
 

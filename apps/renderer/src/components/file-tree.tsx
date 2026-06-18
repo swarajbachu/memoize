@@ -1,4 +1,5 @@
-import { ChevronDown, ChevronRight, Plus } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Add01Icon, ArrowDown01Icon, ArrowRight01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Effect } from "effect";
 
@@ -231,7 +232,7 @@ const TreeNode = memo(
     const isDir = entry.kind === "directory";
     const isOpen = isDir && expanded[entry.path] === true;
     const child = isOpen ? childStates[entry.path] : undefined;
-    const Chevron = isOpen ? ChevronDown : ChevronRight;
+    const chevron = isOpen ? ArrowDown01Icon : ArrowRight01Icon;
     const isActive = !isDir && activePath === entry.path;
 
     return (
@@ -267,14 +268,15 @@ const TreeNode = memo(
                     }}
                     className="pointer-events-auto flex size-5 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-foreground/10 hover:text-foreground group-hover/row:opacity-100"
                   >
-                    <Plus className="size-3.5" />
+                    <HugeiconsIcon icon={Add01Icon} className="size-3.5" />
                   </button>
                 }
               />
               <TooltipPopup>Attach to chat</TooltipPopup>
             </Tooltip>
             {isDir ? (
-              <Chevron
+              <HugeiconsIcon
+                icon={chevron}
                 className={`size-3.5 text-muted-foreground transition-opacity ${
                   isOpen
                     ? "opacity-100"

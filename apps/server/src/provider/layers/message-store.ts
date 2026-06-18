@@ -10,6 +10,7 @@ import {
   ChatArchiveWorktreeError,
   type ChatId,
   ChatNotFoundError,
+  ComposerInput,
   DEFAULT_PERMISSION_MODE,
   DEFAULT_RUNTIME_MODE,
   Message,
@@ -25,6 +26,7 @@ import {
   type MessageId as MessageIdType,
   type MessageRole,
   type ProviderId,
+  QueuedMessage,
   type RuntimeMode,
   Session,
   SessionId,
@@ -85,6 +87,8 @@ interface ChatRow {
   readonly active_session_id: string | null;
   readonly archived_at: string | null;
   readonly archived_worktree_json: string | null;
+  readonly last_message_at: string | null;
+  readonly last_read_at: string | null;
   readonly created_at: string;
   readonly updated_at: string;
 }
@@ -97,7 +101,7 @@ const SESSION_COLUMNS =
 
 const CHAT_COLUMNS =
   "id, project_id, worktree_id, title, active_session_id, " +
-  "archived_at, archived_worktree_json, created_at, updated_at";
+  "archived_at, archived_worktree_json, last_message_at, last_read_at, created_at, updated_at";
 
 const ARCHIVE_SCRIPT_TIMEOUT_MS = 10 * 60 * 1000;
 const ARCHIVE_OUTPUT_LIMIT = 12_000;
@@ -192,6 +196,15 @@ interface MessageRow {
   readonly created_at: string;
 }
 
+interface QueuedMessageRow {
+  readonly id: string;
+  readonly session_id: string;
+  readonly queue_order: number;
+  readonly input_json: string;
+  readonly created_at: string;
+  readonly updated_at: string;
+}
+
 const sessionFromRow = (row: SessionRow): Session =>
   Session.make({
     id: SessionId.make(row.id),
@@ -242,6 +255,9 @@ const chatFromRow = (row: ChatRow): Chat =>
         ? null
         : SessionId.make(row.active_session_id),
     archivedAt: row.archived_at === null ? null : new Date(row.archived_at),
+    lastMessageAt:
+      row.last_message_at === null ? null : new Date(row.last_message_at),
+    lastReadAt: row.last_read_at === null ? null : new Date(row.last_read_at),
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   });
@@ -256,6 +272,16 @@ const messageFromRow = (row: MessageRow): Message => {
     createdAt: new Date(row.created_at),
   });
 };
+
+const queuedMessageFromRow = (row: QueuedMessageRow): QueuedMessage =>
+  QueuedMessage.make({
+    id: row.id,
+    sessionId: SessionId.make(row.session_id),
+    input: ComposerInput.make(JSON.parse(row.input_json)),
+    position: row.queue_order,
+    createdAt: new Date(row.created_at),
+    updatedAt: new Date(row.updated_at),
+  });
 
 /**
  * Pull `parentItemId` off a content payload for the dedicated SQL column.
@@ -628,6 +654,9 @@ export const MessageStoreLive = Layer.scoped(
     const statusPubsubs = yield* Ref.make<
       ReadonlyMap<SessionId, PubSub.PubSub<StatusEvent>>
     >(new Map());
+    const queuePubsubs = yield* Ref.make<
+      ReadonlyMap<SessionId, PubSub.PubSub<ReadonlyArray<QueuedMessage>>>
+    >(new Map());
 
     // Single hub for chat-row changes (title / worktree binding). Unlike the
     // per-session message/status pubsubs, chats are few and updates rare, so
@@ -666,6 +695,20 @@ export const MessageStoreLive = Layer.scoped(
         if (existing !== undefined) return existing;
         const pubsub = yield* PubSub.unbounded<StatusEvent>();
         yield* Ref.update(statusPubsubs, (m) => {
+          const next = new Map(m);
+          next.set(sessionId, pubsub);
+          return next;
+        });
+        return pubsub;
+      });
+
+    const getOrMakeQueuePubsub = (sessionId: SessionId) =>
+      Effect.gen(function* () {
+        const map = yield* Ref.get(queuePubsubs);
+        const existing = map.get(sessionId);
+        if (existing !== undefined) return existing;
+        const pubsub = yield* PubSub.unbounded<ReadonlyArray<QueuedMessage>>();
+        yield* Ref.update(queuePubsubs, (m) => {
           const next = new Map(m);
           next.set(sessionId, pubsub);
           return next;
@@ -730,6 +773,13 @@ export const MessageStoreLive = Layer.scoped(
         yield* sql`
           UPDATE sessions SET updated_at = ${nowIso} WHERE id = ${sessionId}
         `.pipe(Effect.orDie);
+        // Advance the owning chat's activity clock so the sidebar can mark it
+        // unread. `updated_at` (and sidebar ordering) is intentionally left
+        // untouched — `last_message_at` is a separate read/unread signal.
+        yield* sql`
+          UPDATE chats SET last_message_at = ${nowIso}
+          WHERE id = (SELECT chat_id FROM sessions WHERE id = ${sessionId})
+        `.pipe(Effect.orDie);
         return Message.make({
           id,
           sessionId,
@@ -738,6 +788,11 @@ export const MessageStoreLive = Layer.scoped(
           createdAt: now,
         });
       });
+
+    const flushingQueues = yield* Ref.make<ReadonlySet<SessionId>>(new Set());
+    let flushQueueAfterIdle: (
+      sessionId: SessionId,
+    ) => Effect.Effect<void> = () => Effect.void;
 
     const setStatus = (
       sessionId: SessionId,
@@ -750,6 +805,9 @@ export const MessageStoreLive = Layer.scoped(
         `.pipe(Effect.asVoid, Effect.orDie);
         const pubsub = yield* getOrMakeStatusPubsub(sessionId);
         yield* PubSub.publish(pubsub, { sessionId, status });
+        if (status === "idle" || status === "closed") {
+          yield* Effect.forkDaemon(flushQueueAfterIdle(sessionId));
+        }
       });
 
     const broadcastMessage = (
@@ -759,6 +817,83 @@ export const MessageStoreLive = Layer.scoped(
       Effect.gen(function* () {
         const pubsub = yield* getOrMakePubsub(sessionId);
         yield* PubSub.publish(pubsub, message);
+      });
+
+    const ensureQueuedMessagesSchema: Effect.Effect<void> = Effect.gen(
+      function* () {
+        yield* sql`
+          CREATE TABLE IF NOT EXISTS queued_messages (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+            queue_order INTEGER NOT NULL,
+            input_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+          )
+        `.pipe(Effect.orDie);
+
+        const columns = yield* sql<{ readonly name: string }>`
+          PRAGMA table_info(queued_messages)
+        `.pipe(Effect.orDie);
+        const hasColumn = (name: string): boolean =>
+          columns.some((column) => column.name === name);
+
+        if (!hasColumn("queue_order")) {
+          yield* sql`
+            ALTER TABLE queued_messages
+              ADD COLUMN queue_order INTEGER NOT NULL DEFAULT 0
+          `.pipe(Effect.orDie);
+          if (hasColumn("position")) {
+            yield* sql`
+              UPDATE queued_messages SET queue_order = "position"
+            `.pipe(Effect.orDie);
+          }
+        }
+
+        yield* sql`
+          CREATE INDEX IF NOT EXISTS idx_queued_messages_session_queue_order
+          ON queued_messages(session_id, queue_order)
+        `.pipe(Effect.orDie);
+      },
+    );
+
+    const listQueuedRows = (
+      sessionId: SessionId,
+    ): Effect.Effect<ReadonlyArray<QueuedMessage>> =>
+      Effect.gen(function* () {
+        yield* ensureQueuedMessagesSchema;
+        const rows = yield* sql<QueuedMessageRow>`
+          SELECT id, session_id, queue_order, input_json, created_at, updated_at
+          FROM queued_messages
+          WHERE session_id = ${sessionId}
+          ORDER BY queue_order ASC, created_at ASC
+        `.pipe(Effect.orDie);
+        return rows.map(queuedMessageFromRow);
+      });
+
+    const broadcastQueue = (sessionId: SessionId): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        const items = yield* listQueuedRows(sessionId);
+        const pubsub = yield* getOrMakeQueuePubsub(sessionId);
+        yield* PubSub.publish(pubsub, items);
+      });
+
+    const normalizeQueuePositions = (
+      sessionId: SessionId,
+    ): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        yield* ensureQueuedMessagesSchema;
+        const rows = yield* sql<{ readonly id: string }>`
+          SELECT id FROM queued_messages
+          WHERE session_id = ${sessionId}
+          ORDER BY queue_order ASC, created_at ASC
+        `.pipe(Effect.orDie);
+        for (let i = 0; i < rows.length; i += 1) {
+          yield* sql`
+            UPDATE queued_messages SET queue_order = ${i}
+            WHERE id = ${rows[i]!.id} AND session_id = ${sessionId}
+          `.pipe(Effect.orDie);
+        }
       });
 
     /**
@@ -891,6 +1026,16 @@ export const MessageStoreLive = Layer.scoped(
             return next;
           });
         }
+        const queueMap = yield* Ref.get(queuePubsubs);
+        const queuePubsub = queueMap.get(sessionId);
+        if (queuePubsub !== undefined) {
+          yield* PubSub.shutdown(queuePubsub);
+          yield* Ref.update(queuePubsubs, (m) => {
+            const next = new Map(m);
+            next.delete(sessionId);
+            return next;
+          });
+        }
       });
 
     // Boot recovery: any session left in `running` is stale (the previous
@@ -966,7 +1111,7 @@ export const MessageStoreLive = Layer.scoped(
       Effect.gen(function* () {
         const rows = yield* sql<ChatRow>`
           SELECT id, project_id, worktree_id, title, active_session_id,
-                 archived_at, archived_worktree_json, created_at, updated_at
+                 archived_at, archived_worktree_json, last_message_at, last_read_at, created_at, updated_at
           FROM chats WHERE id = ${chatId} LIMIT 1
         `.pipe(Effect.orDie);
         const row = rows[0];
@@ -1459,7 +1604,7 @@ export const MessageStoreLive = Layer.scoped(
       Effect.gen(function* () {
         const rows = yield* sql<ChatRow>`
           SELECT id, project_id, worktree_id, title, active_session_id,
-                 archived_at, archived_worktree_json, created_at, updated_at
+                 archived_at, archived_worktree_json, last_message_at, last_read_at, created_at, updated_at
           FROM chats WHERE id = ${chatId} LIMIT 1
         `.pipe(Effect.orDie);
         if (rows.length === 0) {
@@ -1476,13 +1621,13 @@ export const MessageStoreLive = Layer.scoped(
         const rows = includeArchived
           ? yield* sql<ChatRow>`
               SELECT id, project_id, worktree_id, title, active_session_id,
-                     archived_at, archived_worktree_json, created_at, updated_at
+                     archived_at, archived_worktree_json, last_message_at, last_read_at, created_at, updated_at
               FROM chats WHERE project_id = ${projectId}
               ORDER BY updated_at DESC
             `.pipe(Effect.orDie)
           : yield* sql<ChatRow>`
               SELECT id, project_id, worktree_id, title, active_session_id,
-                     archived_at, archived_worktree_json, created_at, updated_at
+                     archived_at, archived_worktree_json, last_message_at, last_read_at, created_at, updated_at
               FROM chats
               WHERE project_id = ${projectId} AND archived_at IS NULL
               ORDER BY updated_at DESC
@@ -1512,10 +1657,10 @@ export const MessageStoreLive = Layer.scoped(
         yield* sql`
           INSERT INTO chats
             (id, project_id, worktree_id, title, active_session_id,
-             archived_at, created_at, updated_at)
+             archived_at, last_message_at, last_read_at, created_at, updated_at)
           VALUES
             (${chatId}, ${input.projectId}, ${worktreeId}, ${title}, NULL,
-             NULL, ${nowIso}, ${nowIso})
+             NULL, NULL, ${nowIso}, ${nowIso}, ${nowIso})
         `.pipe(Effect.asVoid, Effect.orDie);
         const initialSession = yield* createSession({
           chatId,
@@ -1587,6 +1732,17 @@ export const MessageStoreLive = Layer.scoped(
         // `chat.streamChanges` so the sidebar updates without a refetch.
         const updated = yield* lookupChat(chatId);
         yield* broadcastChat(updated);
+      });
+
+    const markChatRead: MessageStoreShape["markChatRead"] = (chatId) =>
+      Effect.gen(function* () {
+        yield* lookupChat(chatId);
+        const nowIso = new Date().toISOString();
+        // Read state only — leave `updated_at` (sidebar ordering) untouched.
+        yield* sql`
+          UPDATE chats SET last_read_at = ${nowIso} WHERE id = ${chatId}
+        `.pipe(Effect.asVoid, Effect.orDie);
+        return yield* lookupChat(chatId);
       });
 
     const streamChatChanges: MessageStoreShape["streamChatChanges"] = (
@@ -1661,12 +1817,10 @@ export const MessageStoreLive = Layer.scoped(
         );
         // Rename the git branch, then mirror it onto the worktree row so the
         // DB and git agree. updateBranch only runs if the rename succeeded.
-        yield* git
-          .renameBranch(chat.projectId, branch, worktreeId)
-          .pipe(
-            Effect.flatMap(() => worktrees.updateBranch(worktreeId, branch)),
-            Effect.catchAll(() => Effect.void),
-          );
+        yield* git.renameBranch(chat.projectId, branch, worktreeId).pipe(
+          Effect.flatMap(() => worktrees.updateBranch(worktreeId, branch)),
+          Effect.catchAll(() => Effect.void),
+        );
       }).pipe(Effect.catchAllCause(() => Effect.void));
 
     const forkAutoName = (
@@ -1848,7 +2002,7 @@ export const MessageStoreLive = Layer.scoped(
       Effect.gen(function* () {
         const chatRows = yield* sql<ChatRow>`
           SELECT id, project_id, worktree_id, title, active_session_id,
-                 archived_at, archived_worktree_json, created_at, updated_at
+                 archived_at, archived_worktree_json, last_message_at, last_read_at, created_at, updated_at
           FROM chats WHERE id = ${chatId} LIMIT 1
         `.pipe(Effect.orDie);
         const chatRow = chatRows[0];
@@ -2139,13 +2293,13 @@ export const MessageStoreLive = Layer.scoped(
         return yield* lookupSession(sessionId);
       });
 
-    const sendMessage: MessageStoreShape["sendMessage"] = (
-      sessionId,
-      text,
-      attachments,
-      fileRefs,
-      skillRefs,
-    ) =>
+    const submitUserMessage = (
+      sessionId: SessionId,
+      text: string,
+      attachments?: ReadonlyArray<AttachmentRef>,
+      fileRefs?: ReadonlyArray<FileRef>,
+      skillRefs?: ReadonlyArray<SkillRef>,
+    ): Effect.Effect<boolean, SessionNotFoundError> =>
       Effect.gen(function* () {
         const session = yield* lookupSession(sessionId);
         // Drop "pending-*" placeholder ids — those are renderer-side temp
@@ -2236,7 +2390,7 @@ export const MessageStoreLive = Layer.scoped(
 
           if (looksLikeGrokAuthWorkerDeath) {
             yield* setStatus(sessionId, "running");
-            return;
+            return true;
           }
 
           console.log(
@@ -2268,11 +2422,266 @@ export const MessageStoreLive = Layer.scoped(
             yield* broadcastMessage(sessionId, persistedError);
             yield* ndjsonAppend(sessionId, persistedError);
             yield* setStatus(sessionId, "idle");
-            return;
+            return false;
           }
         }
         yield* setStatus(sessionId, "running");
+        return true;
       });
+
+    const sendMessage: MessageStoreShape["sendMessage"] = (
+      sessionId,
+      text,
+      attachments,
+      fileRefs,
+      skillRefs,
+    ) =>
+      Effect.gen(function* () {
+        yield* submitUserMessage(
+          sessionId,
+          text,
+          attachments,
+          fileRefs,
+          skillRefs,
+        );
+      });
+
+    const listQueuedMessages: MessageStoreShape["listQueuedMessages"] = (
+      sessionId,
+    ) =>
+      Effect.gen(function* () {
+        yield* lookupSession(sessionId);
+        return yield* listQueuedRows(sessionId);
+      });
+
+    const streamQueuedMessages: MessageStoreShape["streamQueuedMessages"] = (
+      sessionId,
+    ) =>
+      Stream.unwrapScoped(
+        Effect.gen(function* () {
+          yield* lookupSession(sessionId);
+          const pubsub = yield* getOrMakeQueuePubsub(sessionId);
+          const dequeue = yield* pubsub.subscribe;
+          const initial = yield* listQueuedRows(sessionId);
+          return Stream.concat(
+            Stream.succeed(initial),
+            Stream.fromQueue(dequeue),
+          );
+        }),
+      );
+
+    const addQueuedMessage: MessageStoreShape["addQueuedMessage"] = (
+      sessionId,
+      input,
+    ) =>
+      Effect.gen(function* () {
+        yield* lookupSession(sessionId);
+        yield* ensureQueuedMessagesSchema;
+        const maxRows = yield* sql<{ readonly max_position: number | null }>`
+          SELECT MAX(queue_order) AS max_position
+          FROM queued_messages
+          WHERE session_id = ${sessionId}
+        `.pipe(Effect.orDie);
+        const position = (maxRows[0]?.max_position ?? -1) + 1;
+        const now = new Date();
+        const nowIso = now.toISOString();
+        const id = `q_${crypto.randomUUID()}`;
+        yield* sql`
+          INSERT INTO queued_messages
+            (id, session_id, queue_order, input_json, created_at, updated_at)
+          VALUES
+            (${id}, ${sessionId}, ${position}, ${JSON.stringify(input)},
+             ${nowIso}, ${nowIso})
+        `.pipe(Effect.orDie);
+        const item = QueuedMessage.make({
+          id,
+          sessionId,
+          input,
+          position,
+          createdAt: now,
+          updatedAt: now,
+        });
+        yield* broadcastQueue(sessionId);
+        return item;
+      });
+
+    const updateQueuedMessage: MessageStoreShape["updateQueuedMessage"] = (
+      sessionId,
+      queueId,
+      input,
+    ) =>
+      Effect.gen(function* () {
+        yield* lookupSession(sessionId);
+        const nowIso = new Date().toISOString();
+        yield* sql`
+          UPDATE queued_messages
+          SET input_json = ${JSON.stringify(input)}, updated_at = ${nowIso}
+          WHERE session_id = ${sessionId} AND id = ${queueId}
+        `.pipe(Effect.orDie);
+        const rows = yield* sql<QueuedMessageRow>`
+          SELECT id, session_id, queue_order, input_json, created_at, updated_at
+          FROM queued_messages
+          WHERE session_id = ${sessionId} AND id = ${queueId}
+          LIMIT 1
+        `.pipe(Effect.orDie);
+        const item =
+          rows[0] === undefined
+            ? yield* addQueuedMessage(sessionId, input)
+            : queuedMessageFromRow(rows[0]);
+        yield* broadcastQueue(sessionId);
+        return item;
+      });
+
+    const deleteQueuedMessage: MessageStoreShape["deleteQueuedMessage"] = (
+      sessionId,
+      queueId,
+    ) =>
+      Effect.gen(function* () {
+        yield* lookupSession(sessionId);
+        yield* sql`
+          DELETE FROM queued_messages
+          WHERE session_id = ${sessionId} AND id = ${queueId}
+        `.pipe(Effect.orDie);
+        yield* normalizeQueuePositions(sessionId);
+        yield* broadcastQueue(sessionId);
+      });
+
+    const reorderQueuedMessages: MessageStoreShape["reorderQueuedMessages"] = (
+      sessionId,
+      queueIds,
+    ) =>
+      Effect.gen(function* () {
+        yield* lookupSession(sessionId);
+        const existing = yield* listQueuedRows(sessionId);
+        const byId = new Map(existing.map((item) => [item.id, item]));
+        const ordered = [
+          ...queueIds.flatMap((id) => {
+            const item = byId.get(id);
+            if (item === undefined) return [];
+            byId.delete(id);
+            return [item];
+          }),
+          ...existing.filter((item) => byId.has(item.id)),
+        ];
+        const nowIso = new Date().toISOString();
+        for (let i = 0; i < ordered.length; i += 1) {
+          yield* sql`
+            UPDATE queued_messages
+            SET queue_order = ${i}, updated_at = ${nowIso}
+            WHERE session_id = ${sessionId} AND id = ${ordered[i]!.id}
+          `.pipe(Effect.orDie);
+        }
+        const next = yield* listQueuedRows(sessionId);
+        yield* broadcastQueue(sessionId);
+        return next;
+      });
+
+    const claimQueuedMessage = (
+      sessionId: SessionId,
+      queueId: string,
+    ): Effect.Effect<QueuedMessage | null> =>
+      Effect.gen(function* () {
+        yield* ensureQueuedMessagesSchema;
+        const rows = yield* sql<QueuedMessageRow>`
+          SELECT id, session_id, queue_order, input_json, created_at, updated_at
+          FROM queued_messages
+          WHERE session_id = ${sessionId} AND id = ${queueId}
+          LIMIT 1
+        `.pipe(Effect.orDie);
+        const row = rows[0];
+        if (row === undefined) return null;
+        const item = queuedMessageFromRow(row);
+        yield* sql`
+          DELETE FROM queued_messages
+          WHERE session_id = ${sessionId} AND id = ${queueId}
+        `.pipe(Effect.orDie);
+        yield* normalizeQueuePositions(sessionId);
+        yield* broadcastQueue(sessionId);
+        return item;
+      });
+
+    const restoreQueuedMessage = (item: QueuedMessage): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        yield* ensureQueuedMessagesSchema;
+        const existing = yield* sql<{ readonly count: number }>`
+          SELECT COUNT(*) AS count
+          FROM queued_messages
+          WHERE session_id = ${item.sessionId} AND id = ${item.id}
+        `.pipe(Effect.orDie);
+        if ((existing[0]?.count ?? 0) > 0) return;
+        yield* sql`
+          INSERT INTO queued_messages
+            (id, session_id, queue_order, input_json, created_at, updated_at)
+          VALUES
+            (${item.id}, ${item.sessionId}, ${item.position},
+             ${JSON.stringify(item.input)}, ${item.createdAt.toISOString()},
+             ${new Date().toISOString()})
+        `.pipe(Effect.orDie);
+        yield* normalizeQueuePositions(item.sessionId);
+        yield* broadcastQueue(item.sessionId);
+      });
+
+    const sendClaimedQueuedMessage = (
+      item: QueuedMessage,
+    ): Effect.Effect<void, SessionNotFoundError> =>
+      Effect.gen(function* () {
+        const ok = yield* submitUserMessage(
+          item.sessionId,
+          item.input.text,
+          item.input.attachments,
+          item.input.fileRefs,
+          item.input.skillRefs,
+        );
+        if (!ok) {
+          yield* restoreQueuedMessage(item);
+        }
+      });
+
+    const sendQueuedMessageNow: MessageStoreShape["sendQueuedMessageNow"] = (
+      sessionId,
+      queueId,
+    ) =>
+      Effect.gen(function* () {
+        yield* lookupSession(sessionId);
+        const item = yield* claimQueuedMessage(sessionId, queueId);
+        if (item === null) return;
+        yield* sendClaimedQueuedMessage(item);
+      });
+
+    const flushQueuedMessages: MessageStoreShape["flushQueuedMessages"] = (
+      sessionId,
+    ) =>
+      Effect.gen(function* () {
+        yield* lookupSession(sessionId);
+        const current = yield* Ref.get(flushingQueues);
+        if (current.has(sessionId)) return;
+        yield* Ref.update(flushingQueues, (set) => {
+          const next = new Set(set);
+          next.add(sessionId);
+          return next;
+        });
+        try {
+          const session = yield* lookupSession(sessionId);
+          if (session.status === "running" || session.status === "booting") {
+            return;
+          }
+          const queue = yield* listQueuedRows(sessionId);
+          const head = queue[0];
+          if (head === undefined) return;
+          const claimed = yield* claimQueuedMessage(sessionId, head.id);
+          if (claimed === null) return;
+          yield* sendClaimedQueuedMessage(claimed);
+        } finally {
+          yield* Ref.update(flushingQueues, (set) => {
+            const next = new Set(set);
+            next.delete(sessionId);
+            return next;
+          });
+        }
+      });
+
+    flushQueueAfterIdle = (sessionId) =>
+      flushQueuedMessages(sessionId).pipe(Effect.catchAll(() => Effect.void));
 
     const interruptSession: MessageStoreShape["interruptSession"] = (
       sessionId,
@@ -2306,6 +2715,7 @@ export const MessageStoreLive = Layer.scoped(
       getChat,
       createChat,
       renameChat,
+      markChatRead,
       streamChatChanges,
       setChatWorktree,
       setChatActiveSession,
@@ -2318,6 +2728,14 @@ export const MessageStoreLive = Layer.scoped(
       streamStatus,
       sendMessage,
       interruptSession,
+      listQueuedMessages,
+      streamQueuedMessages,
+      addQueuedMessage,
+      updateQueuedMessage,
+      deleteQueuedMessage,
+      sendQueuedMessageNow,
+      reorderQueuedMessages,
+      flushQueuedMessages,
     } as const;
   }),
 );

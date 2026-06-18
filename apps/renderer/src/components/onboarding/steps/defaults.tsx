@@ -1,5 +1,5 @@
-import { Check } from "lucide-react";
-
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Tick01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import {
   ModelSelect,
 } from "~/components/settings-page";
@@ -64,7 +64,7 @@ export function DefaultsStep() {
                   )}
                 >
                   <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-white/[0.06] text-foreground">
-                    <m.Icon className="size-3.5" strokeWidth={1.75} />
+                    <HugeiconsIcon icon={m.Icon} className="size-3.5" strokeWidth={1.75} />
                   </span>
                   <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <span className="text-[13px] font-medium leading-none text-foreground">
@@ -76,7 +76,7 @@ export function DefaultsStep() {
                   </span>
                   {active && (
                     <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-foreground text-background">
-                      <Check className="size-2.5" strokeWidth={3.5} />
+                      <HugeiconsIcon icon={Tick01Icon} className="size-2.5" strokeWidth={3.5} />
                     </span>
                   )}
                 </button>

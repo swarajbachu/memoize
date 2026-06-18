@@ -1,13 +1,13 @@
-import { AlertCircleIcon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  Check,
-  ChevronDown,
-  ChevronRight,
-  Copy,
-  RotateCw,
-  Settings,
-} from "lucide-react";
+  AlertCircleIcon,
+  ArrowDown01Icon,
+  ArrowRight01Icon,
+  Copy01Icon,
+  RotateRight01Icon,
+  Settings01Icon,
+  Tick01Icon,
+} from "@hugeicons-pro/core-bulk-rounded";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { useState } from "react";
 import type {
   AgentItemId,
@@ -318,7 +318,7 @@ function AssistantBubble({
 
 function ToolErrorRow({ output }: { output: unknown }) {
   const [expanded, setExpanded] = useState(false);
-  const Chevron = expanded ? ChevronDown : ChevronRight;
+  const chevron = expanded ? ArrowDown01Icon : ArrowRight01Icon;
   const text = typeof output === "string" ? output : stringifyJson(output);
   const firstLine = text.split("\n", 1)[0] ?? "";
   return (
@@ -338,7 +338,8 @@ function ToolErrorRow({ output }: { output: unknown }) {
               "group-hover:opacity-0 motion-reduce:transition-none",
             )}
           />
-          <Chevron
+          <HugeiconsIcon
+            icon={chevron}
             aria-hidden="true"
             className={cn(
               "col-start-1 row-start-1 size-3.5 text-muted-foreground opacity-0 transition-opacity duration-150 ease-out",
@@ -457,9 +458,9 @@ function GeminiUpgradeCard({ onDismiss }: { onDismiss?: () => void }) {
               </code>
               <Button size="xs" variant="outline" onClick={copyCommand}>
                 {copied ? (
-                  <Check className="size-3.5" />
+                  <HugeiconsIcon icon={Tick01Icon} className="size-3.5" />
                 ) : (
-                  <Copy className="size-3.5" />
+                  <HugeiconsIcon icon={Copy01Icon} className="size-3.5" />
                 )}
                 {copied ? "Copied" : "Copy upgrade command"}
               </Button>
@@ -593,7 +594,7 @@ export function ErrorBubble({
                   onClick={onRetry}
                   className="gap-1"
                 >
-                  <RotateCw className="size-3" aria-hidden />
+                  <HugeiconsIcon icon={RotateRight01Icon} className="size-3" aria-hidden />
                   Retry
                 </Button>
                 {error.kind === "auth" && (
@@ -604,7 +605,7 @@ export function ErrorBubble({
                     onClick={onOpenSettings}
                     className="gap-1"
                   >
-                    <Settings className="size-3" aria-hidden />
+                    <HugeiconsIcon icon={Settings01Icon} className="size-3" aria-hidden />
                     Open Provider Settings
                   </Button>
                 )}

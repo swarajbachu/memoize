@@ -1,4 +1,5 @@
-import { Archive, ArchiveRestore, Search } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ArchiveArrowUpIcon, ArchiveIcon, Search01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import { useEffect, useMemo, useState } from "react";
 import { Effect } from "effect";
 
@@ -75,7 +76,7 @@ export function ArchivedChatsPage({
     <div className="flex min-h-0 flex-1 flex-col bg-background/55">
       <div className="border-b border-border/50 px-8 py-5">
         <div className="flex items-center gap-3">
-          <Archive className="size-5 text-muted-foreground" />
+          <HugeiconsIcon icon={ArchiveIcon} className="size-5 text-muted-foreground" />
           <div className="min-w-0">
             <h1 className="truncate text-lg font-semibold text-foreground">
               Archived chats
@@ -86,7 +87,7 @@ export function ArchivedChatsPage({
           </div>
         </div>
         <label className="mt-5 flex h-9 max-w-xl items-center gap-2 rounded-md border border-border/70 bg-background px-3 text-sm">
-          <Search className="size-4 shrink-0 text-muted-foreground" />
+          <HugeiconsIcon icon={Search01Icon} className="size-4 shrink-0 text-muted-foreground" />
           <input
             value={query}
             onChange={(event) => setQuery(event.currentTarget.value)}
@@ -137,7 +138,7 @@ export function ArchivedChatsPage({
                   size="sm"
                   onClick={() => void onRestore(chat)}
                 >
-                  <ArchiveRestore className="size-3.5" />
+                  <HugeiconsIcon icon={ArchiveArrowUpIcon} className="size-3.5" />
                   Unarchive
                 </Button>
               </li>

@@ -1,17 +1,6 @@
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ArchiveArrowUpIcon, ArchiveIcon, ArrowDown01Icon, ArrowRight01Icon, Delete02Icon, Edit01Icon, HelpCircleIcon, PencilIcon, Settings01Icon, TaskDone01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import { Effect, Fiber, Stream } from "effect";
-import {
-  Archive,
-  ArchiveRestore,
-  ChevronDown,
-  ChevronRight,
-  CircleQuestionMark,
-  ClipboardCheck,
-  Pencil,
-  Settings,
-  SquarePen,
-  Trash2,
-} from "lucide-react";
-
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -37,7 +26,7 @@ import { resolveAutoWorktreeId } from "../lib/auto-worktree.ts";
 import { noteSessionStatusForCompletionSound } from "../lib/completion-sounds.ts";
 import { formatShortcut } from "../lib/shortcuts.ts";
 import { getRpcClient } from "../lib/rpc-client.ts";
-import { useChatsStore } from "../store/chats.ts";
+import { isChatUnread, useChatsStore } from "../store/chats.ts";
 import {
   gitDiffStatKey,
   useGitDiffStatStore,
@@ -81,6 +70,16 @@ const formatRelative = (iso: Date): string => {
   if (hr < 24) return `${hr}h ago`;
   const day = Math.floor(hr / 24);
   return `${day}d ago`;
+};
+
+/** Resolve the chat that owns a session from the renderer session cache. */
+const chatIdForSession = (sessionId: SessionId): ChatId | null => {
+  const buckets = useSessionsStore.getState().sessionsByProject;
+  for (const list of Object.values(buckets)) {
+    const row = list.find((r) => r.id === sessionId);
+    if (row !== undefined) return row.chatId;
+  }
+  return null;
 };
 
 /**
@@ -132,19 +131,40 @@ function useSessionRunningSubscriptions(sessionIds: ReadonlyArray<SessionId>) {
               client.session.streamStatus({ sessionId: id }),
               (event) =>
                 Effect.sync(() => {
+                  // Capture the prior running flag BEFORE the status update so
+                  // we can detect the running→idle edge for unread tracking.
+                  const wasRunning =
+                    useMessagesStore.getState().runningBySession[id] === true;
+                  const isRunning = event.status === "running";
                   noteSessionStatusForCompletionSound(id, event.status);
-                  useMessagesStore.setState((s) => ({
-                    runningBySession: {
-                      ...s.runningBySession,
-                      [id]: event.status === "running",
-                    },
-                  }));
+                  useMessagesStore
+                    .getState()
+                    .observeSessionStatus(id, event.status);
                   // Mirror the full status into the session row so the
                   // chat surface can branch on `booting` (loading panel)
                   // vs `idle` (composer ready) without a second stream.
                   useSessionsStore
                     .getState()
                     .setSessionStatus(id, event.status);
+                  // running→idle = the agent just produced new output. Light
+                  // the owning chat unread — unless the user is looking at it,
+                  // in which case stamp it read instead. This is the live
+                  // signal that covers every hydrated session, even in
+                  // collapsed/background chats.
+                  if (wasRunning && !isRunning) {
+                    const chatId = chatIdForSession(id);
+                    if (chatId !== null) {
+                      const chats = useChatsStore.getState();
+                      if (chats.selectedChatId === chatId) {
+                        void chats.markRead(chatId);
+                      } else {
+                        chats.noteChatActivity(chatId);
+                      }
+                    }
+                  }
+                  if (event.status === "idle" || event.status === "closed") {
+                    useMessagesStore.getState().flushQueue(id);
+                  }
                 }),
             ),
           );
@@ -226,6 +246,17 @@ export function ProjectsSidebar() {
     hydrateChats,
     hydrateSessions,
   ]);
+
+  // Eagerly hydrate the (lightweight) chat list for EVERY project, regardless
+  // of expansion. This is what lets read/unread — and the cross-project "Next
+  // unread" button — see chats in collapsed/unvisited projects on startup.
+  // Sessions stay lazy (above); the live unread signal only needs them for
+  // projects the user actually opens.
+  useEffect(() => {
+    for (const folder of folders) {
+      if (!(folder.id in chatsByProject)) void hydrateChats(folder.id);
+    }
+  }, [folders, chatsByProject, hydrateChats]);
 
   // PR state is keyed per-session by `(folderId, worktreeId)` because each
   // worktree has its own branch and therefore its own PR. Hydration happens
@@ -335,7 +366,7 @@ function SidebarFooter() {
                   "bg-sidebar-accent/60 text-sidebar-accent-foreground",
               )}
             >
-              <Settings className="size-3.5" />
+              <HugeiconsIcon icon={Settings01Icon} className="size-3.5" />
               <span>Settings</span>
             </button>
           }
@@ -439,7 +470,7 @@ function ProjectGroup({
   ]);
   const showHeaderAttention = headerAttention !== "idle" && !isExpanded;
 
-  const Chevron = isExpanded ? ChevronDown : ChevronRight;
+  const chevron = isExpanded ? ArrowDown01Icon : ArrowRight01Icon;
 
   return (
     <Fragment>
@@ -492,7 +523,8 @@ function ProjectGroup({
                 context="project"
               />
             )}
-            <Chevron
+            <HugeiconsIcon
+              icon={chevron}
               aria-hidden="true"
               className={cn(
                 "col-start-1 row-start-1 size-3.5 text-muted-foreground opacity-0 transition-opacity duration-150 ease-out",
@@ -516,7 +548,7 @@ function ProjectGroup({
             aria-label={`Settings for ${displayName}`}
             title="Repository settings"
           >
-            <Settings className="size-3.5" />
+            <HugeiconsIcon icon={Settings01Icon} className="size-3.5" />
           </button>
           <NewChatButton projectId={id} />
         </div>
@@ -574,21 +606,21 @@ function ProjectContextMenu({
           onClick={onOpenSettings}
           className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
         >
-          <Settings className="size-3.5" />
+          <HugeiconsIcon icon={Settings01Icon} className="size-3.5" />
           Settings
         </MenuItem>
         <MenuItem
           onClick={onOpenArchives}
           className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
         >
-          <Archive className="size-3.5" />
+          <HugeiconsIcon icon={ArchiveIcon} className="size-3.5" />
           Archived chats
         </MenuItem>
         <MenuItem
           onClick={onRemove}
           className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-red-300 hover:bg-red-500/20"
         >
-          <Trash2 className="size-3.5" />
+          <HugeiconsIcon icon={Delete02Icon} className="size-3.5" />
           Remove project
         </MenuItem>
       </MenuPopup>
@@ -669,7 +701,7 @@ function NewChatButton({ projectId }: { projectId: FolderId }) {
                 <Diffusion dotSize={3} cellPadding={1} />
               </span>
             ) : (
-              <SquarePen className="size-3.5" />
+              <HugeiconsIcon icon={Edit01Icon} className="size-3.5" />
             )}
           </button>
         }
@@ -775,6 +807,8 @@ function ChatRow({ chat }: { chat: Chat }) {
   }, [selectedSessionId, sessionIds]);
   const isSelected = selectedChatId === chat.id || sessionBelongsToChat;
   const isArchived = chat.archivedAt !== null;
+  // Unread = new activity the user hasn't seen. Never on the selected row.
+  const isUnread = !isSelected && isChatUnread(chat, selectedChatId);
 
   const branchState: BranchState = isArchived
     ? "archived"
@@ -829,7 +863,7 @@ function ChatRow({ chat }: { chat: Chat }) {
     setMenuOpen(true);
   };
 
-  const PrimaryActionIcon = isArchived ? ArchiveRestore : Archive;
+  const primaryActionIcon = isArchived ? ArchiveArrowUpIcon : ArchiveIcon;
   const primaryActionLabel = isArchived ? "Unarchive" : "Archive";
 
   return (
@@ -851,7 +885,15 @@ function ChatRow({ chat }: { chat: Chat }) {
           !isSelected &&
             isArchived &&
             "text-muted-foreground hover:bg-sidebar-accent/40",
-          !isSelected && !isArchived && "hover:bg-sidebar-accent/40",
+          // Read rows sit dim; unread rows brighten + bold so new activity pops.
+          !isSelected &&
+            !isArchived &&
+            !isUnread &&
+            "text-muted-foreground hover:bg-sidebar-accent/40",
+          !isSelected &&
+            !isArchived &&
+            isUnread &&
+            "font-bold text-white hover:bg-sidebar-accent/40",
         )}
         title={chat.title}
       >
@@ -894,7 +936,7 @@ function ChatRow({ chat }: { chat: Chat }) {
             aria-label={`${primaryActionLabel} ${chat.title}`}
             title={primaryActionLabel}
           >
-            <PrimaryActionIcon className="size-3.5" />
+            <HugeiconsIcon icon={primaryActionIcon} className="size-3.5" />
           </button>
         </div>
       </li>
@@ -909,7 +951,7 @@ function ChatRow({ chat }: { chat: Chat }) {
             onClick={onRename}
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
           >
-            <Pencil className="size-3.5" />
+            <HugeiconsIcon icon={PencilIcon} className="size-3.5" />
             Rename
           </MenuItem>
           {isArchived ? (
@@ -917,7 +959,7 @@ function ChatRow({ chat }: { chat: Chat }) {
               onClick={() => void unarchiveChat(chat.id)}
               className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
             >
-              <ArchiveRestore className="size-3.5" />
+              <HugeiconsIcon icon={ArchiveArrowUpIcon} className="size-3.5" />
               Unarchive
             </MenuItem>
           ) : (
@@ -925,7 +967,7 @@ function ChatRow({ chat }: { chat: Chat }) {
               onClick={() => void archiveChat(chat.id)}
               className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
             >
-              <Archive className="size-3.5" />
+              <HugeiconsIcon icon={ArchiveIcon} className="size-3.5" />
               Archive
             </MenuItem>
           )}
@@ -933,7 +975,7 @@ function ChatRow({ chat }: { chat: Chat }) {
             onClick={onDelete}
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-red-300 hover:bg-red-500/20"
           >
-            <Trash2 className="size-3.5" />
+            <HugeiconsIcon icon={Delete02Icon} className="size-3.5" />
             Delete
           </MenuItem>
         </MenuPopup>
@@ -993,9 +1035,9 @@ function ChatAttentionIcon({
           color="currentColor"
         />
       ) : state === "question" ? (
-        <CircleQuestionMark className="size-3.5" />
+        <HugeiconsIcon icon={HelpCircleIcon} className="size-3.5" />
       ) : (
-        <ClipboardCheck className="size-3.5" />
+        <HugeiconsIcon icon={TaskDone01Icon} className="size-3.5" />
       )}
     </span>
   );

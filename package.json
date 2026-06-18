@@ -55,6 +55,8 @@
     "effect": "^3.21.0"
   },
   "dependencies": {
+    "@hugeicons-pro/core-bulk-rounded": "^4.2.1",
+    "@hugeicons-pro/core-solid-rounded": "^4.2.1",
     "electron": "^42.1.0"
   }
 }

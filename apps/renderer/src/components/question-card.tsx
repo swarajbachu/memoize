@@ -1,6 +1,10 @@
-import { ArrowUp01Icon, Cancel01Icon } from "@hugeicons/core-free-icons";
+import {
+  ArrowLeft01Icon,
+  ArrowRight01Icon,
+  ArrowUp01Icon,
+  Cancel01Icon,
+} from "@hugeicons-pro/core-bulk-rounded";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
 import type React from "react";
 import { useMemo, useState } from "react";
 
@@ -246,7 +250,7 @@ function InteractiveQuestionCard({
               onClick={() => setActiveIdx((i) => Math.max(0, i - 1))}
               className="rounded p-1 hover:text-foreground disabled:opacity-30"
             >
-              <ChevronLeft size={14} />
+              <HugeiconsIcon icon={ArrowLeft01Icon} size={14} />
             </button>
             {questions.map((_, i) => {
               const answered =
@@ -275,7 +279,7 @@ function InteractiveQuestionCard({
               }
               className="rounded p-1 hover:text-foreground disabled:opacity-30"
             >
-              <ChevronRight size={14} />
+              <HugeiconsIcon icon={ArrowRight01Icon} size={14} />
             </button>
           </div>
         ) : (
