@@ -5,6 +5,7 @@ import type { FolderId, GitChange, WorktreeId } from "@memoize/wire";
 
 import { classifyGit, type GitErrorTag } from "../lib/git-rpc.ts";
 import { getRpcClient } from "../lib/rpc-client.ts";
+import { useGitDiffStatStore } from "./git-diff-stat.ts";
 import { useGitStatusStore } from "./git-status.ts";
 import { usePrDetailsStore } from "./pr-details.ts";
 import { usePrStateStore } from "./pr-state.ts";
@@ -62,6 +63,8 @@ export const useGitChangesStore = create<GitChangesState>((set, get) => ({
       },
       loadingByKey: { ...s.loadingByKey, [key]: false },
     }));
+    // Keep the sidebar's per-branch +/- in sync with the working tree.
+    void useGitDiffStatStore.getState().refresh(folderId, worktreeId);
   },
   initRepo: async (folderId, worktreeId) => {
     const client = await getRpcClient();
