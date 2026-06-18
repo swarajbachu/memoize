@@ -91,9 +91,9 @@ const Diff = MemoizeRpcs.toLayerHandler(
 
 const Commit = MemoizeRpcs.toLayerHandler(
   "git.commit",
-  ({ folderId, worktreeId, message }) =>
+  ({ folderId, worktreeId, message, paths }) =>
     Effect.flatMap(GitService, (svc) =>
-      svc.commit(folderId, message, worktreeId ?? null),
+      svc.commit(folderId, message, worktreeId ?? null, paths),
     ),
 );
 
@@ -116,6 +116,30 @@ const MarkReady = MemoizeRpcs.toLayerHandler(
   ({ folderId, worktreeId }) =>
     Effect.flatMap(GitService, (svc) =>
       svc.markReady(folderId, worktreeId ?? null),
+    ),
+);
+
+const RevertFile = MemoizeRpcs.toLayerHandler(
+  "git.revertFile",
+  ({ folderId, worktreeId, path, oldPath, kind }) =>
+    Effect.flatMap(GitService, (svc) =>
+      svc.revertFile(folderId, path, kind, oldPath ?? null, worktreeId ?? null),
+    ),
+);
+
+const RevertAll = MemoizeRpcs.toLayerHandler(
+  "git.revertAll",
+  ({ folderId, worktreeId }) =>
+    Effect.flatMap(GitService, (svc) =>
+      svc.revertAll(folderId, worktreeId ?? null),
+    ),
+);
+
+const DiffStat = MemoizeRpcs.toLayerHandler(
+  "git.diffStat",
+  ({ folderId, worktreeId }) =>
+    Effect.flatMap(GitService, (svc) =>
+      svc.diffStat(folderId, worktreeId ?? null),
     ),
 );
 
@@ -149,5 +173,8 @@ export const GitHandlersLayer = Layer.mergeAll(
   MergePr,
   MarkReady,
   Init,
+  RevertFile,
+  RevertAll,
+  DiffStat,
   FixFailingChecks,
 );
