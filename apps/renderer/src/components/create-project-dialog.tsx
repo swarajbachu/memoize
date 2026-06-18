@@ -1,4 +1,6 @@
-import { FileCode, FolderPlus, Layers } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import type { IconSvgElement } from "@hugeicons/react";
+import { FolderAddIcon, Layers01Icon, SourceCodeIcon } from "@hugeicons-pro/core-bulk-rounded";
 import { useEffect, useState } from "react";
 
 import type { ProjectTemplate } from "@memoize/wire";
@@ -29,7 +31,7 @@ interface TemplateCard {
   readonly id: ProjectTemplate;
   readonly name: string;
   readonly blurb: string;
-  readonly icon: React.ComponentType<{ className?: string }>;
+  readonly icon: IconSvgElement;
 }
 
 // Adding a 4th template is a one-line change here + a new branch in
@@ -39,19 +41,19 @@ const TEMPLATES: ReadonlyArray<TemplateCard> = [
     id: "empty",
     name: "Empty",
     blurb: "Blank Git repo",
-    icon: FileCode,
+    icon: SourceCodeIcon,
   },
   {
     id: "nextjs",
     name: "Next.js",
     blurb: "TypeScript, Tailwind, App Router",
-    icon: FolderPlus,
+    icon: FolderAddIcon,
   },
   {
     id: "turborepo",
     name: "Turborepo",
     blurb: "Monorepo with apps + packages",
-    icon: Layers,
+    icon: Layers01Icon,
   },
 ];
 
@@ -201,7 +203,6 @@ export function CreateProjectDialog({
           <Field label="Template">
             <div className="grid grid-cols-3 gap-3">
               {TEMPLATES.map((tpl) => {
-                const Icon = tpl.icon;
                 const active = tpl.id === template;
                 return (
                   <button
@@ -216,7 +217,7 @@ export function CreateProjectDialog({
                     )}
                   >
                     <span className="flex size-8 items-center justify-center rounded-lg bg-muted/60 text-foreground">
-                      <Icon className="size-4" />
+                      <HugeiconsIcon icon={tpl.icon} className="size-4" />
                     </span>
                     <span className="text-xs font-medium text-foreground">
                       {tpl.name}

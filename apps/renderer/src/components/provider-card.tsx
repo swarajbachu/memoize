@@ -1,13 +1,6 @@
+import { HugeiconsIcon } from "@hugeicons/react";
+import { AlertCircleIcon, ArrowDown01Icon, CircleArrowUp01Icon, Copy01Icon, LinkSquare01Icon, Loading02Icon, Tick01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import { Effect, Fiber, Stream } from "effect";
-import {
-  ArrowUpCircle,
-  Check,
-  ChevronDown,
-  CircleAlert,
-  Copy,
-  ExternalLink,
-  Loader2,
-} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -214,13 +207,10 @@ export function ProviderCard({
               : undefined
           }
         />
-        <ChevronDown
-          className={cn(
-            "size-4 shrink-0 text-muted-foreground transition-transform",
-            expanded && "rotate-180",
-          )}
-          aria-hidden
-        />
+        <HugeiconsIcon icon={ArrowDown01Icon} className={cn(
+                          "size-4 shrink-0 text-muted-foreground transition-transform",
+                          expanded && "rotate-180",
+                        )} aria-hidden />
       </button>
 
       {expanded && (
@@ -363,7 +353,7 @@ function SubscriptionRow({
           className="inline-flex items-center gap-1 rounded border border-violet-400/40 bg-violet-500/10 px-2 py-1 text-[11px] font-medium text-violet-100 transition-colors hover:bg-violet-500/20"
         >
           Subscribe
-          <ExternalLink className="size-3" aria-hidden />
+          <HugeiconsIcon icon={LinkSquare01Icon} className="size-3" aria-hidden />
         </button>
       </div>
     </div>
@@ -484,7 +474,7 @@ function CursorSignInRow() {
     return (
       <div className="flex flex-col gap-2 rounded-md border border-border/50 bg-muted/30 px-3 py-2.5 text-[11px]">
         <div className="flex items-center gap-2 text-muted-foreground">
-          <Loader2 className="size-3.5 animate-spin" aria-hidden />
+          <HugeiconsIcon icon={Loading02Icon} className="size-3.5 animate-spin" aria-hidden />
           <span>
             {state.url === null
               ? "Starting cursor-agent login…"
@@ -503,7 +493,7 @@ function CursorSignInRow() {
               }}
               className="h-6 px-2 text-[11px]"
             >
-              <ExternalLink className="mr-1 size-3" aria-hidden />
+              <HugeiconsIcon icon={LinkSquare01Icon} className="mr-1 size-3" aria-hidden />
               Open browser again
             </Button>
           )}
@@ -699,21 +689,21 @@ function UpdateAvailableButton({
   const { icon, tone } =
     state.kind === "running"
       ? {
-          icon: <Loader2 className="size-3.5 animate-spin" aria-hidden />,
+          icon: <HugeiconsIcon icon={Loading02Icon} className="size-3.5 animate-spin" aria-hidden />,
           tone: "text-muted-foreground",
         }
       : state.kind === "success"
         ? {
-            icon: <Check className="size-3.5" aria-hidden />,
+            icon: <HugeiconsIcon icon={Tick01Icon} className="size-3.5" aria-hidden />,
             tone: "text-emerald-400",
           }
         : state.kind === "failed"
           ? {
-              icon: <CircleAlert className="size-3.5" aria-hidden />,
+              icon: <HugeiconsIcon icon={AlertCircleIcon} className="size-3.5" aria-hidden />,
               tone: "text-rose-400",
             }
           : {
-              icon: <ArrowUpCircle className="size-3.5" aria-hidden />,
+              icon: <HugeiconsIcon icon={CircleArrowUp01Icon} className="size-3.5" aria-hidden />,
               tone: behind ? "text-warning" : "text-muted-foreground",
             };
 
@@ -783,7 +773,7 @@ function CodeRow({ label, command }: { label: string; command: string }) {
           onClick={onCopy}
           className="h-6 shrink-0 px-2 text-[10px]"
         >
-          <Copy className="mr-1 size-3" aria-hidden />
+          <HugeiconsIcon icon={Copy01Icon} className="mr-1 size-3" aria-hidden />
           {copied ? "Copied" : "Copy"}
         </Button>
       </div>

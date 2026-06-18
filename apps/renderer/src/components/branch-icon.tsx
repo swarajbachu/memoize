@@ -1,4 +1,4 @@
-import { GitBranchIcon } from "@hugeicons/core-free-icons";
+import { GitBranchIcon } from "@hugeicons-pro/core-bulk-rounded";
 import { HugeiconsIcon } from "@hugeicons/react";
 
 import { cn } from "~/lib/utils";

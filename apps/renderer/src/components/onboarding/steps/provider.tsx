@@ -1,4 +1,5 @@
-import { Check, ExternalLink, Eye, EyeOff } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { LinkSquare01Icon, Tick01Icon, ViewIcon, ViewOffIcon } from "@hugeicons-pro/core-bulk-rounded";
 import { useState } from "react";
 
 import type { AgentAvailability, ProviderId } from "@memoize/wire";
@@ -198,7 +199,7 @@ function ProviderCard({
       </span>
       {active ? (
         <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-foreground text-background">
-          <Check className="size-2.5" strokeWidth={3.5} />
+          <HugeiconsIcon icon={Tick01Icon} className="size-2.5" strokeWidth={3.5} />
         </span>
       ) : (
         <StateDot state={state} />
@@ -279,7 +280,7 @@ function ProviderStatus({
         : `${PROVIDER_LABEL[providerId]} API key saved — you're all set.`;
     return (
       <div className="flex items-center gap-2 rounded-full bg-emerald-400/[0.08] px-3 py-2 text-[12px] text-emerald-200/90">
-        <Check className="size-3.5" strokeWidth={3} />
+        <HugeiconsIcon icon={Tick01Icon} className="size-3.5" strokeWidth={3} />
         <span className="leading-none">{label}</span>
       </div>
     );
@@ -386,7 +387,7 @@ function SubscriptionNotice({
           onClick={() => openExternal(url)}
           className="gap-1.5 rounded-full bg-violet-500/15 px-2.5 text-[11px] text-violet-200 hover:bg-violet-500/25 hover:text-violet-100"
         >
-          <ExternalLink className="size-3" />
+          <HugeiconsIcon icon={LinkSquare01Icon} className="size-3" />
           Subscribe to {plan}
         </Button>
       </div>
@@ -515,9 +516,9 @@ function ApiKeyRow({ providerId }: { providerId: ProviderId }) {
             tabIndex={-1}
           >
             {reveal ? (
-              <EyeOff className="size-3.5" />
+              <HugeiconsIcon icon={ViewOffIcon} className="size-3.5" />
             ) : (
-              <Eye className="size-3.5" />
+              <HugeiconsIcon icon={ViewIcon} className="size-3.5" />
             )}
           </button>
         </div>

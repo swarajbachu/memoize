@@ -1,7 +1,8 @@
 "use client";
 
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Add01Icon, MinusSignIcon } from "@hugeicons-pro/core-bulk-rounded";
 import { NumberField as NumberFieldPrimitive } from "@base-ui/react/number-field";
-import { MinusIcon, PlusIcon } from "lucide-react";
 import * as React from "react";
 import { cn } from "~/lib/utils";
 import { Label } from "~/components/ui/label";
@@ -65,7 +66,7 @@ export function NumberFieldDecrement({
       data-slot="number-field-decrement"
       {...props}
     >
-      <MinusIcon />
+      <HugeiconsIcon icon={MinusSignIcon} />
     </NumberFieldPrimitive.Decrement>
   );
 }
@@ -83,7 +84,7 @@ export function NumberFieldIncrement({
       data-slot="number-field-increment"
       {...props}
     >
-      <PlusIcon />
+      <HugeiconsIcon icon={Add01Icon} />
     </NumberFieldPrimitive.Increment>
   );
 }
@@ -136,7 +137,7 @@ export function NumberFieldScrubArea({
 }
 
 export function CursorGrowIcon(
-  props: React.ComponentProps<"svg">,
+  props: Omit<React.ComponentProps<typeof HugeiconsIcon>, "icon">,
 ): React.ReactElement {
   return (
     <svg

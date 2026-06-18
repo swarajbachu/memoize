@@ -1,5 +1,5 @@
-import { AlertTriangle, Loader2 } from "lucide-react";
-
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Alert01Icon, Loading02Icon } from "@hugeicons-pro/core-bulk-rounded";
 import {
   Progress,
   ProgressIndicator,
@@ -38,9 +38,9 @@ export function IndexProgressBanner() {
     >
       <span className="flex size-5 shrink-0 items-center justify-center text-foreground">
         {isError ? (
-          <AlertTriangle className="size-3.5" />
+          <HugeiconsIcon icon={Alert01Icon} className="size-3.5" />
         ) : (
-          <Loader2 className="size-3.5 animate-spin" />
+          <HugeiconsIcon icon={Loading02Icon} className="size-3.5 animate-spin" />
         )}
       </span>
       <div className="flex min-w-0 flex-1 flex-col gap-1">

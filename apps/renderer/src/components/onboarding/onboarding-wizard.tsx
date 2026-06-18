@@ -1,4 +1,5 @@
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ArrowLeft01Icon, ArrowRight01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button } from "~/components/ui/button";
@@ -118,7 +119,7 @@ export function OnboardingWizard() {
                   isFirst && "invisible",
                 )}
               >
-                <ArrowLeft />
+                <HugeiconsIcon icon={ArrowLeft01Icon} />
                 Back
               </Button>
               <div className="flex items-center gap-1">
@@ -139,7 +140,7 @@ export function OnboardingWizard() {
                   className="rounded-full px-5"
                 >
                   {isFirst ? "Get started" : "Continue"}
-                  <ArrowRight />
+                  <HugeiconsIcon icon={ArrowRight01Icon} />
                 </Button>
               </div>
             </div>

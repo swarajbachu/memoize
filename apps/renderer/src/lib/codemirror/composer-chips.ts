@@ -11,7 +11,8 @@ import {
   EditorView,
   WidgetType,
 } from "@codemirror/view";
-import { Sparkles } from "lucide-react";
+import { SparklesIcon } from "@hugeicons-pro/core-bulk-rounded";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 
@@ -222,12 +223,12 @@ const buildIconNode = (meta: ChipMeta): Node => {
     }
   }
   if (meta.kind === "skill") {
-    // Lucide icons render as SVG via React; for our DOM widget we inline the
+    // Hugeicons icons render as SVG via React; for our DOM widget we inline the
     // sparkles icon via renderToStaticMarkup once and reuse the markup.
     const wrap = document.createElement("span");
     wrap.className = "fz-chip-iconsvg";
     wrap.innerHTML = renderToStaticMarkup(
-      createElement(Sparkles, { size: 12, strokeWidth: 2 }),
+      createElement(HugeiconsIcon, { icon: SparklesIcon, size: 12 }),
     );
     return wrap;
   }

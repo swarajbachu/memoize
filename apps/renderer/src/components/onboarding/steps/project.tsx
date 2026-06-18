@@ -1,4 +1,5 @@
-import { Check, FolderClosed, FolderPlus } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Folder01Icon, FolderAddIcon, Tick01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import { useState } from "react";
 
 import { Button } from "~/components/ui/button";
@@ -37,7 +38,7 @@ export function ProjectStep() {
           className="group flex flex-col items-center justify-center gap-4 rounded-2xl bg-white/[0.025] px-6 py-12 text-center transition-all hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-60"
         >
           <span className="flex size-12 items-center justify-center rounded-2xl bg-white/[0.06] text-foreground transition-transform group-hover:scale-105">
-            <FolderPlus className="size-5" strokeWidth={1.5} />
+            <HugeiconsIcon icon={FolderAddIcon} className="size-5" />
           </span>
           <span className="flex flex-col gap-1">
             <span className="text-[14px] font-medium text-foreground">
@@ -52,7 +53,7 @@ export function ProjectStep() {
         <div className="flex flex-col gap-3">
           <div className="flex items-center gap-3 rounded-2xl bg-emerald-400/[0.06] px-4 py-3.5">
             <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/[0.08] text-foreground">
-              <FolderClosed className="size-4" strokeWidth={1.75} />
+              <HugeiconsIcon icon={Folder01Icon} className="size-4" />
             </span>
             <div className="flex min-w-0 flex-1 flex-col">
               <span className="truncate text-[14px] font-medium text-foreground">
@@ -63,7 +64,7 @@ export function ProjectStep() {
               </span>
             </div>
             <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-400/20 text-emerald-300">
-              <Check className="size-3" strokeWidth={3} />
+              <HugeiconsIcon icon={Tick01Icon} className="size-3" />
             </span>
           </div>
           <div className="flex justify-end">

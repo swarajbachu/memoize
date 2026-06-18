@@ -1,8 +1,9 @@
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Add01Icon, Cancel01Icon, ComputerTerminal01Icon, Loading02Icon, PlayIcon, Refresh01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Effect, Fiber, Stream } from "effect";
-import { Loader2, Play, Plus, RefreshCw, SquareTerminal, X } from "lucide-react";
 
 import type { FolderId, PtyId, Worktree, WorktreeId } from "@memoize/wire";
 
@@ -134,7 +135,7 @@ function TerminalWorkspace({
                   className="absolute right-2 top-2 z-10 flex size-5 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-muted/60 hover:text-foreground focus-visible:opacity-100 group-hover/terminal:opacity-100"
                   aria-label="New terminal"
                 >
-                  <Plus className="size-3.5" />
+                  <HugeiconsIcon icon={Add01Icon} className="size-3.5" />
                 </button>
               }
             />
@@ -215,7 +216,7 @@ function WorktreeTerminalPane({
       <div className="flex h-10 shrink-0 items-center border-b border-border bg-background text-sm">
         <TabButton active={tab === "setup"} onClick={() => setTab("setup")}>
           {(setupPending || worktree?.setupStatus === "running") && (
-            <Loader2 className="size-3.5 animate-spin" />
+            <HugeiconsIcon icon={Loading02Icon} className="size-3.5 animate-spin" />
           )}
           Setup
         </TabButton>
@@ -232,7 +233,7 @@ function WorktreeTerminalPane({
           aria-label="New terminal"
           title="New terminal"
         >
-          <Plus className="size-4" />
+          <HugeiconsIcon icon={Add01Icon} className="size-4" />
         </button>
       </div>
       <div className="min-h-0 flex-1">
@@ -302,7 +303,7 @@ function SetupOutput({
     <div className="relative h-full bg-background">
       {running && (
         <div className="absolute left-4 top-3 z-10 flex items-center gap-2 rounded border border-border bg-background/90 px-2.5 py-1.5 text-xs text-muted-foreground shadow-sm">
-          <Loader2 className="size-3.5 animate-spin" />
+          <HugeiconsIcon icon={Loading02Icon} className="size-3.5 animate-spin" />
           Running setup
         </div>
       )}
@@ -317,9 +318,9 @@ function SetupOutput({
         className="absolute bottom-3 right-3 gap-2"
       >
         {running ? (
-          <Loader2 className="size-3.5 animate-spin" />
+          <HugeiconsIcon icon={Loading02Icon} className="size-3.5 animate-spin" />
         ) : (
-          <RefreshCw className="size-3.5" />
+          <HugeiconsIcon icon={Refresh01Icon} className="size-3.5" />
         )}
         {running ? "Running..." : "Rerun setup"}
       </Button>
@@ -350,7 +351,7 @@ function RunPane({
         onClick={onRun}
         className="absolute right-3 top-3 z-10 gap-2"
       >
-        <Play className="size-3.5" />
+        <HugeiconsIcon icon={PlayIcon} className="size-3.5" />
         Run
       </Button>
     </div>
@@ -385,7 +386,7 @@ function TerminalList({
                 className="flex size-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
                 aria-label="New terminal"
               >
-                <Plus className="size-3.5" />
+                <HugeiconsIcon icon={Add01Icon} className="size-3.5" />
               </button>
             }
           />
@@ -404,7 +405,7 @@ function TerminalList({
                   : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
               }`}
             >
-              <SquareTerminal className="size-3.5 shrink-0 opacity-70" />
+              <HugeiconsIcon icon={ComputerTerminal01Icon} className="size-3.5 shrink-0 opacity-70" />
               <span className="flex-1 truncate">{inst.title}</span>
               <span
                 role="button"
@@ -423,7 +424,7 @@ function TerminalList({
                 }}
                 className="flex size-4 shrink-0 items-center justify-center rounded text-muted-foreground/60 opacity-0 transition-opacity hover:bg-background hover:text-foreground group-hover:opacity-100"
               >
-                <X className="size-3" />
+                <HugeiconsIcon icon={Cancel01Icon} className="size-3" />
               </span>
             </button>
           </li>

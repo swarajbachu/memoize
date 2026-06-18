@@ -1,6 +1,9 @@
-import { CheckListIcon, Tick02Icon } from "@hugeicons/core-free-icons";
+import {
+  ArrowDown01Icon,
+  CheckListIcon,
+  Tick02Icon,
+} from "@hugeicons-pro/core-bulk-rounded";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ChevronDown } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import type { Message, SessionId } from "@memoize/wire";
@@ -138,13 +141,10 @@ export function ProjectPlanTray({ sessionId }: { sessionId: SessionId }) {
         {running && !allDone ? (
           <Spinner className="size-3.5 shrink-0 text-muted-foreground" />
         ) : null}
-        <ChevronDown
-          className={cn(
-            "size-4 shrink-0 text-muted-foreground transition-transform",
-            expanded ? "rotate-180" : "",
-          )}
-          aria-hidden="true"
-        />
+        <HugeiconsIcon icon={ArrowDown01Icon} className={cn(
+                          "size-4 shrink-0 text-muted-foreground transition-transform",
+                          expanded ? "rotate-180" : "",
+                        )} aria-hidden="true" />
       </button>
       {expanded ? (
         <ul className="max-h-64 space-y-0.5 overflow-y-auto px-3 py-2">

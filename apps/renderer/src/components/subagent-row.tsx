@@ -1,6 +1,5 @@
-import { ClipboardIcon, Robot01Icon } from "@hugeicons/core-free-icons";
+import { ArrowDown01Icon, ArrowRight01Icon, ClipboardIcon, Robot01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ChevronDown, ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import type { AgentItemId, Message, UserQuestionAnswer } from "@memoize/wire";
@@ -169,7 +168,7 @@ export function SubagentRow({
 
 function PromptRow({ text }: { text: string }) {
   const [expanded, setExpanded] = useState(false);
-  const Chevron = expanded ? ChevronDown : ChevronRight;
+  const chevron = expanded ? ArrowDown01Icon : ArrowRight01Icon;
   return (
     <div className="px-4 pt-1">
       <button
@@ -190,7 +189,8 @@ function PromptRow({ text }: { text: string }) {
               "group-hover:opacity-0 motion-reduce:transition-none",
             )}
           />
-          <Chevron
+          <HugeiconsIcon
+            icon={chevron}
             aria-hidden="true"
             className={cn(
               "col-start-1 row-start-1 size-3.5 text-muted-foreground opacity-0 transition-opacity duration-150 ease-out",

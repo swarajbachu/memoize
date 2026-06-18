@@ -1,19 +1,6 @@
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ArrowDown01Icon, AttachmentIcon, DashboardSpeedIcon, FlashIcon, Folder01Icon, GitBranchIcon, InformationCircleIcon, LockIcon, MapsIcon, SentIcon, SquareIcon, Tick01Icon, Upload01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import type { EditorView } from "@codemirror/view";
-import {
-  Bolt,
-  Check,
-  ChevronDown,
-  FolderClosed,
-  GitBranch,
-  Gauge,
-  Info,
-  Lock,
-  Map,
-  Paperclip,
-  Send,
-  Square,
-  Upload,
-} from "lucide-react";
 import {
   useEffect,
   useMemo,
@@ -665,7 +652,7 @@ export function ChatComposer({ session }: { session: Session }) {
               {isDragging && (
                 <div className="pointer-events-none absolute inset-1 z-40 flex items-center justify-center rounded-lg border border-dashed border-accent-foreground/40 bg-popover/80 backdrop-blur-sm">
                   <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                    <Upload className="size-3.5" />
+                    <HugeiconsIcon icon={Upload01Icon} className="size-3.5" />
                     <span>Drop files to attach</span>
                   </div>
                 </div>
@@ -731,7 +718,7 @@ export function ChatComposer({ session }: { session: Session }) {
                         aria-label="Attach files"
                         className="flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/60 hover:text-foreground"
                       >
-                        <Paperclip className="size-3.5" />
+                        <HugeiconsIcon icon={AttachmentIcon} className="size-3.5" />
                       </button>
                     }
                   />
@@ -783,7 +770,7 @@ export function ChatComposer({ session }: { session: Session }) {
                           onClick={() => void interrupt(sessionId)}
                           aria-label="Interrupt"
                         >
-                          <Square className="size-3.5" />
+                          <HugeiconsIcon icon={SquareIcon} className="size-3.5" />
                         </Button>
                       }
                     />
@@ -800,7 +787,7 @@ export function ChatComposer({ session }: { session: Session }) {
                           disabled={!canSend}
                           aria-label="Send"
                         >
-                          <Send className="size-3.5" />
+                          <HugeiconsIcon icon={SentIcon} className="size-3.5" />
                         </Button>
                       }
                     />
@@ -835,7 +822,7 @@ function RuntimeModeToggle({
 }) {
   const setRuntimeMode = useSessionsStore((s) => s.setRuntimeMode);
   const meta = MODE_META[current];
-  const TriggerIcon = meta.Icon;
+  const triggerIcon = meta.Icon;
 
   const onSelect = (mode: RuntimeMode) => {
     if (mode !== current) void setRuntimeMode(sessionId, mode);
@@ -847,14 +834,14 @@ function RuntimeModeToggle({
         className="flex items-center gap-1.5 rounded-md border border-border/60 bg-background px-2 py-1 text-[11px] text-foreground shadow-xs/5 transition-colors hover:bg-muted/60 data-[popup-open]:bg-muted/60"
         aria-label={`Permissions: ${meta.label}`}
       >
-        <TriggerIcon className="size-3.5" />
+        <HugeiconsIcon icon={triggerIcon} className="size-3.5" />
         <span>{meta.label}</span>
-        <ChevronDown className="size-3 opacity-60" />
+        <HugeiconsIcon icon={ArrowDown01Icon} className="size-3 opacity-60" />
       </MenuTrigger>
       <MenuPopup side="top" align="end" className="w-72 p-1">
         {MODES_ORDER.map((mode) => {
           const m = MODE_META[mode];
-          const ItemIcon = m.Icon;
+          const itemIcon = m.Icon;
           const active = mode === current;
           return (
             <MenuItem
@@ -868,9 +855,9 @@ function RuntimeModeToggle({
               )}
             >
               <span className="col-start-1 row-start-1 flex h-5 items-center justify-center">
-                {active && <Check className="size-3.5 opacity-90" />}
+                {active && <HugeiconsIcon icon={Tick01Icon} className="size-3.5 opacity-90" />}
               </span>
-              <ItemIcon className="col-start-2 row-start-1 mt-0.5 size-4 shrink-0" />
+              <HugeiconsIcon icon={itemIcon} className="col-start-2 row-start-1 mt-0.5 size-4 shrink-0" />
               <div className="col-start-3 row-start-1 flex flex-col gap-0.5">
                 <span className="font-medium leading-none">{m.label}</span>
                 <span className="text-xs text-muted-foreground leading-snug">
@@ -933,7 +920,7 @@ function FastModeToggle({ sessionId }: { sessionId: SessionId }) {
                 : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
             )}
           >
-            <Bolt className="size-3.5" />
+            <HugeiconsIcon icon={FlashIcon} className="size-3.5" />
             {enabled ? <span>Fast</span> : null}
           </button>
         }
@@ -985,7 +972,7 @@ function PlanModeToggle({
                 : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
             )}
           >
-            <Map className="size-3.5" />
+            <HugeiconsIcon icon={MapsIcon} className="size-3.5" />
             {isPlan ? <span>Plan</span> : null}
           </button>
         }
@@ -1125,10 +1112,10 @@ function ReasoningPicker({
             : `${resolved.label} for the next message`
         }
       >
-        <Gauge className="size-3" />
+        <HugeiconsIcon icon={DashboardSpeedIcon} className="size-3" />
         <span>{activeLabel}</span>
-        {isUltracode && <Info className="size-3 opacity-90" aria-hidden />}
-        <ChevronDown className="size-3 opacity-60" />
+        {isUltracode && <HugeiconsIcon icon={InformationCircleIcon} className="size-3 opacity-90" aria-hidden />}
+        <HugeiconsIcon icon={ArrowDown01Icon} className="size-3 opacity-60" />
       </MenuTrigger>
       <MenuPopup side="top" align="start" className="w-44">
         <MenuGroup>
@@ -1267,8 +1254,8 @@ function WorkspacePicker({ session }: { session: Session }) {
     session.worktreeId === null
       ? "Current checkout"
       : current?.name ?? "Worktree";
-  const TriggerIcon =
-    session.worktreeId === null ? FolderClosed : GitBranch;
+  const triggerIcon =
+    session.worktreeId === null ? Folder01Icon : GitBranchIcon;
 
   if (locked) {
     return (
@@ -1276,9 +1263,9 @@ function WorkspacePicker({ session }: { session: Session }) {
         className="flex items-center gap-1.5 rounded-md px-2 py-1"
         title="Workspace locked — first message already sent"
       >
-        <TriggerIcon className="size-3.5" />
+        <HugeiconsIcon icon={triggerIcon} className="size-3.5" />
         <span>{triggerLabel}</span>
-        <Lock className="size-3 opacity-60" />
+        <HugeiconsIcon icon={LockIcon} className="size-3 opacity-60" />
       </span>
     );
   }
@@ -1300,9 +1287,9 @@ function WorkspacePicker({ session }: { session: Session }) {
         aria-label="Change workspace"
         title="Change workspace — locks once the first message is sent"
       >
-        <TriggerIcon className="size-3.5" />
+        <HugeiconsIcon icon={triggerIcon} className="size-3.5" />
         <span>{triggerLabel}</span>
-        <ChevronDown className="size-3 opacity-60" />
+        <HugeiconsIcon icon={ArrowDown01Icon} className="size-3 opacity-60" />
       </MenuTrigger>
       <MenuPopup side="top" align="start" className="w-64 p-1">
         <MenuItem
@@ -1316,10 +1303,10 @@ function WorkspacePicker({ session }: { session: Session }) {
         >
           <span className="col-start-1 row-start-1 flex h-5 items-center justify-center">
             {session.worktreeId === null && (
-              <Check className="size-3.5 opacity-90" />
+              <HugeiconsIcon icon={Tick01Icon} className="size-3.5 opacity-90" />
             )}
           </span>
-          <FolderClosed className="col-start-2 row-start-1 mt-0.5 size-4 shrink-0" />
+          <HugeiconsIcon icon={Folder01Icon} className="col-start-2 row-start-1 mt-0.5 size-4 shrink-0" />
           <div className="col-start-3 row-start-1 flex flex-col gap-0.5">
             <span className="font-medium leading-none">Current checkout</span>
             <span className="text-xs text-muted-foreground leading-snug">
@@ -1333,10 +1320,10 @@ function WorkspacePicker({ session }: { session: Session }) {
         >
           <span className="col-start-1 row-start-1 flex h-5 items-center justify-center">
             {session.worktreeId !== null && (
-              <Check className="size-3.5 opacity-90" />
+              <HugeiconsIcon icon={Tick01Icon} className="size-3.5 opacity-90" />
             )}
           </span>
-          <GitBranch className="col-start-2 row-start-1 mt-0.5 size-4 shrink-0" />
+          <HugeiconsIcon icon={GitBranchIcon} className="col-start-2 row-start-1 mt-0.5 size-4 shrink-0" />
           <div className="col-start-3 row-start-1 flex flex-col gap-0.5">
             <span className="font-medium leading-none">New worktree</span>
             <span className="text-xs text-muted-foreground leading-snug">
@@ -1366,7 +1353,7 @@ function WorkspaceBranchLabel({ session }: { session: Session }) {
       className="flex items-center gap-1 truncate font-mono text-foreground/80"
       title={`Branch ${wt.branch}`}
     >
-      <GitBranch className="size-3 shrink-0 opacity-70" />
+      <HugeiconsIcon icon={GitBranchIcon} className="size-3 shrink-0 opacity-70" />
       <span className="truncate font-medium">{wt.branch}</span>
     </span>
   );
