@@ -20,6 +20,7 @@ import {
   type AgentDefinition,
   type AgentEvent,
   type AttachmentRef,
+  type CodeAnnotation,
   type FileRef,
   type FolderId,
   type MessageContent,
@@ -410,6 +411,25 @@ const titleFromInitial = (prompt: string | undefined): string => {
   const firstLine = prompt.trim().split("\n")[0] ?? "";
   const truncated = firstLine.slice(0, 60).trim();
   return truncated.length > 0 ? truncated : "New chat";
+};
+
+/**
+ * Render stacked code annotations into the numbered list the model receives.
+ * Each entry is `path:lineRange — comment`; the agent's cwd is the workspace
+ * root, so the relative path resolves when it reads the file. Pure string fn —
+ * no I/O.
+ */
+const serializeAnnotations = (
+  annotations: ReadonlyArray<CodeAnnotation>,
+): string => {
+  const lines = annotations.map((a, i) => {
+    const range =
+      a.startLine === a.endLine
+        ? `${a.startLine}`
+        : `${a.startLine}-${a.endLine}`;
+    return `${i + 1}. ${a.relPath}:${range} — ${a.comment}`;
+  });
+  return ["Code annotations:", ...lines].join("\n");
 };
 
 const formatProviderFailure = (cause: unknown): string => {
@@ -2299,6 +2319,7 @@ export const MessageStoreLive = Layer.scoped(
       attachments?: ReadonlyArray<AttachmentRef>,
       fileRefs?: ReadonlyArray<FileRef>,
       skillRefs?: ReadonlyArray<SkillRef>,
+      annotations?: ReadonlyArray<CodeAnnotation>,
     ): Effect.Effect<boolean, SessionNotFoundError> =>
       Effect.gen(function* () {
         const session = yield* lookupSession(sessionId);
@@ -2309,10 +2330,12 @@ export const MessageStoreLive = Layer.scoped(
         const cleanAttachments = (attachments ?? []).filter(
           (a) => !a.id.startsWith("pending-"),
         );
+        const annotationList = annotations ?? [];
         const hasRichSegments =
           cleanAttachments.length > 0 ||
           (fileRefs ?? []).length > 0 ||
-          (skillRefs ?? []).length > 0;
+          (skillRefs ?? []).length > 0 ||
+          annotationList.length > 0;
         const content: MessageContent = hasRichSegments
           ? {
               _tag: "user_rich",
@@ -2320,8 +2343,19 @@ export const MessageStoreLive = Layer.scoped(
               attachments: cleanAttachments,
               fileRefs: fileRefs ?? [],
               skillRefs: skillRefs ?? [],
+              annotations: annotationList,
             }
           : { _tag: "user", text };
+        // Annotations have no native CLI token (unlike `@file` / `/skill`),
+        // so the only place the model ever sees them is the prompt text.
+        // Serialise them into a numbered list here — the single injection
+        // point before `provider.send`, so every driver benefits. The
+        // persisted `text` above stays clean; the structured `annotations`
+        // array drives the rendered bubble.
+        const sendText =
+          annotationList.length > 0
+            ? `${serializeAnnotations(annotationList)}\n\n${text}`.trim()
+            : text;
         const persisted = yield* persistMessage(sessionId, content);
         // Pin the attachments so the GC sweep treats them as referenced —
         // a separate row per (message, attachment) keeps the existing
@@ -2369,7 +2403,7 @@ export const MessageStoreLive = Layer.scoped(
           })`,
         );
         const sendResult = yield* provider
-          .send(sessionId, text, cleanAttachments, fileRefs, skillRefs)
+          .send(sessionId, sendText, cleanAttachments, fileRefs, skillRefs)
           .pipe(
             Effect.matchEffect({
               onFailure: (err) =>
@@ -2398,7 +2432,7 @@ export const MessageStoreLive = Layer.scoped(
           );
           const restartResult = yield* restartProviderSession(
             session,
-            text,
+            sendText,
             cleanAttachments,
           ).pipe(
             Effect.matchEffect({
@@ -2435,6 +2469,7 @@ export const MessageStoreLive = Layer.scoped(
       attachments,
       fileRefs,
       skillRefs,
+      annotations,
     ) =>
       Effect.gen(function* () {
         yield* submitUserMessage(
@@ -2443,6 +2478,7 @@ export const MessageStoreLive = Layer.scoped(
           attachments,
           fileRefs,
           skillRefs,
+          annotations,
         );
       });
 
@@ -2631,6 +2667,7 @@ export const MessageStoreLive = Layer.scoped(
           item.input.attachments,
           item.input.fileRefs,
           item.input.skillRefs,
+          item.input.annotations,
         );
         if (!ok) {
           yield* restoreQueuedMessage(item);

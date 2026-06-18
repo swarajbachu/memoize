@@ -64,6 +64,7 @@ const HANDLERS: Record<Command, () => void> = {
   "composer.forceSubmit": () => {},
   "composer.togglePlanMode": () => {},
   "editor.save": () => {},
+  "editor.annotate": () => {},
 };
 
 /**

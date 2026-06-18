@@ -358,6 +358,7 @@ const MessagesSend = MemoizeRpcs.toLayerHandler(
         input?.attachments,
         input?.fileRefs,
         input?.skillRefs,
+        input?.annotations,
       ),
     );
   },

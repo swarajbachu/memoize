@@ -8,7 +8,13 @@ import {
   RuntimeMode,
   UserQuestion,
 } from "./agent.ts";
-import { AttachmentRef, ComposerInput, FileRef, SkillRef } from "./composer.ts";
+import {
+  AttachmentRef,
+  CodeAnnotation,
+  ComposerInput,
+  FileRef,
+  SkillRef,
+} from "./composer.ts";
 import {
   AgentItemId,
   AgentSessionId,
@@ -163,6 +169,11 @@ const UserRichContent = Schema.TaggedStruct("user_rich", {
   attachments: Schema.Array(AttachmentRef),
   fileRefs: Schema.Array(FileRef),
   skillRefs: Schema.Array(SkillRef),
+  // Additive + back-compat: rows persisted before code annotations existed
+  // decode with an empty list rather than failing.
+  annotations: Schema.optionalWith(Schema.Array(CodeAnnotation), {
+    default: () => [],
+  }),
 });
 
 const AssistantContent = Schema.TaggedStruct("assistant", {

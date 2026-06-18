@@ -12,6 +12,7 @@ import { useState } from "react";
 import type {
   AgentItemId,
   AttachmentRef,
+  CodeAnnotation,
   FileRef,
   Message,
   ProviderId,
@@ -27,6 +28,7 @@ import { useUiStore } from "~/store/ui";
 
 import { CopyButton } from "./copy-button.tsx";
 import { FileChip } from "./file-chip.tsx";
+import { FileIcon } from "./file-icon.tsx";
 import { MarkdownBody } from "./markdown-body.tsx";
 import {
   ExitPlanModeRow,
@@ -79,6 +81,7 @@ export function MessageRow({
           attachments={message.content.attachments}
           fileRefs={message.content.fileRefs}
           skillRefs={message.content.skillRefs}
+          annotations={message.content.annotations}
         />
       );
     case "assistant":
@@ -182,17 +185,49 @@ const formatMessageTime = (date: Date): string =>
     minute: "2-digit",
   });
 
+const annotationBasename = (p: string): string => {
+  const i = p.lastIndexOf("/");
+  return i === -1 ? p : p.slice(i + 1);
+};
+
+const annotationRangeLabel = (a: CodeAnnotation): string =>
+  a.startLine === a.endLine ? `${a.startLine}` : `${a.startLine}-${a.endLine}`;
+
+function AnnotationFileBadge({ annotation }: { annotation: CodeAnnotation }) {
+  const name = annotationBasename(annotation.relPath);
+  const range = annotationRangeLabel(annotation);
+  return (
+    <span
+      className="inline-flex max-w-full shrink-0 items-center gap-1.5 rounded-md border border-border/60 bg-background/20 px-1.5 py-0.5 text-[11px] text-user-bubble-foreground/85"
+      title={`${annotation.relPath}:${range}`}
+    >
+      <FileIcon
+        name={name}
+        kind="file"
+        className="inline-flex size-3.5 shrink-0 items-center justify-center"
+      />
+      <span className="min-w-0 truncate font-mono">{name}</span>
+      <span className="shrink-0 font-mono tabular-nums text-user-bubble-foreground/60">
+        :{range}
+      </span>
+    </span>
+  );
+}
+
 function UserBubble({
   text,
   attachments,
   fileRefs,
   skillRefs,
+  annotations,
 }: {
   text: string;
   attachments?: ReadonlyArray<AttachmentRef>;
   fileRefs?: ReadonlyArray<FileRef>;
   skillRefs?: ReadonlyArray<SkillRef>;
+  annotations?: ReadonlyArray<CodeAnnotation>;
 }) {
+  const hasAnnotations = annotations !== undefined && annotations.length > 0;
   const hasChips =
     (attachments !== undefined && attachments.length > 0) ||
     (fileRefs !== undefined && fileRefs.length > 0) ||
@@ -210,6 +245,21 @@ function UserBubble({
           label="Copy message"
           className="absolute right-2 top-1.5 size-5 text-user-bubble-foreground/50 opacity-60 hover:bg-background/10 hover:text-user-bubble-foreground hover:opacity-100 focus-visible:opacity-100"
         />
+        {hasAnnotations ? (
+          <ol className="mb-1.5 space-y-1">
+            {(annotations ?? []).map((a, i) => (
+              <li key={a.id} className="flex items-start gap-1.5 text-xs">
+                <span className="mt-px flex size-4 shrink-0 items-center justify-center rounded-full bg-background/20 text-[10px] font-medium tabular-nums">
+                  {i + 1}
+                </span>
+                <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+                  <AnnotationFileBadge annotation={a} />
+                  <span className="min-w-0 break-words">{a.comment}</span>
+                </span>
+              </li>
+            ))}
+          </ol>
+        ) : null}
         {hasChips ? (
           <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
             {(attachments ?? []).map((a) => {
@@ -594,7 +644,11 @@ export function ErrorBubble({
                   onClick={onRetry}
                   className="gap-1"
                 >
-                  <HugeiconsIcon icon={RotateRight01Icon} className="size-3" aria-hidden />
+                  <HugeiconsIcon
+                    icon={RotateRight01Icon}
+                    className="size-3"
+                    aria-hidden
+                  />
                   Retry
                 </Button>
                 {error.kind === "auth" && (
@@ -605,7 +659,11 @@ export function ErrorBubble({
                     onClick={onOpenSettings}
                     className="gap-1"
                   >
-                    <HugeiconsIcon icon={Settings01Icon} className="size-3" aria-hidden />
+                    <HugeiconsIcon
+                      icon={Settings01Icon}
+                      className="size-3"
+                      aria-hidden
+                    />
                     Open Provider Settings
                   </Button>
                 )}
