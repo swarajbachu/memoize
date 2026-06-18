@@ -1,5 +1,5 @@
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Add01Icon, Cancel01Icon, ComputerTerminal01Icon, Loading02Icon, PlayIcon, Refresh01Icon } from "@hugeicons-pro/core-bulk-rounded";
+import { Add01Icon, Cancel01Icon, ComputerTerminal01Icon, PlayIcon, Refresh01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -18,6 +18,7 @@ import {
 } from "../store/terminals.ts";
 import { EMPTY_WORKTREES, useWorktreesStore } from "../store/worktrees.ts";
 import { Button } from "./ui/button.tsx";
+import { Beacon } from "./ui/loaders";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip.tsx";
 
 /**
@@ -216,7 +217,7 @@ function WorktreeTerminalPane({
       <div className="flex h-10 shrink-0 items-center border-b border-border bg-background text-sm">
         <TabButton active={tab === "setup"} onClick={() => setTab("setup")}>
           {(setupPending || worktree?.setupStatus === "running") && (
-            <HugeiconsIcon icon={Loading02Icon} className="size-3.5 animate-spin" />
+            <Beacon dotSize={2} cellPadding={1} color="currentColor" />
           )}
           Setup
         </TabButton>
@@ -303,7 +304,7 @@ function SetupOutput({
     <div className="relative h-full bg-background">
       {running && (
         <div className="absolute left-4 top-3 z-10 flex items-center gap-2 rounded border border-border bg-background/90 px-2.5 py-1.5 text-xs text-muted-foreground shadow-sm">
-          <HugeiconsIcon icon={Loading02Icon} className="size-3.5 animate-spin" />
+          <Beacon dotSize={2} cellPadding={1} color="currentColor" />
           Running setup
         </div>
       )}
@@ -318,7 +319,7 @@ function SetupOutput({
         className="absolute bottom-3 right-3 gap-2"
       >
         {running ? (
-          <HugeiconsIcon icon={Loading02Icon} className="size-3.5 animate-spin" />
+          <Beacon dotSize={2} cellPadding={1} color="currentColor" />
         ) : (
           <HugeiconsIcon icon={Refresh01Icon} className="size-3.5" />
         )}

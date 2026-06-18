@@ -2,9 +2,9 @@
   --grid-size: 5;
   --dot-size: 4px;
   --dot-gap: 3px;
-  --dim: 0.16;
+  --dim: 0;
   --bright: 1;
-  --cycle: 1.6s;
+  --cycle: 2s;
   --step: 60ms;
 
   display: grid;
@@ -21,6 +21,33 @@
   opacity: var(--dim);
   transform: translateZ(0) scale(1);
   will-change: transform, opacity;
+  animation: loader-pulse calc(var(--cycle, 2s) / var(--speed, 1)) linear infinite;
+  animation-delay: calc(var(--phase, 0) * var(--cycle, 2s) / var(--speed, 1) * -1);
+}
+
+/* Shared traveling-comet pulse. A dot rests fully dark (opacity 0) and blooms
+   to bright only inside a short window, with a subtle scale and eased rise/decay.
+   Staggered per-dot --phase makes the lit window sweep the grid; opacity is 0 at
+   both 0% and 100%, so the loop has no snap. */
+@keyframes loader-pulse {
+  0% {
+    opacity: 0;
+    transform: translateZ(0) scale(0.7);
+    animation-timing-function: cubic-bezier(0.33, 0.9, 0.45, 1); /* fast, eased rise */
+  }
+  14% {
+    opacity: 1;
+    transform: translateZ(0) scale(1);
+    animation-timing-function: cubic-bezier(0.4, 0, 0.7, 0.4); /* soft decay → tail */
+  }
+  36% {
+    opacity: 0;
+    transform: translateZ(0) scale(0.7);
+  }
+  100% {
+    opacity: 0;
+    transform: translateZ(0) scale(0.7);
+  }
 }
 
 [data-paused='true'] .loader .dot {

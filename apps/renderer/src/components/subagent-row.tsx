@@ -8,7 +8,7 @@ import { cn } from "~/lib/utils";
 
 import { CopyButton } from "./copy-button.tsx";
 import { MessageRow, type ToolResultRecord } from "./message-row.tsx";
-import { ThreeDots } from "./ui/loaders";
+import { Beacon } from "./ui/loaders";
 
 const MODEL_LABEL: Record<string, string> = {
   "claude-opus-4-7": "Opus 4.7",
@@ -114,7 +114,7 @@ export function SubagentRow({
       >
         <div className="relative grid size-4 shrink-0 place-items-center">
           {showActivityLoader ? (
-            <ThreeDots
+            <Beacon
               dotSize={2}
               cellPadding={0.5}
               speed={1.3}
