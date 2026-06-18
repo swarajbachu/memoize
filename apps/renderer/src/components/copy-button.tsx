@@ -1,4 +1,5 @@
-import { Check, Copy } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Copy01Icon, Tick02Icon } from "@hugeicons-pro/core-bulk-rounded";
 import { useEffect, useState } from "react";
 
 import { cn } from "~/lib/utils";
@@ -24,7 +25,7 @@ export function CopyButton({
     void navigator.clipboard?.writeText(text).then(() => setCopied(true));
   };
 
-  const Icon = copied ? Check : Copy;
+  const icon = copied ? Tick02Icon : Copy01Icon;
   const title = copied ? "Copied" : label;
 
   return (
@@ -39,7 +40,7 @@ export function CopyButton({
         className,
       )}
     >
-      <Icon className="size-3.5" aria-hidden="true" />
+      <HugeiconsIcon icon={icon} className="size-3.5" aria-hidden="true" />
     </button>
   );
 }

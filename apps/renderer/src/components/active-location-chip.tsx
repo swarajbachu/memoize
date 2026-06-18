@@ -1,4 +1,5 @@
-import { FolderClosed, GitBranch } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Folder01Icon, GitBranchIcon } from "@hugeicons-pro/core-bulk-rounded";
 
 import { useActiveContext } from "../store/active-workspace.ts";
 import { gitStatusKey, useGitStatusStore } from "../store/git-status.ts";
@@ -25,11 +26,11 @@ export function ActiveLocationChip() {
 
   const tail = tailPathSegments(ctx.rootPath, 2);
   const onWorktree = ctx.rootKind === "worktree";
-  const Icon = onWorktree ? GitBranch : FolderClosed;
+  const icon = onWorktree ? GitBranchIcon : Folder01Icon;
 
   return (
     <div className="flex items-center gap-1.5 px-1 pb-1 text-[11px] text-muted-foreground">
-      <Icon className="size-3 shrink-0 opacity-70" />
+      <HugeiconsIcon icon={icon} className="size-3 shrink-0 opacity-70" />
       <span className="truncate font-mono opacity-80" title={ctx.rootPath}>
         {tail}
       </span>

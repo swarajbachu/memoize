@@ -1,4 +1,5 @@
-import { GitBranch, Trash2 } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Delete02Icon, GitBranchIcon } from "@hugeicons-pro/core-bulk-rounded";
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -319,7 +320,7 @@ function RuntimeModeOverrideSection({
                 onClick={() => onChange(mode)}
                 className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40"
               >
-                <m.Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                <HugeiconsIcon icon={m.Icon} className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <span className="text-sm font-medium text-foreground">
                     {m.label}
@@ -439,7 +440,7 @@ function WorktreeSection({
                   key={wt.id}
                   className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/20"
                 >
-                  <GitBranch className="size-4 shrink-0 text-muted-foreground" />
+                  <HugeiconsIcon icon={GitBranchIcon} className="size-4 shrink-0 text-muted-foreground" />
                   <div
                     className="flex min-w-0 flex-col gap-0.5"
                     title={wt.path}
@@ -479,7 +480,7 @@ function WorktreeSection({
                       onClick={() => void onRemove(wt.id, wt.name, false)}
                       title="Remove this worktree from disk (branch stays)"
                     >
-                      <Trash2 className="size-3" />
+                      <HugeiconsIcon icon={Delete02Icon} className="size-3" />
                       Remove
                     </Button>
                   )}

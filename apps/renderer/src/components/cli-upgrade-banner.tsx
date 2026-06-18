@@ -1,4 +1,5 @@
-import { ArrowUpCircle, Check, Copy, ExternalLink, RotateCw } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { CircleArrowUp01Icon, Copy01Icon, LinkSquare01Icon, RotateRight01Icon, Tick01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import { useState } from "react";
 
 import type { ProviderId } from "@memoize/wire";
@@ -67,7 +68,7 @@ export function CliUpgradeBanner({ providerId }: { providerId: ProviderId }) {
     <div className="mx-3 mb-2 mt-1 flex flex-col gap-2 rounded-2xl bg-alert-warning-bg p-3">
       <div className="flex items-start gap-2.5">
         <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg text-warning">
-          <ArrowUpCircle className="size-3.5" />
+          <HugeiconsIcon icon={CircleArrowUp01Icon} className="size-3.5" />
         </span>
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="text-[12.5px] font-medium text-foreground">
@@ -101,11 +102,11 @@ export function CliUpgradeBanner({ providerId }: { providerId: ProviderId }) {
           >
             {copied ? (
               <>
-                <Check className="size-3" /> Copied
+                <HugeiconsIcon icon={Tick01Icon} className="size-3" /> Copied
               </>
             ) : (
               <>
-                <Copy className="size-3" /> Copy
+                <HugeiconsIcon icon={Copy01Icon} className="size-3" /> Copy
               </>
             )}
           </Button>
@@ -119,7 +120,7 @@ export function CliUpgradeBanner({ providerId }: { providerId: ProviderId }) {
           onClick={onOpenDocs}
           className="gap-1.5 rounded-full text-[11px] text-muted-foreground"
         >
-          <ExternalLink className="size-3" />
+          <HugeiconsIcon icon={LinkSquare01Icon} className="size-3" />
           Upgrade guide
         </Button>
         <Button
@@ -129,9 +130,7 @@ export function CliUpgradeBanner({ providerId }: { providerId: ProviderId }) {
           disabled={refreshing}
           className="gap-1.5 rounded-full text-[11px] text-muted-foreground"
         >
-          <RotateCw
-            className={`size-3 ${refreshing ? "animate-spin" : ""}`}
-          />
+          <HugeiconsIcon icon={RotateRight01Icon} className={`size-3 ${refreshing ? "animate-spin" : ""}`} />
           Recheck
         </Button>
       </div>

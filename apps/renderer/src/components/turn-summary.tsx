@@ -1,6 +1,5 @@
-import { BubbleChatIcon, Wrench01Icon } from "@hugeicons/core-free-icons";
+import { ArrowDown01Icon, ArrowRight01Icon, BubbleChatIcon, Wrench01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ChevronDown, ChevronRight } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import type { AgentItemId, Message, UserQuestionAnswer } from "@memoize/wire";
@@ -143,7 +142,7 @@ export function TurnSummary({
     return items;
   }, [toolUses]);
 
-  const Chevron = expanded ? ChevronDown : ChevronRight;
+  const chevron = expanded ? ArrowDown01Icon : ArrowRight01Icon;
   const mutedWhenOpen = expanded
     ? "text-muted-foreground/50"
     : "text-muted-foreground";
@@ -160,7 +159,7 @@ export function TurnSummary({
           mutedWhenOpen,
         )}
       >
-        <Chevron className="size-3.5 shrink-0 opacity-70" />
+        <HugeiconsIcon icon={chevron} className="size-3.5 shrink-0 opacity-70" />
         <span className="flex items-center gap-1.5">
           <HugeiconsIcon
             icon={Wrench01Icon}

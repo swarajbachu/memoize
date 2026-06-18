@@ -1,4 +1,5 @@
-import { Eye, EyeOff } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ViewIcon, ViewOffIcon } from "@hugeicons-pro/core-bulk-rounded";
 import { useState } from "react";
 
 import type { ProviderId } from "@memoize/wire";
@@ -54,9 +55,9 @@ export function ApiKeyRow({ providerId }: { providerId: ProviderId }) {
             tabIndex={-1}
           >
             {reveal ? (
-              <EyeOff className="size-3.5" />
+              <HugeiconsIcon icon={ViewOffIcon} className="size-3.5" />
             ) : (
-              <Eye className="size-3.5" />
+              <HugeiconsIcon icon={ViewIcon} className="size-3.5" />
             )}
           </button>
         </div>

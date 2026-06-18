@@ -290,6 +290,17 @@ export class Message extends Schema.Class<Message>("Message")({
   createdAt: Schema.DateFromString,
 }) {}
 
+export class QueuedMessage extends Schema.Class<QueuedMessage>(
+  "QueuedMessage",
+)({
+  id: Schema.String,
+  sessionId: SessionId,
+  input: ComposerInput,
+  position: Schema.Number,
+  createdAt: Schema.DateFromString,
+  updatedAt: Schema.DateFromString,
+}) {}
+
 export class SessionNotFoundError extends Schema.TaggedError<SessionNotFoundError>()(
   "SessionNotFoundError",
   { sessionId: SessionId },
@@ -454,6 +465,15 @@ export class Chat extends Schema.Class<Chat>("Chat")({
   title: Schema.String,
   activeSessionId: Schema.NullOr(SessionId),
   archivedAt: Schema.NullOr(Schema.DateFromString),
+  /**
+   * Read/unread tracking. `lastMessageAt` advances every time a message is
+   * persisted in any of the chat's sessions; `lastReadAt` advances when the
+   * user views the chat. A chat is unread when `lastMessageAt > lastReadAt`.
+   * `lastMessageAt` is null until the first message; `lastReadAt` is seeded to
+   * the creation time so a freshly created chat starts read.
+   */
+  lastMessageAt: Schema.NullOr(Schema.DateFromString),
+  lastReadAt: Schema.NullOr(Schema.DateFromString),
   createdAt: Schema.DateFromString,
   updatedAt: Schema.DateFromString,
 }) {}
@@ -591,6 +611,16 @@ export const ChatStreamChangesRpc = Rpc.make("chat.streamChanges", {
  * session's `worktreeId` so renderer reads of `session.worktreeId` stay
  * accurate without a second round-trip.
  */
+/**
+ * Mark a chat read by stamping `last_read_at` to "now". Returns the refreshed
+ * chat so the renderer can reconcile its optimistic patch. Idempotent.
+ */
+export const ChatMarkReadRpc = Rpc.make("chat.markRead", {
+  payload: Schema.Struct({ chatId: ChatId }),
+  success: Chat,
+  error: ChatNotFoundError,
+});
+
 export const ChatSetWorktreeRpc = Rpc.make("chat.setWorktree", {
   payload: Schema.Struct({
     chatId: ChatId,
@@ -670,6 +700,71 @@ export const MessagesSendRpc = Rpc.make("messages.send", {
 });
 
 export const MessagesInterruptRpc = Rpc.make("messages.interrupt", {
+  payload: Schema.Struct({ sessionId: SessionId }),
+  success: Schema.Void,
+  error: SessionNotFoundError,
+});
+
+export const MessagesQueueListRpc = Rpc.make("messages.queue.list", {
+  payload: Schema.Struct({ sessionId: SessionId }),
+  success: Schema.Array(QueuedMessage),
+  error: SessionNotFoundError,
+});
+
+export const MessagesQueueStreamRpc = Rpc.make("messages.queue.stream", {
+  payload: Schema.Struct({ sessionId: SessionId }),
+  success: Schema.Array(QueuedMessage),
+  error: SessionNotFoundError,
+  stream: true,
+});
+
+export const MessagesQueueAddRpc = Rpc.make("messages.queue.add", {
+  payload: Schema.Struct({
+    sessionId: SessionId,
+    input: ComposerInput,
+  }),
+  success: QueuedMessage,
+  error: SessionNotFoundError,
+});
+
+export const MessagesQueueUpdateRpc = Rpc.make("messages.queue.update", {
+  payload: Schema.Struct({
+    sessionId: SessionId,
+    queueId: Schema.String,
+    input: ComposerInput,
+  }),
+  success: QueuedMessage,
+  error: SessionNotFoundError,
+});
+
+export const MessagesQueueDeleteRpc = Rpc.make("messages.queue.delete", {
+  payload: Schema.Struct({
+    sessionId: SessionId,
+    queueId: Schema.String,
+  }),
+  success: Schema.Void,
+  error: SessionNotFoundError,
+});
+
+export const MessagesQueueSendNowRpc = Rpc.make("messages.queue.sendNow", {
+  payload: Schema.Struct({
+    sessionId: SessionId,
+    queueId: Schema.String,
+  }),
+  success: Schema.Void,
+  error: SessionNotFoundError,
+});
+
+export const MessagesQueueReorderRpc = Rpc.make("messages.queue.reorder", {
+  payload: Schema.Struct({
+    sessionId: SessionId,
+    queueIds: Schema.Array(Schema.String),
+  }),
+  success: Schema.Array(QueuedMessage),
+  error: SessionNotFoundError,
+});
+
+export const MessagesQueueFlushRpc = Rpc.make("messages.queue.flush", {
   payload: Schema.Struct({ sessionId: SessionId }),
   success: Schema.Void,
   error: SessionNotFoundError,

@@ -1,4 +1,5 @@
-import { ArrowUpCircle, X } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Cancel01Icon, CircleArrowUp01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import { useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -108,7 +109,7 @@ export function ProviderUpdatesToast() {
     >
       <div className="flex items-start gap-3">
         <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
-          <ArrowUpCircle className="size-4" />
+          <HugeiconsIcon icon={CircleArrowUp01Icon} className="size-4" />
         </span>
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="text-[13px] font-medium text-foreground">
@@ -124,7 +125,7 @@ export function ProviderUpdatesToast() {
           className="text-muted-foreground hover:text-foreground"
           aria-label="Dismiss provider update toast"
         >
-          <X className="size-3.5" />
+          <HugeiconsIcon icon={Cancel01Icon} className="size-3.5" />
         </button>
       </div>
 

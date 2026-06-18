@@ -1,4 +1,5 @@
-import { MessageSquare } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Message01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import {
   Fragment,
   useEffect,
@@ -165,7 +166,7 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
     >
       {messages.length === 0 ? (
         <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-muted-foreground">
-          <MessageSquare className="size-10 opacity-40" />
+          <HugeiconsIcon icon={Message01Icon} className="size-10 opacity-40" />
           <div>
             <p className="text-sm">
               {session?.title ?? "New chat"}

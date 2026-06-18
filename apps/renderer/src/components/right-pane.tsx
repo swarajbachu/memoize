@@ -1,4 +1,5 @@
-import { FolderClosed, GitBranch } from "lucide-react";
+import { Folder01Icon, GitBranchIcon } from "@hugeicons-pro/core-bulk-rounded";
+import { HugeiconsIcon } from "@hugeicons/react";
 
 import { formatShortcut } from "../lib/shortcuts.ts";
 import { useActiveContext } from "../store/active-workspace.ts";
@@ -138,12 +139,12 @@ function ActiveWorkspaceChip() {
   });
   if (ctx.status !== "ready") return null;
   const onWorktree = ctx.rootKind === "worktree";
-  const Icon = onWorktree ? GitBranch : FolderClosed;
+  const icon = onWorktree ? GitBranchIcon : Folder01Icon;
   const label = onWorktree ? (worktree?.name ?? "Worktree") : "Main checkout";
   const sub = onWorktree ? worktree?.branch ?? null : null;
   return (
     <div className="flex shrink-0 items-center gap-1.5 border-b border-border/40 px-3 py-1.5 text-[11px] text-muted-foreground">
-      <Icon className="size-3.5 shrink-0 opacity-70" />
+      <HugeiconsIcon icon={icon} className="size-3.5 shrink-0 opacity-70" />
       <span className="truncate font-medium text-foreground/80">{label}</span>
       {sub !== null ? (
         <span className="truncate font-mono opacity-70">· {sub}</span>

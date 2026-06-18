@@ -3,7 +3,7 @@ import {
   MessageAdd01Icon,
   Rocket01Icon,
   SparklesIcon,
-} from "@hugeicons/core-free-icons";
+} from "@hugeicons-pro/core-bulk-rounded";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -129,9 +129,14 @@ export function ChatCreatingPanel({
   return (
     <div className="flex flex-col gap-4">
       {prompt.length > 0 && (
-        <p className="line-clamp-3 text-[13px] leading-relaxed text-muted-foreground">
-          {prompt}
-        </p>
+        <div className="rounded-md border border-border/40 bg-muted/25 px-2.5 py-2">
+          <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+            Queued
+          </div>
+          <p className="line-clamp-3 text-[13px] leading-relaxed text-foreground/85">
+            {prompt}
+          </p>
+        </div>
       )}
       <ul className="flex flex-col gap-1">
         {stages.map((stage, i) => {
