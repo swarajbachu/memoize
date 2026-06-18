@@ -1,5 +1,16 @@
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArchiveArrowUpIcon, ArchiveIcon, ArrowDown01Icon, ArrowRight01Icon, Delete02Icon, Edit01Icon, HelpCircleIcon, PencilIcon, Settings01Icon, TaskDone01Icon } from "@hugeicons-pro/core-bulk-rounded";
+import {
+  ArchiveArrowUpIcon,
+  ArchiveIcon,
+  ArrowDown01Icon,
+  ArrowRight01Icon,
+  Delete02Icon,
+  Edit01Icon,
+  HelpCircleIcon,
+  PencilIcon,
+  Settings01Icon,
+  TaskDone01Icon,
+} from "@hugeicons-pro/core-bulk-rounded";
 import { Effect, Fiber, Stream } from "effect";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
@@ -27,6 +38,7 @@ import { noteSessionStatusForCompletionSound } from "../lib/completion-sounds.ts
 import { formatShortcut } from "../lib/shortcuts.ts";
 import { getRpcClient } from "../lib/rpc-client.ts";
 import { isChatUnread, useChatsStore } from "../store/chats.ts";
+import { gitDiffStatKey, useGitDiffStatStore } from "../store/git-diff-stat.ts";
 import { useMessagesStore } from "../store/messages.ts";
 import { prStateKey, usePrStateStore } from "../store/pr-state.ts";
 import { useProvidersStore } from "../store/providers.ts";
@@ -347,9 +359,28 @@ export function ProjectsSidebar() {
 
 function SidebarFooter() {
   const setView = useUiStore((s) => s.setView);
+  const setSettingsSection = useUiStore((s) => s.setSettingsSection);
   const view = useUiStore((s) => s.view);
   return (
-    <div className="border-t border-sidebar-border/40 px-2 py-1.5">
+    <div className="flex flex-col gap-0.5 border-t border-sidebar-border/40 px-2 py-1.5">
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              onClick={() => {
+                setSettingsSection({ kind: "pokedex" });
+                setView("settings");
+              }}
+              className="flex w-full items-center gap-2 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
+            >
+              <HugeiconsIcon icon={TaskDone01Icon} className="size-3.5" />
+              <span>Pokedex</span>
+            </button>
+          }
+        />
+        <TooltipPopup side="top">Open Pokedex</TooltipPopup>
+      </Tooltip>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -754,6 +785,16 @@ function ChatRow({ chat }: { chat: Chat }) {
     void hydratePrState(chat.projectId, chat.worktreeId);
   }, [hydratePrState, chat.projectId, chat.worktreeId]);
 
+  // Per-branch diff stats (additions/deletions vs base), shown even when no
+  // PR exists yet — so a working branch surfaces its size in the sidebar.
+  const diffStat = useGitDiffStatStore(
+    (s) => s.byKey[gitDiffStatKey(chat.projectId, chat.worktreeId)] ?? null,
+  );
+  const hydrateDiffStat = useGitDiffStatStore((s) => s.hydrate);
+  useEffect(() => {
+    void hydrateDiffStat(chat.projectId, chat.worktreeId);
+  }, [hydrateDiffStat, chat.projectId, chat.worktreeId]);
+
   // Ids of this chat's non-archived sessions — so the sidebar busy
   // indicator reflects ANY tab being active, not just the currently
   // selected one.
@@ -796,19 +837,30 @@ function ChatRow({ chat }: { chat: Chat }) {
   // Unread = new activity the user hasn't seen. Never on the selected row.
   const isUnread = !isSelected && isChatUnread(chat, selectedChatId);
 
-  const branchState: BranchState =
-    prInfo === null
+  const branchState: BranchState = isArchived
+    ? "archived"
+    : prInfo === null || prInfo.state === "none"
       ? "default"
-      : prInfo.state === "open"
-        ? "pr-open"
-        : prInfo.state === "merged" || prInfo.state === "closed"
+      : prInfo.state === "merged"
+        ? "pr-merged"
+        : prInfo.state === "closed"
           ? "pr-closed"
-          : "default";
-  const showDiff =
-    prInfo !== null &&
-    (prInfo.state === "open" ||
-      prInfo.state === "merged" ||
-      prInfo.state === "closed");
+          : // open PR — reflect CI / conflict status
+            prInfo.checks === "failure" || prInfo.mergeable === "conflicting"
+            ? "pr-failing"
+            : prInfo.checks === "pending"
+              ? "pr-pending"
+              : "pr-open";
+
+  // Prefer the live branch diff (works without a PR); fall back to the PR's
+  // own counts so merged/closed branches still show their size.
+  const stats =
+    diffStat !== null && (diffStat.additions > 0 || diffStat.deletions > 0)
+      ? diffStat
+      : prInfo !== null && (prInfo.additions > 0 || prInfo.deletions > 0)
+        ? { additions: prInfo.additions, deletions: prInfo.deletions }
+        : null;
+  const showDiff = stats !== null;
 
   const onRename = () => {
     const next = window.prompt("Rename chat", chat.title);
@@ -888,13 +940,13 @@ function ChatRow({ chat }: { chat: Chat }) {
         <span className="min-w-0 flex-1 truncate">{chat.title}</span>
         <div className="relative flex h-4 w-16 shrink-0 items-center justify-end">
           <span className="tabular-nums text-[10px] text-muted-foreground transition-opacity duration-150 ease-out motion-reduce:transition-none group-hover:hidden">
-            {showDiff && prInfo !== null ? (
+            {showDiff && stats !== null ? (
               <>
-                <span className="text-emerald-400">
-                  +{formatCompactNumber(prInfo.additions)}
+                <span className="text-success">
+                  +{formatCompactNumber(stats.additions)}
                 </span>{" "}
-                <span className="text-red-400">
-                  −{formatCompactNumber(prInfo.deletions)}
+                <span className="text-destructive">
+                  −{formatCompactNumber(stats.deletions)}
                 </span>
               </>
             ) : (

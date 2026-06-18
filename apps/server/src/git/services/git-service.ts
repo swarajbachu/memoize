@@ -3,6 +3,7 @@ import { Context, type Effect, type Stream } from "effect";
 import {
   type FolderId,
   type GitChange,
+  type GitChangeKind,
   type GitCommandError,
   type GitBranchInfo,
   type GitCommit,
@@ -83,6 +84,7 @@ export interface GitServiceShape {
     folderId: FolderId,
     message: string,
     worktreeId?: WorktreeId | null,
+    paths?: ReadonlyArray<string>,
   ) => Effect.Effect<{ readonly sha: string }, GitFailure>;
   readonly push: (
     folderId: FolderId,
@@ -102,6 +104,24 @@ export interface GitServiceShape {
   readonly init: (
     folderId: FolderId,
   ) => Effect.Effect<{ readonly branch: string }, GitFailure>;
+  readonly revertFile: (
+    folderId: FolderId,
+    path: string,
+    kind: GitChangeKind,
+    oldPath?: string | null,
+    worktreeId?: WorktreeId | null,
+  ) => Effect.Effect<{ readonly reverted: boolean }, GitFailure>;
+  readonly revertAll: (
+    folderId: FolderId,
+    worktreeId?: WorktreeId | null,
+  ) => Effect.Effect<{ readonly reverted: boolean }, GitFailure>;
+  readonly diffStat: (
+    folderId: FolderId,
+    worktreeId?: WorktreeId | null,
+  ) => Effect.Effect<
+    { readonly additions: number; readonly deletions: number },
+    GitFailure
+  >;
   readonly fixFailingChecks: (
     folderId: FolderId,
     worktreeId?: WorktreeId | null,

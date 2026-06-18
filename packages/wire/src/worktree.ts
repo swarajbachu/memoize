@@ -2,6 +2,7 @@ import { Rpc } from "@effect/rpc";
 import { Schema } from "effect";
 
 import { FolderId, WorktreeId } from "./ids.ts";
+import { PokemonSummary } from "./pokemon.ts";
 
 export const WorktreeSetupStatus = Schema.Literal(
   "pending",
@@ -17,7 +18,7 @@ export type WorktreeSetupStatus = typeof WorktreeSetupStatus.Type;
  * `~/.memoize/<repo-name>-<projectId-short>/<name>/` so it stays out of the
  * source repo (no `.git/info/exclude` rewriting, no stray entries in `git
  * status`, no `.memoize/` paths leaking into file pickers). Branch matches
- * `<name>` (e.g. `pikachu-42`).
+ * `<name>` (e.g. `pikachu`).
  */
 export class Worktree extends Schema.Class<Worktree>("Worktree")({
   id: WorktreeId,
@@ -31,6 +32,7 @@ export class Worktree extends Schema.Class<Worktree>("Worktree")({
   setupOutput: Schema.String,
   setupStartedAt: Schema.NullOr(Schema.DateFromString),
   setupFinishedAt: Schema.NullOr(Schema.DateFromString),
+  pokemon: Schema.NullOr(PokemonSummary),
 }) {}
 
 export class WorktreeNotFoundError extends Schema.TaggedError<WorktreeNotFoundError>()(

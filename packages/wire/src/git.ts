@@ -410,6 +410,14 @@ export const GitCommitRpc = Rpc.make("git.commit", {
     folderId: FolderId,
     worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
     message: Schema.String,
+    /**
+     * Explicit set of paths to commit. When provided (and non-empty), only
+     * these paths are staged + committed (`git add -- <paths>` then
+     * `git commit -m … -- <paths>`), so the Changes tab can let the user pick
+     * which files go into the commit. Omitted/empty falls back to the legacy
+     * "commit everything" behaviour (`git add -A`).
+     */
+    paths: Schema.optional(Schema.Array(Schema.String)),
   }),
   success: Schema.Struct({ sha: Schema.String }),
   error: GitErrors,
@@ -474,5 +482,61 @@ export const GitInitRpc = Rpc.make("git.init", {
     folderId: FolderId,
   }),
   success: Schema.Struct({ branch: Schema.String }),
+  error: GitErrors,
+});
+
+/**
+ * Discard a single file's uncommitted changes. Behaviour depends on `kind`:
+ *   - untracked → delete the new file from disk (`git clean -f`)
+ *   - everything else → restore index + working tree to HEAD (`git restore`)
+ * Surfaced from the Changes tab's per-row hover "revert" affordance, always
+ * behind a confirm dialog. `kind` lets the server pick the right git command
+ * without re-running `status`.
+ */
+export const GitRevertFileRpc = Rpc.make("git.revertFile", {
+  payload: Schema.Struct({
+    folderId: FolderId,
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
+    path: Schema.String,
+    oldPath: Schema.optional(Schema.NullOr(Schema.String)),
+    kind: GitChangeKind,
+  }),
+  success: Schema.Struct({ reverted: Schema.Boolean }),
+  error: GitErrors,
+});
+
+/**
+ * Discard every uncommitted change in the working tree: `git reset --hard
+ * HEAD` followed by `git clean -fd` to also remove untracked files/dirs.
+ * Destructive and unrecoverable — the Changes tab gates this behind a strong
+ * confirm dialog ("Revert all").
+ */
+export const GitRevertAllRpc = Rpc.make("git.revertAll", {
+  payload: Schema.Struct({
+    folderId: FolderId,
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
+  }),
+  success: Schema.Struct({ reverted: Schema.Boolean }),
+  error: GitErrors,
+});
+
+/**
+ * Total additions/deletions of a worktree's branch — including uncommitted
+ * working-tree edits — relative to its base branch. Computed as
+ * `git diff --numstat <merge-base(base, HEAD)>`, where `base` is the repo's
+ * default branch (`origin/HEAD`, falling back to origin/main, main, …). Drives
+ * the projects sidebar's per-chat `+N −N` stats so a branch shows its diff
+ * even before a PR is opened. Returns zeros rather than failing when there's
+ * no base, no commits, or no diff.
+ */
+export const GitDiffStatRpc = Rpc.make("git.diffStat", {
+  payload: Schema.Struct({
+    folderId: FolderId,
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
+  }),
+  success: Schema.Struct({
+    additions: Schema.Number,
+    deletions: Schema.Number,
+  }),
   error: GitErrors,
 });

@@ -1172,11 +1172,26 @@ export const GitServiceLive = Layer.effect(
       folderId,
       message,
       worktreeId,
+      paths,
     ) =>
       Effect.flatMap(resolvePathForWorktree(folderId, worktreeId), (cwd) =>
         Effect.gen(function* () {
-          yield* run(folderId, cwd, ["add", "-A"]);
-          yield* run(folderId, cwd, ["commit", "-m", message]);
+          if (paths !== undefined && paths.length > 0) {
+            // Stage + commit only the chosen paths. `git add` handles new and
+            // deleted files; the pathspec on `commit` keeps any other staged
+            // changes out of this commit.
+            yield* run(folderId, cwd, ["add", "--", ...paths]);
+            yield* run(folderId, cwd, [
+              "commit",
+              "-m",
+              message,
+              "--",
+              ...paths,
+            ]);
+          } else {
+            yield* run(folderId, cwd, ["add", "-A"]);
+            yield* run(folderId, cwd, ["commit", "-m", message]);
+          }
           const sha = (yield* run(folderId, cwd, ["rev-parse", "HEAD"])).trim();
           return { sha };
         }),
@@ -1264,6 +1279,138 @@ export const GitServiceLive = Layer.effect(
       Effect.flatMap(resolvePath(folderId), (cwd) =>
         run(folderId, cwd, ["init", "-b", "main"]).pipe(
           Effect.as({ branch: "main" }),
+        ),
+      );
+
+    /**
+     * Discard a single file's uncommitted changes. Untracked files are
+     * deleted from disk (`git clean -f`); everything else is restored from
+     * HEAD in both the index and the working tree (`git restore --staged
+     * --worktree`). For renames the original path is restored too, so a
+     * `foo → bar` move reverts the deletion of `foo` as well as `bar`.
+     */
+    const revertFile: GitService["Type"]["revertFile"] = (
+      folderId,
+      path,
+      kind,
+      oldPath,
+      worktreeId,
+    ) =>
+      Effect.flatMap(resolvePathForWorktree(folderId, worktreeId), (cwd) =>
+        Effect.gen(function* () {
+          if (kind === "untracked") {
+            yield* run(folderId, cwd, ["clean", "-f", "--", path]);
+          } else {
+            yield* run(folderId, cwd, [
+              "restore",
+              "--staged",
+              "--worktree",
+              "--",
+              path,
+            ]);
+            if (
+              typeof oldPath === "string" &&
+              oldPath.length > 0 &&
+              oldPath !== path
+            ) {
+              yield* run(folderId, cwd, [
+                "restore",
+                "--staged",
+                "--worktree",
+                "--",
+                oldPath,
+              ]);
+            }
+          }
+          return { reverted: true };
+        }),
+      );
+
+    /**
+     * Discard every uncommitted change: hard-reset tracked files to HEAD,
+     * then remove all untracked files and directories. Destructive and
+     * unrecoverable — gated behind a confirm dialog in the renderer.
+     */
+    const revertAll: GitService["Type"]["revertAll"] = (folderId, worktreeId) =>
+      Effect.flatMap(resolvePathForWorktree(folderId, worktreeId), (cwd) =>
+        Effect.gen(function* () {
+          yield* run(folderId, cwd, ["reset", "--hard", "HEAD"]);
+          yield* run(folderId, cwd, ["clean", "-fd"]);
+          return { reverted: true };
+        }),
+      );
+
+    /**
+     * Resolve the repo's default base branch for a worktree: prefer
+     * `origin/HEAD` (e.g. `origin/main`), then probe common defaults. Returns
+     * `null` when none resolve (no remote, fresh repo) so the caller can fall
+     * back to diffing against HEAD.
+     */
+    const detectBaseRef = (folderId: FolderId, cwd: string) =>
+      run(folderId, cwd, [
+        "symbolic-ref",
+        "--quiet",
+        "refs/remotes/origin/HEAD",
+      ]).pipe(
+        Effect.map((s) => s.trim().replace(/^refs\/remotes\//, "")),
+        Effect.catchAll(() =>
+          Effect.reduce(
+            ["origin/main", "origin/master", "main", "master"],
+            null as string | null,
+            (found, ref) =>
+              found !== null
+                ? Effect.succeed(found)
+                : run(folderId, cwd, [
+                    "rev-parse",
+                    "--verify",
+                    "--quiet",
+                    ref,
+                  ]).pipe(
+                    Effect.as(ref),
+                    Effect.catchAll(() => Effect.succeed(null)),
+                  ),
+          ),
+        ),
+      );
+
+    /**
+     * Sum additions/deletions of the branch — including uncommitted edits —
+     * vs the merge-base with the repo's default branch. Binary files (`-`
+     * numstat columns) are skipped. Any git failure degrades to zeros so the
+     * sidebar never breaks on an odd repo state.
+     */
+    const diffStat: GitService["Type"]["diffStat"] = (folderId, worktreeId) =>
+      Effect.flatMap(resolvePathForWorktree(folderId, worktreeId), (cwd) =>
+        Effect.gen(function* () {
+          const base = yield* detectBaseRef(folderId, cwd);
+          let from = "HEAD";
+          if (base !== null) {
+            const mergeBase = yield* run(folderId, cwd, [
+              "merge-base",
+              base,
+              "HEAD",
+            ]).pipe(
+              Effect.map((s) => s.trim()),
+              Effect.catchAll(() => Effect.succeed("")),
+            );
+            if (mergeBase.length > 0) from = mergeBase;
+          }
+          const out = yield* run(folderId, cwd, ["diff", "--numstat", from]);
+          let additions = 0;
+          let deletions = 0;
+          for (const line of out.split("\n")) {
+            const cols = line.split("\t");
+            if (cols.length < 2) continue;
+            const a = Number.parseInt(cols[0]!, 10);
+            const d = Number.parseInt(cols[1]!, 10);
+            if (!Number.isNaN(a)) additions += a;
+            if (!Number.isNaN(d)) deletions += d;
+          }
+          return { additions, deletions };
+        }).pipe(
+          Effect.catchTag("GitCommandError", () =>
+            Effect.succeed({ additions: 0, deletions: 0 }),
+          ),
         ),
       );
 
@@ -1454,6 +1601,9 @@ export const GitServiceLive = Layer.effect(
       mergePr,
       markReady,
       init,
+      revertFile,
+      revertAll,
+      diffStat,
       fixFailingChecks,
     } as const;
   }),

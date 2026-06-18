@@ -48,7 +48,7 @@ export function NextUnreadButton() {
         title="Jump to the next chat with unread activity"
       >
         Next unread
-        <HugeiconsIcon icon={ArrowRight01Icon} className="size-4" />
+        <HugeiconsIcon icon={ArrowRight01Icon} className="size-3.5" />
       </Button>
     </div>
   );

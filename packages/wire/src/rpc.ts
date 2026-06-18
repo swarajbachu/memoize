@@ -47,8 +47,11 @@ import {
   GitHeadChangedRpc,
   GitInitRpc,
   GitLogRpc,
+  GitDiffStatRpc,
   GitMarkReadyRpc,
   GitMergePrRpc,
+  GitRevertAllRpc,
+  GitRevertFileRpc,
   GitOriginRpc,
   GitPrDetailsRpc,
   GitPrStateRpc,
@@ -65,6 +68,7 @@ import {
   PermissionRequestsRpc,
   PermissionRevokeDecisionRpc,
 } from "./permission.ts";
+import { PokemonEnsureSpriteCachedRpc, PokemonPokedexRpc } from "./pokemon.ts";
 import { PingRpc } from "./ping.ts";
 import {
   KeybindingsGetRpc,
@@ -193,6 +197,9 @@ export const MemoizeRpcs = RpcGroup.make(
   GitMarkReadyRpc,
   GitInitRpc,
   GitFixFailingChecksRpc,
+  GitRevertFileRpc,
+  GitRevertAllRpc,
+  GitDiffStatRpc,
   FsTreeRpc,
   FsReadFileRpc,
   FsWriteFileRpc,
@@ -255,6 +262,8 @@ export const MemoizeRpcs = RpcGroup.make(
   PermissionListPendingRpc,
   PermissionListDecisionsRpc,
   PermissionRevokeDecisionRpc,
+  PokemonPokedexRpc,
+  PokemonEnsureSpriteCachedRpc,
   BrowserCommandsRpc,
   BrowserRespondRpc,
   BrowserSetCredentialRpc,

@@ -17,6 +17,7 @@ export type SettingsSection =
   | { readonly kind: "general" }
   | { readonly kind: "providers" }
   | { readonly kind: "workspace" }
+  | { readonly kind: "pokedex" }
   | { readonly kind: "browser" }
   | { readonly kind: "shortcuts" }
   | { readonly kind: "developer" }

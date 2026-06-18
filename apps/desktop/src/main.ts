@@ -643,12 +643,14 @@ function createMainWindow() {
 }
 
 /**
- * Resolve `memoize://attachments/<id>` to a file under
- * `<userDataDir>/attachments/`. The id has no extension on the wire so we
- * scan the directory for a file with the matching stem. Anything outside
- * the host `attachments` is rejected — no path traversal, no other hosts.
+ * Resolve internal asset URLs to files under userData:
+ *   - `memoize://attachments/<id>`
+ *   - `memoize://pokemon/<dex-number>` or `memoize://pokemon/<dex-number>-<variant>`
+ * The id has no extension on the wire so we scan the directory for a file
+ * with the matching stem. Anything outside known hosts is rejected.
  */
 const ATTACHMENTS_HOST = "attachments";
+const POKEMON_HOST = "pokemon";
 
 const MIME_BY_EXT: Record<string, string> = {
   png: "image/png",
@@ -661,10 +663,17 @@ const MIME_BY_EXT: Record<string, string> = {
 
 const registerMemoizeProtocol = (): void => {
   const attachmentsDir = Path.join(app.getPath("userData"), "attachments");
+  const pokemonDir = Path.join(app.getPath("userData"), "pokemon-sprites");
 
   protocol.handle("memoize", async (request) => {
     const url = new URL(request.url);
-    if (url.host !== ATTACHMENTS_HOST) {
+    const assetDir =
+      url.host === ATTACHMENTS_HOST
+        ? attachmentsDir
+        : url.host === POKEMON_HOST
+          ? pokemonDir
+          : null;
+    if (assetDir === null) {
       return new Response(null, { status: 404 });
     }
 
@@ -677,7 +686,7 @@ const registerMemoizeProtocol = (): void => {
 
     let entries: string[];
     try {
-      entries = await fs.readdir(attachmentsDir);
+      entries = await fs.readdir(assetDir);
     } catch {
       return new Response(null, { status: 404 });
     }
@@ -687,7 +696,7 @@ const registerMemoizeProtocol = (): void => {
     });
     if (!filename) return new Response(null, { status: 404 });
 
-    const absPath = Path.join(attachmentsDir, filename);
+    const absPath = Path.join(assetDir, filename);
     const ext = filename.slice(filename.lastIndexOf(".") + 1).toLowerCase();
     const mime = MIME_BY_EXT[ext] ?? "application/octet-stream";
 
