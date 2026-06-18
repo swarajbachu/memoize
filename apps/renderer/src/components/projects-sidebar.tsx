@@ -878,7 +878,7 @@ function ChatRow({ chat }: { chat: Chat }) {
           !isSelected &&
             !isArchived &&
             isUnread &&
-            "font-medium text-foreground hover:bg-sidebar-accent/40",
+            "font-bold text-white hover:bg-sidebar-accent/40",
         )}
         title={chat.title}
       >
