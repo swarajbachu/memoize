@@ -14,8 +14,15 @@ import {
   reconfigureEditorKeymap,
 } from "../lib/codemirror/setup.ts";
 import { languageForFile } from "../lib/codemirror/languages.ts";
+import { useActiveWorkspaceRoot } from "../store/active-workspace.ts";
 import { useKeybindingsStore } from "../store/keybindings.ts";
 import { useUiStore, type FileView, type OpenFile } from "../store/ui.ts";
+import {
+  measureAnnotationSelection,
+  type PendingSelection,
+} from "../lib/codemirror/annotation-selection.ts";
+import { AnnotateOverlay } from "./annotation/annotate-overlay.tsx";
+import { useAddAnnotation } from "./annotation/use-add-annotation.ts";
 
 import type { EditorView } from "@codemirror/view";
 
@@ -129,6 +136,25 @@ function CodeMirrorBody({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [reloadCount, setReloadCount] = useState(0);
+  const [selection, setSelection] = useState<PendingSelection | null>(null);
+  const [cardOpen, setCardOpen] = useState(false);
+  const selectionRef = useRef<PendingSelection | null>(null);
+  selectionRef.current = selection;
+  const addAnnotation = useAddAnnotation();
+
+  // The annotation target path: workspace-relative for project files, absolute
+  // for external ones (matches `CodeAnnotation.relPath`).
+  const workspaceRoot = useActiveWorkspaceRoot(
+    openFile.kind === "text" ? openFile.folderId : null,
+  );
+  const annotationPath =
+    openFile.kind === "external" ? openFile.absPath : openFile.path;
+  const annotationAbsPath =
+    openFile.kind === "external"
+      ? openFile.absPath
+      : workspaceRoot !== null
+        ? `${workspaceRoot}/${openFile.path}`
+        : openFile.path;
 
   // Mutable per-file working state. Refs so save/load callbacks stay stable
   // across keystrokes.
@@ -194,6 +220,20 @@ function CodeMirrorBody({
     const el = containerRef.current;
     if (!el) return;
     const onSave = () => void saveRef.current();
+    const onAnnotate = () => {
+      const current = selectionRef.current;
+      if (current !== null) {
+        setCardOpen(true);
+        return;
+      }
+      const v = viewRef.current;
+      if (v === null) return;
+      measureAnnotationSelection(v, (sel) => {
+        if (sel === null) return;
+        setSelection(sel);
+        setCardOpen(true);
+      });
+    };
     const view = createEditor({
       parent: el,
       doc: "",
@@ -203,11 +243,17 @@ function CodeMirrorBody({
         docRef.current = doc;
         useUiStore.getState().setFileDirty(doc !== baselineRef.current);
       },
+      onSelect: (sel) => {
+        setSelection(sel);
+        // Collapsed selection (clicked away) dismisses the card too.
+        if (sel === null) setCardOpen(false);
+      },
+      onAnnotate,
     });
     viewRef.current = view;
 
     const unsubKeybindings = useKeybindingsStore.subscribe(() => {
-      reconfigureEditorKeymap(view, onSave);
+      reconfigureEditorKeymap(view, onSave, onAnnotate);
     });
 
     return () => {
@@ -295,6 +341,27 @@ function CodeMirrorBody({
         className="min-h-0 flex-1 overflow-hidden"
         hidden={state.status !== "text"}
       />
+      {!hidden && state.status === "text" ? (
+        <AnnotateOverlay
+          selection={selection}
+          relPath={annotationPath}
+          absPath={annotationAbsPath}
+          cardOpen={cardOpen}
+          onCardOpenChange={setCardOpen}
+          onConfirm={(draft) => {
+            addAnnotation(draft);
+            // Collapse the selection so the affordance dismisses itself.
+            const v = viewRef.current;
+            if (v !== null) {
+              v.dispatch({
+                selection: { anchor: v.state.selection.main.head },
+              });
+            }
+            setSelection(null);
+            setCardOpen(false);
+          }}
+        />
+      ) : null}
       {state.status === "loading" && <Placeholder>Loading…</Placeholder>}
       {state.status === "binary" && (
         <Placeholder>
@@ -329,6 +396,60 @@ type DiffState =
   | { status: "ready"; result: GitDiffResult }
   | { status: "error"; reason: string; noRepo: boolean };
 
+/**
+ * Walk up from a DOM node to the nearest `@pierre/diffs` line row, which
+ * carries `data-line` (the file line number), `data-alt-line`, and
+ * `data-line-type`.
+ */
+const closestLineRow = (
+  node: Node | null,
+  root: HTMLElement,
+): HTMLElement | null => {
+  let el: Node | null = node;
+  while (el !== null && el !== root) {
+    if (el instanceof HTMLElement && el.hasAttribute("data-line")) return el;
+    el = el.parentNode;
+  }
+  return null;
+};
+
+/**
+ * New-file line number for a diff row. For deletion-side rows, `data-line` is
+ * the old-file number; use `data-alt-line` when present, otherwise let the
+ * caller fall back to a nearby context/addition row.
+ */
+const newSideLine = (row: HTMLElement): number | null => {
+  const type = row.getAttribute("data-line-type");
+  const line = Number(row.getAttribute("data-line"));
+  const alt = Number(row.getAttribute("data-alt-line"));
+  if (type?.includes("deletion") === true) {
+    return Number.isFinite(alt) && alt > 0 ? alt : null;
+  }
+  return Number.isFinite(line) && line > 0 ? line : null;
+};
+
+const nearestNewSideLine = (
+  row: HTMLElement | null,
+  root: HTMLElement,
+): number | null => {
+  if (row === null) return null;
+  const direct = newSideLine(row);
+  if (direct !== null) return direct;
+
+  const rows = Array.from(root.querySelectorAll<HTMLElement>("[data-line]"));
+  const index = rows.indexOf(row);
+  if (index === -1) return null;
+  for (let distance = 1; distance < rows.length; distance++) {
+    const next = rows[index + distance];
+    const prev = rows[index - distance];
+    const nextLine = next === undefined ? null : newSideLine(next);
+    if (nextLine !== null) return nextLine;
+    const prevLine = prev === undefined ? null : newSideLine(prev);
+    if (prevLine !== null) return prevLine;
+  }
+  return null;
+};
+
 function DiffViewBody({
   openFile,
 }: {
@@ -338,6 +459,62 @@ function DiffViewBody({
   // Bumped after an in-place `git init` from the no-repo CTA so the diff
   // re-fetches without the user toggling Edit/Diff to force a remount.
   const [reload, setReload] = useState(0);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [selection, setSelection] = useState<PendingSelection | null>(null);
+  const [cardOpen, setCardOpen] = useState(false);
+  const cardOpenRef = useRef(false);
+  cardOpenRef.current = cardOpen;
+  const addAnnotation = useAddAnnotation();
+  const workspaceRoot = useActiveWorkspaceRoot(openFile.folderId);
+  const annotationAbsPath =
+    workspaceRoot !== null
+      ? `${workspaceRoot}/${openFile.path}`
+      : openFile.path;
+
+  // Map a text selection inside the diff to a new-side line range + anchor.
+  // `selectionchange` covers drag-select; the diff scroller covers tracking.
+  useEffect(() => {
+    const root = containerRef.current;
+    if (root === null) return;
+    const recompute = () => {
+      // Don't disturb the pinned selection while the comment card is open —
+      // typing in the textarea fires its own (collapsed) selectionchange.
+      if (cardOpenRef.current) return;
+      const sel = window.getSelection();
+      if (sel === null || sel.isCollapsed || sel.rangeCount === 0) {
+        setSelection(null);
+        return;
+      }
+      const range = sel.getRangeAt(0);
+      if (!root.contains(range.commonAncestorContainer)) return;
+      const startRow = closestLineRow(range.startContainer, root);
+      const endRow = closestLineRow(range.endContainer, root);
+      const nums = [startRow, endRow]
+        .map((r) => nearestNewSideLine(r, root))
+        .filter((n): n is number => n !== null);
+      if (nums.length === 0) {
+        setSelection(null);
+        return;
+      }
+      const rect = range.getBoundingClientRect();
+      const rootRect = root.getBoundingClientRect();
+      setSelection({
+        startLine: Math.min(...nums),
+        endLine: Math.max(...nums),
+        top: rect.top,
+        left: rect.left,
+        bottom: rect.bottom,
+        boundaryRight: rootRect.right,
+        boundaryBottom: rootRect.bottom,
+      });
+    };
+    document.addEventListener("selectionchange", recompute);
+    root.addEventListener("scroll", recompute, { passive: true });
+    return () => {
+      document.removeEventListener("selectionchange", recompute);
+      root.removeEventListener("scroll", recompute);
+    };
+  }, [state.status]);
 
   useEffect(() => {
     let cancelled = false;
@@ -411,9 +588,22 @@ function DiffViewBody({
           onDismiss={() => {}}
         />
       ) : null}
-      <div className="fz-diff min-h-0 flex-1 overflow-auto">
+      <div ref={containerRef} className="fz-diff min-h-0 flex-1 overflow-auto">
         <PatchDiff patch={patch} disableWorkerPool />
       </div>
+      <AnnotateOverlay
+        selection={selection}
+        relPath={openFile.path}
+        absPath={annotationAbsPath}
+        cardOpen={cardOpen}
+        onCardOpenChange={setCardOpen}
+        onConfirm={(draft) => {
+          addAnnotation(draft);
+          window.getSelection()?.removeAllRanges();
+          setSelection(null);
+          setCardOpen(false);
+        }}
+      />
     </div>
   );
 }

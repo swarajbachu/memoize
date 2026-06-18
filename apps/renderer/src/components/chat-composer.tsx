@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import {
+  ComposerInput,
   findModelDescriptor,
   type BooleanOptionDescriptor,
   type Message,
@@ -41,6 +42,10 @@ import {
   updateImageChipEffect,
 } from "~/lib/codemirror/composer-chips";
 import { useActiveWorkspaceRoot } from "../store/active-workspace.ts";
+import {
+  annotationsForSession,
+  useAnnotationsStore,
+} from "../store/annotations.ts";
 import { useAttachmentsStore } from "../store/attachments.ts";
 import { useComposerBridge } from "../store/composer-bridge.ts";
 import { cn } from "~/lib/utils";
@@ -49,6 +54,7 @@ import {
   type BuiltinCommand,
 } from "../composer/builtin-commands.ts";
 import { parseComposerInput } from "../composer/segment-parser.ts";
+import { AnnotationTray } from "./composer/annotation-tray.tsx";
 import { ComposerChipOverlay } from "./composer/composer-chip-overlay.tsx";
 import { FileTagPopover } from "./composer/file-tag-popover.tsx";
 import { ProjectPlanTray } from "./composer/project-plan-tray.tsx";
@@ -260,8 +266,13 @@ export function ChatComposer({ session }: { session: Session }) {
   const setView = useUiStore((s) => s.setView);
   const setSettingsSection = useUiStore((s) => s.setSettingsSection);
   const workspaceRoot = useActiveWorkspaceRoot(session.projectId);
+  const annotationCount = useAnnotationsStore(
+    (s) => (s.bySession[sessionId] ?? []).length,
+  );
 
-  const canSend = hasText;
+  // Stacked annotations are a valid message on their own, so they enable Send
+  // even with an empty text box.
+  const canSend = hasText || annotationCount > 0;
 
   // Mount the CodeMirror view once per ChatComposer instance. Switching
   // sessions remounts the component (`session.id` is the chat-view key),
@@ -556,7 +567,10 @@ export function ChatComposer({ session }: { session: Session }) {
     const view = editorViewRef.current;
     if (view === null) return false;
     const docText = composerDoc(view).trim();
-    if (docText.length === 0) return false;
+    const annotations = annotationsForSession(sessionId);
+    // Allow a pure-annotation submit (no typed text) — the stacked comments
+    // are the message.
+    if (docText.length === 0 && annotations.length === 0) return false;
 
     const builtin = matchBuiltin(docText, session.providerId);
     if (builtin !== null) {
@@ -565,8 +579,21 @@ export function ChatComposer({ session }: { session: Session }) {
       return true;
     }
 
-    const input = parseComposerInput(view.state, session.providerId);
+    const parsed = parseComposerInput(view.state, session.providerId);
+    const input =
+      annotations.length > 0
+        ? ComposerInput.make({
+            text: parsed.text,
+            attachments: parsed.attachments,
+            fileRefs: parsed.fileRefs,
+            skillRefs: parsed.skillRefs,
+            annotations,
+          })
+        : parsed;
     clearComposer(view);
+    // Drain the tray: the annotations now live on `input` (carried into the
+    // queue too, so a mid-turn submit flushes them intact).
+    useAnnotationsStore.getState().clear(sessionId);
     if (inFlight) {
       // Mid-turn submit becomes a queue chip; auto-flushed when the turn
       // ends or steered manually.
@@ -633,6 +660,7 @@ export function ChatComposer({ session }: { session: Session }) {
         <div className="mx-auto">
           <ActiveLocationChip />
           <ProjectPlanTray key={sessionId} sessionId={sessionId} />
+          <AnnotationTray sessionId={sessionId} />
           <Frame>
             <Card
               className={cn(

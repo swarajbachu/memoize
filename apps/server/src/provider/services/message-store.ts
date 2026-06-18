@@ -13,6 +13,7 @@ import type {
   ChatId,
   ChatNotFoundError,
   ChatUnarchiveResult,
+  CodeAnnotation,
   ComposerInput,
   FileRef,
   FolderId,
@@ -318,6 +319,7 @@ export interface MessageStoreShape {
     attachments?: ReadonlyArray<AttachmentRef>,
     fileRefs?: ReadonlyArray<FileRef>,
     skillRefs?: ReadonlyArray<SkillRef>,
+    annotations?: ReadonlyArray<CodeAnnotation>,
   ) => Effect.Effect<void, SessionNotFoundError>;
 
   readonly interruptSession: (

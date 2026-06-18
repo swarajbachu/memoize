@@ -35,6 +35,7 @@ import { Migration0013ArchiveCleanup } from "../src/persistence/migrations/0013_
 import { Migration0014ScriptsAndSetup } from "../src/persistence/migrations/0014_scripts_and_setup.ts";
 import { Migration0015QueuedMessages } from "../src/persistence/migrations/0015_queued_messages.ts";
 import { Migration0016QueuedMessagesQueueOrderRepair } from "../src/persistence/migrations/0016_queued_messages_queue_order_repair.ts";
+import { Migration0017ChatReadState } from "../src/persistence/migrations/0017_chat_read_state.ts";
 import { WorktreeService } from "../src/worktree/services/worktree-service.ts";
 import { MessageStore } from "../src/provider/services/message-store.ts";
 import { ProviderService } from "../src/provider/services/provider-service.ts";
@@ -185,6 +186,7 @@ const runAllMigrations = Effect.all(
     Migration0014ScriptsAndSetup,
     Migration0015QueuedMessages,
     Migration0016QueuedMessagesQueueOrderRepair,
+    Migration0017ChatReadState,
   ],
   { discard: true },
 );
@@ -249,7 +251,9 @@ describe("MessageStore migrations", () => {
   it("0016 repairs queued_messages rows from the old position column", async () => {
     const dir = mkdtempSync(join(tmpdir(), "mz-queue-migration-"));
     const dbPath = join(dir, "test.sqlite");
-    const runtime = ManagedRuntime.make(SqliteClient.layer({ filename: dbPath }));
+    const runtime = ManagedRuntime.make(
+      SqliteClient.layer({ filename: dbPath }),
+    );
     try {
       await runtime.runPromise(
         Effect.gen(function* () {
@@ -274,9 +278,7 @@ describe("MessageStore migrations", () => {
           const columns = yield* sql<{ readonly name: string }>`
             PRAGMA table_info(queued_messages)
           `;
-          expect(columns.map((column) => column.name)).toContain(
-            "queue_order",
-          );
+          expect(columns.map((column) => column.name)).toContain("queue_order");
           const rows = yield* sql<{ readonly queue_order: number }>`
             SELECT queue_order FROM queued_messages WHERE id = 'q1'
           `;
