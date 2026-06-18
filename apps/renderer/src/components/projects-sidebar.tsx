@@ -1,5 +1,16 @@
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArchiveArrowUpIcon, ArchiveIcon, ArrowDown01Icon, ArrowRight01Icon, Delete02Icon, Edit01Icon, HelpCircleIcon, PencilIcon, Settings01Icon, TaskDone01Icon } from "@hugeicons-pro/core-bulk-rounded";
+import {
+  ArchiveArrowUpIcon,
+  ArchiveIcon,
+  ArrowDown01Icon,
+  ArrowRight01Icon,
+  Delete02Icon,
+  Edit01Icon,
+  HelpCircleIcon,
+  PencilIcon,
+  Settings01Icon,
+  TaskDone01Icon,
+} from "@hugeicons-pro/core-bulk-rounded";
 import { Effect, Fiber, Stream } from "effect";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
@@ -27,10 +38,7 @@ import { noteSessionStatusForCompletionSound } from "../lib/completion-sounds.ts
 import { formatShortcut } from "../lib/shortcuts.ts";
 import { getRpcClient } from "../lib/rpc-client.ts";
 import { isChatUnread, useChatsStore } from "../store/chats.ts";
-import {
-  gitDiffStatKey,
-  useGitDiffStatStore,
-} from "../store/git-diff-stat.ts";
+import { gitDiffStatKey, useGitDiffStatStore } from "../store/git-diff-stat.ts";
 import { useMessagesStore } from "../store/messages.ts";
 import { prStateKey, usePrStateStore } from "../store/pr-state.ts";
 import { useProvidersStore } from "../store/providers.ts";
@@ -351,9 +359,28 @@ export function ProjectsSidebar() {
 
 function SidebarFooter() {
   const setView = useUiStore((s) => s.setView);
+  const setSettingsSection = useUiStore((s) => s.setSettingsSection);
   const view = useUiStore((s) => s.view);
   return (
-    <div className="border-t border-sidebar-border/40 px-2 py-1.5">
+    <div className="flex flex-col gap-0.5 border-t border-sidebar-border/40 px-2 py-1.5">
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              onClick={() => {
+                setSettingsSection({ kind: "pokedex" });
+                setView("settings");
+              }}
+              className="flex w-full items-center gap-2 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
+            >
+              <HugeiconsIcon icon={TaskDone01Icon} className="size-3.5" />
+              <span>Pokedex</span>
+            </button>
+          }
+        />
+        <TooltipPopup side="top">Open Pokedex</TooltipPopup>
+      </Tooltip>
       <Tooltip>
         <TooltipTrigger
           render={

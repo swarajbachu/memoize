@@ -1,4 +1,5 @@
-import { ChevronRight } from "lucide-react";
+import { ArrowRight01Icon } from "@hugeicons-pro/core-bulk-rounded";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { useMemo } from "react";
 
 import type { Chat } from "@memoize/wire";
@@ -47,7 +48,7 @@ export function NextUnreadButton() {
         title="Jump to the next chat with unread activity"
       >
         Next unread
-        <ChevronRight />
+        <HugeiconsIcon icon={ArrowRight01Icon} className="size-3.5" />
       </Button>
     </div>
   );

@@ -1,6 +1,22 @@
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { IconSvgElement } from "@hugeicons/react";
-import { Add01Icon, Alert01Icon, ArrowLeft01Icon, Delete02Icon, Folder01Icon, GitBranchIcon, GlobeIcon, KeyboardIcon, PackageIcon, RotateRight01Icon, Settings01Icon, TestTubeIcon, Tick01Icon, VolumeHighIcon } from "@hugeicons-pro/core-bulk-rounded";
+import {
+  Add01Icon,
+  Alert01Icon,
+  ArrowLeft01Icon,
+  Delete02Icon,
+  Folder01Icon,
+  GitBranchIcon,
+  GlobeIcon,
+  KeyboardIcon,
+  PackageIcon,
+  RotateRight01Icon,
+  Settings01Icon,
+  TaskDone01Icon,
+  TestTubeIcon,
+  Tick01Icon,
+  VolumeHighIcon,
+} from "@hugeicons-pro/core-bulk-rounded";
 import { useEffect, useMemo, useState } from "react";
 
 import { Effect } from "effect";
@@ -38,6 +54,7 @@ import { ProviderIcon } from "./provider-icons.tsx";
 import { MODES_ORDER, MODE_META } from "./runtime-mode-meta.ts";
 import { DeveloperPane } from "./settings/developer-pane.tsx";
 import { KeybindingsPane } from "./settings/keybindings-editor.tsx";
+import { PokedexPane } from "./settings/pokedex-pane.tsx";
 import { RepositorySettings } from "./settings-repository.tsx";
 import { Button } from "./ui/button.tsx";
 import {
@@ -85,6 +102,12 @@ const TOP_RAIL: ReadonlyArray<RailItemBase> = [
     label: "Workspace",
     Icon: GitBranchIcon,
     section: { kind: "workspace" },
+  },
+  {
+    id: "pokedex",
+    label: "Pokedex",
+    Icon: TaskDone01Icon,
+    section: { kind: "pokedex" },
   },
   {
     id: "browser",
@@ -143,13 +166,14 @@ export function SettingsPage() {
         </button>
       </header>
       <div className="flex min-h-0 flex-1">
-        <Rail
-          section={section}
-          onSelect={setSection}
-          folders={folders}
-        />
+        <Rail section={section} onSelect={setSection} folders={folders} />
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-10 py-8">
-          <div className="mx-auto flex w-full max-w-2xl flex-col gap-10">
+          <div
+            className={cn(
+              "mx-auto flex w-full flex-col gap-10",
+              section.kind === "pokedex" ? "max-w-5xl" : "max-w-2xl",
+            )}
+          >
             <SectionTitle section={section} folders={folders} />
             <Pane section={section} />
           </div>
@@ -198,8 +222,7 @@ function Rail({
           <div className="flex flex-col gap-0.5">
             {folders.map((f) => {
               const active =
-                section.kind === "repository" &&
-                section.projectId === f.id;
+                section.kind === "repository" && section.projectId === f.id;
               return (
                 <RailButton
                   key={f.id}
@@ -281,6 +304,12 @@ function SectionTitle({
         subtitle: "How new chats relate to your git checkout.",
       };
     }
+    if (section.kind === "pokedex") {
+      return {
+        title: "Pokedex",
+        subtitle: "Unlocked Pokémon from all worktrees.",
+      };
+    }
     if (section.kind === "browser") {
       return {
         title: "Browser",
@@ -296,7 +325,8 @@ function SectionTitle({
     if (section.kind === "developer") {
       return {
         title: "Developer",
-        subtitle: "Accent palette + workflow chip/button states (dev builds only).",
+        subtitle:
+          "Accent palette + workflow chip/button states (dev builds only).",
       };
     }
     const f = folders.find((x) => x.id === section.projectId);
@@ -329,6 +359,7 @@ function Pane({ section }: { section: SettingsSection }) {
   if (section.kind === "general") return <GeneralPane />;
   if (section.kind === "providers") return <ProvidersPane />;
   if (section.kind === "workspace") return <WorkspacePane />;
+  if (section.kind === "pokedex") return <PokedexPane />;
   if (section.kind === "browser") return <BrowserSettingsPane />;
   if (section.kind === "shortcuts") return <KeybindingsPane />;
   if (section.kind === "developer") return <DeveloperPane />;
@@ -386,7 +417,9 @@ function BrowserSettingsPane() {
 
   const remove = async (target: string) => {
     const client = await getRpcClient();
-    await Effect.runPromise(client.browser.removeCredential({ origin: target }));
+    await Effect.runPromise(
+      client.browser.removeCredential({ origin: target }),
+    );
     await load();
   };
 
@@ -508,7 +541,10 @@ const BRANCH_STYLE_META: Record<
   BranchNamingStyle,
   { label: string; example: string }
 > = {
-  "username-slug": { label: "username/branch", example: "swarajbachu/dark-mode" },
+  "username-slug": {
+    label: "username/branch",
+    example: "swarajbachu/dark-mode",
+  },
   slug: { label: "branch only", example: "dark-mode" },
   "feat-slug": { label: "feat/branch", example: "feat/dark-mode" },
   custom: { label: "custom prefix", example: "prefix/dark-mode" },
@@ -599,7 +635,10 @@ function GeneralPane() {
         description="Play a short sound when any agent turn finishes, including agents working in background chats."
       >
         <div className="flex items-center gap-2">
-          <HugeiconsIcon icon={VolumeHighIcon} className="size-4 shrink-0 text-muted-foreground" />
+          <HugeiconsIcon
+            icon={VolumeHighIcon}
+            className="size-4 shrink-0 text-muted-foreground"
+          />
           <Select
             value={completionSoundPreset}
             onValueChange={(v) =>
@@ -786,7 +825,11 @@ function ProvidersPane() {
               disabled={loading}
               aria-label="Refresh provider status"
             >
-              <HugeiconsIcon icon={RotateRight01Icon} className={cn("size-3.5", loading && "animate-spin")} aria-hidden />
+              <HugeiconsIcon
+                icon={RotateRight01Icon}
+                className={cn("size-3.5", loading && "animate-spin")}
+                aria-hidden
+              />
             </Button>
           </div>
         </FrameHeader>
@@ -883,9 +926,7 @@ function WorkspacePane() {
  * + tool subset.
  */
 function SubagentsSection() {
-  const enableForNewSessions = useSubagentsStore(
-    (s) => s.enableForNewSessions,
-  );
+  const enableForNewSessions = useSubagentsStore((s) => s.enableForNewSessions);
   const setEnableForNewSessions = useSubagentsStore(
     (s) => s.setEnableForNewSessions,
   );
@@ -920,7 +961,10 @@ function SubagentsSection() {
               ps.overrides.model ?? preset.definition.model ?? "";
             const rowDisabled = !enableForNewSessions || !ps.enabled;
             return (
-              <div key={preset.name} className="flex flex-col gap-3 px-4 py-3.5">
+              <div
+                key={preset.name}
+                className="flex flex-col gap-3 px-4 py-3.5"
+              >
                 <label className="group flex cursor-pointer items-start gap-3">
                   <Switch
                     checked={ps.enabled && enableForNewSessions}
@@ -1120,7 +1164,11 @@ export function SettingsRow({
     <div className="flex flex-col gap-3 px-4 py-3.5">
       <div className="flex items-center gap-3">
         {Icon && (
-          <HugeiconsIcon icon={Icon} className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          <HugeiconsIcon
+            icon={Icon}
+            className="size-4 shrink-0 text-muted-foreground"
+            aria-hidden
+          />
         )}
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <div className="text-sm font-medium text-foreground">{title}</div>
@@ -1223,7 +1271,8 @@ export function OptionCard({
             !compact && "mt-0.5",
           )}
         >
-          {iconNode ?? (Icon ? <HugeiconsIcon icon={Icon} className="size-4" /> : null)}
+          {iconNode ??
+            (Icon ? <HugeiconsIcon icon={Icon} className="size-4" /> : null)}
         </span>
       )}
       <span className="flex min-w-0 flex-1 flex-col gap-1">
@@ -1291,7 +1340,12 @@ export function RadioCheck({
       )}
     >
       {active && (
-        <HugeiconsIcon icon={Tick01Icon} className="size-2.5 text-primary-foreground" strokeWidth={3.5} aria-hidden />
+        <HugeiconsIcon
+          icon={Tick01Icon}
+          className="size-2.5 text-primary-foreground"
+          strokeWidth={3.5}
+          aria-hidden
+        />
       )}
     </span>
   );
@@ -1374,7 +1428,12 @@ export function CheckboxInput({
         )}
       >
         {checked && (
-          <HugeiconsIcon icon={Tick01Icon} className="size-3 text-background" strokeWidth={3.5} aria-hidden />
+          <HugeiconsIcon
+            icon={Tick01Icon}
+            className="size-3 text-background"
+            strokeWidth={3.5}
+            aria-hidden
+          />
         )}
       </span>
     </span>
@@ -1455,9 +1514,10 @@ export function ModelSelect({
 }) {
   const models = MODELS_BY_PROVIDER[providerId] ?? [];
   const normalizedValue =
-    value !== null && (models.some((m) => m.id === value) || models.length === 0)
-      ? value ?? ""
-      : models[0]?.id ?? "";
+    value !== null &&
+    (models.some((m) => m.id === value) || models.length === 0)
+      ? (value ?? "")
+      : (models[0]?.id ?? "");
   const items = useMemo(
     () => models.map((m) => ({ value: m.id, label: m.label })),
     [models],
@@ -1501,7 +1561,11 @@ export function ensureValidDefaultsForRuntime(
   const model =
     settings.defaultModelByProvider[provider] ??
     MODELS_BY_PROVIDER[provider][0]!.id;
-  return { providerId: provider, model, runtimeMode: settings.defaultRuntimeMode };
+  return {
+    providerId: provider,
+    model,
+    runtimeMode: settings.defaultRuntimeMode,
+  };
 }
 
 export { PROVIDER_LABEL };

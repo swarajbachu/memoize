@@ -9,6 +9,7 @@ import * as Path from "node:path";
 
 import {
   type FolderId,
+  PokemonSummary,
   Worktree,
   WorktreeCreateError,
   WorktreeDirtyError,
@@ -21,7 +22,14 @@ import {
 
 import { RepositorySettingsService } from "../../repository-settings/services/repository-settings-service.ts";
 import { WorkspaceService } from "../../workspace/services/workspace-service.ts";
-import { generateCoolName } from "../cool-name.ts";
+import { allocatePokemonName } from "../../pokemon/allocator.ts";
+import {
+  POKEMON_BY_NUMBER,
+  POKEMON_CATALOG,
+  pokemonSpriteSourcesFor,
+  pokemonSpriteStem,
+} from "../../pokemon/catalog.ts";
+import { PokemonService } from "../../pokemon/services/pokemon-service.ts";
 import {
   WorktreeService,
   type WorktreeRestoreSnapshot,
@@ -39,6 +47,7 @@ interface WorktreeRow {
   readonly setup_output: string;
   readonly setup_started_at: string | null;
   readonly setup_finished_at: string | null;
+  readonly pokemon_number: number | null;
 }
 
 const isSetupStatus = (value: string): value is WorktreeSetupStatus =>
@@ -47,6 +56,37 @@ const isSetupStatus = (value: string): value is WorktreeSetupStatus =>
   value === "succeeded" ||
   value === "failed" ||
   value === "skipped";
+
+const variantIdForWorktreeName = (
+  pokemon: NonNullable<ReturnType<typeof POKEMON_BY_NUMBER.get>>,
+  worktreeName: string,
+): string => {
+  const match = /-v(\d+)$/.exec(worktreeName);
+  if (match === null) return "default";
+  const version = Number(match[1]);
+  if (!Number.isSafeInteger(version) || version < 2) return "default";
+  const sources = pokemonSpriteSourcesFor(pokemon);
+  return sources[(version - 1) % sources.length]?.id ?? "default";
+};
+
+const pokemonSummaryFor = (
+  number: number | null,
+  worktreeName: string,
+): PokemonSummary | null => {
+  if (number === null) return null;
+  const pokemon = POKEMON_BY_NUMBER.get(number);
+  if (pokemon === undefined) return null;
+  const variantId = variantIdForWorktreeName(pokemon, worktreeName);
+  return PokemonSummary.make({
+    number: pokemon.number,
+    slug: pokemon.slug,
+    name: pokemon.name,
+    generation: pokemon.generation,
+    rarity: pokemon.rarity,
+    points: pokemon.points,
+    spriteUrl: `memoize://pokemon/${pokemonSpriteStem(pokemon.number, variantId)}`,
+  });
+};
 
 const rowToWorktree = (row: WorktreeRow): Worktree =>
   Worktree.make({
@@ -63,6 +103,7 @@ const rowToWorktree = (row: WorktreeRow): Worktree =>
       row.setup_started_at === null ? null : new Date(row.setup_started_at),
     setupFinishedAt:
       row.setup_finished_at === null ? null : new Date(row.setup_finished_at),
+    pokemon: pokemonSummaryFor(row.pokemon_number, row.name),
   });
 
 const SETUP_TIMEOUT_MS = 10 * 60 * 1000;
@@ -141,7 +182,10 @@ const prepareLocalFiles = async (
       const stat = await fs.lstat(targetNodeModules);
       if (stat.isSymbolicLink()) {
         output += "node_modules already symlinked\n";
-      } else if (stat.isDirectory() && (await isEmptyDirectory(targetNodeModules))) {
+      } else if (
+        stat.isDirectory() &&
+        (await isEmptyDirectory(targetNodeModules))
+      ) {
         await fs.rmdir(targetNodeModules);
         canLink = true;
       } else {
@@ -224,6 +268,7 @@ export const WorktreeServiceLive = Layer.effect(
   Effect.gen(function* () {
     const workspace = yield* WorkspaceService;
     const repositorySettings = yield* RepositorySettingsService;
+    const pokemonService = yield* PokemonService;
     const executor = yield* CommandExecutor.CommandExecutor;
     const fs = yield* FileSystem.FileSystem;
     const sql = yield* SqlClient.SqlClient;
@@ -307,7 +352,8 @@ export const WorktreeServiceLive = Layer.effect(
       Effect.gen(function* () {
         const rows = yield* sql<WorktreeRow>`
           SELECT id, project_id, path, name, branch, base_branch, created_at,
-                 setup_status, setup_output, setup_started_at, setup_finished_at
+                 setup_status, setup_output, setup_started_at, setup_finished_at,
+                 pokemon_number
           FROM worktrees
           WHERE project_id = ${projectId}
           ORDER BY created_at DESC
@@ -319,7 +365,8 @@ export const WorktreeServiceLive = Layer.effect(
       Effect.gen(function* () {
         const rows = yield* sql<WorktreeRow>`
           SELECT id, project_id, path, name, branch, base_branch, created_at,
-                 setup_status, setup_output, setup_started_at, setup_finished_at
+                 setup_status, setup_output, setup_started_at, setup_finished_at,
+                 pokemon_number
           FROM worktrees
           WHERE id = ${worktreeId}
           LIMIT 1
@@ -414,26 +461,68 @@ export const WorktreeServiceLive = Layer.effect(
           }
         }
 
-        // Try a few cool-names before giving up. Disk, DB, and existing-branch
-        // collisions all count as "pick another."
+        const unavailableNames = new Set<string>();
+        const existingRows = yield* sql<{ readonly name: string }>`
+          SELECT name FROM worktrees WHERE project_id = ${projectId}
+        `.pipe(Effect.orDie);
+        for (const row of existingRows) unavailableNames.add(row.name);
+
+        const baseEntries = yield* fs
+          .readDirectory(baseDir)
+          .pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<string>));
+        for (const entry of baseEntries) unavailableNames.add(entry);
+
+        const branchNamesRaw = yield* runGit(repoPath, [
+          "for-each-ref",
+          "--format=%(refname:short)",
+          "refs/heads",
+        ]).pipe(Effect.orElseSucceed(() => ""));
+        for (const branchName of branchNamesRaw.split("\n")) {
+          const trimmed = branchName.trim();
+          if (trimmed !== "") unavailableNames.add(trimmed);
+        }
+
+        const usedPokemonRows = yield* sql<{
+          readonly pokemon_number: number;
+        }>`
+          SELECT pokemon_number FROM pokemon_unlocks
+        `.pipe(Effect.orDie);
+        const usedPokemonNumbers = new Set(
+          usedPokemonRows.map((row) => row.pokemon_number),
+        );
+
+        // Allocation can still race with another worktree creator, so loop
+        // with newly discovered collisions fed back into the unavailable set.
         let attempt = 0;
-        while (attempt < 5) {
+        while (attempt < 50) {
           attempt += 1;
-          const name = generateCoolName();
+          const allocation = allocatePokemonName({
+            catalog: POKEMON_CATALOG,
+            unavailableNames,
+            usedPokemonNumbers,
+          });
+          if (allocation === null) break;
+          const { name, pokemon } = allocation;
           const branch = name;
           const target = Path.join(baseDir, name);
 
           const targetExists = yield* fs
             .exists(target)
             .pipe(Effect.catchAll(() => Effect.succeed(false)));
-          if (targetExists) continue;
+          if (targetExists) {
+            unavailableNames.add(name);
+            continue;
+          }
 
           const dupes = yield* sql<{ id: string }>`
             SELECT id FROM worktrees
             WHERE project_id = ${projectId} AND name = ${name}
             LIMIT 1
           `.pipe(Effect.orDie);
-          if (dupes.length > 0) continue;
+          if (dupes.length > 0) {
+            unavailableNames.add(name);
+            continue;
+          }
 
           // Skip if a branch with this name already exists in the repo —
           // `git worktree add -b` would fail and we'd surface a confusing
@@ -447,7 +536,10 @@ export const WorktreeServiceLive = Layer.effect(
             Effect.map(() => true),
             Effect.catchAll(() => Effect.succeed(false)),
           );
-          if (branchExists) continue;
+          if (branchExists) {
+            unavailableNames.add(name);
+            continue;
+          }
 
           // git worktree add -b <branch> <target> <baseRef>
           // baseRef is the freshly-fetched `origin/<branch>` when available,
@@ -475,11 +567,12 @@ export const WorktreeServiceLive = Layer.effect(
           yield* sql`
             INSERT INTO worktrees
               (id, project_id, path, name, branch, base_branch, created_at,
-               setup_status, setup_output)
+               setup_status, setup_output, pokemon_number)
             VALUES
               (${id}, ${projectId}, ${target}, ${name}, ${branch}, ${baseBranch}, ${nowIso},
-               'pending', '')
+               'pending', '', ${pokemon.number})
           `.pipe(Effect.orDie);
+          yield* pokemonService.recordUnlock(pokemon.number, id);
           const prepared = yield* runSetupFor(id).pipe(
             Effect.catchAll(() => get(id).pipe(Effect.map((wt) => wt!))),
           );
@@ -488,7 +581,7 @@ export const WorktreeServiceLive = Layer.effect(
         return yield* Effect.fail(
           new WorktreeCreateError({
             projectId,
-            reason: "could not pick a unique worktree name",
+            reason: "could not pick a unique Pokémon worktree name",
           }),
         );
       });
@@ -617,6 +710,7 @@ export const WorktreeServiceLive = Layer.effect(
           setupOutput: "",
           setupStartedAt: null,
           setupFinishedAt: null,
+          pokemon: null,
         });
       });
 
@@ -684,7 +778,11 @@ export const WorktreeServiceLive = Layer.effect(
             runShellScript({
               script,
               cwd: worktree.path,
-              env: setupEnv(folder.path, worktree, settings.environmentVariables),
+              env: setupEnv(
+                folder.path,
+                worktree,
+                settings.environmentVariables,
+              ),
             }),
           catch: (err) =>
             new WorktreeSetupError({
@@ -725,7 +823,10 @@ export const WorktreeServiceLive = Layer.effect(
         const script = settings.runScript?.trim() ?? "";
         if (script.length === 0) {
           return yield* Effect.fail(
-            new WorktreeSetupError({ worktreeId, reason: "run script is empty" }),
+            new WorktreeSetupError({
+              worktreeId,
+              reason: "run script is empty",
+            }),
           );
         }
         return {
