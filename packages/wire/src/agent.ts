@@ -436,6 +436,29 @@ const UsageDeltaEvent = Schema.TaggedStruct("UsageDelta", {
   model: Schema.String,
 });
 
+export const ContextUsagePrecision = Schema.Literal(
+  "exact",
+  "estimated",
+  "capacity-only",
+);
+export type ContextUsagePrecision = typeof ContextUsagePrecision.Type;
+
+const ContextUsageEvent = Schema.TaggedStruct("ContextUsage", {
+  providerId: ProviderId,
+  usedTokens: Schema.NullOr(Schema.Number),
+  windowTokens: Schema.NullOr(Schema.Number),
+  precision: ContextUsagePrecision,
+  source: Schema.optional(Schema.String),
+});
+
+const UsageLimitEvent = Schema.TaggedStruct("UsageLimit", {
+  providerId: ProviderId,
+  label: Schema.String,
+  usedPercent: Schema.NullOr(Schema.Number),
+  resetsAt: Schema.NullOr(Schema.DateFromString),
+  windowMinutes: Schema.NullOr(Schema.Number),
+});
+
 const CompletedEvent = Schema.TaggedStruct("Completed", {
   reason: Schema.Literal("ended", "interrupted", "error"),
 });
@@ -547,6 +570,8 @@ export const AgentEvent = Schema.Union(
   PermissionRequestEvent,
   SubagentSummaryEvent,
   UsageDeltaEvent,
+  ContextUsageEvent,
+  UsageLimitEvent,
   SessionCursorEvent,
   UserQuestionEvent,
   PermissionModeChangedEvent,
@@ -735,6 +760,17 @@ const claudeContextWindowDescriptor = (): SelectOptionDescriptor => ({
     { id: "1m", label: "1M" },
   ],
   defaultId: "1m",
+});
+
+const staticContextWindowDescriptor = (
+  id: string,
+  label: string,
+): SelectOptionDescriptor => ({
+  kind: "select",
+  id: "contextWindow",
+  label: "Context Window",
+  options: [{ id, label }],
+  defaultId: id,
 });
 
 export const MODELS_BY_PROVIDER: Record<
@@ -960,8 +996,18 @@ export const MODELS_BY_PROVIDER: Record<
     { id: "composer-2.5", label: "Composer 2.5", supportsPlanMode: true },
     { id: "gpt-5.5", label: "GPT-5.5", supportsPlanMode: true },
     { id: "gpt-5.3-codex", label: "Codex 5.3", supportsPlanMode: true },
-    { id: "claude-sonnet-4-6", label: "Sonnet 4.6", supportsPlanMode: true },
-    { id: "claude-opus-4-7", label: "Opus 4.7", supportsPlanMode: true },
+    {
+      id: "claude-sonnet-4-6",
+      label: "Sonnet 4.6",
+      optionDescriptors: [staticContextWindowDescriptor("1m", "1M")],
+      supportsPlanMode: true,
+    },
+    {
+      id: "claude-opus-4-7",
+      label: "Opus 4.7",
+      optionDescriptors: [staticContextWindowDescriptor("1m", "1M")],
+      supportsPlanMode: true,
+    },
     { id: "gemini-3.1-pro", label: "Gemini 3.1 Pro", supportsPlanMode: true },
   ],
   // OpenCode is a meta-provider: it spawns a local `opencode serve` and

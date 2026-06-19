@@ -3,6 +3,7 @@ import { Schema } from "effect";
 
 import {
   AgentDefinition,
+  ContextUsagePrecision,
   PermissionMode,
   ProviderId,
   RuntimeMode,
@@ -243,6 +244,22 @@ const UsageContent = Schema.TaggedStruct("usage", {
   model: Schema.String,
 });
 
+const ContextUsageContent = Schema.TaggedStruct("context_usage", {
+  providerId: ProviderId,
+  usedTokens: Schema.NullOr(Schema.Number),
+  windowTokens: Schema.NullOr(Schema.Number),
+  precision: ContextUsagePrecision,
+  source: Schema.optional(Schema.String),
+});
+
+const UsageLimitContent = Schema.TaggedStruct("usage_limit", {
+  providerId: ProviderId,
+  label: Schema.String,
+  usedPercent: Schema.NullOr(Schema.Number),
+  resetsAt: Schema.NullOr(Schema.DateFromString),
+  windowMinutes: Schema.NullOr(Schema.Number),
+});
+
 /**
  * Persisted form of a `UserQuestion` event. `itemId` is the SDK's
  * `tool_use.id` for the AskUserQuestion call; the paired
@@ -288,6 +305,8 @@ export const MessageContent = Schema.Union(
   ErrorContent,
   SubagentSummaryContent,
   UsageContent,
+  ContextUsageContent,
+  UsageLimitContent,
   UserQuestionContent,
   UserQuestionAnswerContent,
 );

@@ -72,7 +72,7 @@ import {
 } from "../store/annotations.ts";
 import { useAttachmentsStore } from "../store/attachments.ts";
 import { useComposerBridge } from "../store/composer-bridge.ts";
-import { cn } from "~/lib/utils";
+import { cn, formatCompactNumber } from "~/lib/utils";
 import {
   matchBuiltin,
   type BuiltinCommand,
@@ -866,6 +866,7 @@ export function ChatComposer({ session }: { session: Session }) {
                   sessionId={sessionId}
                   current={session.runtimeMode}
                 />
+                <ContextStatusPopover session={session} />
                 <SessionTimer sessionId={sessionId} inFlight={inFlight} />
                 {inFlight ? (
                   <Tooltip>
@@ -1484,6 +1485,243 @@ function ReasoningPicker({
         </MenuGroup>
       </MenuPopup>
     </Menu>
+  );
+}
+
+const contextWindowTokensFromId = (id: string | undefined): number | null => {
+  switch (id?.toLowerCase()) {
+    case "200k":
+      return 200_000;
+    case "1m":
+      return 1_000_000;
+    default:
+      return null;
+  }
+};
+
+const descriptorContextWindowTokens = (
+  providerId: ProviderId,
+  model: string,
+): number | null => {
+  const descriptor = findModelDescriptor(providerId, model);
+  const contextDescriptor = descriptor?.optionDescriptors?.find(
+    (d): d is SelectOptionDescriptor =>
+      d.kind === "select" && d.id === "contextWindow",
+  );
+  return contextWindowTokensFromId(contextDescriptor?.defaultId);
+};
+
+/**
+ * Best-known context window for a session before Claude/Codex report the
+ * exact number — the user's selected window if any, else the model's
+ * default. This is a real capacity (not a fabricated usage figure), so the
+ * control can stay visible from the first message.
+ */
+const selectedContextWindowTokens = (
+  sessionId: SessionId,
+  providerId: ProviderId,
+  model: string,
+): number | null => {
+  if (typeof window === "undefined") {
+    return descriptorContextWindowTokens(providerId, model);
+  }
+  const stored = window.sessionStorage.getItem(
+    `memoize.modelOptions.${sessionId}.contextWindow`,
+  );
+  return (
+    contextWindowTokensFromId(stored ?? undefined) ??
+    descriptorContextWindowTokens(providerId, model)
+  );
+};
+
+const formatTokens = (value: number): string => {
+  const formatted = formatCompactNumber(value);
+  return formatted.endsWith("m") || formatted.endsWith("k")
+    ? formatted
+    : `${formatted}`;
+};
+
+const resetLabel = (date: Date | null): string | null => {
+  if (date === null) return null;
+  const now = new Date();
+  const sameDay =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+  if (sameDay) {
+    return new Intl.DateTimeFormat([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(date);
+  }
+  return new Intl.DateTimeFormat([], {
+    day: "numeric",
+    month: "short",
+  }).format(date);
+};
+
+function ContextStatusPopover({ session }: { session: Session }) {
+  const messages = useMessagesStore(
+    (s) => s.messagesBySession[session.id] ?? EMPTY_MESSAGES,
+  );
+
+  const latestContext = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const content = messages[i]!.content;
+      if (
+        content._tag === "context_usage" &&
+        content.providerId === session.providerId
+      ) {
+        return content;
+      }
+    }
+    return null;
+  }, [messages, session.providerId]);
+
+  const usageLimits = useMemo(
+    () =>
+      messages
+        .filter(
+          (m) =>
+            m.content._tag === "usage_limit" &&
+            m.content.providerId === session.providerId,
+        )
+        .slice(-2)
+        .map((m) => (m.content._tag === "usage_limit" ? m.content : null))
+        .filter((v): v is NonNullable<typeof v> => v !== null),
+    [messages, session.providerId],
+  );
+
+  // Real numbers only — but the context window itself is a real capacity we
+  // know from the model, so we show it from the first message and fill in
+  // the live bar once Claude/Codex report exact usage.
+  const usedTokens = latestContext?.usedTokens ?? null;
+  const windowTokens =
+    latestContext?.windowTokens ??
+    selectedContextWindowTokens(session.id, session.providerId, session.model);
+
+  const percent =
+    usedTokens !== null && windowTokens !== null && windowTokens > 0
+      ? Math.min(100, (usedTokens / windowTokens) * 100)
+      : null;
+  const freeTokens =
+    usedTokens !== null && windowTokens !== null
+      ? Math.max(0, windowTokens - usedTokens)
+      : null;
+
+  const hasContext = usedTokens !== null || windowTokens !== null;
+  const hasLimits = usageLimits.length > 0;
+  if (!hasContext && !hasLimits) return null;
+
+  const high = percent !== null && percent >= 90;
+  const headerValue =
+    usedTokens !== null && windowTokens !== null
+      ? `${formatTokens(usedTokens)} / ${formatTokens(windowTokens)}`
+      : windowTokens !== null
+        ? formatTokens(windowTokens)
+        : formatTokens(usedTokens!);
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            className={cn(
+              "flex h-6 items-center justify-center rounded-md px-2 transition-colors hover:bg-muted/60",
+              high
+                ? "text-amber-400 hover:text-amber-300"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+            aria-label="Context and usage status"
+          >
+            <HugeiconsIcon icon={DashboardSpeedIcon} className="size-3.5" />
+          </button>
+        }
+      />
+      <TooltipPopup
+        side="top"
+        align="end"
+        sideOffset={8}
+        className="w-[256px] overflow-hidden rounded-xl border-border bg-popover p-0 text-[13px] shadow-lg"
+      >
+        {hasContext ? (
+          <div className="flex flex-col gap-2.5 p-3">
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="font-medium text-foreground">Context</span>
+              <span className="tabular-nums text-muted-foreground">
+                {headerValue}
+              </span>
+            </div>
+            {percent !== null ? (
+              <>
+                <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className={cn(
+                      "h-full rounded-full transition-[width]",
+                      high ? "bg-amber-400" : "bg-foreground",
+                    )}
+                    style={{ width: `${Math.max(percent, 2)}%` }}
+                  />
+                </div>
+                <div className="flex items-center justify-between text-muted-foreground">
+                  <span className="tabular-nums">
+                    {percent.toFixed(1)}% used
+                  </span>
+                  {freeTokens !== null ? (
+                    <span className="tabular-nums">
+                      {formatTokens(freeTokens)} free
+                    </span>
+                  ) : null}
+                </div>
+              </>
+            ) : (
+              <div className="text-muted-foreground/70">
+                Usage appears after the first response
+              </div>
+            )}
+          </div>
+        ) : null}
+        {hasLimits ? (
+          <div
+            className={cn(
+              "flex flex-col gap-2 p-3",
+              hasContext && "border-t border-border",
+            )}
+          >
+            <span className="font-medium text-foreground">Usage limits</span>
+            <div className="flex flex-col gap-1.5">
+              {usageLimits.map((limit, index) => {
+                const reset = resetLabel(limit.resetsAt);
+                const remaining =
+                  limit.usedPercent !== null
+                    ? `${Math.max(0, 100 - limit.usedPercent).toFixed(0)}% left`
+                    : "Active";
+                return (
+                  <div
+                    key={`${limit.label}-${index}`}
+                    className="flex items-center justify-between gap-3 text-muted-foreground"
+                  >
+                    <span className="truncate text-foreground">
+                      {limit.label}
+                    </span>
+                    <span className="flex shrink-0 items-center gap-2 tabular-nums">
+                      <span>{remaining}</span>
+                      {reset !== null ? (
+                        <span className="text-muted-foreground/50">
+                          resets {reset}
+                        </span>
+                      ) : null}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+      </TooltipPopup>
+    </Tooltip>
   );
 }
 
