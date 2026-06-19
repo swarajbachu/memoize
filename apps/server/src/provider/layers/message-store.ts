@@ -303,6 +303,9 @@ const parentItemIdOfContent = (content: MessageContent): string | null => {
     case "user_question":
     case "user_question_answer":
       return content.parentItemId ?? null;
+    case "context_usage":
+    case "usage_limit":
+      return null;
     case "subagent_summary":
       // The summary row IS the wrapper; it sits at the top level next to
       // its `Agent` tool_use. No parent.
@@ -328,6 +331,8 @@ const roleForContent = (content: MessageContent): MessageRole => {
       return "tool";
     case "error":
     case "usage":
+    case "context_usage":
+    case "usage_limit":
       return "system";
   }
 };
@@ -390,6 +395,24 @@ const eventToContent = (event: AgentEvent): MessageContent | null => {
         cacheReadTokens: event.cacheReadTokens,
         cacheCreationTokens: event.cacheCreationTokens,
         model: event.model,
+      };
+    case "ContextUsage":
+      return {
+        _tag: "context_usage",
+        providerId: event.providerId,
+        usedTokens: event.usedTokens,
+        windowTokens: event.windowTokens,
+        precision: event.precision,
+        source: event.source,
+      };
+    case "UsageLimit":
+      return {
+        _tag: "usage_limit",
+        providerId: event.providerId,
+        label: event.label,
+        usedPercent: event.usedPercent,
+        resetsAt: event.resetsAt,
+        windowMinutes: event.windowMinutes,
       };
     case "Error":
       return { _tag: "error", message: event.message };
