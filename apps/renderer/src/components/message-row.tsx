@@ -28,6 +28,7 @@ import { useMessagesStore, type ChatError } from "~/store/messages";
 import { useUiStore } from "~/store/ui";
 
 import { CopyButton } from "./copy-button.tsx";
+import { useRevealAnnotation } from "./annotation/annotation-navigation.ts";
 import { AnnotationFileChip, FileChip } from "./file-chip.tsx";
 import { MarkdownBody } from "./markdown-body.tsx";
 import {
@@ -219,6 +220,7 @@ function UserBubble({
   goal?: boolean;
 }) {
   const hasAnnotations = annotations !== undefined && annotations.length > 0;
+  const revealAnnotation = useRevealAnnotation();
   const hasChips =
     (attachments !== undefined && attachments.length > 0) ||
     (fileRefs !== undefined && fileRefs.length > 0) ||
@@ -237,16 +239,25 @@ function UserBubble({
           className="absolute right-2 top-1.5 size-5 text-user-bubble-foreground/50 opacity-60 hover:bg-background/10 hover:text-user-bubble-foreground hover:opacity-100 focus-visible:opacity-100"
         />
         {hasAnnotations ? (
-          <ol className="mb-1.5 space-y-1">
+          <ol className="mb-2 space-y-1">
             {(annotations ?? []).map((a, i) => (
-              <li key={a.id} className="flex items-start gap-1.5 text-xs">
-                <span className="mt-px flex size-4 shrink-0 items-center justify-center rounded-full bg-background/20 text-[10px] font-medium tabular-nums">
-                  {i + 1}
-                </span>
-                <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
-                  <AnnotationFileChip annotation={a} />
-                  <span className="min-w-0 break-words">{a.comment}</span>
-                </span>
+              <li key={a.id}>
+                <button
+                  type="button"
+                  onClick={() => revealAnnotation(a)}
+                  className="flex w-full min-w-0 items-start gap-2 rounded-lg border border-user-bubble-foreground/12 bg-background/10 px-2 py-1.5 text-left text-xs hover:bg-background/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-user-bubble-foreground/30"
+                  title="Open annotation"
+                >
+                  <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-background/20 text-[10px] font-semibold tabular-nums">
+                    {i + 1}
+                  </span>
+                  <span className="grid min-w-0 flex-1 gap-1">
+                    <AnnotationFileChip annotation={a} />
+                    <span className="min-w-0 break-words leading-snug">
+                      {a.comment}
+                    </span>
+                  </span>
+                </button>
               </li>
             ))}
           </ol>

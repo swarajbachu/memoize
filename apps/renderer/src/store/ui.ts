@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import type { FolderId, WorktreeId } from "@memoize/wire";
+import type { CodeAnnotation, FolderId, WorktreeId } from "@memoize/wire";
 
 /**
  * Top-level renderer view. The settings page replaces the chat surface in the
@@ -82,6 +82,14 @@ export type OpenFile =
       readonly view: FileView;
     };
 
+export type RevealedAnnotation = CodeAnnotation & {
+  /**
+   * Monotonic token so clicking the same annotation again still re-scrolls and
+   * refreshes the editor highlight.
+   */
+  readonly revealToken: number;
+};
+
 type UiState = {
   readonly view: View;
   readonly setView: (view: View) => void;
@@ -97,6 +105,7 @@ type UiState = {
   readonly rightSidebarOpen: boolean;
   readonly isFullScreen: boolean;
   readonly activeRightTab: RightTab;
+  readonly revealedAnnotation: RevealedAnnotation | null;
   readonly setActiveMainTab: (tab: MainTab) => void;
   readonly openFileInTab: (
     file:
@@ -115,6 +124,8 @@ type UiState = {
   readonly setRightSidebarOpen: (open: boolean) => void;
   readonly setFullScreen: (full: boolean) => void;
   readonly setActiveRightTab: (tab: RightTab) => void;
+  readonly revealAnnotation: (annotation: CodeAnnotation) => void;
+  readonly clearRevealedAnnotation: () => void;
 };
 
 export const useUiStore = create<UiState>((set) => ({
@@ -130,6 +141,7 @@ export const useUiStore = create<UiState>((set) => ({
   rightSidebarOpen: true,
   isFullScreen: false,
   activeRightTab: "files",
+  revealedAnnotation: null,
   setActiveMainTab: (tab) => set({ activeMainTab: tab }),
   openFileInTab: (file) =>
     set({
@@ -150,4 +162,12 @@ export const useUiStore = create<UiState>((set) => ({
   setRightSidebarOpen: (open) => set({ rightSidebarOpen: open }),
   setFullScreen: (full) => set({ isFullScreen: full }),
   setActiveRightTab: (tab) => set({ activeRightTab: tab }),
+  revealAnnotation: (annotation) =>
+    set((s) => ({
+      revealedAnnotation: {
+        ...annotation,
+        revealToken: (s.revealedAnnotation?.revealToken ?? 0) + 1,
+      },
+    })),
+  clearRevealedAnnotation: () => set({ revealedAnnotation: null }),
 }));

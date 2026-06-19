@@ -701,7 +701,11 @@ export function ChatComposer({ session }: { session: Session }) {
         <div className="mx-auto">
           <ActiveLocationChip />
           <ProjectPlanTray key={sessionId} sessionId={sessionId} />
-          <AnnotationTray sessionId={sessionId} />
+          <AnnotationTray
+            sessionId={sessionId}
+            folderId={session.projectId}
+            worktreeId={session.worktreeId}
+          />
           {session.providerId === "codex" && goal !== null ? (
             <GoalBanner
               goal={goal}
@@ -724,7 +728,7 @@ export function ChatComposer({ session }: { session: Session }) {
           <Frame>
             <Card
               className={cn(
-                "rounded-xl min-h-30 transition-colors",
+                "min-h-30 rounded-lg transition-colors",
                 goalSendMode
                   ? "border-2 border-dashed border-amber-300/60 dark:border-amber-300/45"
                   : inPlanMode

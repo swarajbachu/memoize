@@ -109,7 +109,7 @@ export function AnnotateOverlay({
       onMouseDown={(e) => e.preventDefault()}
     >
       {cardOpen ? (
-        <div className="w-full rounded-xl border border-border bg-popover p-2 shadow-lg">
+        <div className="w-full rounded-lg border border-border/70 bg-popover p-2 shadow-lg">
           <div className="mb-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
             <HugeiconsIcon icon={BubbleChatIcon} className="size-3.5" />
             <span className="truncate font-medium text-foreground">
@@ -133,7 +133,7 @@ export function AnnotateOverlay({
             }}
             rows={2}
             placeholder="Add a comment…"
-            className="max-h-32 min-h-14 w-full resize-y rounded-md border border-border/50 bg-background px-2 py-1.5 text-xs leading-relaxed text-foreground outline-none focus:border-ring/50"
+            className="max-h-32 min-h-14 w-full resize-y rounded-md bg-background/80 px-2 py-1.5 text-xs leading-relaxed text-foreground outline-none ring-0 placeholder:text-muted-foreground/70 focus:bg-background"
           />
           <div className="mt-1.5 flex items-center justify-end gap-1">
             <button
@@ -161,7 +161,7 @@ export function AnnotateOverlay({
           type="button"
           onClick={() => onCardOpenChange(true)}
           className={cn(
-            "flex items-center gap-1.5 rounded-full border border-border bg-popover px-2.5 py-1 text-xs font-medium text-foreground shadow-md",
+            "flex items-center gap-1.5 rounded-md border border-border/70 bg-popover px-2.5 py-1 text-xs font-medium text-foreground shadow-md",
             "hover:bg-accent hover:text-accent-foreground",
           )}
           aria-label={`Annotate ${basename(relPath)}:${rangeLabel(selection)}`}

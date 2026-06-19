@@ -43,4 +43,3 @@ export const BlogCard = ({ card }: { card: CardData }) => {
     </Link>
   );
 };
-

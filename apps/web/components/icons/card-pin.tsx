@@ -265,4 +265,3 @@ export const CardPin = () => {
     </svg>
   );
 };
-
