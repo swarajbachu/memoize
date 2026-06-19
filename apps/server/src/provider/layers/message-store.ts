@@ -19,10 +19,12 @@ import {
   SessionAlreadyStartedError,
   type AgentDefinition,
   type AgentEvent,
+  AgentSessionNotFoundError,
   type AttachmentRef,
   type CodeAnnotation,
   type FileRef,
   type FolderId,
+  GoalUnsupportedError,
   type MessageContent,
   type MessageId as MessageIdType,
   type MessageRole,
@@ -34,6 +36,8 @@ import {
   SessionNotFoundError,
   SessionStartError,
   type SkillRef,
+  ThreadGoal,
+  type ThreadGoalSetInput,
   type Worktree,
   WorktreeId,
 } from "@memoize/wire";
@@ -677,6 +681,16 @@ export const MessageStoreLive = Layer.scoped(
     const queuePubsubs = yield* Ref.make<
       ReadonlyMap<SessionId, PubSub.PubSub<ReadonlyArray<QueuedMessage>>>
     >(new Map());
+    const goalPubsubs = yield* Ref.make<
+      ReadonlyMap<
+        SessionId,
+        PubSub.PubSub<{
+          readonly sessionId: SessionId;
+          readonly goal: ThreadGoal | null;
+        }>
+      >
+    >(new Map());
+    const goalsBySession = new Map<string, ThreadGoal | null>();
 
     // Single hub for chat-row changes (title / worktree binding). Unlike the
     // per-session message/status pubsubs, chats are few and updates rare, so
@@ -734,6 +748,33 @@ export const MessageStoreLive = Layer.scoped(
           return next;
         });
         return pubsub;
+      });
+
+    const getOrMakeGoalPubsub = (sessionId: SessionId) =>
+      Effect.gen(function* () {
+        const map = yield* Ref.get(goalPubsubs);
+        const existing = map.get(sessionId);
+        if (existing !== undefined) return existing;
+        const pubsub = yield* PubSub.unbounded<{
+          readonly sessionId: SessionId;
+          readonly goal: ThreadGoal | null;
+        }>();
+        yield* Ref.update(goalPubsubs, (m) => {
+          const next = new Map(m);
+          next.set(sessionId, pubsub);
+          return next;
+        });
+        return pubsub;
+      });
+
+    const publishGoal = (
+      sessionId: SessionId,
+      goal: ThreadGoal | null,
+    ): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        goalsBySession.set(sessionId, goal);
+        const pubsub = yield* getOrMakeGoalPubsub(sessionId);
+        yield* PubSub.publish(pubsub, { sessionId, goal }).pipe(Effect.asVoid);
       });
 
     const lookupSession = (
@@ -970,6 +1011,14 @@ export const MessageStoreLive = Layer.scoped(
                   WHERE id = ${sessionId}
                 `.pipe(Effect.asVoid, Effect.orDie);
                 permissionModeBySession.set(sessionId, event.mode);
+                return;
+              }
+              if (event._tag === "GoalUpdated") {
+                yield* publishGoal(sessionId, ThreadGoal.make(event.goal));
+                return;
+              }
+              if (event._tag === "GoalCleared") {
+                yield* publishGoal(sessionId, null);
                 return;
               }
               if (
@@ -1245,6 +1294,7 @@ export const MessageStoreLive = Layer.scoped(
             yield* persistMessage(sessionId, {
               _tag: "user",
               text: input.initialPrompt!,
+              goal: false,
             });
           }
           // Detach the boot so the RPC reply happens immediately. The status
@@ -1365,6 +1415,7 @@ export const MessageStoreLive = Layer.scoped(
           yield* persistMessage(sessionId, {
             _tag: "user",
             text: input.initialPrompt!,
+            goal: false,
           });
         }
         yield* startSubscription(sessionId);
@@ -2188,6 +2239,93 @@ export const MessageStoreLive = Layer.scoped(
         }),
       );
 
+    const ensureCodexGoalSession = (
+      sessionId: SessionId,
+    ): Effect.Effect<Session, SessionNotFoundError | GoalUnsupportedError> =>
+      Effect.gen(function* () {
+        const session = yield* lookupSession(sessionId);
+        if (session.providerId !== "codex") {
+          return yield* Effect.fail(
+            new GoalUnsupportedError({ providerId: session.providerId }),
+          );
+        }
+        return session;
+      });
+
+    const mapProviderSessionNotFound =
+      (
+        sessionId: SessionId,
+      ): ((
+        error: AgentSessionNotFoundError,
+      ) => Effect.Effect<never, SessionNotFoundError>) =>
+      () =>
+        Effect.fail(new SessionNotFoundError({ sessionId }));
+
+    const getGoal: MessageStoreShape["getGoal"] = (sessionId) =>
+      Effect.gen(function* () {
+        yield* ensureCodexGoalSession(sessionId);
+        const goal = yield* provider
+          .getGoal(sessionId)
+          .pipe(
+            Effect.catchTag(
+              "AgentSessionNotFoundError",
+              mapProviderSessionNotFound(sessionId),
+            ),
+          );
+        yield* publishGoal(sessionId, goal);
+        return goal;
+      });
+
+    const setGoal: MessageStoreShape["setGoal"] = (sessionId, goalInput) =>
+      Effect.gen(function* () {
+        yield* ensureCodexGoalSession(sessionId);
+        const goal = yield* provider
+          .setGoal(sessionId, goalInput)
+          .pipe(
+            Effect.catchTag(
+              "AgentSessionNotFoundError",
+              mapProviderSessionNotFound(sessionId),
+            ),
+          );
+        yield* publishGoal(sessionId, goal);
+        return goal;
+      });
+
+    const clearGoal: MessageStoreShape["clearGoal"] = (sessionId) =>
+      Effect.gen(function* () {
+        yield* ensureCodexGoalSession(sessionId);
+        yield* provider
+          .clearGoal(sessionId)
+          .pipe(
+            Effect.catchTag(
+              "AgentSessionNotFoundError",
+              mapProviderSessionNotFound(sessionId),
+            ),
+          );
+        yield* publishGoal(sessionId, null);
+      });
+
+    const streamGoal: MessageStoreShape["streamGoal"] = (sessionId) =>
+      Stream.unwrapScoped(
+        Effect.gen(function* () {
+          yield* ensureCodexGoalSession(sessionId);
+          const pubsub = yield* getOrMakeGoalPubsub(sessionId);
+          const dequeue = yield* pubsub.subscribe;
+          const cached = goalsBySession.get(sessionId);
+          const initialGoal =
+            cached !== undefined
+              ? cached
+              : yield* provider
+                  .getGoal(sessionId)
+                  .pipe(Effect.catchAll(() => Effect.succeed(null)));
+          if (cached === undefined) goalsBySession.set(sessionId, initialGoal);
+          return Stream.concat(
+            Stream.succeed({ sessionId, goal: initialGoal }),
+            Stream.fromQueue(dequeue),
+          );
+        }),
+      );
+
     /**
      * Restart the provider for `session` under the same persisted id so the
      * message history stays attached to the same row. Used after a process
@@ -2320,6 +2458,7 @@ export const MessageStoreLive = Layer.scoped(
       fileRefs?: ReadonlyArray<FileRef>,
       skillRefs?: ReadonlyArray<SkillRef>,
       annotations?: ReadonlyArray<CodeAnnotation>,
+      asGoal?: boolean,
     ): Effect.Effect<boolean, SessionNotFoundError> =>
       Effect.gen(function* () {
         const session = yield* lookupSession(sessionId);
@@ -2344,8 +2483,9 @@ export const MessageStoreLive = Layer.scoped(
               fileRefs: fileRefs ?? [],
               skillRefs: skillRefs ?? [],
               annotations: annotationList,
+              goal: asGoal === true,
             }
-          : { _tag: "user", text };
+          : { _tag: "user", text, goal: asGoal === true };
         // Annotations have no native CLI token (unlike `@file` / `/skill`),
         // so the only place the model ever sees them is the prompt text.
         // Serialise them into a numbered list here — the single injection
@@ -2393,6 +2533,33 @@ export const MessageStoreLive = Layer.scoped(
         );
         if (firstUserCount === 1 && text.trim().length > 0) {
           yield* forkAutoName(session.chatId, sessionId, text);
+        }
+        if (asGoal === true) {
+          const objective = text.trim();
+          if (objective.length === 0) return false;
+          if (session.providerId !== "codex") {
+            const persistedError = yield* persistMessage(sessionId, {
+              _tag: "error",
+              message:
+                "Goal mode is currently only supported for Codex sessions.",
+            });
+            yield* broadcastMessage(sessionId, persistedError);
+            yield* ndjsonAppend(sessionId, persistedError);
+            return false;
+          }
+          const goal = yield* provider
+            .setGoal(sessionId, {
+              objective,
+              status: "active",
+            })
+            .pipe(
+              Effect.catchTag(
+                "AgentSessionNotFoundError",
+                mapProviderSessionNotFound(sessionId),
+              ),
+            );
+          yield* publishGoal(sessionId, goal);
+          return true;
         }
         // First attempt: push into the existing provider session. If that
         // session is gone (provider dropped it across an app restart) start
@@ -2470,6 +2637,7 @@ export const MessageStoreLive = Layer.scoped(
       fileRefs,
       skillRefs,
       annotations,
+      asGoal,
     ) =>
       Effect.gen(function* () {
         yield* submitUserMessage(
@@ -2479,6 +2647,7 @@ export const MessageStoreLive = Layer.scoped(
           fileRefs,
           skillRefs,
           annotations,
+          asGoal,
         );
       });
 
@@ -2763,6 +2932,10 @@ export const MessageStoreLive = Layer.scoped(
       listMessages,
       streamMessages,
       streamStatus,
+      getGoal,
+      setGoal,
+      clearGoal,
+      streamGoal,
       sendMessage,
       interruptSession,
       listQueuedMessages,
