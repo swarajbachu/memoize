@@ -2,6 +2,7 @@ import { getSEO } from "@/lib/seo";
 import { AboutSection } from "@/components/about";
 import { BentoOne } from "@/components/bento-one";
 import { Comparison } from "@/components/comparison";
+import { DownloadShortcut } from "@/components/download-shortcut";
 import { FAQ } from "@/components/faq";
 import { Hero } from "@/components/hero";
 import { LogoCloud } from "@/components/logo-cloud";
@@ -17,6 +18,7 @@ export const metadata = getSEO({
 export default function Home() {
   return (
     <section className="flex max-w-screen overflow-x-hidden flex-col items-center justify-center">
+      <DownloadShortcut />
       <Hero />
       <LogoCloud />
       <BentoOne />

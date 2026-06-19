@@ -1,14 +1,12 @@
 // Central place for memoize's brand constants and outbound links so we only
-// edit them once. Swap DOWNLOAD_URL to the direct signed .dmg asset once a
-// release exists.
+// edit them once.
 
 export const SITE_NAME = "memoize";
 
 export const GITHUB_URL = "https://github.com/swarajbachu/memoize";
 
-// Points at the latest GitHub release for now. Replace with the direct
-// `.dmg` download URL when a signed build is published.
-export const DOWNLOAD_URL = `${GITHUB_URL}/releases/latest`;
+// Stable site route that redirects to the latest signed `.dmg`.
+export const DOWNLOAD_URL = "/download";
 
 export const TAGLINE =
   "Token max every coding agent from one local Mac workspace.";

@@ -89,8 +89,6 @@ export const Footer = () => {
                 </div>
                 <Link
                   href={DOWNLOAD_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
                   aria-label="Download memoize for Mac"
                   className="bg-primary text-primary-foreground shadow-card-md inline-flex size-12 items-center justify-center rounded-xl"
                 >
