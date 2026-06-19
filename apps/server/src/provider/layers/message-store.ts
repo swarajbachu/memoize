@@ -777,6 +777,30 @@ export const MessageStoreLive = Layer.scoped(
         yield* PubSub.publish(pubsub, { sessionId, goal }).pipe(Effect.asVoid);
       });
 
+    const latestGoalUserMessageMatches = (
+      sessionId: SessionId,
+      text: string,
+    ): Effect.Effect<boolean> =>
+      Effect.gen(function* () {
+        const rows = yield* sql<{ readonly content_json: string }>`
+          SELECT content_json FROM messages
+          WHERE session_id = ${sessionId} AND role = 'user'
+          ORDER BY created_at DESC
+          LIMIT 1
+        `.pipe(Effect.orDie);
+        const raw = rows[0]?.content_json;
+        if (raw === undefined) return false;
+        try {
+          const content = JSON.parse(raw) as MessageContent;
+          if (content._tag !== "user" && content._tag !== "user_rich") {
+            return false;
+          }
+          return content.goal === true && content.text.trim() === text.trim();
+        } catch {
+          return false;
+        }
+      });
+
     const lookupSession = (
       sessionId: SessionId,
     ): Effect.Effect<Session, SessionNotFoundError> =>
@@ -2539,6 +2563,19 @@ export const MessageStoreLive = Layer.scoped(
     ): Effect.Effect<boolean, SessionNotFoundError> =>
       Effect.gen(function* () {
         const session = yield* lookupSession(sessionId);
+        if (asGoal !== true && session.providerId === "codex") {
+          const goal = goalsBySession.get(sessionId);
+          const trimmed = text.trim();
+          if (
+            goal !== undefined &&
+            goal !== null &&
+            goal.status === "active" &&
+            goal.objective.trim() === trimmed &&
+            (yield* latestGoalUserMessageMatches(sessionId, trimmed))
+          ) {
+            return true;
+          }
+        }
         // Drop "pending-*" placeholder ids — those are renderer-side temp
         // tokens for attachments whose upload didn't finish before submit.
         // The bytes don't exist server-side, so forwarding them would just
