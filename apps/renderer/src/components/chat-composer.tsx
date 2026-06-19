@@ -672,16 +672,20 @@ export function ChatComposer({ session }: { session: Session }) {
         <div className="mx-auto">
           <ActiveLocationChip />
           <ProjectPlanTray key={sessionId} sessionId={sessionId} />
-          <AnnotationTray sessionId={sessionId} />
+          <AnnotationTray
+            sessionId={sessionId}
+            folderId={session.projectId}
+            worktreeId={session.worktreeId}
+          />
           <Frame>
             <Card
               className={cn(
-                "rounded-xl min-h-30 transition-colors",
+                "min-h-30 rounded-lg shadow-sm transition-colors",
                 inPlanMode
                   ? "border-2 border-dashed border-rose-300/60 dark:border-rose-300/40"
                   : inUltracodeMode
                     ? "border-2 border-transparent [background:linear-gradient(var(--color-card),var(--color-card))_padding-box,linear-gradient(90deg,#fb7185,#f97316,#facc15,#22c55e,#06b6d4,#8b5cf6,#d946ef)_border-box]"
-                    : "border-border/50",
+                    : "border-border/40",
               )}
               onDragEnter={onDragEnter}
               onDragOver={onDragOver}

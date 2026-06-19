@@ -1,6 +1,6 @@
 import { PatchDiff } from "@pierre/diffs/react";
 import { Effect } from "effect";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { GitDiffResult } from "@memoize/wire";
 
@@ -9,14 +9,25 @@ import { classifyGit } from "../lib/git-rpc.ts";
 import { getRpcClient } from "../lib/rpc-client.ts";
 import { GitInitCta } from "./git-init-cta.tsx";
 import {
+  clearAnnotationRevealInEditor,
   createEditor,
   languageCompartment,
   reconfigureEditorKeymap,
+  scrollAnnotationIntoView,
+  setAnnotationsInEditor,
 } from "../lib/codemirror/setup.ts";
 import { languageForFile } from "../lib/codemirror/languages.ts";
 import { useActiveWorkspaceRoot } from "../store/active-workspace.ts";
+import { useAnnotationsStore } from "../store/annotations.ts";
 import { useKeybindingsStore } from "../store/keybindings.ts";
+import { useSessionsStore } from "../store/sessions.ts";
 import { useUiStore, type FileView, type OpenFile } from "../store/ui.ts";
+import {
+  ANNOTATION_WIDGET_DELETE,
+  ANNOTATION_WIDGET_SAVE,
+  type AnnotationWidgetDeleteDetail,
+  type AnnotationWidgetSaveDetail,
+} from "../lib/codemirror/annotation-reveal.ts";
 import {
   measureAnnotationSelection,
   type PendingSelection,
@@ -138,6 +149,13 @@ function CodeMirrorBody({
   const [reloadCount, setReloadCount] = useState(0);
   const [selection, setSelection] = useState<PendingSelection | null>(null);
   const [cardOpen, setCardOpen] = useState(false);
+  const revealedAnnotation = useUiStore((s) => s.revealedAnnotation);
+  const selectedSessionId = useSessionsStore((s) => s.selectedSessionId);
+  const draftAnnotations = useAnnotationsStore((s) =>
+    selectedSessionId === null ? [] : (s.bySession[selectedSessionId] ?? []),
+  );
+  const selectedSessionIdRef = useRef(selectedSessionId);
+  selectedSessionIdRef.current = selectedSessionId;
   const selectionRef = useRef<PendingSelection | null>(null);
   selectionRef.current = selection;
   const addAnnotation = useAddAnnotation();
@@ -155,6 +173,32 @@ function CodeMirrorBody({
       : workspaceRoot !== null
         ? `${workspaceRoot}/${openFile.path}`
         : openFile.path;
+  const matchesRevealedAnnotation =
+    revealedAnnotation !== null &&
+    (revealedAnnotation.relPath === annotationPath ||
+      revealedAnnotation.absPath === annotationAbsPath);
+  const visibleAnnotations = useMemo(
+    () =>
+      draftAnnotations
+        .filter(
+          (a) =>
+            a.relPath === annotationPath || a.absPath === annotationAbsPath,
+        )
+        .concat(
+          matchesRevealedAnnotation && revealedAnnotation !== null
+            ? draftAnnotations.some((a) => a.id === revealedAnnotation.id)
+              ? []
+              : [revealedAnnotation]
+            : [],
+        ),
+    [
+      annotationAbsPath,
+      annotationPath,
+      draftAnnotations,
+      matchesRevealedAnnotation,
+      revealedAnnotation,
+    ],
+  );
 
   // Mutable per-file working state. Refs so save/load callbacks stay stable
   // across keystrokes.
@@ -219,6 +263,22 @@ function CodeMirrorBody({
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+    const onAnnotationSave = (event: Event) => {
+      const sessionId = selectedSessionIdRef.current;
+      if (sessionId === null) return;
+      const custom = event as CustomEvent<AnnotationWidgetSaveDetail>;
+      useAnnotationsStore
+        .getState()
+        .updateComment(sessionId, custom.detail.id, custom.detail.comment);
+    };
+    const onAnnotationDelete = (event: Event) => {
+      const sessionId = selectedSessionIdRef.current;
+      if (sessionId === null) return;
+      const custom = event as CustomEvent<AnnotationWidgetDeleteDetail>;
+      useAnnotationsStore.getState().remove(sessionId, custom.detail.id);
+    };
+    el.addEventListener(ANNOTATION_WIDGET_SAVE, onAnnotationSave);
+    el.addEventListener(ANNOTATION_WIDGET_DELETE, onAnnotationDelete);
     const onSave = () => void saveRef.current();
     const onAnnotate = () => {
       const current = selectionRef.current;
@@ -257,6 +317,8 @@ function CodeMirrorBody({
     });
 
     return () => {
+      el.removeEventListener(ANNOTATION_WIDGET_SAVE, onAnnotationSave);
+      el.removeEventListener(ANNOTATION_WIDGET_DELETE, onAnnotationDelete);
       unsubKeybindings();
       view.destroy();
       viewRef.current = null;
@@ -318,6 +380,34 @@ function CodeMirrorBody({
     };
   }, [openFile, reloadCount, setFileDirty]);
 
+  useEffect(() => {
+    const view = viewRef.current;
+    if (view === null || state.status !== "text") return;
+    if (visibleAnnotations.length === 0) {
+      clearAnnotationRevealInEditor(view);
+      return;
+    }
+    setAnnotationsInEditor(view, visibleAnnotations);
+  }, [visibleAnnotations, state.status, openFile]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (
+      view === null ||
+      state.status !== "text" ||
+      !matchesRevealedAnnotation ||
+      revealedAnnotation === null
+    ) {
+      return;
+    }
+    scrollAnnotationIntoView(view, revealedAnnotation);
+  }, [
+    matchesRevealedAnnotation,
+    revealedAnnotation?.revealToken,
+    state.status,
+    openFile,
+  ]);
+
   return (
     <div
       className="flex min-h-0 flex-1 flex-col"
@@ -349,7 +439,10 @@ function CodeMirrorBody({
           cardOpen={cardOpen}
           onCardOpenChange={setCardOpen}
           onConfirm={(draft) => {
-            addAnnotation(draft);
+            const created = addAnnotation(draft);
+            if (created !== null) {
+              useUiStore.getState().revealAnnotation(created);
+            }
             // Collapse the selection so the affordance dismisses itself.
             const v = viewRef.current;
             if (v !== null) {

@@ -53,6 +53,11 @@ type AnnotationsState = {
     annotation: Omit<CodeAnnotation, "id">,
   ) => string;
   readonly remove: (sessionId: SessionId, id: string) => void;
+  readonly updateComment: (
+    sessionId: SessionId,
+    id: string,
+    comment: string,
+  ) => void;
   readonly clear: (sessionId: SessionId) => void;
 };
 
@@ -74,6 +79,18 @@ export const useAnnotationsStore = create<AnnotationsState>((set, get) => ({
     const bySession = { ...get().bySession };
     if (next.length === 0) delete bySession[sessionId];
     else bySession[sessionId] = next;
+    set({ bySession });
+    persist(bySession);
+  },
+  updateComment: (sessionId, id, comment) => {
+    const current = get().bySession[sessionId];
+    if (current === undefined) return;
+    const trimmed = comment.trim();
+    if (trimmed.length === 0) return;
+    const next = current.map((a) =>
+      a.id === id ? { ...a, comment: trimmed } : a,
+    );
+    const bySession = { ...get().bySession, [sessionId]: next };
     set({ bySession });
     persist(bySession);
   },

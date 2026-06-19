@@ -17,6 +17,12 @@ import {
 
 import { useKeybindingsStore } from "../../store/keybindings";
 import {
+  annotationRevealExtension,
+  revealAnnotationEffect,
+  setAnnotationsEffect,
+  type RevealedCodeAnnotation,
+} from "./annotation-reveal.ts";
+import {
   annotationSelectionExtension,
   type OnSelect,
 } from "./annotation-selection.ts";
@@ -132,6 +138,7 @@ export const createEditor = ({
         ),
         keymap.of([...defaultKeymap, ...historyKeymap, ...foldKeymap]),
         memoizeTheme,
+        annotationRevealExtension,
         languageCompartment.of(language ?? []),
         ...(onSelect !== undefined
           ? [annotationSelectionExtension(onSelect)]
@@ -144,6 +151,53 @@ export const createEditor = ({
   });
   editorKeymapCompartment.set(view, userKeymapCompartment);
   return view;
+};
+
+export const revealAnnotationInEditor = (
+  view: EditorView,
+  annotation: RevealedCodeAnnotation,
+): void => {
+  const doc = view.state.doc;
+  if (doc.lines === 0) return;
+  const startLine = Math.max(1, Math.min(annotation.startLine, doc.lines));
+  const endLine = Math.max(startLine, Math.min(annotation.endLine, doc.lines));
+  const start = doc.line(startLine);
+  view.dispatch({
+    effects: [
+      revealAnnotationEffect.of({
+        ...annotation,
+        startLine,
+        endLine,
+      }),
+      EditorView.scrollIntoView(start.from, { y: "center" }),
+    ],
+  });
+  view.focus();
+};
+
+export const scrollAnnotationIntoView = (
+  view: EditorView,
+  annotation: RevealedCodeAnnotation,
+): void => {
+  const doc = view.state.doc;
+  if (doc.lines === 0) return;
+  const startLine = Math.max(1, Math.min(annotation.startLine, doc.lines));
+  const start = doc.line(startLine);
+  view.dispatch({
+    effects: EditorView.scrollIntoView(start.from, { y: "center" }),
+  });
+  view.focus();
+};
+
+export const clearAnnotationRevealInEditor = (view: EditorView): void => {
+  view.dispatch({ effects: revealAnnotationEffect.of(null) });
+};
+
+export const setAnnotationsInEditor = (
+  view: EditorView,
+  annotations: ReadonlyArray<RevealedCodeAnnotation>,
+): void => {
+  view.dispatch({ effects: setAnnotationsEffect.of(annotations) });
 };
 
 /**
