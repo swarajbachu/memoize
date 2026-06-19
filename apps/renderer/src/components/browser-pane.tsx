@@ -135,10 +135,10 @@ export function BrowserPane() {
     const executeBrowserCommand = async (
       req: BrowserCommandRequest,
     ): Promise<void> => {
-      // Always surface the action: force the Browser tab visible. This also
-      // un-hides the webview so `capturePage` works (it returns an empty
-      // image for a `display:none` element).
-      useUiStore.getState().setActiveRightTab("browser");
+      // Always surface the action: open the sidebar and force the Browser
+      // panel visible+active. This also un-hides the webview so `capturePage`
+      // works (it returns an empty image for a `display:none` element).
+      useUiStore.getState().revealPanel("browser");
       const wv = webviewRef.current as WebviewElement | null;
       const result = await runBrowserCommand(req, wv, {
         setUrl,

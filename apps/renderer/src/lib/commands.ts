@@ -48,13 +48,9 @@ const HANDLERS: Record<Command, () => void> = {
     ui.setRightSidebarOpen(!ui.rightSidebarOpen);
   },
   "toggle-terminal": () => {
-    const ui = useUiStore.getState();
-    if (!ui.rightSidebarOpen) ui.setRightSidebarOpen(true);
-    ui.setActiveRightTab(
-      ui.activeRightTab === "terminal" && ui.rightSidebarOpen
-        ? "files"
-        : "terminal",
-    );
+    // Open the sidebar (if closed) and reveal a terminal panel — focus an
+    // existing one or add a fresh terminal tab.
+    useUiStore.getState().revealPanel("terminal");
   },
   "focus-composer": () => {
     useComposerBridge.getState().focus?.();

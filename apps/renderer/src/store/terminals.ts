@@ -26,6 +26,18 @@ type TerminalsState = {
   readonly byKey: Readonly<Record<string, ReadonlyArray<TerminalInstance>>>;
   readonly activeByKey: Readonly<Record<string, string | null>>;
   readonly ensureSeed: (key: string, cwd: string) => void;
+  /**
+   * Resolve a 0-based slot index to a terminal instance for `key`, appending
+   * fresh instances until the list is long enough. Used by the right-dock
+   * terminal tabs, which carry a workspace-relative `slot` rather than a
+   * pinned instance id (see `ui.ts` PanelInstance). Returns the instance at
+   * `slot`.
+   */
+  readonly ensureSlot: (
+    key: string,
+    slot: number,
+    cwd: string,
+  ) => TerminalInstance;
   readonly add: (key: string, cwd: string) => string;
   readonly addCommand: (
     key: string,
@@ -70,6 +82,31 @@ export const useTerminalsStore = create<TerminalsState>((set) => ({
         activeByKey: { ...state.activeByKey, [key]: instance.id },
       };
     }),
+  ensureSlot: (key, slot, cwd) => {
+    let result: TerminalInstance | undefined;
+    set((state) => {
+      const list = state.byKey[key] ?? [];
+      if (list.length > slot) {
+        result = list[slot];
+        return state;
+      }
+      const next = [...list];
+      while (next.length <= slot) {
+        next.push({ id: newId(), title: nextTitle(next), cwd });
+      }
+      const instance = next[slot] as TerminalInstance;
+      result = instance;
+      // Only claim focus when the key has none yet — the dock renders each
+      // slot independently, so `activeByKey` is only meaningful to the
+      // worktree `TerminalWorkspace` list path.
+      const active = state.activeByKey[key] ?? instance.id;
+      return {
+        byKey: { ...state.byKey, [key]: next },
+        activeByKey: { ...state.activeByKey, [key]: active },
+      };
+    });
+    return result as TerminalInstance;
+  },
   add: (key, cwd) => {
     const id = newId();
     set((state) => {
