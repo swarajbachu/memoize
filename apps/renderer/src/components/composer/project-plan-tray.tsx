@@ -72,9 +72,113 @@ const parseTodosFromOutput = (output: unknown): Todo[] => {
   return [];
 };
 
+/** Coerce an arbitrary tool `output` into searchable text. */
+const outputToString = (output: unknown): string => {
+  if (typeof output === "string") return output;
+  if (output !== null && typeof output === "object") {
+    const o = output as Record<string, unknown>;
+    if (typeof o.content === "string") return o.content;
+    if (typeof o.text === "string") return o.text;
+    try {
+      return JSON.stringify(output);
+    } catch {
+      return "";
+    }
+  }
+  return "";
+};
+
 /**
- * "Project Plan" panel docked above the composer. Surfaces the agent's latest
- * `TodoWrite` list (all drivers normalize the tool name to `TodoWrite`) as a
+ * The newer Claude Agent SDK plans with incremental `TaskCreate`/`TaskUpdate`
+ * tools instead of `TodoWrite`'s single snapshot. A create's *result* carries
+ * both the id and title (`Task #4 created successfully: <subject>`); an update's
+ * *input* carries `{ taskId, status }`. Reconstruct the live list from those.
+ */
+const parseTaskCreated = (
+  output: unknown,
+): { id: string; subject: string } | null => {
+  const m = outputToString(output).match(/Task #(\d+) created[^:]*:\s*(.+)/i);
+  if (m === null) return null;
+  return { id: m[1]!, subject: m[2]!.trim() };
+};
+
+const parseTaskUpdate = (
+  input: unknown,
+): { id: string; status?: TodoStatus | "deleted"; subject?: string } | null => {
+  if (input === null || typeof input !== "object") return null;
+  const r = input as Record<string, unknown>;
+  const id = r.taskId;
+  if (typeof id !== "string" && typeof id !== "number") return null;
+  const raw = r.status;
+  const status =
+    raw === "deleted" ||
+    raw === "completed" ||
+    raw === "in_progress" ||
+    raw === "pending"
+      ? raw
+      : undefined;
+  return {
+    id: String(id),
+    status,
+    subject: typeof r.subject === "string" ? r.subject : undefined,
+  };
+};
+
+interface ReconstructedTask {
+  text: string;
+  status: TodoStatus;
+  order: number;
+}
+
+/** Build the current task list by replaying TaskCreate/TaskUpdate events. */
+const tasksFromMessages = (messages: ReadonlyArray<Message>): Todo[] => {
+  const tasks = new Map<string, ReconstructedTask>();
+  let order = 0;
+  for (const m of messages) {
+    const c = m.content;
+    if (c._tag === "tool_result") {
+      const created = parseTaskCreated(c.output);
+      if (created !== null) {
+        const existing = tasks.get(created.id);
+        if (existing === undefined) {
+          tasks.set(created.id, {
+            text: created.subject,
+            status: "pending",
+            order: order++,
+          });
+        } else {
+          existing.text = created.subject;
+        }
+      }
+    } else if (c._tag === "tool_use" && c.tool === "TaskUpdate") {
+      const upd = parseTaskUpdate(c.input);
+      if (upd === null) continue;
+      if (upd.status === "deleted") {
+        tasks.delete(upd.id);
+        continue;
+      }
+      const existing = tasks.get(upd.id);
+      if (existing === undefined) {
+        tasks.set(upd.id, {
+          text: upd.subject ?? `Task ${upd.id}`,
+          status: upd.status ?? "pending",
+          order: order++,
+        });
+      } else {
+        if (upd.status !== undefined) existing.status = upd.status;
+        if (upd.subject !== undefined) existing.text = upd.subject;
+      }
+    }
+  }
+  return Array.from(tasks.values())
+    .sort((a, b) => a.order - b.order)
+    .map((t) => ({ text: t.text, status: t.status }));
+};
+
+/**
+ * "Project Plan" panel docked above the composer. Surfaces the agent's live
+ * plan — reconstructed from the newer `TaskCreate`/`TaskUpdate` tools, falling
+ * back to a legacy `TodoWrite` snapshot — as a
  * glanceable, collapsible progress view: header with an `X of Y Done` count and
  * a spinner while the turn runs, expanding to a timeline of items with per-item
  * status icons. Renders nothing until a session has produced a TodoWrite list,
@@ -95,8 +199,13 @@ export function ProjectPlanTray({ sessionId }: { sessionId: SessionId }) {
   const [expanded, setExpanded] = useState(false);
 
   const todos = useMemo(() => {
-    // Walk newest→oldest and take the first TodoWrite signal we find, from
-    // either source: Claude puts the list on the tool_use input; Grok (ACP)
+    // Preferred: the newer Task tools (TaskCreate/TaskUpdate), replayed into a
+    // live list. This is what current Claude (Agent SDK ≥ 0.2.x) sessions emit
+    // instead of TodoWrite.
+    const tasks = tasksFromMessages(messages);
+    if (tasks.length > 0) return tasks;
+    // Fallback: legacy TodoWrite single-snapshot. Walk newest→oldest and take
+    // the first signal — Claude puts the list on the tool_use input; Grok (ACP)
     // puts it on the tool_result output. Whichever is latest wins.
     for (let i = messages.length - 1; i >= 0; i--) {
       const c = messages[i]!.content;
