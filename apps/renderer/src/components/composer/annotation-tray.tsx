@@ -1,11 +1,11 @@
 import {
   ArrowDown01Icon,
   BubbleChatIcon,
-  Cancel01Icon,
   PencilEdit01Icon,
   Tick01Icon,
 } from "@hugeicons-pro/core-bulk-rounded";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { X } from "lucide-react";
 import { useState } from "react";
 
 import type {
@@ -19,43 +19,14 @@ import { cn } from "~/lib/utils";
 
 import { useAnnotationsStore } from "../../store/annotations.ts";
 import { useRevealAnnotation } from "../annotation/annotation-navigation.ts";
-import { FileIcon } from "../file-icon.tsx";
+import { AnnotationFileChip } from "../file-chip.tsx";
 
 const EMPTY: ReadonlyArray<CodeAnnotation> = [];
 
-const basename = (p: string): string => {
-  const i = p.lastIndexOf("/");
-  return i === -1 ? p : p.slice(i + 1);
-};
-
-const rangeLabel = (a: CodeAnnotation): string =>
-  a.startLine === a.endLine ? `${a.startLine}` : `${a.startLine}-${a.endLine}`;
-
-function AnnotationFileBadge({ annotation }: { annotation: CodeAnnotation }) {
-  const name = basename(annotation.relPath);
-  const range = rangeLabel(annotation);
-  return (
-    <span
-      className="inline-flex max-w-full shrink-0 items-center gap-1.5 rounded-md border border-border/70 bg-background/70 px-1.5 py-0.5 text-[11px] text-muted-foreground"
-      title={`${annotation.relPath}:${range}`}
-    >
-      <FileIcon
-        name={name}
-        kind="file"
-        className="inline-flex size-3.5 shrink-0 items-center justify-center"
-      />
-      <span className="min-w-0 truncate font-mono text-foreground">{name}</span>
-      <span className="shrink-0 font-mono tabular-nums">L{range}</span>
-    </span>
-  );
-}
-
 /**
- * Stacked code annotations docked above the composer, mirroring the reference
- * screenshots: a collapsible "N Annotations" header with a clear-all action,
- * expanding to one removable row per pinned comment. They drain into the
- * outgoing `ComposerInput` on submit (see the composer's `submit` handler).
- * Renders nothing until the focused session has at least one annotation.
+ * Stacked code annotations docked above the composer. Draft annotations can be
+ * opened in the editor, edited in-place, removed individually, or cleared as a
+ * group before submit.
  */
 export function AnnotationTray({
   sessionId,
@@ -79,8 +50,6 @@ export function AnnotationTray({
 
   if (annotations.length === 0) return null;
 
-  const count = annotations.length;
-
   return (
     <div className="mb-2 overflow-hidden rounded-lg border border-border/50 bg-card/80 shadow-sm">
       <div className="flex w-full items-center gap-2 border-b border-border/40 bg-muted/20 px-2.5 py-1.5">
@@ -99,7 +68,7 @@ export function AnnotationTray({
             Annotations
           </span>
           <span className="rounded border border-border/50 bg-background/70 px-1.5 py-px text-[10px] font-medium tabular-nums text-muted-foreground">
-            {count}
+            {annotations.length}
           </span>
           <HugeiconsIcon
             icon={ArrowDown01Icon}
@@ -116,7 +85,7 @@ export function AnnotationTray({
           className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
           aria-label="Clear all annotations"
         >
-          <HugeiconsIcon icon={Cancel01Icon} className="size-3.5" />
+          <X className="size-3.5" strokeWidth={1.8} />
         </button>
       </div>
       {expanded ? (
@@ -137,7 +106,7 @@ export function AnnotationTray({
                     className="min-w-0 justify-self-start rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                     title="Open annotation"
                   >
-                    <AnnotationFileBadge annotation={a} />
+                    <AnnotationFileChip annotation={a} />
                   </button>
                   {editingId === a.id ? (
                     <textarea
@@ -199,7 +168,7 @@ export function AnnotationTray({
                 className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-70 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 group-hover/annotation:opacity-100"
                 aria-label="Remove annotation"
               >
-                <HugeiconsIcon icon={Cancel01Icon} className="size-3.5" />
+                <X className="size-3.5" strokeWidth={1.8} />
               </button>
             </li>
           ))}

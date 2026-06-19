@@ -1,9 +1,9 @@
 import {
   BubbleChatIcon,
-  Cancel01Icon,
   Tick01Icon,
 } from "@hugeicons-pro/core-bulk-rounded";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { cn } from "~/lib/utils";
@@ -142,7 +142,7 @@ export function AnnotateOverlay({
               className="flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-background hover:text-foreground"
               aria-label="Cancel annotation"
             >
-              <HugeiconsIcon icon={Cancel01Icon} className="size-3.5" />
+              <X className="size-3.5" strokeWidth={1.8} />
             </button>
             <button
               type="button"

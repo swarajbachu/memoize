@@ -145,7 +145,7 @@ export function CloneRepoDialog({ open, onOpenChange }: CloneRepoDialogProps) {
               />
               <Button
                 type="button"
-                variant="outline"
+                variant="secondary"
                 size="sm"
                 onClick={() => void onBrowse()}
               >
@@ -155,14 +155,10 @@ export function CloneRepoDialog({ open, onOpenChange }: CloneRepoDialogProps) {
           </Field>
         </DialogPanel>
 
-        <DialogFooter variant="bare">
+        <DialogFooter>
           <DialogClose
             render={
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={submitting}
-              >
+              <Button type="button" variant="ghost" disabled={submitting}>
                 Cancel
               </Button>
             }
@@ -271,7 +267,10 @@ function RecentRepos({
               <span className="flex items-center gap-1.5 text-[12px] text-foreground">
                 {repo.nameWithOwner}
                 {repo.isPrivate && (
-                  <HugeiconsIcon icon={LockIcon} className="size-2.5 text-muted-foreground" />
+                  <HugeiconsIcon
+                    icon={LockIcon}
+                    className="size-2.5 text-muted-foreground"
+                  />
                 )}
               </span>
               {repo.description !== null && (
