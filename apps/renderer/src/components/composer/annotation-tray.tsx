@@ -1,9 +1,9 @@
 import {
   ArrowDown01Icon,
   BubbleChatIcon,
-  Cancel01Icon,
 } from "@hugeicons-pro/core-bulk-rounded";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { X } from "lucide-react";
 import { useState } from "react";
 
 import type { CodeAnnotation, SessionId } from "@memoize/wire";
@@ -11,36 +11,9 @@ import type { CodeAnnotation, SessionId } from "@memoize/wire";
 import { cn } from "~/lib/utils";
 
 import { useAnnotationsStore } from "../../store/annotations.ts";
-import { FileIcon } from "../file-icon.tsx";
+import { AnnotationFileChip } from "../file-chip.tsx";
 
 const EMPTY: ReadonlyArray<CodeAnnotation> = [];
-
-const basename = (p: string): string => {
-  const i = p.lastIndexOf("/");
-  return i === -1 ? p : p.slice(i + 1);
-};
-
-const rangeLabel = (a: CodeAnnotation): string =>
-  a.startLine === a.endLine ? `${a.startLine}` : `${a.startLine}-${a.endLine}`;
-
-function AnnotationFileBadge({ annotation }: { annotation: CodeAnnotation }) {
-  const name = basename(annotation.relPath);
-  const range = rangeLabel(annotation);
-  return (
-    <span
-      className="inline-flex max-w-[42%] shrink-0 items-center gap-1.5 rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 text-[11px] text-muted-foreground"
-      title={`${annotation.relPath}:${range}`}
-    >
-      <FileIcon
-        name={name}
-        kind="file"
-        className="inline-flex size-3.5 shrink-0 items-center justify-center"
-      />
-      <span className="min-w-0 truncate font-mono">{name}</span>
-      <span className="shrink-0 font-mono tabular-nums">:{range}</span>
-    </span>
-  );
-}
 
 /**
  * Stacked code annotations docked above the composer, mirroring the reference
@@ -62,7 +35,7 @@ export function AnnotationTray({ sessionId }: { sessionId: SessionId }) {
   const count = annotations.length;
 
   return (
-    <div className="mb-1.5 overflow-hidden rounded-xl border border-border/50 bg-card/60">
+    <div className="mb-1.5 overflow-hidden rounded-lg border border-border/60 bg-card">
       <div className="flex w-full items-center gap-2 bg-primary/10 px-3 py-2">
         <button
           type="button"
@@ -93,7 +66,7 @@ export function AnnotationTray({ sessionId }: { sessionId: SessionId }) {
           className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-background hover:text-foreground"
           aria-label="Clear all annotations"
         >
-          <HugeiconsIcon icon={Cancel01Icon} className="size-3.5" />
+          <X className="size-3.5" strokeWidth={1.8} />
         </button>
       </div>
       {expanded ? (
@@ -109,14 +82,14 @@ export function AnnotationTray({ sessionId }: { sessionId: SessionId }) {
               <span className="flex-1 truncate text-sm text-foreground">
                 {a.comment}
               </span>
-              <AnnotationFileBadge annotation={a} />
+              <AnnotationFileChip annotation={a} className="max-w-[42%]" />
               <button
                 type="button"
                 onClick={() => remove(sessionId, a.id)}
                 className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground group-hover/annotation:opacity-100"
                 aria-label="Remove annotation"
               >
-                <HugeiconsIcon icon={Cancel01Icon} className="size-3.5" />
+                <X className="size-3.5" strokeWidth={1.8} />
               </button>
             </li>
           ))}

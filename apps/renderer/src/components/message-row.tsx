@@ -28,8 +28,7 @@ import { useMessagesStore, type ChatError } from "~/store/messages";
 import { useUiStore } from "~/store/ui";
 
 import { CopyButton } from "./copy-button.tsx";
-import { FileChip } from "./file-chip.tsx";
-import { FileIcon } from "./file-icon.tsx";
+import { AnnotationFileChip, FileChip } from "./file-chip.tsx";
 import { MarkdownBody } from "./markdown-body.tsx";
 import {
   ExitPlanModeRow,
@@ -50,6 +49,20 @@ const stringifyJson = (value: unknown): string => {
   } catch {
     return String(value);
   }
+};
+
+const RECONNECTING_PATTERN =
+  /^\s*Reconnecting\s*\.{3}\s*(\d+)\s*\/\s*(\d+)\s*$/i;
+
+const parseReconnectingStatus = (
+  message: string,
+): { readonly attempt: number; readonly maxAttempts: number } | null => {
+  const match = RECONNECTING_PATTERN.exec(message);
+  if (match === null) return null;
+  const attempt = Number(match[1]);
+  const maxAttempts = Number(match[2]);
+  if (!Number.isFinite(attempt) || !Number.isFinite(maxAttempts)) return null;
+  return { attempt, maxAttempts };
 };
 
 /**
@@ -148,6 +161,7 @@ export function MessageRow({
       return (
         <ErrorBubble
           error={{ kind: "generic", message: message.content.message }}
+          sessionId={sessionId}
         />
       );
   }
@@ -188,35 +202,6 @@ const formatMessageTime = (date: Date): string =>
     hour: "numeric",
     minute: "2-digit",
   });
-
-const annotationBasename = (p: string): string => {
-  const i = p.lastIndexOf("/");
-  return i === -1 ? p : p.slice(i + 1);
-};
-
-const annotationRangeLabel = (a: CodeAnnotation): string =>
-  a.startLine === a.endLine ? `${a.startLine}` : `${a.startLine}-${a.endLine}`;
-
-function AnnotationFileBadge({ annotation }: { annotation: CodeAnnotation }) {
-  const name = annotationBasename(annotation.relPath);
-  const range = annotationRangeLabel(annotation);
-  return (
-    <span
-      className="inline-flex max-w-full shrink-0 items-center gap-1.5 rounded-md border border-border/60 bg-background/20 px-1.5 py-0.5 text-[11px] text-user-bubble-foreground/85"
-      title={`${annotation.relPath}:${range}`}
-    >
-      <FileIcon
-        name={name}
-        kind="file"
-        className="inline-flex size-3.5 shrink-0 items-center justify-center"
-      />
-      <span className="min-w-0 truncate font-mono">{name}</span>
-      <span className="shrink-0 font-mono tabular-nums text-user-bubble-foreground/60">
-        :{range}
-      </span>
-    </span>
-  );
-}
 
 function UserBubble({
   text,
@@ -259,7 +244,7 @@ function UserBubble({
                   {i + 1}
                 </span>
                 <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
-                  <AnnotationFileBadge annotation={a} />
+                  <AnnotationFileChip annotation={a} />
                   <span className="min-w-0 break-words">{a.comment}</span>
                 </span>
               </li>
@@ -434,7 +419,7 @@ type RateLimitInfo = {
 // pattern matching against the human-readable text.
 const parseRateLimit = (text: string): RateLimitInfo | null => {
   const isRateLimit =
-    /usage limit|rate[-\s]?limit|quota|429|too many requests|overloaded|hit your limit/i.test(
+    /usage limit|rate[-\s]?limit|quota|429|too many requests|overloaded|hit your limit|reached (?:your |the )?limit|agent reached limit/i.test(
       text,
     );
   if (!isRateLimit) return null;
@@ -444,7 +429,7 @@ const parseRateLimit = (text: string): RateLimitInfo | null => {
       /reset(?:s|ing)?(?:\s+at)?\s+(\d{1,2}(?::\d{2})?\s*[ap]m(?:\s*\([^)]+\))?)/i,
     ) ??
     text.match(
-      /try again at\s+(\d{1,2}(?::\d{2})?\s*[ap]m(?:\s*\([^)]+\))?)/i,
+      /(?:try|see|check)\s+again\s+at\s+(\d{1,2}(?::\d{2})?\s*[ap]m(?:\s*(?:\([^)]+\)|[A-Z][A-Za-z_/-]*(?:\s+time)?))?)/i,
     ) ??
     text.match(/reset(?:s|ing)?(?:\s+at)?\s+(\d{4}-\d{2}-\d{2}[T0-9:.Z+\-]*)/i);
 
@@ -549,11 +534,15 @@ export function ErrorBubble({
   onDismiss?: () => void;
 }) {
   const retry = useMessagesStore((s) => s.retry);
+  const send = useMessagesStore((s) => s.send);
   const setView = useUiStore((s) => s.setView);
   const setSettingsSection = useUiStore((s) => s.setSettingsSection);
 
   const onRetry = () => {
     if (sessionId !== undefined) void retry(sessionId);
+  };
+  const onKeepGoing = () => {
+    if (sessionId !== undefined) void send(sessionId, "keep going");
   };
   const onOpenSettings = () => {
     setView("settings");
@@ -567,35 +556,60 @@ export function ErrorBubble({
   const rateLimit = parseRateLimit(error.message);
   if (rateLimit !== null) {
     return (
-      <div className="px-4 py-2">
-        <div className="max-w-[88%] rounded-xl bg-alert-warning-bg px-3 py-2 text-xs text-foreground">
-          <div className="flex items-center gap-2">
-            <HugeiconsIcon
-              icon={AlertCircleIcon}
-              strokeWidth={2}
-              aria-hidden="true"
-              className="size-3.5 shrink-0 text-warning"
-            />
-            <span className="font-medium text-foreground">
-              Rate limit reached
-            </span>
-            <span className="text-muted-foreground/50">·</span>
-            <span className="text-muted-foreground">
-              {formatResetDetail(rateLimit)}
-            </span>
-            {onDismiss !== undefined && (
+      <div className="px-4 py-1.5">
+        <div className="inline-flex max-w-[88%] items-center gap-2 rounded-md border border-border/45 bg-[color-mix(in_oklch,var(--bg-elevated)_34%,var(--background))] px-2.5 py-1.5 text-xs text-foreground shadow-[inset_0_1px_0_color-mix(in_oklch,white_4%,transparent),0_1px_2px_color-mix(in_oklch,black_22%,transparent)]">
+          <span className="font-medium">Limit reached</span>
+          <span className="text-muted-foreground">
+            {formatResetDetail(rateLimit)}
+          </span>
+          {onDismiss !== undefined && (
+            <button
+              type="button"
+              onClick={onDismiss}
+              className="rounded-[0.1875rem] px-1 py-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              aria-label="Dismiss limit status"
+            >
+              Dismiss
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const reconnecting = parseReconnectingStatus(error.message);
+  if (reconnecting !== null) {
+    const isFinalAttempt = reconnecting.attempt >= reconnecting.maxAttempts;
+    return (
+      <div className="px-4 py-1.5">
+        <div className="inline-flex max-w-[88%] items-center gap-2 rounded-md border border-border/45 bg-[color-mix(in_oklch,var(--bg-elevated)_34%,var(--background))] px-2.5 py-1.5 text-xs text-foreground shadow-[inset_0_1px_0_color-mix(in_oklch,white_4%,transparent),0_1px_2px_color-mix(in_oklch,black_22%,transparent)]">
+          <span className="font-medium">Reconnecting</span>
+          <span className="font-mono text-muted-foreground">
+            {reconnecting.attempt}/{reconnecting.maxAttempts}
+          </span>
+          {isFinalAttempt && (
+            <>
+              <span className="h-3 w-px bg-border/60" aria-hidden="true" />
               <button
                 type="button"
-                onClick={onDismiss}
-                className="ml-auto rounded px-1.5 py-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                onClick={onKeepGoing}
+                disabled={sessionId === undefined}
+                className="rounded-[0.1875rem] bg-secondary px-1.5 py-0.5 font-medium text-secondary-foreground transition-colors hover:bg-secondary/90"
               >
-                Dismiss
+                Retry
               </button>
-            )}
-          </div>
-          <div className="mt-1 break-words text-muted-foreground">
-            {error.message}
-          </div>
+            </>
+          )}
+          {onDismiss !== undefined && (
+            <button
+              type="button"
+              onClick={onDismiss}
+              className="rounded-[0.1875rem] px-1 py-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              aria-label="Dismiss reconnecting status"
+            >
+              Dismiss
+            </button>
+          )}
         </div>
       </div>
     );

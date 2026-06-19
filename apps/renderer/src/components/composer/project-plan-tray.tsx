@@ -118,7 +118,7 @@ export function ProjectPlanTray({ sessionId }: { sessionId: SessionId }) {
   const allDone = done === total;
 
   return (
-    <div className="mb-1.5 overflow-hidden rounded-xl border border-border/50 bg-card/60">
+    <div className="mb-1.5 overflow-hidden rounded-lg border border-border/60 bg-card">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
@@ -139,12 +139,21 @@ export function ProjectPlanTray({ sessionId }: { sessionId: SessionId }) {
           {done} of {total} Done
         </span>
         {running && !allDone ? (
-          <Beacon dotSize={2} cellPadding={1} color="currentColor" className="shrink-0 text-muted-foreground" />
+          <Beacon
+            dotSize={2}
+            cellPadding={1}
+            color="currentColor"
+            className="shrink-0 text-muted-foreground"
+          />
         ) : null}
-        <HugeiconsIcon icon={ArrowDown01Icon} className={cn(
-                          "size-4 shrink-0 text-muted-foreground transition-transform",
-                          expanded ? "rotate-180" : "",
-                        )} aria-hidden="true" />
+        <HugeiconsIcon
+          icon={ArrowDown01Icon}
+          className={cn(
+            "size-4 shrink-0 text-muted-foreground transition-transform",
+            expanded ? "rotate-180" : "",
+          )}
+          aria-hidden="true"
+        />
       </button>
       {expanded ? (
         <ul className="max-h-64 space-y-0.5 overflow-y-auto px-3 py-2">
@@ -202,7 +211,14 @@ function TodoStatusIcon({
     // makes the whole composer read as "busy". Show a static filled ring
     // instead to mark "current step, not running".
     if (running)
-      return <Beacon dotSize={2} cellPadding={1} color="currentColor" className="text-primary" />;
+      return (
+        <Beacon
+          dotSize={2}
+          cellPadding={1}
+          color="currentColor"
+          className="text-primary"
+        />
+      );
     return (
       <span
         className="flex size-3.5 items-center justify-center rounded-full border-2 border-primary"

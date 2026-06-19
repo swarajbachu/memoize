@@ -740,7 +740,7 @@ export function ChatComposer({ session }: { session: Session }) {
               onPaste={onPaste}
             >
               {isDragging && (
-                <div className="pointer-events-none absolute inset-1 z-40 flex items-center justify-center rounded-lg border border-dashed border-accent-foreground/40 bg-popover/80 backdrop-blur-sm">
+                <div className="pointer-events-none absolute inset-1 z-40 flex items-center justify-center rounded-lg border border-dashed border-accent-foreground/40 bg-popover">
                   <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
                     <HugeiconsIcon icon={Upload01Icon} className="size-3.5" />
                     <span>Drop files to attach</span>

@@ -1,6 +1,7 @@
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Add01Icon, Cancel01Icon, ComputerTerminal01Icon, PlayIcon, Refresh01Icon } from "@hugeicons-pro/core-bulk-rounded";
+import { ComputerTerminal01Icon, PlayIcon, Refresh01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { Plus, X } from "lucide-react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Effect, Fiber, Stream } from "effect";
@@ -136,7 +137,7 @@ function TerminalWorkspace({
                   className="absolute right-2 top-2 z-10 flex size-5 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-muted/60 hover:text-foreground focus-visible:opacity-100 group-hover/terminal:opacity-100"
                   aria-label="New terminal"
                 >
-                  <HugeiconsIcon icon={Add01Icon} className="size-3.5" />
+                  <Plus className="size-3.5" strokeWidth={1.8} />
                 </button>
               }
             />
@@ -234,7 +235,7 @@ function WorktreeTerminalPane({
           aria-label="New terminal"
           title="New terminal"
         >
-          <HugeiconsIcon icon={Add01Icon} className="size-4" />
+          <Plus className="size-4" strokeWidth={1.8} />
         </button>
       </div>
       <div className="min-h-0 flex-1">
@@ -387,7 +388,7 @@ function TerminalList({
                 className="flex size-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
                 aria-label="New terminal"
               >
-                <HugeiconsIcon icon={Add01Icon} className="size-3.5" />
+                <Plus className="size-3.5" strokeWidth={1.8} />
               </button>
             }
           />
@@ -425,7 +426,7 @@ function TerminalList({
                 }}
                 className="flex size-4 shrink-0 items-center justify-center rounded text-muted-foreground/60 opacity-0 transition-opacity hover:bg-background hover:text-foreground group-hover:opacity-100"
               >
-                <HugeiconsIcon icon={Cancel01Icon} className="size-3" />
+                <X className="size-3" strokeWidth={1.8} />
               </span>
             </button>
           </li>
