@@ -1705,19 +1705,21 @@ function ContextStatusPopover({ session }: { session: Session }) {
                 return (
                   <div
                     key={`${limit.label}-${index}`}
-                    className="flex items-center justify-between gap-3 text-muted-foreground"
+                    className="flex flex-col gap-0.5"
                   >
-                    <span className="truncate text-foreground">
-                      {limit.label}
-                    </span>
-                    <span className="flex shrink-0 items-center gap-2 tabular-nums">
-                      <span>{remaining}</span>
-                      {reset !== null ? (
-                        <span className="text-muted-foreground/50">
-                          resets {reset}
-                        </span>
-                      ) : null}
-                    </span>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="truncate text-foreground">
+                        {limit.label}
+                      </span>
+                      <span className="shrink-0 tabular-nums text-muted-foreground">
+                        {remaining}
+                      </span>
+                    </div>
+                    {reset !== null ? (
+                      <span className="tabular-nums text-muted-foreground/50">
+                        resets {reset}
+                      </span>
+                    ) : null}
                   </div>
                 );
               })}
