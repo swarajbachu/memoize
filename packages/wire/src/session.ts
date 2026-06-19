@@ -256,7 +256,9 @@ const UsageLimitContent = Schema.TaggedStruct("usage_limit", {
   providerId: ProviderId,
   label: Schema.String,
   usedPercent: Schema.NullOr(Schema.Number),
-  resetsAt: Schema.NullOr(Schema.DateFromString),
+  // ISO-8601 string — see `UsageLimitEvent` in agent.ts for why this isn't
+  // a `Date` schema (constructor validates against the decoded `Date`).
+  resetsAt: Schema.NullOr(Schema.String),
   windowMinutes: Schema.NullOr(Schema.Number),
 });
 

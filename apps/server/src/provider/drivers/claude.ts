@@ -403,7 +403,9 @@ const claudeRateLimitEvents = (
         : utilization;
   const resetsAt =
     typeof info.resetsAt === "number" && Number.isFinite(info.resetsAt)
-      ? new Date(info.resetsAt > 1e12 ? info.resetsAt : info.resetsAt * 1000)
+      ? new Date(
+          info.resetsAt > 1e12 ? info.resetsAt : info.resetsAt * 1000,
+        ).toISOString()
       : null;
   return [
     {
@@ -458,7 +460,9 @@ const translate = (
       // Top-level turn: snapshot how full the context window is. The
       // per-request `usage` is what was actually sent to (input + cache)
       // plus generated this request (output) — i.e. the live occupancy.
-      const usage = (msg.message as { usage?: Record<string, unknown> }).usage;
+      const usage = (msg.message as { usage?: unknown }).usage as
+        | Record<string, unknown>
+        | undefined;
       if (usage !== undefined) {
         const tok = (key: string): number => {
           const v = usage[key];

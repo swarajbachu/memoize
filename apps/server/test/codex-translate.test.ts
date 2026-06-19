@@ -66,13 +66,13 @@ describe("translateCodexItem", () => {
           path: "/repo/package.json",
         },
       ],
-      aggregatedOutput: "{\n  \"name\": \"desktop\"\n}\n",
+      aggregatedOutput: '{\n  "name": "desktop"\n}\n',
       exitCode: 0,
       durationMs: 12,
     };
 
     const ev = only(translateCodexItem(item, "completed"), "ToolResult");
-    expect(ev.output).toBe("{\n  \"name\": \"desktop\"\n}\n");
+    expect(ev.output).toBe('{\n  "name": "desktop"\n}\n');
   });
 
   it("falls back to Bash for ordinary command execution", () => {
@@ -218,7 +218,7 @@ describe("translateCodexStatusNotification", () => {
     expect(ev.label).toBe("Codex weekly");
     expect(ev.usedPercent).toBe(42);
     expect(ev.windowMinutes).toBe(10_080);
-    expect(ev.resetsAt?.toISOString()).toBe("2027-01-15T08:00:00.000Z");
+    expect(ev.resetsAt).toBe("2027-01-15T08:00:00.000Z");
   });
 });
 

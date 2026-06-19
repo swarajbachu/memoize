@@ -396,9 +396,11 @@ const decisionToCodex = (
       ? "accept"
       : "decline";
 
-const codexResetDate = (value: number | null): Date | null => {
+const codexResetDate = (value: number | null): string | null => {
   if (value === null || !Number.isFinite(value)) return null;
-  return new Date(value > 1_000_000_000_000 ? value : value * 1000);
+  return new Date(
+    value > 1_000_000_000_000 ? value : value * 1000,
+  ).toISOString();
 };
 
 const codexLimitLabel = (value: string | null): string =>
@@ -608,7 +610,8 @@ export const translateCodexStatusNotification = (
           _tag: "ContextUsage",
           providerId: "codex",
           usedTokens: notification.params.tokenUsage.total.totalTokens,
-          windowTokens: notification.params.tokenUsage.modelContextWindow ?? null,
+          windowTokens:
+            notification.params.tokenUsage.modelContextWindow ?? null,
           precision: "exact",
           source: "Codex app-server",
         },

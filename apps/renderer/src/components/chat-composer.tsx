@@ -1541,8 +1541,10 @@ const formatTokens = (value: number): string => {
     : `${formatted}`;
 };
 
-const resetLabel = (date: Date | null): string | null => {
-  if (date === null) return null;
+const resetLabel = (iso: string | null): string | null => {
+  if (iso === null) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
   const now = new Date();
   const sameDay =
     date.getFullYear() === now.getFullYear() &&

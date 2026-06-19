@@ -455,7 +455,10 @@ const UsageLimitEvent = Schema.TaggedStruct("UsageLimit", {
   providerId: ProviderId,
   label: Schema.String,
   usedPercent: Schema.NullOr(Schema.Number),
-  resetsAt: Schema.NullOr(Schema.DateFromString),
+  // ISO-8601 string, not a `Date` schema: the value crosses IPC and the
+  // persistence layer as JSON, and a `DateFromString` transform trips the
+  // struct constructor (which validates against the decoded `Date` side).
+  resetsAt: Schema.NullOr(Schema.String),
   windowMinutes: Schema.NullOr(Schema.Number),
 });
 
