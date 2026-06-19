@@ -36,6 +36,9 @@ jobs:
           key: ${{ runner.os }}-electron-builder-${{ hashFiles('**/bun.lock') }}
 
       - name: Install
+        env:
+          # Required by .npmrc for @hugeicons-pro packages.
+          HUGEICONS_TOKEN: ${{ secrets.HUGEICONS_TOKEN }}
         run: bun install --frozen-lockfile
 
       - name: Build
