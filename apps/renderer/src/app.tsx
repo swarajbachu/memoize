@@ -404,7 +404,12 @@ function MainShell() {
           collapsible
           collapsedSize="0%"
           panelRef={rightPanelRef}
-          onResize={(size) => {
+          onResize={(size, _id, prev) => {
+            // Ignore the initial mount call (prev === undefined). The right
+            // dock defaults to closed (`rightSidebarOpen: false`); the
+            // persisted/default panel width would otherwise fire here and
+            // flip the sidebar open before the collapse effect runs.
+            if (prev === undefined) return;
             const open = size.asPercentage > 0;
             if (open !== rightSidebarOpen) setRightSidebarOpen(open);
           }}

@@ -289,8 +289,7 @@ export function ChatComposer({ session }: { session: Session }) {
   const setModel = useSessionsStore((s) => s.setModel);
   const setRuntimeMode = useSessionsStore((s) => s.setRuntimeMode);
   const setPermissionMode = useSessionsStore((s) => s.setPermissionMode);
-  const setRightSidebarOpen = useUiStore((s) => s.setRightSidebarOpen);
-  const setActiveRightTab = useUiStore((s) => s.setActiveRightTab);
+  const revealPanel = useUiStore((s) => s.revealPanel);
   const setView = useUiStore((s) => s.setView);
   const setSettingsSection = useUiStore((s) => s.setSettingsSection);
   const workspaceRoot = useActiveWorkspaceRoot(session.projectId);
@@ -431,8 +430,7 @@ export function ChatComposer({ session }: { session: Session }) {
         }
         break;
       case "diff":
-        setRightSidebarOpen(true);
-        setActiveRightTab("changes");
+        revealPanel("changes");
         break;
       case "copy": {
         const latest = [...(sessionMessages ?? [])]
