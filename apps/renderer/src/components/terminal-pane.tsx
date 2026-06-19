@@ -19,7 +19,7 @@ import {
 } from "../store/terminals.ts";
 import { EMPTY_WORKTREES, useWorktreesStore } from "../store/worktrees.ts";
 import { Button } from "./ui/button.tsx";
-import { Beacon } from "./ui/loaders";
+import { Spinner } from "./ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip.tsx";
 
 /**
@@ -218,7 +218,7 @@ function WorktreeTerminalPane({
       <div className="flex h-10 shrink-0 items-center border-b border-border bg-background text-sm">
         <TabButton active={tab === "setup"} onClick={() => setTab("setup")}>
           {(setupPending || worktree?.setupStatus === "running") && (
-            <Beacon dotSize={2} cellPadding={1} color="currentColor" />
+            <Spinner className="size-3.5" />
           )}
           Setup
         </TabButton>
@@ -305,7 +305,7 @@ function SetupOutput({
     <div className="relative h-full bg-background">
       {running && (
         <div className="absolute left-4 top-3 z-10 flex items-center gap-2 rounded border border-border bg-background/90 px-2.5 py-1.5 text-xs text-muted-foreground shadow-sm">
-          <Beacon dotSize={2} cellPadding={1} color="currentColor" />
+          <Spinner className="size-3.5" />
           Running setup
         </div>
       )}
@@ -320,7 +320,7 @@ function SetupOutput({
         className="absolute bottom-3 right-3 gap-2"
       >
         {running ? (
-          <Beacon dotSize={2} cellPadding={1} color="currentColor" />
+          <Spinner className="size-3.5" />
         ) : (
           <HugeiconsIcon icon={Refresh01Icon} className="size-3.5" />
         )}

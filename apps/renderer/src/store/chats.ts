@@ -39,7 +39,7 @@ type ChatsState = {
   readonly showArchivedByProject: Record<string, boolean>;
   readonly loadingByProject: Record<string, boolean>;
   /** Per-project in-flight flag for `create()`. Drives the sidebar
-   * "New chat" button's icon swap (SquarePen → Diffusion). */
+   * "New chat" button's icon swap (SquarePen → Spinner). */
   readonly creatingByProject: Record<string, boolean>;
   readonly error: string | null;
   readonly hydrate: (projectId: FolderId) => Promise<void>;

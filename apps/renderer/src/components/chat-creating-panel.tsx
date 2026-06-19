@@ -11,7 +11,7 @@ import type { ProviderId } from "@memoize/wire";
 
 import { cn } from "~/lib/utils";
 import { PROVIDER_LABEL } from "./settings-page";
-import { Beacon } from "./ui/loaders";
+import { Spinner } from "./ui/spinner";
 
 /**
  * Step-by-step progress shown while `chat.create` is in flight. The RPC
@@ -164,7 +164,7 @@ export function ChatCreatingPanel({
               <span className="min-w-0 truncate">{stage.render()}</span>
               {state === "active" && (
                 <span className="ml-1 inline-flex items-center text-muted-foreground">
-                  <Beacon dotSize={2.5} cellPadding={1} />
+                  <Spinner className="size-4" />
                 </span>
               )}
             </li>

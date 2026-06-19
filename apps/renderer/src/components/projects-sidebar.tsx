@@ -55,7 +55,7 @@ import { useUiStore } from "../store/ui.ts";
 import { useWorkspaceStore } from "../store/workspace.ts";
 import { BranchIcon, type BranchState } from "./branch-icon.tsx";
 import { ProjectAddMenu } from "./project-add-menu.tsx";
-import { Beacon, Diffusion } from "./ui/loaders";
+import { Spinner } from "./ui/spinner";
 
 const initialsOf = (name: string): string => {
   const parts = name.split(/[-_.\s]+/).filter(Boolean);
@@ -728,7 +728,7 @@ function NewChatButton({ projectId }: { projectId: FolderId }) {
           >
             {creating ? (
               <span className="inline-flex size-3.5 items-center justify-center">
-                <Diffusion dotSize={3} cellPadding={1} />
+                <Spinner className="size-3.5" />
               </span>
             ) : (
               <HugeiconsIcon icon={Edit01Icon} className="size-3.5" />
@@ -1058,12 +1058,7 @@ function ChatAttentionIcon({
       title={label}
     >
       {state === "running" ? (
-        <Beacon
-          dotSize={3}
-          cellPadding={0.75}
-          speed={1.8}
-          color="currentColor"
-        />
+        <Spinner className="size-4" />
       ) : state === "question" ? (
         <HugeiconsIcon icon={HelpCircleIcon} className="size-3.5" />
       ) : (
