@@ -1,5 +1,4 @@
-import { HugeiconsIcon } from "@hugeicons/react";
-import { Add01Icon, Cancel01Icon } from "@hugeicons-pro/core-bulk-rounded";
+import { Plus, X } from "lucide-react";
 import { useMemo } from "react";
 
 import {
@@ -335,7 +334,7 @@ function ChatTabButton({
         aria-label="Close chat"
         className="relative z-10 rounded p-0.5 opacity-0 transition-opacity hover:bg-foreground/10 group-hover:opacity-100"
       >
-        <HugeiconsIcon icon={Cancel01Icon} className="size-3" />
+        <X className="size-3" strokeWidth={1.8} />
       </button>
     </div>
   );
@@ -386,7 +385,7 @@ function NewChatTabButton({
           <Diffusion dotSize={3} cellPadding={1} />
         </span>
       ) : (
-        <HugeiconsIcon icon={Add01Icon} className="size-3.5" />
+        <Plus className="size-3.5" strokeWidth={1.8} />
       )}
     </button>
   );
@@ -436,7 +435,7 @@ function FileTabButton({
         aria-label="Close file"
         className="relative z-10 rounded p-0.5 opacity-0 transition-opacity hover:bg-foreground/10 group-hover:opacity-100"
       >
-        <HugeiconsIcon icon={Cancel01Icon} className="size-3" />
+        <X className="size-3" strokeWidth={1.8} />
       </button>
     </div>
   );

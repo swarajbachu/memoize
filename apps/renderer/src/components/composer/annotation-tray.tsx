@@ -1,9 +1,9 @@
 import {
   ArrowDown01Icon,
   BubbleChatIcon,
-  Cancel01Icon,
 } from "@hugeicons-pro/core-bulk-rounded";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { X } from "lucide-react";
 import { useState } from "react";
 
 import type { CodeAnnotation, SessionId } from "@memoize/wire";
@@ -66,7 +66,7 @@ export function AnnotationTray({ sessionId }: { sessionId: SessionId }) {
           className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-background hover:text-foreground"
           aria-label="Clear all annotations"
         >
-          <HugeiconsIcon icon={Cancel01Icon} className="size-3.5" />
+          <X className="size-3.5" strokeWidth={1.8} />
         </button>
       </div>
       {expanded ? (
@@ -89,7 +89,7 @@ export function AnnotationTray({ sessionId }: { sessionId: SessionId }) {
                 className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground group-hover/annotation:opacity-100"
                 aria-label="Remove annotation"
               >
-                <HugeiconsIcon icon={Cancel01Icon} className="size-3.5" />
+                <X className="size-3.5" strokeWidth={1.8} />
               </button>
             </li>
           ))}

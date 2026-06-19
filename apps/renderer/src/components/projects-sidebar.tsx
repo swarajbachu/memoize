@@ -1,7 +1,5 @@
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  ArchiveArrowUpIcon,
-  ArchiveIcon,
   ArrowDown01Icon,
   ArrowRight01Icon,
   Delete02Icon,
@@ -11,6 +9,11 @@ import {
   Settings01Icon,
   TaskDone01Icon,
 } from "@hugeicons-pro/core-bulk-rounded";
+import {
+  ArchiveArrowDownIcon,
+  ArchiveArrowUpIcon,
+  ArchiveIcon,
+} from "@hugeicons-pro/core-solid-rounded";
 import { Effect, Fiber, Stream } from "effect";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
@@ -890,7 +893,7 @@ function ChatRow({ chat }: { chat: Chat }) {
     setMenuOpen(true);
   };
 
-  const primaryActionIcon = isArchived ? ArchiveArrowUpIcon : ArchiveIcon;
+  const primaryActionIcon = isArchived ? ArchiveArrowUpIcon : ArchiveArrowDownIcon;
   const primaryActionLabel = isArchived ? "Unarchive" : "Archive";
 
   return (
@@ -994,7 +997,7 @@ function ChatRow({ chat }: { chat: Chat }) {
               onClick={() => void archiveChat(chat.id)}
               className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
             >
-              <HugeiconsIcon icon={ArchiveIcon} className="size-3.5" />
+              <HugeiconsIcon icon={ArchiveArrowDownIcon} className="size-3.5" />
               Archive
             </MenuItem>
           )}

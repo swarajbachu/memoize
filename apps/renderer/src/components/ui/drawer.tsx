@@ -1,12 +1,10 @@
 "use client";
 
 import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  ArrowRight01Icon,
-  Cancel01Icon,
-} from "@hugeicons-pro/core-bulk-rounded";
+import { ArrowRight01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
 import { Drawer as DrawerPrimitive } from "@base-ui/react/drawer";
+import { X } from "lucide-react";
 import { mergeProps } from "@base-ui/react/merge-props";
 import { Radio as RadioPrimitive } from "@base-ui/react/radio";
 import { RadioGroup as RadioGroupPrimitive } from "@base-ui/react/radio-group";
@@ -221,7 +219,7 @@ export function DrawerPopup({
               className="absolute end-2 top-2"
               render={<Button size="icon" variant="ghost" />}
             >
-              <HugeiconsIcon icon={Cancel01Icon} />
+              <X />
             </DrawerPrimitive.Close>
           )}
           {showBar && <DrawerBar />}
