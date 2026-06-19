@@ -2,7 +2,7 @@ import { PatchDiff } from "@pierre/diffs/react";
 import { Effect } from "effect";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { GitDiffResult } from "@memoize/wire";
+import type { CodeAnnotation, GitDiffResult } from "@memoize/wire";
 
 import { cn } from "~/lib/utils";
 import { classifyGit } from "../lib/git-rpc.ts";
@@ -132,6 +132,12 @@ function ImageBody({ src, name }: { src: string; name: string }) {
 
 type EditableFile = Extract<OpenFile, { kind: "text" | "external" }>;
 
+// Stable empty reference for the annotations selector. Returning a fresh
+// `[]` literal from a zustand/`useSyncExternalStore` selector fails React's
+// snapshot identity check every render → "getSnapshot should be cached" and
+// an infinite update loop. One shared constant keeps the reference stable.
+const EMPTY_ANNOTATIONS: ReadonlyArray<CodeAnnotation> = [];
+
 function CodeMirrorBody({
   openFile,
   hidden,
@@ -152,7 +158,9 @@ function CodeMirrorBody({
   const revealedAnnotation = useUiStore((s) => s.revealedAnnotation);
   const selectedSessionId = useSessionsStore((s) => s.selectedSessionId);
   const draftAnnotations = useAnnotationsStore((s) =>
-    selectedSessionId === null ? [] : (s.bySession[selectedSessionId] ?? []),
+    selectedSessionId === null
+      ? EMPTY_ANNOTATIONS
+      : (s.bySession[selectedSessionId] ?? EMPTY_ANNOTATIONS),
   );
   const selectedSessionIdRef = useRef(selectedSessionId);
   selectedSessionIdRef.current = selectedSessionId;
