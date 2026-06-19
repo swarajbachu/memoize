@@ -12,6 +12,7 @@ import {
   type PermissionDecision,
   type PermissionKind,
   type ProviderId,
+  type ThreadGoalSetInput,
 } from "@memoize/wire";
 
 import { probeAllProviders, resolveCliPath } from "../availability.ts";
@@ -23,10 +24,7 @@ import {
   startCodexSession,
   type CodexSessionHandle,
 } from "../drivers/codex.ts";
-import {
-  startGrokSession,
-  type GrokSessionHandle,
-} from "../drivers/grok.ts";
+import { startGrokSession, type GrokSessionHandle } from "../drivers/grok.ts";
 import {
   startGeminiSession,
   type GeminiSessionHandle,
@@ -137,11 +135,13 @@ export const ProviderServiceLive = Layer.effect(
         // listConfigured is best-effort — a keychain failure here shouldn't
         // wipe out the CLI-logged-in picture, which is the primary auth path
         // and works without any keychain entry of ours.
-        const configured = yield* credentials.listConfigured().pipe(
-          Effect.catchAll(() =>
-            Effect.succeed([] as ReadonlyArray<ProviderId>),
-          ),
-        );
+        const configured = yield* credentials
+          .listConfigured()
+          .pipe(
+            Effect.catchAll(() =>
+              Effect.succeed([] as ReadonlyArray<ProviderId>),
+            ),
+          );
         const configuredSet = new Set<ProviderId>(configured);
         return list.map(
           (a): AgentAvailability => ({
@@ -177,9 +177,9 @@ export const ProviderServiceLive = Layer.effect(
             );
           }
           const cwd = input.cwdOverride ?? folder.path;
-          const apiKey = yield* credentials.get(input.providerId).pipe(
-            Effect.catchAll(() => Effect.succeed<string | null>(null)),
-          );
+          const apiKey = yield* credentials
+            .get(input.providerId)
+            .pipe(Effect.catchAll(() => Effect.succeed<string | null>(null)));
           const sessionId = input.sessionId ?? nextSessionId();
           let handle: SessionHandle;
           if (input.providerId === "gemini") {
@@ -413,6 +413,24 @@ export const ProviderServiceLive = Layer.effect(
       answerQuestion: (sessionId, itemId, answers) =>
         Effect.flatMap(lookup(sessionId), ({ handle }) =>
           handle.answerQuestion(itemId, answers),
+        ),
+      getGoal: (sessionId) =>
+        Effect.flatMap(lookup(sessionId), ({ providerId, handle }) =>
+          providerId === "codex"
+            ? (handle as CodexSessionHandle).getGoal()
+            : Effect.fail(new AgentSessionNotFoundError({ sessionId })),
+        ),
+      setGoal: (sessionId, goal: ThreadGoalSetInput) =>
+        Effect.flatMap(lookup(sessionId), ({ providerId, handle }) =>
+          providerId === "codex"
+            ? (handle as CodexSessionHandle).setGoal(goal)
+            : Effect.fail(new AgentSessionNotFoundError({ sessionId })),
+        ),
+      clearGoal: (sessionId) =>
+        Effect.flatMap(lookup(sessionId), ({ providerId, handle }) =>
+          providerId === "codex"
+            ? (handle as CodexSessionHandle).clearGoal()
+            : Effect.fail(new AgentSessionNotFoundError({ sessionId })),
         ),
     };
   }),

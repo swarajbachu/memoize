@@ -1,5 +1,12 @@
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowDown01Icon, Folder01Icon, FolderAddIcon, SentIcon, Tick01Icon } from "@hugeicons-pro/core-bulk-rounded";
+import {
+  ArrowDown01Icon,
+  DashboardSpeedIcon,
+  Folder01Icon,
+  FolderAddIcon,
+  SentIcon,
+  Tick01Icon,
+} from "@hugeicons-pro/core-bulk-rounded";
 import { X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 
@@ -16,11 +23,7 @@ import {
   MenuSeparator,
   MenuTrigger,
 } from "~/components/ui/menu";
-import {
-  Tooltip,
-  TooltipPopup,
-  TooltipTrigger,
-} from "~/components/ui/tooltip";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { resolveAutoWorktreeId } from "~/lib/auto-worktree";
 import { useChatsStore } from "~/store/chats";
 import { useMessagesStore } from "~/store/messages";
@@ -31,8 +34,13 @@ import { ChatCreatingPanel } from "./chat-creating-panel.tsx";
 import { ModelPicker } from "./model-picker.tsx";
 
 const SUGGESTIONS: ReadonlyArray<{ label: string }> = [
-  { label: "Land targeted provider compatibility rules before the next harness drift" },
-  { label: "Bring background activity policy onto main to cut reconnect churn" },
+  {
+    label:
+      "Land targeted provider compatibility rules before the next harness drift",
+  },
+  {
+    label: "Bring background activity policy onto main to cut reconnect churn",
+  },
   { label: "Use the new resource history to finish the leak investigation" },
   { label: "Plan the next slice — what should we tackle first?" },
 ];
@@ -68,11 +76,15 @@ export function ChatLanding() {
   );
 
   const create = useChatsStore((s) => s.create);
+  const send = useMessagesStore((s) => s.send);
   const creating = useChatsStore((s) =>
-    selectedFolderId !== null ? s.creatingByProject[selectedFolderId] === true : false,
+    selectedFolderId !== null
+      ? s.creatingByProject[selectedFolderId] === true
+      : false,
   );
 
   const [text, setText] = useState("");
+  const [goalSendMode, setGoalSendMode] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   // Snapshot of the prompt the user just submitted. Drives the
   // ChatCreatingPanel preview so the form can be hidden during the RPC
@@ -132,10 +144,15 @@ export function ChatLanding() {
         fileRefs: [],
         skillRefs: [],
       });
-      useMessagesStore.getState().queue(sessionId, input);
-      useMessagesStore.getState().flushQueue(sessionId);
+      if (goalSendMode && defaultProviderId === "codex") {
+        void send(sessionId, input, { asGoal: true });
+      } else {
+        useMessagesStore.getState().queue(sessionId, input);
+        useMessagesStore.getState().flushQueue(sessionId);
+      }
     }
     setText("");
+    setGoalSendMode(false);
     // Don't clear pendingPrompt — the parent will unmount us when the
     // view swaps to ChatView, so the panel keeps animating until then.
   };
@@ -185,7 +202,14 @@ export function ChatLanding() {
         ) : (
           <>
             <Frame>
-              <Card className="rounded-xl border-border/50">
+              <Card
+                className={cn(
+                  "rounded-xl border-border/50",
+                  goalSendMode && defaultProviderId === "codex"
+                    ? "border-amber-400/55 shadow-[0_0_0_1px_rgba(251,191,36,0.22)]"
+                    : undefined,
+                )}
+              >
                 <CardPanel className="relative flex flex-col gap-2 px-3 py-2">
                   <textarea
                     ref={textareaRef}
@@ -208,7 +232,40 @@ export function ChatLanding() {
                     style={{ minHeight: MIN_HEIGHT, maxHeight: MAX_HEIGHT }}
                     className="w-full resize-none bg-transparent text-sm leading-relaxed text-foreground outline-none placeholder:text-muted-foreground"
                   />
-                  <div className="flex items-center justify-end">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      {defaultProviderId === "codex" ? (
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <Button
+                                variant={goalSendMode ? "secondary" : "ghost"}
+                                size="icon-sm"
+                                onClick={() => setGoalSendMode((v) => !v)}
+                                aria-label={
+                                  goalSendMode
+                                    ? "Sending first message as goal"
+                                    : "Send first message as goal"
+                                }
+                              >
+                                <HugeiconsIcon
+                                  icon={DashboardSpeedIcon}
+                                  className={cn(
+                                    "size-3.5",
+                                    goalSendMode ? "text-amber-300" : undefined,
+                                  )}
+                                />
+                              </Button>
+                            }
+                          />
+                          <TooltipPopup>
+                            {goalSendMode
+                              ? "First send sets a goal"
+                              : "Send first message as goal"}
+                          </TooltipPopup>
+                        </Tooltip>
+                      ) : null}
+                    </div>
                     <Tooltip>
                       <TooltipTrigger
                         render={
@@ -219,7 +276,10 @@ export function ChatLanding() {
                             disabled={!canSend}
                             aria-label="Send"
                           >
-                            <HugeiconsIcon icon={SentIcon} className="size-3.5" />
+                            <HugeiconsIcon
+                              icon={SentIcon}
+                              className="size-3.5"
+                            />
                           </Button>
                         }
                       />
@@ -308,9 +368,17 @@ function ProjectPicker({
                 )}
               >
                 <span className="col-start-1 row-start-1 flex items-center justify-center">
-                  {active && <HugeiconsIcon icon={Tick01Icon} className="size-3.5 opacity-90" />}
+                  {active && (
+                    <HugeiconsIcon
+                      icon={Tick01Icon}
+                      className="size-3.5 opacity-90"
+                    />
+                  )}
                 </span>
-                <HugeiconsIcon icon={Folder01Icon} className="col-start-2 row-start-1 size-3.5 opacity-80" />
+                <HugeiconsIcon
+                  icon={Folder01Icon}
+                  className="col-start-2 row-start-1 size-3.5 opacity-80"
+                />
                 <span className="col-start-3 row-start-1 truncate">
                   {folder.name}
                 </span>
@@ -324,7 +392,10 @@ function ProjectPicker({
           className="grid grid-cols-[1rem_auto_1fr] items-center gap-x-2 rounded-md px-2 py-1.5 text-sm"
         >
           <span className="col-start-1 row-start-1" />
-          <HugeiconsIcon icon={FolderAddIcon} className="col-start-2 row-start-1 size-3.5 opacity-80" />
+          <HugeiconsIcon
+            icon={FolderAddIcon}
+            className="col-start-2 row-start-1 size-3.5 opacity-80"
+          />
           <span className="col-start-3 row-start-1">Add new project</span>
         </MenuItem>
       </MenuPopup>

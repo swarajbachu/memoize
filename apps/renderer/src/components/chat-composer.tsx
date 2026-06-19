@@ -3,12 +3,15 @@ import {
   ArrowDown01Icon,
   AttachmentIcon,
   DashboardSpeedIcon,
+  Delete02Icon,
   FlashIcon,
   Folder01Icon,
   GitBranchIcon,
   InformationCircleIcon,
   LockIcon,
   MapsIcon,
+  PencilIcon,
+  PlayIcon,
   SentIcon,
   SquareIcon,
   Tick01Icon,
@@ -29,6 +32,7 @@ import {
   type SelectOptionDescriptor,
   type Session,
   type SessionId,
+  type ThreadGoal,
 } from "@memoize/wire";
 import { ModelPicker } from "./model-picker.tsx";
 import { ActiveLocationChip } from "./active-location-chip.tsx";
@@ -36,6 +40,17 @@ import { ActiveLocationChip } from "./active-location-chip.tsx";
 import { Card, CardPanel } from "~/components/ui/card";
 import { Frame, FrameFooter } from "~/components/ui/frame";
 import { Button } from "~/components/ui/button";
+import {
+  Dialog,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+} from "~/components/ui/dialog";
+import { Input } from "~/components/ui/input";
+import { Textarea } from "~/components/ui/textarea";
 import {
   composerDoc,
   createComposerView,
@@ -111,9 +126,12 @@ export function ChatComposer({ session }: { session: Session }) {
   const inFlight = useMessagesStore(
     (s) => s.runningBySession[sessionId] === true,
   );
+  const goal = useMessagesStore((s) => s.goalBySession[sessionId] ?? null);
   const send = useMessagesStore((s) => s.send);
   const interrupt = useMessagesStore((s) => s.interrupt);
   const queue = useMessagesStore((s) => s.queue);
+  const setGoal = useMessagesStore((s) => s.setGoal);
+  const clearGoal = useMessagesStore((s) => s.clearGoal);
 
   // Pending AskUserQuestion takes over the composer slot — that's where
   // the user types anyway, and floating it inline above the chat
@@ -245,6 +263,7 @@ export function ChatComposer({ session }: { session: Session }) {
   }, [inFlight, headPermission, sessionId, hydratePermissions]);
 
   const [hasText, setHasText] = useState(false);
+  const [goalSendMode, setGoalSendMode] = useState(false);
   const [trigger, setTrigger] = useState<ActiveTrigger | null>(null);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -403,6 +422,13 @@ export function ChatComposer({ session }: { session: Session }) {
         break;
       case "run":
         void setPermissionMode(sessionId, "default");
+        break;
+      case "goal":
+        if (parsed.args.length > 0) {
+          void send(sessionId, parsed.args, { asGoal: true });
+        } else {
+          setGoalSendMode(true);
+        }
         break;
       case "diff":
         setRightSidebarOpen(true);
@@ -603,10 +629,13 @@ export function ChatComposer({ session }: { session: Session }) {
           })
         : parsed;
     clearComposer(view);
+    setGoalSendMode(false);
     // Drain the tray: the annotations now live on `input` (carried into the
     // queue too, so a mid-turn submit flushes them intact).
     useAnnotationsStore.getState().clear(sessionId);
-    if (inFlight) {
+    if (goalSendMode) {
+      void send(sessionId, input, { asGoal: true });
+    } else if (inFlight) {
       // Mid-turn submit becomes a queue chip; auto-flushed when the turn
       // ends or steered manually.
       queue(sessionId, input);
@@ -673,15 +702,36 @@ export function ChatComposer({ session }: { session: Session }) {
           <ActiveLocationChip />
           <ProjectPlanTray key={sessionId} sessionId={sessionId} />
           <AnnotationTray sessionId={sessionId} />
+          {session.providerId === "codex" && goal !== null ? (
+            <GoalBanner
+              goal={goal}
+              inPlanMode={inPlanMode}
+              onPause={() =>
+                void setGoal(sessionId, {
+                  status: goal.status === "active" ? "paused" : "active",
+                })
+              }
+              onSave={(objective, tokenBudget) =>
+                void setGoal(sessionId, {
+                  objective,
+                  status: "active",
+                  tokenBudget,
+                })
+              }
+              onClear={() => void clearGoal(sessionId)}
+            />
+          ) : null}
           <Frame>
             <Card
               className={cn(
                 "rounded-xl min-h-30 transition-colors",
-                inPlanMode
-                  ? "border-2 border-dashed border-rose-300/60 dark:border-rose-300/40"
-                  : inUltracodeMode
-                    ? "border-2 border-transparent [background:linear-gradient(var(--color-card),var(--color-card))_padding-box,linear-gradient(90deg,#fb7185,#f97316,#facc15,#22c55e,#06b6d4,#8b5cf6,#d946ef)_border-box]"
-                    : "border-border/50",
+                goalSendMode
+                  ? "border-2 border-dashed border-amber-300/60 dark:border-amber-300/45"
+                  : inPlanMode
+                    ? "border-2 border-dashed border-rose-300/60 dark:border-rose-300/40"
+                    : inUltracodeMode
+                      ? "border-2 border-transparent [background:linear-gradient(var(--color-card),var(--color-card))_padding-box,linear-gradient(90deg,#fb7185,#f97316,#facc15,#22c55e,#06b6d4,#8b5cf6,#d946ef)_border-box]"
+                      : "border-border/50",
               )}
               onDragEnter={onDragEnter}
               onDragOver={onDragOver}
@@ -791,6 +841,13 @@ export function ChatComposer({ session }: { session: Session }) {
                   (d): d is BooleanOptionDescriptor =>
                     d.kind === "boolean" && d.id === "fastMode",
                 ) === true && <FastModeToggle sessionId={sessionId} />}
+                {session.providerId === "codex" ? (
+                  <GoalModeToggle
+                    active={goalSendMode}
+                    hasGoal={goal !== null}
+                    onClick={() => setGoalSendMode((v) => !v)}
+                  />
+                ) : null}
                 {(findModelDescriptor(session.providerId, session.model)
                   ?.supportsPlanMode ??
                   true) && (
@@ -1039,6 +1096,239 @@ function PlanModeToggle({
         <span className="ml-2 opacity-60">⇧Tab</span>
       </TooltipPopup>
     </Tooltip>
+  );
+}
+
+function GoalModeToggle({
+  active,
+  hasGoal,
+  onClick,
+}: {
+  active: boolean;
+  hasGoal: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            onClick={onClick}
+            aria-label={active ? "Send next message as goal" : "Set goal"}
+            aria-pressed={active}
+            className={cn(
+              "flex h-6 items-center gap-1.5 rounded-md px-2 text-[11px] transition-colors",
+              active
+                ? "bg-amber-300/15 text-amber-200 hover:bg-amber-300/25"
+                : hasGoal
+                  ? "text-amber-200 hover:bg-muted/60"
+                  : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+            )}
+          >
+            <HugeiconsIcon icon={DashboardSpeedIcon} className="size-3.5" />
+            {active ? <span>Goal</span> : null}
+          </button>
+        }
+      />
+      <TooltipPopup>
+        {active ? "Next send sets a goal" : "Send next message as goal"}
+      </TooltipPopup>
+    </Tooltip>
+  );
+}
+
+const GOAL_LABEL: Record<ThreadGoal["status"], string> = {
+  active: "Pursuing goal",
+  paused: "Goal paused",
+  budgetLimited: "Goal budget reached",
+  usageLimited: "Goal usage limited",
+  blocked: "Goal blocked",
+  complete: "Goal complete",
+};
+
+function GoalBanner({
+  goal,
+  inPlanMode,
+  onPause,
+  onSave,
+  onClear,
+}: {
+  goal: ThreadGoal;
+  inPlanMode: boolean;
+  onPause: () => void;
+  onSave: (objective: string, tokenBudget: number | null) => void;
+  onClear: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const objective = goal.objective.trim();
+  const elapsed =
+    goal.timeUsedSeconds > 0
+      ? `${Math.floor(goal.timeUsedSeconds / 60)}m ${Math.floor(
+          goal.timeUsedSeconds % 60,
+        )}s`
+      : "0s";
+  return (
+    <div className="mb-2 rounded-lg border border-border/70 bg-card/70 px-3 py-2 text-sm">
+      <div className="flex min-w-0 items-center gap-2">
+        <HugeiconsIcon
+          icon={DashboardSpeedIcon}
+          className="size-4 shrink-0 text-muted-foreground"
+        />
+        <div className="min-w-0 flex-1 truncate">
+          <span className="font-medium text-foreground">
+            {GOAL_LABEL[goal.status]}
+          </span>{" "}
+          <span className="text-muted-foreground">{objective}</span>
+        </div>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                onClick={onPause}
+                className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                aria-label={
+                  goal.status === "active" ? "Pause goal" : "Resume goal"
+                }
+              >
+                <HugeiconsIcon
+                  icon={goal.status === "active" ? SquareIcon : PlayIcon}
+                  className="size-3.5"
+                />
+              </button>
+            }
+          />
+          <TooltipPopup>
+            {goal.status === "active" ? "Pause goal" : "Resume goal"}
+          </TooltipPopup>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                onClick={() => setOpen(true)}
+                className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                aria-label="Edit goal"
+              >
+                <HugeiconsIcon icon={PencilIcon} className="size-3.5" />
+              </button>
+            }
+          />
+          <TooltipPopup>Edit goal</TooltipPopup>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                onClick={onClear}
+                className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                aria-label="Delete goal"
+              >
+                <HugeiconsIcon icon={Delete02Icon} className="size-3.5" />
+              </button>
+            }
+          />
+          <TooltipPopup>Delete goal</TooltipPopup>
+        </Tooltip>
+      </div>
+      {inPlanMode && goal.status === "active" ? (
+        <div className="mt-1 text-xs text-amber-200/80">
+          Plan mode is active; Codex will not continue this goal until plan mode
+          exits.
+        </div>
+      ) : null}
+      <GoalEditorDialog
+        open={open}
+        onOpenChange={setOpen}
+        goal={goal}
+        elapsed={elapsed}
+        onSave={onSave}
+      />
+    </div>
+  );
+}
+
+function GoalEditorDialog({
+  open,
+  onOpenChange,
+  goal,
+  elapsed,
+  onSave,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  goal: ThreadGoal;
+  elapsed: string;
+  onSave: (objective: string, tokenBudget: number | null) => void;
+}) {
+  const [objective, setObjective] = useState(goal.objective);
+  const [budget, setBudget] = useState(
+    goal.tokenBudget === null ? "" : String(goal.tokenBudget),
+  );
+  useEffect(() => {
+    if (!open) return;
+    setObjective(goal.objective);
+    setBudget(goal.tokenBudget === null ? "" : String(goal.tokenBudget));
+  }, [goal, open]);
+  const trimmed = objective.trim();
+  const validBudget =
+    budget.trim().length === 0 || Number.isFinite(Number(budget));
+  const canSave = trimmed.length > 0 && trimmed.length <= 4000 && validBudget;
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogPopup>
+        <DialogHeader>
+          <DialogTitle>Edit Goal</DialogTitle>
+          <DialogDescription>
+            Changing the objective replaces the Codex goal and resets goal
+            usage.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogPanel className="space-y-3">
+          <Textarea
+            value={objective}
+            onChange={(event) => setObjective(event.currentTarget.value)}
+            maxLength={4000}
+            aria-label="Goal objective"
+          />
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>{objective.length}/4000</span>
+            <span>
+              {goal.tokensUsed.toLocaleString()} tokens · {elapsed}
+            </span>
+          </div>
+          <Input
+            nativeInput
+            type="number"
+            min={1}
+            value={budget}
+            onChange={(event) => setBudget(event.currentTarget.value)}
+            placeholder="Token budget"
+            aria-label="Token budget"
+          />
+        </DialogPanel>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            disabled={!canSave}
+            onClick={() => {
+              onSave(
+                trimmed,
+                budget.trim().length === 0 ? null : Number(budget),
+              );
+              onOpenChange(false);
+            }}
+          >
+            Save Goal
+          </Button>
+        </DialogFooter>
+      </DialogPopup>
+    </Dialog>
   );
 }
 

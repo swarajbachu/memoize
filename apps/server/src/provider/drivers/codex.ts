@@ -16,6 +16,9 @@ import {
   type PermissionMode,
   type SkillRef,
   type StartSessionInput,
+  ThreadGoal,
+  type ThreadGoalSetInput,
+  type ThreadGoalStatus,
   type UserQuestionAnswer,
 } from "@memoize/wire";
 
@@ -25,6 +28,7 @@ import { CodexAppServerClient } from "../codex-app-server-client.ts";
 import type { ServerNotification } from "../codex-app-protocol/ServerNotification";
 import type { ServerRequest } from "../codex-app-protocol/ServerRequest";
 import type { SandboxPolicy } from "../codex-app-protocol/v2/SandboxPolicy";
+import type { ThreadGoal as CodexThreadGoal } from "../codex-app-protocol/v2/ThreadGoal";
 import type { ThreadItem } from "../codex-app-protocol/v2/ThreadItem";
 import type { UserInput } from "../codex-app-protocol/v2/UserInput";
 
@@ -115,6 +119,9 @@ export interface CodexSessionHandle {
     itemId: AgentItemId,
     answers: ReadonlyArray<UserQuestionAnswer>,
   ) => Effect.Effect<void>;
+  readonly getGoal: () => Effect.Effect<ThreadGoal | null>;
+  readonly setGoal: (goal: ThreadGoalSetInput) => Effect.Effect<ThreadGoal>;
+  readonly clearGoal: () => Effect.Effect<void>;
 }
 
 let itemCounter = 0;
@@ -133,6 +140,48 @@ const asRecord = (value: unknown): Record<string, unknown> =>
 
 const asString = (value: unknown): string | null =>
   typeof value === "string" && value.length > 0 ? value : null;
+
+const normalizeGoalStatus = (status: string): ThreadGoalStatus => {
+  switch (status) {
+    case "active":
+    case "paused":
+    case "budgetLimited":
+    case "usageLimited":
+    case "blocked":
+    case "complete":
+      return status;
+    case "budget_limited":
+      return "budgetLimited";
+    case "usage_limited":
+      return "usageLimited";
+    default:
+      return "blocked";
+  }
+};
+
+const normalizeThreadGoal = (goal: CodexThreadGoal | ThreadGoal): ThreadGoal =>
+  ThreadGoal.make({
+    threadId: goal.threadId,
+    objective: goal.objective,
+    status: normalizeGoalStatus(goal.status),
+    tokenBudget: goal.tokenBudget,
+    tokensUsed: goal.tokensUsed,
+    timeUsedSeconds: goal.timeUsedSeconds,
+    createdAt: goal.createdAt,
+    updatedAt: goal.updatedAt,
+  });
+
+const goalFromResponse = (value: unknown): CodexThreadGoal | null => {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const nested = record["goal"];
+  if (nested === null) return null;
+  if (nested !== undefined && typeof nested === "object") {
+    return nested as CodexThreadGoal;
+  }
+  return value as CodexThreadGoal;
+};
 
 const toolIdentifierPart = (value: string): string =>
   value.replace(/[^A-Za-z0-9_]/g, "_");
@@ -636,6 +685,17 @@ export const startCodexSession = (
         cursor: activeThreadId,
         strategy: "codex-thread-id",
       });
+      try {
+        const currentGoal = await app.request<unknown>("thread/goal/get", {
+          threadId: activeThreadId,
+        });
+        const goal = goalFromResponse(currentGoal);
+        if (goal !== null) {
+          emit({ _tag: "GoalUpdated", goal: normalizeThreadGoal(goal) });
+        }
+      } catch (cause) {
+        console.warn("[codex] goal hydration failed", cause);
+      }
     };
 
     yield* Effect.tryPromise({
@@ -974,6 +1034,17 @@ export const startCodexSession = (
             latestDiff = notification.params.diff;
           }
           return [];
+        case "thread/goal/updated":
+          if (notification.params.threadId !== activeThreadId) return [];
+          return [
+            {
+              _tag: "GoalUpdated",
+              goal: normalizeThreadGoal(notification.params.goal),
+            },
+          ];
+        case "thread/goal/cleared":
+          if (notification.params.threadId !== activeThreadId) return [];
+          return [{ _tag: "GoalCleared" }];
         case "item/started":
           if (notification.params.threadId !== activeThreadId) return [];
           {
@@ -1196,6 +1267,46 @@ export const startCodexSession = (
           if (waiter === undefined) return;
           questionWaiters.delete(itemId);
           waiter.resolve(answers);
+        }),
+      getGoal: () =>
+        Effect.promise(async () => {
+          if (activeThreadId === null) return null;
+          const response = await app.request<unknown>("thread/goal/get", {
+            threadId: activeThreadId,
+          });
+          const goal = goalFromResponse(response);
+          return goal === null ? null : normalizeThreadGoal(goal);
+        }),
+      setGoal: (goalInput) =>
+        Effect.promise(async () => {
+          if (activeThreadId === null) {
+            throw new Error("Codex thread is not ready for goals.");
+          }
+          const response = await app.request<unknown>("thread/goal/set", {
+            threadId: activeThreadId,
+            ...(goalInput.objective !== undefined
+              ? { objective: goalInput.objective }
+              : {}),
+            ...(goalInput.status !== undefined
+              ? { status: goalInput.status }
+              : {}),
+            ...(goalInput.tokenBudget !== undefined
+              ? { tokenBudget: goalInput.tokenBudget }
+              : {}),
+          });
+          const responseGoal = goalFromResponse(response);
+          if (responseGoal === null) {
+            throw new Error("Codex did not return a goal.");
+          }
+          const normalized = normalizeThreadGoal(responseGoal);
+          emit({ _tag: "GoalUpdated", goal: normalized });
+          return normalized;
+        }),
+      clearGoal: () =>
+        Effect.promise(async () => {
+          if (activeThreadId === null) return;
+          await app.request("thread/goal/clear", { threadId: activeThreadId });
+          emit({ _tag: "GoalCleared" });
         }),
     };
   });

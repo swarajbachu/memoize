@@ -3,6 +3,7 @@ import {
   ArrowDown01Icon,
   ArrowRight01Icon,
   Copy01Icon,
+  DashboardSpeedIcon,
   RotateRight01Icon,
   Settings01Icon,
   Tick01Icon,
@@ -86,7 +87,9 @@ export function MessageRow({
 }) {
   switch (message.content._tag) {
     case "user":
-      return <UserBubble text={message.content.text} />;
+      return (
+        <UserBubble text={message.content.text} goal={message.content.goal} />
+      );
     case "user_rich":
       return (
         <UserBubble
@@ -95,6 +98,7 @@ export function MessageRow({
           fileRefs={message.content.fileRefs}
           skillRefs={message.content.skillRefs}
           annotations={message.content.annotations}
+          goal={message.content.goal}
         />
       );
     case "assistant":
@@ -205,12 +209,14 @@ function UserBubble({
   fileRefs,
   skillRefs,
   annotations,
+  goal = false,
 }: {
   text: string;
   attachments?: ReadonlyArray<AttachmentRef>;
   fileRefs?: ReadonlyArray<FileRef>;
   skillRefs?: ReadonlyArray<SkillRef>;
   annotations?: ReadonlyArray<CodeAnnotation>;
+  goal?: boolean;
 }) {
   const hasAnnotations = annotations !== undefined && annotations.length > 0;
   const hasChips =
@@ -319,6 +325,12 @@ function UserBubble({
         ) : null}
         {display.length > 0 ? (
           <div className="whitespace-pre-wrap break-words">{display}</div>
+        ) : null}
+        {goal ? (
+          <div className="mt-2 flex items-center gap-1.5 text-xs text-user-bubble-foreground/65">
+            <HugeiconsIcon icon={DashboardSpeedIcon} className="size-3.5" />
+            <span>Sent as goal</span>
+          </div>
         ) : null}
       </div>
     </div>

@@ -508,6 +508,32 @@ const PermissionModeChangedEvent = Schema.TaggedStruct(
   { mode: PermissionMode },
 );
 
+const GoalStatus = Schema.Literal(
+  "active",
+  "paused",
+  "budgetLimited",
+  "usageLimited",
+  "blocked",
+  "complete",
+);
+
+const GoalPayload = Schema.Struct({
+  threadId: Schema.String,
+  objective: Schema.String,
+  status: GoalStatus,
+  tokenBudget: Schema.NullOr(Schema.Number),
+  tokensUsed: Schema.Number,
+  timeUsedSeconds: Schema.Number,
+  createdAt: Schema.Number,
+  updatedAt: Schema.Number,
+});
+
+const GoalUpdatedEvent = Schema.TaggedStruct("GoalUpdated", {
+  goal: GoalPayload,
+});
+
+const GoalClearedEvent = Schema.TaggedStruct("GoalCleared", {});
+
 export const AgentEvent = Schema.Union(
   StartedEvent,
   StatusEvent,
@@ -524,6 +550,8 @@ export const AgentEvent = Schema.Union(
   SessionCursorEvent,
   UserQuestionEvent,
   PermissionModeChangedEvent,
+  GoalUpdatedEvent,
+  GoalClearedEvent,
   CompletedEvent,
   ErrorEvent,
 );
