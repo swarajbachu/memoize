@@ -1565,6 +1565,43 @@ const resetLabel = (iso: string | null): string | null => {
   return `${day} ${time}`;
 };
 
+/**
+ * Mini donut gauge for the composer status trigger. The faint track is the
+ * full window; the bright arc fills clockwise from the top with the percent
+ * of context used. `percent === null` (no usage reported yet) shows just the
+ * track. Inherits `currentColor`, so it turns amber when the button does.
+ */
+function ContextRing({ percent }: { percent: number | null }) {
+  const r = 6;
+  const circumference = 2 * Math.PI * r;
+  const clamped = Math.min(Math.max(percent ?? 0, 0), 100);
+  return (
+    <svg viewBox="0 0 16 16" fill="none" className="size-3.5 -rotate-90">
+      <circle
+        cx="8"
+        cy="8"
+        r={r}
+        stroke="currentColor"
+        strokeWidth="2"
+        className="opacity-25"
+      />
+      {percent !== null ? (
+        <circle
+          cx="8"
+          cy="8"
+          r={r}
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={circumference * (1 - clamped / 100)}
+          className="transition-[stroke-dashoffset]"
+        />
+      ) : null}
+    </svg>
+  );
+}
+
 function ContextStatusPopover({ session }: { session: Session }) {
   const messages = useMessagesStore(
     (s) => s.messagesBySession[session.id] ?? EMPTY_MESSAGES,
@@ -1640,7 +1677,7 @@ function ContextStatusPopover({ session }: { session: Session }) {
             )}
             aria-label="Context and usage status"
           >
-            <HugeiconsIcon icon={DashboardSpeedIcon} className="size-3.5" />
+            <ContextRing percent={percent} />
           </button>
         }
       />
