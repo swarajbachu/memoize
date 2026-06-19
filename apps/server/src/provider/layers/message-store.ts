@@ -2261,6 +2261,90 @@ export const MessageStoreLive = Layer.scoped(
       () =>
         Effect.fail(new SessionNotFoundError({ sessionId }));
 
+    const startProviderSessionOnly = (
+      session: Session,
+    ): Effect.Effect<void, SessionStartError> => {
+      runtimeModeBySession.set(session.id, session.runtimeMode);
+      permissionModeBySession.set(session.id, session.permissionMode);
+      const subagents = agentsFor(session.id);
+      return cwdForWorktree(session.worktreeId).pipe(
+        Effect.flatMap((cwdOverride) =>
+          provider
+            .start(
+              {
+                folderId: session.projectId,
+                providerId: session.providerId,
+                mode: "sdk",
+                sessionId: session.id,
+                model: session.model,
+                agents: subagents?.agents,
+                enableSubagents: subagents?.enableSubagents,
+                cwdOverride,
+                permissionMode: session.permissionMode,
+                toolSearch: session.toolSearch,
+              },
+              session.cursor,
+              () => getRuntimeModeFor(session.id),
+            )
+            .pipe(
+              Effect.flatMap(() => startSubscription(session.id)),
+              Effect.mapError((err) =>
+                err._tag === "ProviderNotAvailableError"
+                  ? new SessionStartError({
+                      providerId: session.providerId,
+                      reason: err.reason,
+                    })
+                  : err._tag === "AgentSessionStartError"
+                    ? new SessionStartError({
+                        providerId: err.providerId,
+                        reason: err.reason,
+                      })
+                    : new SessionStartError({
+                        providerId: session.providerId,
+                        reason: formatProviderFailure(err),
+                      }),
+              ),
+            ),
+        ),
+      );
+    };
+
+    const setGoalWithLiveProvider = (
+      session: Session,
+      goalInput: ThreadGoalSetInput,
+    ): Effect.Effect<ThreadGoal, SessionNotFoundError | SessionStartError> => {
+      const attempt = provider.setGoal(session.id, goalInput);
+      const retryBooting = (
+        retriesLeft: number,
+      ): Effect.Effect<
+        ThreadGoal,
+        AgentSessionNotFoundError | SessionNotFoundError
+      > =>
+        attempt.pipe(
+          Effect.catchTag("AgentSessionNotFoundError", (err) =>
+            Effect.gen(function* () {
+              const latest = yield* lookupSession(session.id);
+              if (retriesLeft <= 0 || latest.status !== "booting") {
+                return yield* Effect.fail(err);
+              }
+              yield* Effect.sleep("250 millis");
+              return yield* retryBooting(retriesLeft - 1);
+            }),
+          ),
+        );
+      return retryBooting(240).pipe(
+        Effect.catchTag("AgentSessionNotFoundError", () =>
+          startProviderSessionOnly(session).pipe(
+            Effect.zipRight(provider.setGoal(session.id, goalInput)),
+            Effect.catchTag(
+              "AgentSessionNotFoundError",
+              mapProviderSessionNotFound(session.id),
+            ),
+          ),
+        ),
+      );
+    };
+
     const getGoal: MessageStoreShape["getGoal"] = (sessionId) =>
       Effect.gen(function* () {
         yield* ensureCodexGoalSession(sessionId);
@@ -2278,15 +2362,8 @@ export const MessageStoreLive = Layer.scoped(
 
     const setGoal: MessageStoreShape["setGoal"] = (sessionId, goalInput) =>
       Effect.gen(function* () {
-        yield* ensureCodexGoalSession(sessionId);
-        const goal = yield* provider
-          .setGoal(sessionId, goalInput)
-          .pipe(
-            Effect.catchTag(
-              "AgentSessionNotFoundError",
-              mapProviderSessionNotFound(sessionId),
-            ),
-          );
+        const session = yield* ensureCodexGoalSession(sessionId);
+        const goal = yield* setGoalWithLiveProvider(session, goalInput);
         yield* publishGoal(sessionId, goal);
         return goal;
       });
@@ -2547,17 +2624,28 @@ export const MessageStoreLive = Layer.scoped(
             yield* ndjsonAppend(sessionId, persistedError);
             return false;
           }
-          const goal = yield* provider
-            .setGoal(sessionId, {
-              objective,
-              status: "active",
-            })
-            .pipe(
-              Effect.catchTag(
-                "AgentSessionNotFoundError",
-                mapProviderSessionNotFound(sessionId),
-              ),
-            );
+          const goal = yield* setGoalWithLiveProvider(session, {
+            objective,
+            status: "active",
+          }).pipe(
+            Effect.catchAll((err) =>
+              Effect.gen(function* () {
+                const message =
+                  err._tag === "SessionStartError"
+                    ? `Goal mode could not start Codex: ${err.reason}`
+                    : "Goal mode could not start Codex for this session.";
+                const persistedError = yield* persistMessage(sessionId, {
+                  _tag: "error",
+                  message,
+                });
+                yield* broadcastMessage(sessionId, persistedError);
+                yield* ndjsonAppend(sessionId, persistedError);
+                yield* setStatus(sessionId, "idle");
+                return null;
+              }),
+            ),
+          );
+          if (goal === null) return false;
           yield* publishGoal(sessionId, goal);
           return true;
         }

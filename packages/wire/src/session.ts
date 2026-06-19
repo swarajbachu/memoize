@@ -921,7 +921,11 @@ export const SessionGoalSetRpc = Rpc.make("session.goal.set", {
     goal: ThreadGoalSetInput,
   }),
   success: ThreadGoal,
-  error: Schema.Union(SessionNotFoundError, GoalUnsupportedError),
+  error: Schema.Union(
+    SessionNotFoundError,
+    SessionStartError,
+    GoalUnsupportedError,
+  ),
 });
 
 export const SessionGoalClearRpc = Rpc.make("session.goal.clear", {

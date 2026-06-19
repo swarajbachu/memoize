@@ -326,7 +326,10 @@ export interface MessageStoreShape {
   readonly setGoal: (
     sessionId: SessionId,
     goal: ThreadGoalSetInput,
-  ) => Effect.Effect<ThreadGoal, SessionNotFoundError | GoalUnsupportedError>;
+  ) => Effect.Effect<
+    ThreadGoal,
+    SessionNotFoundError | SessionStartError | GoalUnsupportedError
+  >;
 
   readonly clearGoal: (
     sessionId: SessionId,
