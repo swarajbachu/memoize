@@ -8,7 +8,7 @@ import { useMemo, useState } from "react";
 
 import type { Message, SessionId } from "@memoize/wire";
 
-import { Beacon } from "~/components/ui/loaders";
+import { Spinner } from "~/components/ui/spinner";
 import { cn } from "~/lib/utils";
 
 import { useMessagesStore } from "../../store/messages.ts";
@@ -248,12 +248,7 @@ export function ProjectPlanTray({ sessionId }: { sessionId: SessionId }) {
           {done} of {total} Done
         </span>
         {running && !allDone ? (
-          <Beacon
-            dotSize={2}
-            cellPadding={1}
-            color="currentColor"
-            className="shrink-0 text-muted-foreground"
-          />
+          <Spinner className="size-3.5 shrink-0 text-muted-foreground" />
         ) : null}
         <HugeiconsIcon
           icon={ArrowDown01Icon}
@@ -321,12 +316,7 @@ function TodoStatusIcon({
     // instead to mark "current step, not running".
     if (running)
       return (
-        <Beacon
-          dotSize={2}
-          cellPadding={1}
-          color="currentColor"
-          className="text-primary"
-        />
+        <Spinner className="size-3.5 text-primary" />
       );
     return (
       <span

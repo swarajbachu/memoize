@@ -16,7 +16,7 @@ import {
   DialogTitle,
 } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
-import { Diffusion } from "~/components/ui/loaders";
+import { Spinner } from "~/components/ui/spinner";
 import { useWorkspaceStore } from "../store/workspace.ts";
 
 interface CloneRepoDialogProps {
@@ -172,7 +172,7 @@ export function CloneRepoDialog({ open, onOpenChange }: CloneRepoDialogProps) {
             {submitting ? (
               <>
                 <span className="inline-flex size-3.5 items-center justify-center">
-                  <Diffusion dotSize={3} cellPadding={1} />
+                  <Spinner className="size-3.5" />
                 </span>
                 Cloning…
               </>
