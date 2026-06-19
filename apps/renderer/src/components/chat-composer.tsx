@@ -1550,17 +1550,19 @@ const resetLabel = (iso: string | null): string | null => {
     date.getFullYear() === now.getFullYear() &&
     date.getMonth() === now.getMonth() &&
     date.getDate() === now.getDate();
-  if (sameDay) {
-    return new Intl.DateTimeFormat([], {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }).format(date);
-  }
-  return new Intl.DateTimeFormat([], {
+  const time = new Intl.DateTimeFormat([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+  // Same day → just the time; otherwise prefix the day so "resets 20 Jun
+  // 08:00" still tells you when, not only which day.
+  if (sameDay) return time;
+  const day = new Intl.DateTimeFormat([], {
     day: "numeric",
     month: "short",
   }).format(date);
+  return `${day} ${time}`;
 };
 
 function ContextStatusPopover({ session }: { session: Session }) {
