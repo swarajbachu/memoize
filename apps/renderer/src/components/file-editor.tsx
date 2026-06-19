@@ -388,6 +388,18 @@ function CodeMirrorBody({
     };
   }, [openFile, reloadCount, setFileDirty]);
 
+  // The editor is created once (mount effect) while its container is still
+  // hidden — during the initial file read, and whenever the tab opens in
+  // diff view. CodeMirror constructed inside a `display:none` subtree
+  // measures zero height and paints nothing; its ResizeObserver doesn't
+  // reliably fire on the later none→visible transition. Force a re-measure
+  // once the editor is both visible and populated so the content shows.
+  useEffect(() => {
+    const view = viewRef.current;
+    if (view === null || hidden || state.status !== "text") return;
+    view.requestMeasure();
+  }, [hidden, state.status]);
+
   useEffect(() => {
     const view = viewRef.current;
     if (view === null || state.status !== "text") return;
