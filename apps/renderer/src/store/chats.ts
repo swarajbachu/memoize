@@ -57,7 +57,13 @@ type ChatsState = {
       readonly permissionMode?: PermissionMode;
       readonly toolSearch?: boolean;
     },
-  ) => Promise<ChatId | null>;
+  ) => Promise<
+    | {
+        readonly chatId: ChatId;
+        readonly initialSessionId: SessionId;
+      }
+    | null
+  >;
   readonly rename: (chatId: ChatId, title: string) => Promise<void>;
   readonly setWorktree: (
     chatId: ChatId,
@@ -259,7 +265,7 @@ export const useChatsStore = create<ChatsState>((set, get) => ({
           },
         };
       });
-      return chat.id;
+      return { chatId: chat.id, initialSessionId: initialSession.id };
     } catch (err) {
       set((s) => ({
         error: formatError(err),

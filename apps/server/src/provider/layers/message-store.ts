@@ -1603,9 +1603,17 @@ export const MessageStoreLive = Layer.scoped(
         const nowIso = new Date().toISOString();
         yield* sql`
           UPDATE sessions
-          SET worktree_id = ${worktreeId}, updated_at = ${nowIso}
+          SET worktree_id = ${worktreeId},
+              cursor = NULL,
+              resume_strategy = 'none',
+              updated_at = ${nowIso}
           WHERE id = ${sessionId}
         `.pipe(Effect.orDie);
+        yield* provider
+          .close(sessionId)
+          .pipe(Effect.catchAll(() => Effect.void));
+        yield* interruptProviderFiber(sessionId);
+        yield* setStatus(sessionId, "idle");
       });
 
     /**
@@ -1978,7 +1986,11 @@ export const MessageStoreLive = Layer.scoped(
         // Mirror onto every member session so renderer reads of
         // session.worktreeId stay accurate without a second round-trip.
         yield* sql`
-          UPDATE sessions SET worktree_id = ${worktreeId}, updated_at = ${nowIso}
+          UPDATE sessions
+          SET worktree_id = ${worktreeId},
+              cursor = NULL,
+              resume_strategy = 'none',
+              updated_at = ${nowIso}
           WHERE chat_id = ${chatId}
         `.pipe(Effect.asVoid, Effect.orDie);
         // Background-booted sessions (chat.create → session.create with
