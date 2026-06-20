@@ -61,11 +61,11 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
     return null;
   });
 
-  // While this session's worktree is still being set up, the inline setup
-  // card carries the "what's happening" message — so suppress the empty
-  // "New chat" placeholder underneath it.
+  // While this session's worktree is still being set up — or the provider
+  // CLI is still booting — the inline setup card carries the "what's
+  // happening" message, so suppress the empty "New chat" placeholder under it.
   const worktreeId = session?.worktreeId ?? null;
-  const setupActive = useWorktreesStore((s) => {
+  const worktreeSetupActive = useWorktreesStore((s) => {
     if (worktreeId === null) return false;
     for (const list of Object.values(s.byProject)) {
       const wt = (list ?? EMPTY_WORKTREES).find((w) => w.id === worktreeId);
@@ -79,6 +79,7 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
     }
     return false;
   });
+  const setupActive = worktreeSetupActive || session?.status === "booting";
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
