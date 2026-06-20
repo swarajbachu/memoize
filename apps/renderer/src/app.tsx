@@ -331,7 +331,7 @@ function MainShell() {
               hidden={activeMainTab !== "chat"}
               className="flex min-h-0 flex-1 flex-col"
             >
-              {creatingChat ? (
+              {creatingChat && selectedSessionId !== null ? (
                 <div className="flex min-h-0 flex-1 flex-col px-8 py-6">
                   <p className="mb-4 text-[13px] leading-snug text-foreground/85">
                     {selectedFolder ? (

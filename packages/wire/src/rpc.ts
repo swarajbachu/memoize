@@ -156,6 +156,7 @@ import {
   WorktreeListRpc,
   WorktreeRemoveRpc,
   WorktreeRerunSetupRpc,
+  WorktreeSetupStreamRpc,
   WorktreeStartRunRpc,
 } from "./worktree.ts";
 
@@ -282,6 +283,7 @@ export const MemoizeRpcs = RpcGroup.make(
   WorktreeListRpc,
   WorktreeGetRpc,
   WorktreeRerunSetupRpc,
+  WorktreeSetupStreamRpc,
   WorktreeStartRunRpc,
   WorktreeRemoveRpc,
   RepositorySettingsGetRpc,

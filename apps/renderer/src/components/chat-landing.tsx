@@ -86,6 +86,11 @@ export function ChatLanding() {
   const [text, setText] = useState("");
   const [goalSendMode, setGoalSendMode] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Local "submit in flight" flag. Covers the whole creation window —
+  // including the worktree-create step, which happens before the chats store
+  // flips `creatingByProject` — so the loading panel shows the moment the
+  // user hits send rather than after the worktree exists.
+  const [submitting, setSubmitting] = useState(false);
   // Snapshot of the prompt the user just submitted. Drives the
   // ChatCreatingPanel preview so the form can be hidden during the RPC
   // without the user losing visual continuity with what they sent.
@@ -112,13 +117,17 @@ export function ChatLanding() {
   };
 
   const canSend =
-    text.trim().length > 0 && selectedFolderId !== null && !creating;
+    text.trim().length > 0 &&
+    selectedFolderId !== null &&
+    !creating &&
+    !submitting;
 
   const submit = async (): Promise<void> => {
     if (!canSend || selectedFolderId === null) return;
     const trimmed = text.trim();
     const model = defaultModelByProvider[defaultProviderId];
     setSubmitError(null);
+    setSubmitting(true);
     setPendingPrompt(trimmed);
     // Spin up the worktree before creating the chat so the session runs in
     // it — without this the landing screen promised a worktree (see the
@@ -134,6 +143,7 @@ export function ChatLanding() {
         `Couldn't start ${defaultProviderId}. Check that its CLI is installed and signed in.`;
       setSubmitError(reason);
       setPendingPrompt(null);
+      setSubmitting(false);
       return;
     }
     const sessionId = useSessionsStore.getState().selectedSessionId;
@@ -148,7 +158,13 @@ export function ChatLanding() {
         void send(sessionId, input, { asGoal: true });
       } else {
         useMessagesStore.getState().queue(sessionId, input);
-        useMessagesStore.getState().flushQueue(sessionId);
+        // When a worktree was created, hold this first turn until setup
+        // finishes — the worktrees setup stream flushes the queue on the
+        // terminal status, so the agent starts in a prepared tree. With no
+        // worktree there's nothing to wait for, so flush immediately.
+        if (worktreeId === null) {
+          useMessagesStore.getState().flushQueue(sessionId);
+        }
       }
     }
     setText("");
@@ -191,7 +207,7 @@ export function ChatLanding() {
           </div>
         )}
 
-        {creating && pendingPrompt !== null ? (
+        {submitting && pendingPrompt !== null ? (
           <div className="px-1">
             <ChatCreatingPanel
               providerId={defaultProviderId}
