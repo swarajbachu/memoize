@@ -489,11 +489,15 @@ export const WorktreeServiceLive = Layer.effect(
         // because the network/remote is unavailable.
         let baseRef = "HEAD";
         if (baseBranch !== "HEAD") {
+          // Time-box the fetch: a slow or offline remote must never stall
+          // worktree creation. On timeout we fall through to local `HEAD`
+          // exactly like any other fetch failure.
           const fetched = yield* runGit(repoPath, [
             "fetch",
             "origin",
             baseBranch,
           ]).pipe(
+            Effect.timeout("3 seconds"),
             Effect.map(() => true),
             Effect.catchAll(() => Effect.succeed(false)),
           );

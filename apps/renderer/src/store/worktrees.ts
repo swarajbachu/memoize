@@ -8,11 +8,19 @@ import {
   type WorktreeSetupEvent,
 } from "@memoize/wire";
 
+import { toastManager } from "../components/ui/toast.tsx";
 import { getRpcClient } from "../lib/rpc-client.ts";
 import { openTerminalCommand } from "../lib/run-terminal.ts";
 import { useMessagesStore } from "./messages.ts";
 import { useRepositorySettingsStore } from "./repository-settings.ts";
 import { useSessionsStore } from "./sessions.ts";
+
+/** Rarities worth interrupting the user with a one-off unlock toast. */
+const NOTABLE_RARITIES: ReadonlySet<string> = new Set([
+  "rare",
+  "epic",
+  "legendary",
+]);
 
 type WorktreesByProject = Readonly<Record<string, ReadonlyArray<Worktree>>>;
 
@@ -46,9 +54,7 @@ type WorktreesState = {
     worktreeId: WorktreeId,
   ) => void;
   readonly unsubscribeSetup: (worktreeId: WorktreeId) => void;
-  readonly startRun: (
-    worktreeId: WorktreeId,
-  ) => Promise<{
+  readonly startRun: (worktreeId: WorktreeId) => Promise<{
     readonly cwd: string;
     readonly script: string;
     readonly env: Record<string, string>;
@@ -124,9 +130,7 @@ export const useWorktreesStore = create<WorktreesState>((set, get) => ({
     });
     try {
       const client = await getRpcClient();
-      const list = await Effect.runPromise(
-        client.worktree.list({ projectId }),
-      );
+      const list = await Effect.runPromise(client.worktree.list({ projectId }));
       set((s) => ({
         byProject: { ...s.byProject, [projectId]: list },
         loading: (() => {
@@ -155,9 +159,7 @@ export const useWorktreesStore = create<WorktreesState>((set, get) => ({
     });
     try {
       const client = await getRpcClient();
-      const wt = await Effect.runPromise(
-        client.worktree.create({ projectId }),
-      );
+      const wt = await Effect.runPromise(client.worktree.create({ projectId }));
       set((s) => {
         const existing = s.byProject[projectId] ?? [];
         return {
@@ -170,6 +172,16 @@ export const useWorktreesStore = create<WorktreesState>((set, get) => ({
           error: null,
         };
       });
+      if (wt.pokemon !== null && NOTABLE_RARITIES.has(wt.pokemon.rarity)) {
+        const rarity =
+          wt.pokemon.rarity.charAt(0).toUpperCase() +
+          wt.pokemon.rarity.slice(1);
+        toastManager.add({
+          title: `${rarity} unlock!`,
+          description: `${wt.pokemon.name} joined your Pokédex`,
+          type: "success",
+        });
+      }
       // Setup now runs detached on the server; follow it live and let the
       // stream's terminal-status handler fire maybeAutoRun + flush.
       get().subscribeSetup(projectId, wt.id);
@@ -295,9 +307,7 @@ export const useWorktreesStore = create<WorktreesState>((set, get) => ({
   remove: async (projectId, worktreeId, force) => {
     try {
       const client = await getRpcClient();
-      await Effect.runPromise(
-        client.worktree.remove({ worktreeId, force }),
-      );
+      await Effect.runPromise(client.worktree.remove({ worktreeId, force }));
       get().unsubscribeSetup(worktreeId);
       set((s) => {
         const list = s.byProject[projectId] ?? [];
@@ -320,4 +330,5 @@ export const useWorktreesStore = create<WorktreesState>((set, get) => ({
 
 export const selectWorktreesFor = (
   projectId: FolderId,
-): ReadonlyArray<Worktree> => useWorktreesStore.getState().byProject[projectId] ?? [];
+): ReadonlyArray<Worktree> =>
+  useWorktreesStore.getState().byProject[projectId] ?? [];

@@ -113,7 +113,6 @@ import { EMPTY_WORKTREES, useWorktreesStore } from "../store/worktrees.ts";
 import { PermissionCard } from "./permission-card.tsx";
 import { QuestionCard } from "./question-card.tsx";
 import { ProviderIcon } from "./provider-icons.tsx";
-import { PokemonRarityText, PokemonSprite } from "./pokemon.tsx";
 import { MODES_ORDER, MODE_META } from "./runtime-mode-meta.ts";
 
 const MIN_HEIGHT = 56;
@@ -264,6 +263,11 @@ export function ChatComposer({ session }: { session: Session }) {
 
   const [hasText, setHasText] = useState(false);
   const [goalSendMode, setGoalSendMode] = useState(false);
+  // Version-gated Codex features the installed CLI supports (from the
+  // availability probe). Drives whether goal/fast controls render at all.
+  const codexCapabilities = useProvidersStore((s) =>
+    s.capabilitiesFor(session.providerId),
+  );
   const [trigger, setTrigger] = useState<ActiveTrigger | null>(null);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -842,8 +846,17 @@ export function ChatComposer({ session }: { session: Session }) {
                 )?.optionDescriptors?.some(
                   (d): d is BooleanOptionDescriptor =>
                     d.kind === "boolean" && d.id === "fastMode",
-                ) === true && <FastModeToggle sessionId={sessionId} />}
-                {session.providerId === "codex" ? (
+                ) === true &&
+                  // For Codex, the fast tier also requires a new-enough CLI
+                  // (the `fastMode` capability). Claude declares its own
+                  // `fastMode` descriptor and isn't version-gated, so only
+                  // filter when the provider gates it.
+                  (session.providerId !== "codex" ||
+                    codexCapabilities.includes("fastMode")) && (
+                    <FastModeToggle sessionId={sessionId} />
+                  )}
+                {session.providerId === "codex" &&
+                codexCapabilities.includes("goalMode") ? (
                   <GoalModeToggle
                     active={goalSendMode}
                     hasGoal={goal !== null}
@@ -1896,11 +1909,7 @@ function WorkspacePicker({ session }: { session: Session }) {
         className="flex items-center gap-1.5 rounded-md px-2 py-1"
         title="Workspace locked — first message already sent"
       >
-        {current?.pokemon ? (
-          <PokemonSprite pokemon={current.pokemon} className="size-4" />
-        ) : (
-          <HugeiconsIcon icon={triggerIcon} className="size-3.5" />
-        )}
+        <HugeiconsIcon icon={triggerIcon} className="size-3.5" />
         <span>{triggerLabel}</span>
         <HugeiconsIcon icon={LockIcon} className="size-3 opacity-60" />
       </span>
@@ -1924,11 +1933,7 @@ function WorkspacePicker({ session }: { session: Session }) {
         aria-label="Change workspace"
         title="Change workspace — locks once the first message is sent"
       >
-        {current?.pokemon ? (
-          <PokemonSprite pokemon={current.pokemon} className="size-4" />
-        ) : (
-          <HugeiconsIcon icon={triggerIcon} className="size-3.5" />
-        )}
+        <HugeiconsIcon icon={triggerIcon} className="size-3.5" />
         <span>{triggerLabel}</span>
         <HugeiconsIcon icon={ArrowDown01Icon} className="size-3 opacity-60" />
       </MenuTrigger>
@@ -2006,18 +2011,11 @@ function WorkspaceBranchLabel({ session }: { session: Session }) {
       className="flex items-center gap-1 truncate font-mono text-foreground/80"
       title={`Branch ${wt.branch}`}
     >
-      {wt.pokemon ? (
-        <PokemonSprite pokemon={wt.pokemon} className="size-4" />
-      ) : (
-        <HugeiconsIcon
-          icon={GitBranchIcon}
-          className="size-3 shrink-0 opacity-70"
-        />
-      )}
+      <HugeiconsIcon
+        icon={GitBranchIcon}
+        className="size-3 shrink-0 opacity-70"
+      />
       <span className="truncate font-medium">{wt.branch}</span>
-      {wt.pokemon ? (
-        <PokemonRarityText rarity={wt.pokemon.rarity} className="text-[10px]" />
-      ) : null}
     </span>
   );
 }
