@@ -28,6 +28,8 @@ import { CodexAppServerClient } from "../codex-app-server-client.ts";
 import type { ServerNotification } from "../codex-app-protocol/ServerNotification";
 import type { ServerRequest } from "../codex-app-protocol/ServerRequest";
 import type { SandboxPolicy } from "../codex-app-protocol/v2/SandboxPolicy";
+import type { Model } from "../codex-app-protocol/v2/Model";
+import type { ModelListResponse } from "../codex-app-protocol/v2/ModelListResponse";
 import type { ThreadGoal as CodexThreadGoal } from "../codex-app-protocol/v2/ThreadGoal";
 import type { ThreadItem } from "../codex-app-protocol/v2/ThreadItem";
 import type { UserInput } from "../codex-app-protocol/v2/UserInput";
@@ -181,6 +183,38 @@ const goalFromResponse = (value: unknown): CodexThreadGoal | null => {
     return nested as CodexThreadGoal;
   }
   return value as CodexThreadGoal;
+};
+
+/**
+ * Whether a model advertises a "fast" service tier. Codex exposes speed tiers
+ * via `serviceTiers` (current) and `additionalSpeedTiers` (deprecated); we
+ * match either id/name containing "fast" so we stay robust to label changes.
+ */
+const modelAdvertisesFastTier = (model: Model): boolean =>
+  [
+    ...model.serviceTiers.flatMap((tier) => [tier.id, tier.name]),
+    ...model.additionalSpeedTiers,
+  ].some((label) => label.toLowerCase().includes("fast"));
+
+/**
+ * Whether the model a session resolved to advertises a fast service tier,
+ * from the live `model/list`. Returns `null` when the model isn't in the
+ * catalog (unknown — caller should trust the pre-session FE gate rather than
+ * block). The version floor + static model catalog gate the FE *control*; this
+ * is the authoritative per-model confirmation enforced at turn time.
+ */
+const probeModelFastTier = async (
+  app: CodexAppServerClient,
+  activeModel: string | null,
+): Promise<boolean | null> => {
+  const response = await app.request<ModelListResponse>("model/list", {
+    includeHidden: true,
+  });
+  const model =
+    response.data.find(
+      (entry) => entry.id === activeModel || entry.model === activeModel,
+    ) ?? response.data.find((entry) => entry.isDefault);
+  return model === undefined ? null : modelAdvertisesFastTier(model);
 };
 
 const toolIdentifierPart = (value: string): string =>
@@ -611,6 +645,12 @@ export const startCodexSession = (
     let latestDiff = "";
     let closed = false;
     let pending: Promise<void> = Promise.resolve();
+    // Runtime fast-tier gate for the model this session resolved to, from the
+    // live `model/list` `serviceTiers`. `null` = unknown (probe not done /
+    // failed) → trust the FE gate; `true`/`false` = the model definitively
+    // does / does not advertise a fast tier. Only a definitive `false` blocks
+    // the `serviceTier: "fast"` request in `runTurn`.
+    let modelFastTier: boolean | null = null;
 
     type QuestionWaiter = {
       readonly questionIds: ReadonlyArray<string>;
@@ -695,6 +735,16 @@ export const startCodexSession = (
         }
       } catch (cause) {
         console.warn("[codex] goal hydration failed", cause);
+      }
+      // Runtime fast-mode confirmation: the version floor (AgentAvailability
+      // `capabilities`) + the static model catalog decide whether the FE
+      // *shows* the fast toggle; the live `model/list` `serviceTiers` are the
+      // authoritative per-model gate enforced at turn time (see `runTurn`).
+      // Best-effort — a failure leaves `modelFastTier` null (trust the FE).
+      try {
+        modelFastTier = await probeModelFastTier(app, input.model ?? null);
+      } catch (cause) {
+        console.warn("[codex] fast-tier probe failed", cause);
       }
     };
 
@@ -797,6 +847,21 @@ export const startCodexSession = (
         reasoning === "low" || reasoning === "medium" || reasoning === "high"
           ? reasoning
           : null;
+      // Fast mode: the `fastMode` per-model boolean knob maps onto Codex's
+      // `serviceTier: "fast"` (the 1.5× speed tier). The FE only shows the
+      // toggle when the CLI version + static model catalog allow it; the live
+      // `model/list` `serviceTiers` are the authoritative per-model gate, so we
+      // drop the field (and tell the user) when the resolved model definitively
+      // lacks a fast tier. `modelFastTier === null` (unknown) trusts the FE.
+      const fastModeRequested = input.modelOptions?.["fastMode"] === "true";
+      const fastMode = fastModeRequested && modelFastTier !== false;
+      if (fastModeRequested && modelFastTier === false) {
+        emit({
+          _tag: "AssistantMessage",
+          itemId: nextItemId(),
+          text: "Fast mode isn't available for this model — running at the standard tier.",
+        });
+      }
       const turn = await app.request<{ turn: { id: string } }>("turn/start", {
         threadId: activeThreadId,
         input: [
@@ -812,6 +877,7 @@ export const startCodexSession = (
         sandboxPolicy: toSandboxPolicy(currentMode, cwd),
         model: input.model ?? null,
         ...(effort !== null ? { effort } : {}),
+        ...(fastMode ? { serviceTier: "fast" } : {}),
       });
       currentTurnId = turn.turn.id;
     };

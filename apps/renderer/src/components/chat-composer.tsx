@@ -264,6 +264,11 @@ export function ChatComposer({ session }: { session: Session }) {
 
   const [hasText, setHasText] = useState(false);
   const [goalSendMode, setGoalSendMode] = useState(false);
+  // Version-gated Codex features the installed CLI supports (from the
+  // availability probe). Drives whether goal/fast controls render at all.
+  const codexCapabilities = useProvidersStore((s) =>
+    s.capabilitiesFor(session.providerId),
+  );
   const [trigger, setTrigger] = useState<ActiveTrigger | null>(null);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -840,8 +845,17 @@ export function ChatComposer({ session }: { session: Session }) {
                 )?.optionDescriptors?.some(
                   (d): d is BooleanOptionDescriptor =>
                     d.kind === "boolean" && d.id === "fastMode",
-                ) === true && <FastModeToggle sessionId={sessionId} />}
-                {session.providerId === "codex" ? (
+                ) === true &&
+                  // For Codex, the fast tier also requires a new-enough CLI
+                  // (the `fastMode` capability). Claude declares its own
+                  // `fastMode` descriptor and isn't version-gated, so only
+                  // filter when the provider gates it.
+                  (session.providerId !== "codex" ||
+                    codexCapabilities.includes("fastMode")) && (
+                    <FastModeToggle sessionId={sessionId} />
+                  )}
+                {session.providerId === "codex" &&
+                codexCapabilities.includes("goalMode") ? (
                   <GoalModeToggle
                     active={goalSendMode}
                     hasGoal={goal !== null}
