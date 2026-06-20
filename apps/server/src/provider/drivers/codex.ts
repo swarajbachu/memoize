@@ -396,6 +396,16 @@ const decisionToCodex = (
       ? "accept"
       : "decline";
 
+const codexResetDate = (value: number | null): string | null => {
+  if (value === null || !Number.isFinite(value)) return null;
+  return new Date(
+    value > 1_000_000_000_000 ? value : value * 1000,
+  ).toISOString();
+};
+
+const codexLimitLabel = (value: string | null): string =>
+  value !== null && value.trim().length > 0 ? value.trim() : "Codex usage";
+
 interface CodexToolTranslationLogger {
   readonly path: string;
   readonly append: (
@@ -585,6 +595,44 @@ export const translateCodexItem = (
       ];
     default:
       return [];
+  }
+};
+
+export const translateCodexStatusNotification = (
+  notification: ServerNotification,
+  activeThreadId: string | null,
+): ReadonlyArray<AgentEvent> | null => {
+  switch (notification.method) {
+    case "thread/tokenUsage/updated":
+      if (notification.params.threadId !== activeThreadId) return [];
+      return [
+        {
+          _tag: "ContextUsage",
+          providerId: "codex",
+          usedTokens: notification.params.tokenUsage.total.totalTokens,
+          windowTokens:
+            notification.params.tokenUsage.modelContextWindow ?? null,
+          precision: "exact",
+          source: "Codex app-server",
+        },
+      ];
+    case "account/rateLimits/updated": {
+      const limits = notification.params.rateLimits;
+      const primary = limits.primary;
+      if (primary === null) return [];
+      return [
+        {
+          _tag: "UsageLimit",
+          providerId: "codex",
+          label: codexLimitLabel(limits.limitName),
+          usedPercent: primary.usedPercent,
+          resetsAt: codexResetDate(primary.resetsAt),
+          windowMinutes: primary.windowDurationMins,
+        },
+      ];
+    }
+    default:
+      return null;
   }
 };
 
@@ -1011,6 +1059,12 @@ export const startCodexSession = (
     function translateNotification(
       notification: ServerNotification,
     ): ReadonlyArray<AgentEvent> {
+      const statusEvents = translateCodexStatusNotification(
+        notification,
+        activeThreadId,
+      );
+      if (statusEvents !== null) return statusEvents;
+
       switch (notification.method) {
         case "thread/started":
           activeThreadId = notification.params.thread.id;

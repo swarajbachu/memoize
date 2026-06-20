@@ -19,7 +19,7 @@ import {
 } from "../store/terminals.ts";
 import { EMPTY_WORKTREES, useWorktreesStore } from "../store/worktrees.ts";
 import { Button } from "./ui/button.tsx";
-import { Beacon } from "./ui/loaders";
+import { Spinner } from "./ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip.tsx";
 
 /**
@@ -71,6 +71,86 @@ export function TerminalPane() {
       worktreeId={ctx.worktreeId}
       rootPath={ctx.rootPath}
       showFloatingAdd
+    />
+  );
+}
+
+function TerminalPlaceholder({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex h-full w-full items-center justify-center bg-background text-sm text-muted-foreground">
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Renders a single terminal for one right-dock tab. The tab carries a
+ * workspace-relative `slot`; this resolves it to the active workspace's Nth
+ * terminal instance (seeding via `ensureSlot`) and mounts one `PtyTerminal`.
+ *
+ * Transitional: on a worktree, slot 0 hosts `WorktreeTerminalPane` so its
+ * Setup/Run/Terminal sub-tabs stay reachable exactly once; extra terminal
+ * tabs (slot ≥ 1) are plain shells. The setup-flow redesign will move setup
+ * out of here and this branch goes away.
+ */
+export function TerminalSlotPane({ slot }: { slot: number }) {
+  const ctx = useActiveContext();
+  const ready = ctx.status === "ready" && !ctx.worktreePending;
+
+  if (ctx.status === "loading") {
+    return <TerminalPlaceholder>Loading workspace…</TerminalPlaceholder>;
+  }
+  if (ctx.status === "empty") {
+    return (
+      <TerminalPlaceholder>
+        No folder selected. Add or pick a folder on the left.
+      </TerminalPlaceholder>
+    );
+  }
+  if (ctx.worktreePending) {
+    return <TerminalPlaceholder>Preparing worktree…</TerminalPlaceholder>;
+  }
+  if (!ready) return null;
+  if (ctx.worktreeId !== null && slot === 0) {
+    return <WorktreeTerminalPane ctx={ctx} worktreeId={ctx.worktreeId} />;
+  }
+  return (
+    <PlainTerminalSlot
+      folderId={ctx.folderId}
+      worktreeId={ctx.worktreeId}
+      rootPath={ctx.rootPath}
+      slot={slot}
+    />
+  );
+}
+
+function PlainTerminalSlot({
+  folderId,
+  worktreeId,
+  rootPath,
+  slot,
+}: {
+  folderId: FolderId;
+  worktreeId: WorktreeId | null;
+  rootPath: string;
+  slot: number;
+}) {
+  const key = terminalsKey(folderId, worktreeId);
+  const list = useTerminalsStore((s) => s.byKey[key] ?? EMPTY_TERMINALS);
+  const ensureSlot = useTerminalsStore((s) => s.ensureSlot);
+
+  useEffect(() => {
+    if (list.length <= slot) ensureSlot(key, slot, rootPath);
+  }, [key, list.length, slot, ensureSlot, rootPath]);
+
+  const inst = list[slot];
+  if (inst === undefined) return null;
+  return (
+    <PtyTerminal
+      folderId={folderId}
+      cwd={inst.cwd}
+      instanceId={inst.id}
+      command={inst.command}
     />
   );
 }
@@ -218,7 +298,7 @@ function WorktreeTerminalPane({
       <div className="flex h-10 shrink-0 items-center border-b border-border bg-background text-sm">
         <TabButton active={tab === "setup"} onClick={() => setTab("setup")}>
           {(setupPending || worktree?.setupStatus === "running") && (
-            <Beacon dotSize={2} cellPadding={1} color="currentColor" />
+            <Spinner className="size-3.5" />
           )}
           Setup
         </TabButton>
@@ -305,7 +385,7 @@ function SetupOutput({
     <div className="relative h-full bg-background">
       {running && (
         <div className="absolute left-4 top-3 z-10 flex items-center gap-2 rounded border border-border bg-background/90 px-2.5 py-1.5 text-xs text-muted-foreground shadow-sm">
-          <Beacon dotSize={2} cellPadding={1} color="currentColor" />
+          <Spinner className="size-3.5" />
           Running setup
         </div>
       )}
@@ -320,7 +400,7 @@ function SetupOutput({
         className="absolute bottom-3 right-3 gap-2"
       >
         {running ? (
-          <Beacon dotSize={2} cellPadding={1} color="currentColor" />
+          <Spinner className="size-3.5" />
         ) : (
           <HugeiconsIcon icon={Refresh01Icon} className="size-3.5" />
         )}
@@ -450,7 +530,7 @@ function readToken(el: HTMLElement, cssVar: string, fallback: string): string {
   return computed || fallback;
 }
 
-function PtyTerminal({
+export function PtyTerminal({
   folderId,
   cwd,
   instanceId,

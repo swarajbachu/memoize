@@ -158,6 +158,10 @@ export function MessageRow({
       // The paired `user_question` row above renders the answer inline, so
       // the standalone answer row is suppressed.
       return null;
+    case "usage":
+    case "context_usage":
+    case "usage_limit":
+      return null;
     case "error":
       return (
         <ErrorBubble
