@@ -12,6 +12,7 @@ import Link from "next/link";
 const navItems = [
   { label: "Features", href: "/#features" },
   { label: "Compare", href: "/#compare" },
+  { label: "Change Log", href: "/changelog" },
   { label: "Blog", href: "/blog" },
 ];
 

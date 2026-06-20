@@ -19,7 +19,7 @@ const data = {
     { label: "Compare", href: "/#compare" },
     { label: "FAQ", href: "/#faq" },
     { label: "Download", href: DOWNLOAD_URL },
-    { label: "Changelog", href: "/blog" },
+    { label: "Change Log", href: "/changelog" },
   ],
   Agents: [
     { label: "Claude Code", href: "/#features" },
@@ -30,6 +30,7 @@ const data = {
   ],
   Resources: [
     { label: "Blog", href: "/blog" },
+    { label: "Change Log", href: "/changelog" },
     { label: "GitHub", href: GITHUB_URL },
     { label: "Releases", href: `${GITHUB_URL}/releases` },
     { label: "Issues", href: `${GITHUB_URL}/issues` },
