@@ -205,19 +205,17 @@ export function ChatLanding() {
       setSubmitting(false);
       return;
     }
-    const sessionId = useSessionsStore.getState().selectedSessionId;
-    if (sessionId !== null) {
-      migrateModelOptions(DRAFT_SESSION_ID, sessionId);
-      if (opts.asGoal && codexGoalSupported) {
-        void send(sessionId, input, { asGoal: true });
-      } else {
-        useMessagesStore.getState().queue(sessionId, input);
-        // When a worktree was created, hold this first turn until setup
-        // finishes — the worktrees setup stream flushes the queue on the
-        // terminal status. With no worktree there's nothing to wait for.
-        if (worktreeId === null) {
-          useMessagesStore.getState().flushQueue(sessionId);
-        }
+    const sessionId = result.initialSessionId;
+    migrateModelOptions(DRAFT_SESSION_ID, sessionId);
+    if (opts.asGoal && codexGoalSupported) {
+      void send(sessionId, input, { asGoal: true });
+    } else {
+      useMessagesStore.getState().queue(sessionId, input);
+      // When a worktree was created, hold this first turn until setup
+      // finishes — the worktrees setup stream flushes the queue on the
+      // terminal status. With no worktree there's nothing to wait for.
+      if (worktreeId === null) {
+        useMessagesStore.getState().flushQueue(sessionId);
       }
     }
     useSessionsStore.getState().clearDraft();
