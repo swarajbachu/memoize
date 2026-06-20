@@ -155,6 +155,10 @@ type UiState = {
   /** Add a panel to the dock. Singletons that are already open are focused
    * instead of duplicated; terminals always append a new slot. */
   readonly addPanel: (kind: PanelKind) => void;
+  /** Add a terminal panel pinned to a SPECIFIC terminal-list slot (rather
+   * than the auto-computed next slot) and activate it. Used to surface a
+   * command terminal (e.g. Run) whose instance lives at a known list index. */
+  readonly addTerminalPanelForSlot: (slot: number) => void;
   /** Remove a dock panel by id. Layout-only: callers that close a terminal
    * panel must also drop its backing PTY instance (the active workspace key
    * lives in the component layer). Re-indexes remaining terminal slots. */
@@ -233,6 +237,14 @@ export const useUiStore = create<UiState>((set, get) => ({
       }
       // terminal: append a new slot at the next contiguous index.
       const slot = s.rightPanels.filter((p) => p.kind === "terminal").length;
+      const panel: PanelInstance = { id: newPanelId(), kind: "terminal", slot };
+      return {
+        rightPanels: [...s.rightPanels, panel],
+        activeRightPanelId: panel.id,
+      };
+    }),
+  addTerminalPanelForSlot: (slot) =>
+    set((s) => {
       const panel: PanelInstance = { id: newPanelId(), kind: "terminal", slot };
       return {
         rightPanels: [...s.rightPanels, panel],

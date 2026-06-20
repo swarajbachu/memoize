@@ -119,12 +119,52 @@ const MIN_HEIGHT = 56;
 const MAX_HEIGHT = 240;
 const MAX_ATTACHMENTS_PER_TURN = 20;
 
-export function ChatComposer({ session }: { session: Session }) {
+export function ChatComposer({
+  session,
+  onDraftSubmit,
+}: {
+  session: Session;
+  /**
+   * When set, the composer runs in "draft" mode for the new-chat landing:
+   * `session` is a synthetic draft (see `sessions.beginDraft`) with no real
+   * server row. Submit routes here instead of send/queue so the landing can
+   * create the worktree + chat on first send; session-state trays (queue,
+   * plan, annotations, context, location, workspace) are hidden; and the
+   * permission-hydration polling is skipped (there's nothing to hydrate). The
+   * model/runtime/permission/provider toggles still work — their store setters
+   * route to the draft slot — so the user's picks carry into `create()`.
+   */
+  onDraftSubmit?: (input: ComposerInput, opts: { asGoal: boolean }) => void;
+}) {
   const sessionId: SessionId = session.id;
+  const isDraft = onDraftSubmit !== undefined;
   const [reasoningLevel, setReasoningLevel] = useState<string | null>(null);
   const inFlight = useMessagesStore(
     (s) => s.runningBySession[sessionId] === true,
   );
+  // The first message(s) sit in the queue while the worktree branches / setup
+  // runs / the provider boots — the worktrees setup stream flushes them once
+  // the tree is ready. Until then, any submit must APPEND to the queue
+  // (preserving order), never fire a live send into a not-yet-ready session.
+  // The composer is now visible throughout setup, so this path is reachable.
+  const hasQueued = useMessagesStore(
+    (s) => (s.queueBySession[sessionId]?.length ?? 0) > 0,
+  );
+  const worktreeSetupActive = useWorktreesStore((s) => {
+    const wtId = session.worktreeId;
+    if (wtId === null) return false;
+    for (const list of Object.values(s.byProject)) {
+      const wt = (list ?? EMPTY_WORKTREES).find((w) => w.id === wtId);
+      if (wt !== undefined) {
+        // Only while setup is genuinely in flight — a `failed` status is
+        // terminal (its queue already flushed), so later messages send.
+        return wt.setupStatus === "running" || wt.setupStatus === "pending";
+      }
+    }
+    return false;
+  });
+  const holdForSetup =
+    hasQueued || worktreeSetupActive || session.status === "booting";
   const goal = useMessagesStore((s) => s.goalBySession[sessionId] ?? null);
   const send = useMessagesStore((s) => s.send);
   const interrupt = useMessagesStore((s) => s.interrupt);
@@ -201,17 +241,18 @@ export function ChatComposer({ session }: { session: Session }) {
     );
   }, [inFlight, pendingPermissions, sessionId]);
   useEffect(() => {
+    if (isDraft) return;
     void hydratePermissions(sessionId);
-  }, [sessionId, hydratePermissions]);
+  }, [isDraft, sessionId, hydratePermissions]);
   // Reconcile permission requests whenever the running flag transitions
   // true → false. A turn that ended (or aborted) sometimes leaves a stale
   // pending-permission row in the client cache — the row's UI then takes
   // over the composer slot and looks like the input is disabled. Re-asking
   // the server clears anything it already resolved.
   useEffect(() => {
-    if (inFlight) return;
+    if (isDraft || inFlight) return;
     void hydratePermissions(sessionId);
-  }, [inFlight, sessionId, hydratePermissions]);
+  }, [isDraft, inFlight, sessionId, hydratePermissions]);
   // Deterministic fallback delivery. The reconcile hydrate above is gated off
   // while a turn is in flight, yet that's exactly when the agent blocks on a
   // permission request. If the live `permission.requests` stream ever drops
@@ -222,15 +263,15 @@ export function ChatComposer({ session }: { session: Session }) {
   // healthy. The interval is cleared the instant the turn ends or the session
   // changes.
   useEffect(() => {
-    if (!inFlight) return;
+    if (isDraft || !inFlight) return;
     const id = window.setInterval(() => {
       void hydratePermissions(sessionId);
     }, 2000);
     return () => window.clearInterval(id);
-  }, [inFlight, sessionId, hydratePermissions]);
+  }, [isDraft, inFlight, sessionId, hydratePermissions]);
   const headPermission = pendingPermissions[0];
   useEffect(() => {
-    if (!inFlight || headPermission !== undefined) return;
+    if (isDraft || !inFlight || headPermission !== undefined) return;
     console.info(
       `[permission-ui] ${JSON.stringify({
         ts: new Date().toISOString(),
@@ -259,7 +300,7 @@ export function ChatComposer({ session }: { session: Session }) {
       );
       window.clearInterval(id);
     };
-  }, [inFlight, headPermission, sessionId, hydratePermissions]);
+  }, [isDraft, inFlight, headPermission, sessionId, hydratePermissions]);
 
   const [hasText, setHasText] = useState(false);
   const [goalSendMode, setGoalSendMode] = useState(false);
@@ -635,11 +676,18 @@ export function ChatComposer({ session }: { session: Session }) {
     // Drain the tray: the annotations now live on `input` (carried into the
     // queue too, so a mid-turn submit flushes them intact).
     useAnnotationsStore.getState().clear(sessionId);
+    // Draft mode (new-chat landing): hand the input back to the landing, which
+    // creates the worktree + chat and queues this as the first message.
+    if (onDraftSubmit !== undefined) {
+      onDraftSubmit(input, { asGoal: goalSendMode });
+      return true;
+    }
     if (goalSendMode) {
       void send(sessionId, input, { asGoal: true });
-    } else if (inFlight) {
-      // Mid-turn submit becomes a queue chip; auto-flushed when the turn
-      // ends or steered manually.
+    } else if (inFlight || holdForSetup) {
+      // Mid-turn submit — or a submit while the worktree/provider is still
+      // coming up — becomes a queue chip; auto-flushed when the turn ends,
+      // setup completes, or steered manually.
       queue(sessionId, input);
     } else {
       void send(sessionId, input);
@@ -701,14 +749,18 @@ export function ChatComposer({ session }: { session: Session }) {
         aria-hidden={showCard || undefined}
       >
         <div className="mx-auto">
-          <ActiveLocationChip />
-          <ProjectPlanTray key={sessionId} sessionId={sessionId} />
-          <AnnotationTray
-            sessionId={sessionId}
-            folderId={session.projectId}
-            worktreeId={session.worktreeId}
-          />
-          {session.providerId === "codex" && goal !== null ? (
+          {!isDraft ? (
+            <>
+              <ActiveLocationChip />
+              <ProjectPlanTray key={sessionId} sessionId={sessionId} />
+              <AnnotationTray
+                sessionId={sessionId}
+                folderId={session.projectId}
+                worktreeId={session.worktreeId}
+              />
+            </>
+          ) : null}
+          {!isDraft && session.providerId === "codex" && goal !== null ? (
             <GoalBanner
               goal={goal}
               inPlanMode={inPlanMode}
@@ -760,7 +812,7 @@ export function ChatComposer({ session }: { session: Session }) {
                 hidden
                 onChange={onPickFiles}
               />
-              <QueueTray sessionId={sessionId} />
+              {!isDraft ? <QueueTray sessionId={sessionId} /> : null}
               <CardPanel className="relative flex items-stretch gap-2 px-3 py-2">
                 {trigger !== null && editorViewRef.current !== null ? (
                   trigger.kind === "slash" ? (
@@ -877,8 +929,10 @@ export function ChatComposer({ session }: { session: Session }) {
                   sessionId={sessionId}
                   current={session.runtimeMode}
                 />
-                <ContextStatusPopover session={session} />
-                <SessionTimer sessionId={sessionId} inFlight={inFlight} />
+                {!isDraft ? <ContextStatusPopover session={session} /> : null}
+                {!isDraft ? (
+                  <SessionTimer sessionId={sessionId} inFlight={inFlight} />
+                ) : null}
                 {inFlight ? (
                   <Tooltip>
                     <TooltipTrigger
@@ -918,10 +972,12 @@ export function ChatComposer({ session }: { session: Session }) {
                 )}
               </div>
             </FrameFooter>
-            <div className="flex items-center justify-between gap-2 border-t border-border/40 px-2 py-1 text-[11px] text-muted-foreground">
-              <WorkspacePicker session={session} />
-              <WorkspaceBranchLabel session={session} />
-            </div>
+            {!isDraft ? (
+              <div className="flex items-center justify-between gap-2 border-t border-border/40 px-2 py-1 text-[11px] text-muted-foreground">
+                <WorkspacePicker session={session} />
+                <WorkspaceBranchLabel session={session} />
+              </div>
+            ) : null}
           </Frame>
         </div>
       </div>

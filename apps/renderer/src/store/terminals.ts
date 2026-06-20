@@ -39,12 +39,17 @@ type TerminalsState = {
     cwd: string,
   ) => TerminalInstance;
   readonly add: (key: string, cwd: string) => string;
+  /**
+   * Append a command-bound terminal instance and return its 0-based LIST
+   * INDEX (not its id), so the caller can pin a right-dock terminal panel to
+   * exactly that slot (see `lib/run-terminal.ts`).
+   */
   readonly addCommand: (
     key: string,
     cwd: string,
     title: string,
     command: TerminalInstance["command"],
-  ) => string;
+  ) => number;
   readonly remove: (key: string, id: string) => void;
   readonly setActive: (key: string, id: string) => void;
 };
@@ -121,15 +126,17 @@ export const useTerminalsStore = create<TerminalsState>((set) => ({
   },
   addCommand: (key, cwd, title, command) => {
     const id = newId();
+    let index = 0;
     set((state) => {
       const list = state.byKey[key] ?? [];
+      index = list.length;
       const instance: TerminalInstance = { id, title, cwd, command };
       return {
         byKey: { ...state.byKey, [key]: [...list, instance] },
         activeByKey: { ...state.activeByKey, [key]: id },
       };
     });
-    return id;
+    return index;
   },
   remove: (key, id) =>
     set((state) => {
