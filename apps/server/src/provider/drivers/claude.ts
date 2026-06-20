@@ -27,6 +27,10 @@ import {
 } from "@memoize/wire";
 
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
+import {
+  applyClaudeWorktreeEnv,
+  claudeWorktreePrompt,
+} from "./claude-worktree-prompt.ts";
 
 /**
  * Live-only handle for one Claude SDK conversation. The orchestrator
@@ -863,7 +867,7 @@ const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
   "TodoWrite",
   ASK_USER_QUESTION_FQN,
   // Memoize code-index tools. All five are strict reads against the
-  // workspace-local SQLite — they can't mutate anything, so prompting on
+  // worktree-local SQLite — they can't mutate anything, so prompting on
   // every call (and failing to dedupe because the per-input JSON ends up
   // in the kindKey) is pure noise. Auto-allow them like Grep/Glob.
   `mcp__${MEMOIZE_MCP_NAME}__code_search`,
@@ -1194,8 +1198,8 @@ export const startClaudeSession = (
   // Extra MCP tools to register inside the in-process memoize MCP server.
   // Phase B uses this to expose `code_search`, `symbol_lookup`,
   // `find_references`, `read_chunk`, `list_module` from `@memoize/index`.
-  // Tools arrive already bound to the session's workspace handle, so the
-  // driver itself stays workspace-agnostic. Typed loosely because the SDK's
+  // Tools arrive already bound to the session's worktree handle, so the
+  // driver itself stays path-agnostic. Typed loosely because the SDK's
   // `SdkMcpToolDefinition` is parameterized by each tool's zod schema and
   // doesn't compose across distinct shapes in an array.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1404,7 +1408,10 @@ export const startClaudeSession = (
       alwaysLoad: !(input.toolSearch ?? false),
     });
 
-    const env = scrubInheritedClaudeMarkers(process.env);
+    const env = applyClaudeWorktreeEnv(
+      scrubInheritedClaudeMarkers(process.env),
+      cwd,
+    );
     if (apiKey !== null) env.ANTHROPIC_API_KEY = apiKey;
     // Sub-agent map → SDK Options.agents. When at least one preset is
     // present and the master toggle is on, also add `Agent` to
@@ -1436,6 +1443,11 @@ export const startClaudeSession = (
     const initialPermissionMode = input.permissionMode ?? "default";
     const options: Options = {
       cwd,
+      systemPrompt: {
+        type: "preset",
+        preset: "claude_code",
+        append: claudeWorktreePrompt(cwd),
+      },
       abortController: abort,
       ...(claudeExecutablePath !== null
         ? { pathToClaudeCodeExecutable: claudeExecutablePath }
