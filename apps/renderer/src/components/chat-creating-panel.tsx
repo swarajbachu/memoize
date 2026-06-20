@@ -62,7 +62,7 @@ export function ChatCreatingPanel({
       {
         id: "chat",
         icon: MessageAdd01Icon,
-        hold: 350,
+        hold: 250,
         render: () => <>Created a new chat</>,
       },
     ];
@@ -70,7 +70,7 @@ export function ChatCreatingPanel({
       out.push({
         id: "worktree",
         icon: GitBranchIcon,
-        hold: 900,
+        hold: 500,
         render: () => (
           <>
             Branching a fresh worktree off <Chip>main</Chip>
@@ -80,14 +80,14 @@ export function ChatCreatingPanel({
       out.push({
         id: "setup",
         icon: SparklesIcon,
-        hold: 1800,
-        render: () => <>Running setup script</>,
+        hold: 700,
+        render: () => <>Preparing workspace files</>,
       });
     }
     out.push({
       id: "provider",
       icon: Rocket01Icon,
-      hold: 1400,
+      hold: 700,
       render: () => (
         <>
           Starting <Chip>{providerLabel}</Chip>
@@ -98,7 +98,7 @@ export function ChatCreatingPanel({
       id: "ready",
       icon: SparklesIcon,
       hold: null,
-      render: () => <>Loading workspace…</>,
+      render: () => <>Setting up workspace…</>,
     });
     return out;
   }, [providerLabel, willCreateWorktree]);

@@ -113,7 +113,6 @@ import { EMPTY_WORKTREES, useWorktreesStore } from "../store/worktrees.ts";
 import { PermissionCard } from "./permission-card.tsx";
 import { QuestionCard } from "./question-card.tsx";
 import { ProviderIcon } from "./provider-icons.tsx";
-import { PokemonRarityText, PokemonSprite } from "./pokemon.tsx";
 import { MODES_ORDER, MODE_META } from "./runtime-mode-meta.ts";
 
 const MIN_HEIGHT = 56;
@@ -1617,11 +1616,7 @@ function WorkspacePicker({ session }: { session: Session }) {
         className="flex items-center gap-1.5 rounded-md px-2 py-1"
         title="Workspace locked — first message already sent"
       >
-        {current?.pokemon ? (
-          <PokemonSprite pokemon={current.pokemon} className="size-4" />
-        ) : (
-          <HugeiconsIcon icon={triggerIcon} className="size-3.5" />
-        )}
+        <HugeiconsIcon icon={triggerIcon} className="size-3.5" />
         <span>{triggerLabel}</span>
         <HugeiconsIcon icon={LockIcon} className="size-3 opacity-60" />
       </span>
@@ -1645,11 +1640,7 @@ function WorkspacePicker({ session }: { session: Session }) {
         aria-label="Change workspace"
         title="Change workspace — locks once the first message is sent"
       >
-        {current?.pokemon ? (
-          <PokemonSprite pokemon={current.pokemon} className="size-4" />
-        ) : (
-          <HugeiconsIcon icon={triggerIcon} className="size-3.5" />
-        )}
+        <HugeiconsIcon icon={triggerIcon} className="size-3.5" />
         <span>{triggerLabel}</span>
         <HugeiconsIcon icon={ArrowDown01Icon} className="size-3 opacity-60" />
       </MenuTrigger>
@@ -1727,18 +1718,11 @@ function WorkspaceBranchLabel({ session }: { session: Session }) {
       className="flex items-center gap-1 truncate font-mono text-foreground/80"
       title={`Branch ${wt.branch}`}
     >
-      {wt.pokemon ? (
-        <PokemonSprite pokemon={wt.pokemon} className="size-4" />
-      ) : (
-        <HugeiconsIcon
-          icon={GitBranchIcon}
-          className="size-3 shrink-0 opacity-70"
-        />
-      )}
+      <HugeiconsIcon
+        icon={GitBranchIcon}
+        className="size-3 shrink-0 opacity-70"
+      />
       <span className="truncate font-medium">{wt.branch}</span>
-      {wt.pokemon ? (
-        <PokemonRarityText rarity={wt.pokemon.rarity} className="text-[10px]" />
-      ) : null}
     </span>
   );
 }
