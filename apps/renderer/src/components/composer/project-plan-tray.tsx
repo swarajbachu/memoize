@@ -13,7 +13,22 @@ import { cn } from "~/lib/utils";
 
 import { useMessagesStore } from "../../store/messages.ts";
 
-type TodoStatus = "pending" | "in_progress" | "completed";
+const TODO_STATUS = {
+  pending: "pending",
+  inProgress: "in_progress",
+  completed: "completed",
+} as const;
+
+type TodoStatus = (typeof TODO_STATUS)[keyof typeof TODO_STATUS];
+
+const TASK_DELETED_STATUS = "deleted";
+
+const COMPLETED_STATUS_VALUES = new Set<unknown>([TODO_STATUS.completed]);
+const IN_PROGRESS_STATUS_VALUES = new Set<unknown>([
+  TODO_STATUS.inProgress,
+  "inProgress",
+  "running",
+]);
 
 interface Todo {
   readonly text: string;
@@ -26,8 +41,9 @@ const asString = (v: unknown): string | undefined =>
   typeof v === "string" ? v : undefined;
 
 const asStatus = (v: unknown): TodoStatus => {
-  if (v === "completed" || v === "in_progress") return v;
-  return "pending";
+  if (COMPLETED_STATUS_VALUES.has(v)) return TODO_STATUS.completed;
+  if (IN_PROGRESS_STATUS_VALUES.has(v)) return TODO_STATUS.inProgress;
+  return TODO_STATUS.pending;
 };
 
 /** Normalize a raw `[{ content, activeForm, status }]` array into our shape. */
@@ -104,19 +120,22 @@ const parseTaskCreated = (
 
 const parseTaskUpdate = (
   input: unknown,
-): { id: string; status?: TodoStatus | "deleted"; subject?: string } | null => {
+): {
+  id: string;
+  status?: TodoStatus | typeof TASK_DELETED_STATUS;
+  subject?: string;
+} | null => {
   if (input === null || typeof input !== "object") return null;
   const r = input as Record<string, unknown>;
   const id = r.taskId;
   if (typeof id !== "string" && typeof id !== "number") return null;
   const raw = r.status;
   const status =
-    raw === "deleted" ||
-    raw === "completed" ||
-    raw === "in_progress" ||
-    raw === "pending"
-      ? raw
-      : undefined;
+    raw === undefined
+      ? undefined
+      : raw === TASK_DELETED_STATUS
+        ? TASK_DELETED_STATUS
+        : asStatus(raw);
   return {
     id: String(id),
     status,
@@ -143,7 +162,7 @@ const tasksFromMessages = (messages: ReadonlyArray<Message>): Todo[] => {
         if (existing === undefined) {
           tasks.set(created.id, {
             text: created.subject,
-            status: "pending",
+            status: TODO_STATUS.pending,
             order: order++,
           });
         } else {
@@ -153,7 +172,7 @@ const tasksFromMessages = (messages: ReadonlyArray<Message>): Todo[] => {
     } else if (c._tag === "tool_use" && c.tool === "TaskUpdate") {
       const upd = parseTaskUpdate(c.input);
       if (upd === null) continue;
-      if (upd.status === "deleted") {
+      if (upd.status === TASK_DELETED_STATUS) {
         tasks.delete(upd.id);
         continue;
       }
@@ -161,7 +180,7 @@ const tasksFromMessages = (messages: ReadonlyArray<Message>): Todo[] => {
       if (existing === undefined) {
         tasks.set(upd.id, {
           text: upd.subject ?? `Task ${upd.id}`,
-          status: upd.status ?? "pending",
+          status: upd.status ?? TODO_STATUS.pending,
           order: order++,
         });
       } else {
@@ -174,6 +193,11 @@ const tasksFromMessages = (messages: ReadonlyArray<Message>): Todo[] => {
     .sort((a, b) => a.order - b.order)
     .map((t) => ({ text: t.text, status: t.status }));
 };
+
+const activeHeaderTodo = (todos: ReadonlyArray<Todo>): Todo | undefined =>
+  todos.find((t) => t.status === TODO_STATUS.inProgress) ??
+  todos.find((t) => t.status !== TODO_STATUS.completed) ??
+  todos.at(-1);
 
 /**
  * "Project Plan" panel docked above the composer. Surfaces the agent's live
@@ -222,9 +246,9 @@ export function ProjectPlanTray({ sessionId }: { sessionId: SessionId }) {
 
   if (todos.length === 0) return null;
 
-  const done = todos.filter((t) => t.status === "completed").length;
+  const done = todos.filter((t) => t.status === TODO_STATUS.completed).length;
   const total = todos.length;
-  const allDone = done === total;
+  const headerTodo = activeHeaderTodo(todos);
 
   return (
     <div className="mb-1.5 overflow-hidden rounded-lg border border-border/60 bg-card">
@@ -237,19 +261,24 @@ export function ProjectPlanTray({ sessionId }: { sessionId: SessionId }) {
           "bg-primary/10 hover:bg-primary/15",
         )}
       >
-        <HugeiconsIcon
-          icon={CheckListIcon}
-          strokeWidth={2}
-          className="size-3.5 shrink-0 text-muted-foreground"
-          aria-hidden="true"
-        />
-        <span className="text-sm font-medium">Project Plan</span>
+        <span className="flex size-3.5 shrink-0 items-center justify-center">
+          {headerTodo === undefined ? (
+            <HugeiconsIcon
+              icon={CheckListIcon}
+              strokeWidth={2}
+              className="size-3.5 text-muted-foreground"
+              aria-hidden="true"
+            />
+          ) : (
+            <TodoStatusIcon status={headerTodo.status} running={running} />
+          )}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">
+          {headerTodo?.text ?? "Project Plan"}
+        </span>
         <span className="ml-auto text-xs text-muted-foreground tabular-nums">
           {done} of {total} Done
         </span>
-        {running && !allDone ? (
-          <Spinner className="size-3.5 shrink-0 text-muted-foreground" />
-        ) : null}
         <HugeiconsIcon
           icon={ArrowDown01Icon}
           className={cn(
@@ -276,7 +305,7 @@ export function ProjectPlanTray({ sessionId }: { sessionId: SessionId }) {
               <span
                 className={cn(
                   "text-sm leading-snug",
-                  t.status === "completed"
+                  t.status === TODO_STATUS.completed
                     ? "text-muted-foreground"
                     : "text-foreground",
                 )}
@@ -298,7 +327,7 @@ function TodoStatusIcon({
   status: TodoStatus;
   running: boolean;
 }) {
-  if (status === "completed") {
+  if (status === TODO_STATUS.completed) {
     return (
       <HugeiconsIcon
         icon={Tick02Icon}
@@ -308,9 +337,9 @@ function TodoStatusIcon({
       />
     );
   }
-  if (status === "in_progress") {
+  if (status === TODO_STATUS.inProgress) {
     // Only animate while the turn is actually running. Once the agent stops
-    // (or finishes) the item's status stays "in_progress" in the data, so a
+    // (or finishes) the item stays marked current in the data, so a
     // spinning loader would imply work is still happening when it isn't — and
     // makes the whole composer read as "busy". Show a static filled ring
     // instead to mark "current step, not running".
