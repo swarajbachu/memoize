@@ -33,7 +33,6 @@ import { BrowserPane } from "./browser-pane.tsx";
 import { DiffPane } from "./diff-pane.tsx";
 import { FileTree } from "./file-tree.tsx";
 import { PrPane } from "./pr-pane.tsx";
-import { PokemonRarityText, PokemonSprite } from "./pokemon.tsx";
 import { TerminalSlotPane } from "./terminal-pane.tsx";
 import {
   Menu,
@@ -86,9 +85,7 @@ function addableKinds(
   const openSingletons = new Set(
     panels.filter((p) => SINGLETON_PANEL_KINDS.has(p.kind)).map((p) => p.kind),
   );
-  return PANEL_ORDER.filter(
-    (k) => k === "terminal" || !openSingletons.has(k),
-  );
+  return PANEL_ORDER.filter((k) => k === "terminal" || !openSingletons.has(k));
 }
 
 /**
@@ -150,9 +147,9 @@ export function RightPane() {
   const handleClose = (panel: PanelInstance) => {
     if (panel.kind === "terminal" && selectedFolderId !== null) {
       const key = terminalsKey(selectedFolderId, worktreeId);
-      const inst = (
-        useTerminalsStore.getState().byKey[key] ?? EMPTY_TERMINALS
-      )[panel.slot];
+      const inst = (useTerminalsStore.getState().byKey[key] ?? EMPTY_TERMINALS)[
+        panel.slot
+      ];
       if (inst !== undefined) {
         useTerminalsStore.getState().remove(key, inst.id);
       }
@@ -434,18 +431,8 @@ function ActiveWorkspaceChip() {
   const sub = onWorktree ? (worktree?.branch ?? null) : null;
   return (
     <div className="flex shrink-0 items-center gap-1.5 border-b border-border/40 px-3 py-1.5 text-[11px] text-muted-foreground">
-      {worktree?.pokemon ? (
-        <PokemonSprite pokemon={worktree.pokemon} className="size-4" />
-      ) : (
-        <HugeiconsIcon icon={icon} className="size-3.5 shrink-0 opacity-70" />
-      )}
+      <HugeiconsIcon icon={icon} className="size-3.5 shrink-0 opacity-70" />
       <span className="truncate font-medium text-foreground/80">{label}</span>
-      {worktree?.pokemon ? (
-        <PokemonRarityText
-          rarity={worktree.pokemon.rarity}
-          className="shrink-0 text-[10px]"
-        />
-      ) : null}
       {sub !== null ? (
         <span className="truncate font-mono opacity-70">· {sub}</span>
       ) : null}

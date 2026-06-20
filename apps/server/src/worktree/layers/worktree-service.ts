@@ -439,11 +439,15 @@ export const WorktreeServiceLive = Layer.effect(
         // because the network/remote is unavailable.
         let baseRef = "HEAD";
         if (baseBranch !== "HEAD") {
+          // Time-box the fetch: a slow or offline remote must never stall
+          // worktree creation. On timeout we fall through to local `HEAD`
+          // exactly like any other fetch failure.
           const fetched = yield* runGit(repoPath, [
             "fetch",
             "origin",
             baseBranch,
           ]).pipe(
+            Effect.timeout("3 seconds"),
             Effect.map(() => true),
             Effect.catchAll(() => Effect.succeed(false)),
           );
@@ -573,7 +577,10 @@ export const WorktreeServiceLive = Layer.effect(
                'pending', '', ${pokemon.number})
           `.pipe(Effect.orDie);
           yield* pokemonService.recordUnlock(pokemon.number, id);
-          const prepared = yield* runSetupFor(id).pipe(
+          // Await the fast file-prep (node_modules symlink + .env copy) but
+          // fork the slow setup script, so creation returns in ~1s instead of
+          // blocking on `npm install`.
+          const prepared = yield* runSetupFor(id, { background: true }).pipe(
             Effect.catchAll(() => get(id).pipe(Effect.map((wt) => wt!))),
           );
           return prepared;
@@ -728,6 +735,7 @@ export const WorktreeServiceLive = Layer.effect(
 
     function runSetupFor(
       worktreeId: WorktreeId,
+      options?: { readonly background?: boolean },
     ): Effect.Effect<Worktree, WorktreeNotFoundError | WorktreeSetupError> {
       return Effect.gen(function* () {
         const worktree = yield* get(worktreeId);
@@ -773,33 +781,47 @@ export const WorktreeServiceLive = Layer.effect(
           return (yield* get(worktreeId))!;
         }
 
-        const result = yield* Effect.tryPromise({
-          try: () =>
-            runShellScript({
-              script,
-              cwd: worktree.path,
-              env: setupEnv(
-                folder.path,
-                worktree,
-                settings.environmentVariables,
-              ),
-            }),
-          catch: (err) =>
-            new WorktreeSetupError({
-              worktreeId,
-              reason: err instanceof Error ? err.message : String(err),
-            }),
+        // Running the user's setup script (e.g. `npm install`) can take
+        // minutes. Capture it as an Effect so the create path can fork it and
+        // return immediately — the worktree + prepared files already exist,
+        // status is 'running', and the renderer surfaces the eventual
+        // 'succeeded'/'failed' via refresh / the terminal pane.
+        const runScript = Effect.gen(function* () {
+          const result = yield* Effect.tryPromise({
+            try: () =>
+              runShellScript({
+                script,
+                cwd: worktree.path,
+                env: setupEnv(
+                  folder.path,
+                  worktree,
+                  settings.environmentVariables,
+                ),
+              }),
+            catch: (err) =>
+              new WorktreeSetupError({
+                worktreeId,
+                reason: err instanceof Error ? err.message : String(err),
+              }),
+          });
+          const finishedAt = new Date().toISOString();
+          const status = result.exitCode === 0 ? "succeeded" : "failed";
+          const output = truncateOutput(`${prep}${result.output}`);
+          yield* sql`
+            UPDATE worktrees
+            SET setup_status = ${status},
+                setup_output = ${output},
+                setup_finished_at = ${finishedAt}
+            WHERE id = ${worktreeId}
+          `.pipe(Effect.orDie);
         });
-        const finishedAt = new Date().toISOString();
-        const status = result.exitCode === 0 ? "succeeded" : "failed";
-        const output = truncateOutput(`${prep}${result.output}`);
-        yield* sql`
-          UPDATE worktrees
-          SET setup_status = ${status},
-              setup_output = ${output},
-              setup_finished_at = ${finishedAt}
-          WHERE id = ${worktreeId}
-        `.pipe(Effect.orDie);
+
+        if (options?.background === true) {
+          yield* Effect.forkDaemon(runScript.pipe(Effect.ignoreLogged));
+          return (yield* get(worktreeId))!;
+        }
+
+        yield* runScript;
         return (yield* get(worktreeId))!;
       });
     }
