@@ -27,6 +27,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { resolveAutoWorktreeId } from "~/lib/auto-worktree";
 import { useChatsStore } from "~/store/chats";
 import { useMessagesStore } from "~/store/messages";
+import { useProvidersStore } from "~/store/providers";
 import { useSessionsStore } from "~/store/sessions";
 import { useSettingsStore } from "~/store/settings";
 import { useWorkspaceStore } from "~/store/workspace";
@@ -67,6 +68,14 @@ export function ChatLanding() {
   const addFolder = useWorkspaceStore((s) => s.add);
 
   const defaultProviderId = useSettingsStore((s) => s.defaultProviderId);
+  // Goal mode is only offered when the installed Codex CLI is new enough
+  // (version-gated capability from the availability probe). No live session
+  // exists here, so this is the only gate the landing screen can apply.
+  const codexCapabilities = useProvidersStore((s) =>
+    s.capabilitiesFor("codex"),
+  );
+  const codexGoalSupported =
+    defaultProviderId === "codex" && codexCapabilities.includes("goalMode");
   const defaultModelByProvider = useSettingsStore(
     (s) => s.defaultModelByProvider,
   );
@@ -144,7 +153,7 @@ export function ChatLanding() {
         fileRefs: [],
         skillRefs: [],
       });
-      if (goalSendMode && defaultProviderId === "codex") {
+      if (goalSendMode && codexGoalSupported) {
         void send(sessionId, input, { asGoal: true });
       } else {
         useMessagesStore.getState().queue(sessionId, input);
@@ -205,7 +214,7 @@ export function ChatLanding() {
               <Card
                 className={cn(
                   "rounded-xl border-border/50",
-                  goalSendMode && defaultProviderId === "codex"
+                  goalSendMode && codexGoalSupported
                     ? "border-amber-400/55 shadow-[0_0_0_1px_rgba(251,191,36,0.22)]"
                     : undefined,
                 )}
@@ -234,7 +243,7 @@ export function ChatLanding() {
                   />
                   <div className="flex items-center justify-between">
                     <div>
-                      {defaultProviderId === "codex" ? (
+                      {codexGoalSupported ? (
                         <Tooltip>
                           <TooltipTrigger
                             render={
