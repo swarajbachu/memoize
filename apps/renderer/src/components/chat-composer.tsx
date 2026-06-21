@@ -229,18 +229,6 @@ export function ChatComposer({
     return out;
   }, [requestsById, sessionId]);
   useEffect(() => {
-    console.info(
-      `[permission-ui] ${JSON.stringify({
-        ts: new Date().toISOString(),
-        event: "composer.pending_permissions_changed",
-        sessionId,
-        inFlight,
-        count: pendingPermissions.length,
-        requestIds: pendingPermissions.map((req) => req.id),
-      })}`,
-    );
-  }, [inFlight, pendingPermissions, sessionId]);
-  useEffect(() => {
     if (isDraft) return;
     void hydratePermissions(sessionId);
   }, [isDraft, sessionId, hydratePermissions]);
@@ -272,34 +260,11 @@ export function ChatComposer({
   const headPermission = pendingPermissions[0];
   useEffect(() => {
     if (isDraft || !inFlight || headPermission !== undefined) return;
-    console.info(
-      `[permission-ui] ${JSON.stringify({
-        ts: new Date().toISOString(),
-        event: "composer.poll_pending_start",
-        sessionId,
-      })}`,
-    );
     void hydratePermissions(sessionId);
     const id = window.setInterval(() => {
-      console.info(
-        `[permission-ui] ${JSON.stringify({
-          ts: new Date().toISOString(),
-          event: "composer.poll_pending_tick",
-          sessionId,
-        })}`,
-      );
       void hydratePermissions(sessionId);
     }, 1_000);
-    return () => {
-      console.info(
-        `[permission-ui] ${JSON.stringify({
-          ts: new Date().toISOString(),
-          event: "composer.poll_pending_stop",
-          sessionId,
-        })}`,
-      );
-      window.clearInterval(id);
-    };
+    return () => window.clearInterval(id);
   }, [isDraft, inFlight, headPermission, sessionId, hydratePermissions]);
 
   const [hasText, setHasText] = useState(false);
