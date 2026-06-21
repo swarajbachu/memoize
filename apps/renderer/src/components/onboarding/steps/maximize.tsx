@@ -27,28 +27,6 @@ const MONTHLY_STACK = {
   ],
 } as const;
 
-const MONTHLY_CARDS: ReadonlyArray<{
-  readonly label: string;
-  readonly value: string;
-  readonly detail: string;
-}> = [
-  {
-    label: "You pay this month",
-    value: MONTHLY_STACK.subscriptionCost,
-    detail: "Claude Max + ChatGPT Pro",
-  },
-  {
-    label: "API value used this month",
-    value: "dynamic",
-    detail: "From your local agent logs",
-  },
-  {
-    label: "You can pull this month",
-    value: MONTHLY_STACK.apiValue,
-    detail: "API-equivalent monthly ceiling",
-  },
-];
-
 const currentMonthRange = () => {
   const now = new Date();
   const since = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -110,7 +88,7 @@ export function MaximizeStep() {
   const sourceLine = sources.length > 0 ? ` across ${sources.join(" · ")}` : "";
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-8">
       <StepHeader
         title="Maximize this month"
         subtitle="See the subscription bill, the API value you already used, and the value still available from the plans you pay for."
@@ -119,20 +97,10 @@ export function MaximizeStep() {
       {loading ? (
         <SpendSkeleton />
       ) : (
-        <div className="grid gap-3 sm:grid-cols-3">
-          {MONTHLY_CARDS.map((card) => (
-            <MonthlyCard
-              key={card.label}
-              label={card.label}
-              value={card.value === "dynamic" ? usedValue : card.value}
-              detail={card.detail}
-              accent={card.value === "dynamic"}
-            />
-          ))}
-        </div>
+        <MonthlySnapshot usedValue={usedValue} tokens={tokens} sourceLine={sourceLine} />
       )}
 
-      <div className="flex flex-col gap-3 rounded-2xl bg-white/[0.025] p-5">
+      <div className="flex flex-col gap-4 rounded-2xl bg-white/[0.025] p-5">
         <div className="flex items-start gap-3">
           <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
             <HugeiconsIcon
@@ -174,32 +142,70 @@ export function MaximizeStep() {
   );
 }
 
-function MonthlyCard({
+function MonthlySnapshot({
+  usedValue,
+  tokens,
+  sourceLine,
+}: {
+  usedValue: string;
+  tokens: number;
+  sourceLine: string;
+}) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_15rem]">
+      <div className="flex min-h-36 flex-col justify-between rounded-2xl border border-primary/10 bg-primary/[0.055] p-5">
+        <div className="flex flex-col gap-1">
+          <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-primary/80">
+            API value used this month
+          </span>
+          <span className="text-[12px] text-muted-foreground">
+            From your local agent logs
+          </span>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-4xl font-semibold leading-none tracking-tight tabular-nums text-primary">
+            {usedValue}
+          </span>
+          <span className="text-[11px] leading-snug text-muted-foreground">
+            {tokens > 0 ? `${formatTokens(tokens)} tokens${sourceLine}` : "No usage found yet"}
+          </span>
+        </div>
+      </div>
+
+      <div className="grid gap-3">
+        <CompactMetric
+          label="You pay"
+          value={MONTHLY_STACK.subscriptionCost}
+          detail="Claude Max + ChatGPT Pro"
+        />
+        <CompactMetric
+          label="Available ceiling"
+          value={MONTHLY_STACK.apiValue}
+          detail="API-equivalent monthly value"
+        />
+      </div>
+    </div>
+  );
+}
+
+function CompactMetric({
   label,
   value,
   detail,
-  accent,
 }: {
   label: string;
   value: string;
   detail: string;
-  accent?: boolean;
 }) {
   return (
-    <div className="flex min-h-32 flex-col justify-between rounded-2xl bg-white/[0.025] p-4">
-      <span className="text-[11px] font-medium leading-snug text-muted-foreground">
+    <div className="flex min-h-[4.5rem] flex-col justify-center gap-1 rounded-2xl bg-white/[0.025] px-4 py-3">
+      <span className="text-[11px] font-medium text-muted-foreground">
         {label}
       </span>
-      <span
-        className={
-          accent
-            ? "text-2xl font-semibold leading-tight tracking-tight tabular-nums text-primary"
-            : "text-2xl font-semibold leading-tight tracking-tight tabular-nums text-foreground"
-        }
-      >
+      <span className="text-xl font-semibold leading-tight tracking-tight tabular-nums text-foreground">
         {value}
       </span>
-      <span className="text-[11px] leading-snug text-muted-foreground">
+      <span className="text-[10px] leading-snug text-muted-foreground">
         {detail}
       </span>
     </div>
@@ -235,7 +241,7 @@ function PlanRow({
 
 function SpendSkeleton() {
   return (
-    <div className="flex flex-col gap-3 rounded-2xl bg-white/[0.025] p-5">
+    <div className="flex flex-col gap-4 rounded-2xl bg-white/[0.025] p-5">
       <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
         <HugeiconsIcon
           icon={Loading02Icon}
@@ -244,13 +250,22 @@ function SpendSkeleton() {
         />
         Scanning this month&apos;s local agent logs...
       </div>
-      <div className="grid gap-3 sm:grid-cols-3">
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="flex flex-col gap-2">
-            <div className="h-3 w-20 animate-pulse rounded bg-white/[0.06]" />
-            <div className="h-8 w-24 animate-pulse rounded bg-white/[0.06]" />
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_15rem]">
+        <div className="flex h-36 flex-col justify-between rounded-2xl bg-white/[0.035] p-5">
+          <div className="h-3 w-40 animate-pulse rounded bg-white/[0.06]" />
+          <div className="space-y-2">
+            <div className="h-9 w-36 animate-pulse rounded bg-white/[0.06]" />
+            <div className="h-3 w-48 animate-pulse rounded bg-white/[0.06]" />
           </div>
-        ))}
+        </div>
+        <div className="grid gap-3">
+          {[0, 1].map((i) => (
+            <div key={i} className="flex flex-col justify-center gap-2 rounded-2xl bg-white/[0.025] px-4 py-3">
+              <div className="h-3 w-20 animate-pulse rounded bg-white/[0.06]" />
+              <div className="h-6 w-28 animate-pulse rounded bg-white/[0.06]" />
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
