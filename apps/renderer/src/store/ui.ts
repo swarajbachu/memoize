@@ -28,7 +28,14 @@ export type SettingsSection =
  * the file tab only exists when `openFile !== null`. Opening a different file
  * replaces (never stacks) the file tab — see specs/0.02-MVP/features/file-viewer.md.
  */
-export type MainTab = "chat" | "file" | "archives";
+export type MainTab = "chat" | "file" | "archives" | "usage";
+
+/**
+ * Whether the Usage dashboard shows every project's usage (`global`, opened
+ * from the sidebar footer) or just the selected project's usage across all its
+ * sessions (`project`, opened from a project's context menu).
+ */
+export type UsageScope = "global" | "project";
 
 /**
  * Panel kinds the right-hand dock can host. The dock is user-managed: panels
@@ -124,6 +131,7 @@ type UiState = {
   readonly settingsSection: SettingsSection;
   readonly setSettingsSection: (section: SettingsSection) => void;
   readonly activeMainTab: MainTab;
+  readonly usageScope: UsageScope;
   readonly openFile: OpenFile | null;
   readonly fileDirty: boolean;
   // 0.02 hard-codes false. The future settings-page autosave toggle flips
@@ -136,6 +144,8 @@ type UiState = {
   readonly activeRightPanelId: string | null;
   readonly revealedAnnotation: RevealedAnnotation | null;
   readonly setActiveMainTab: (tab: MainTab) => void;
+  /** Open the Usage dashboard in the main pane at the given scope. */
+  readonly openUsage: (scope: UsageScope) => void;
   readonly openFileInTab: (
     file:
       | (Omit<Extract<OpenFile, { kind: "text" }>, "view"> & {
@@ -194,6 +204,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   settingsSection: { kind: "general" },
   setSettingsSection: (section) => set({ settingsSection: section }),
   activeMainTab: "chat",
+  usageScope: "global",
   openFile: null,
   fileDirty: false,
   autosave: false,
@@ -204,6 +215,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   activeRightPanelId: null,
   revealedAnnotation: null,
   setActiveMainTab: (tab) => set({ activeMainTab: tab }),
+  openUsage: (scope) => set({ view: "chat", activeMainTab: "usage", usageScope: scope }),
   openFileInTab: (file) =>
     set({
       openFile:

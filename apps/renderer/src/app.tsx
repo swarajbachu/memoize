@@ -26,6 +26,7 @@ import { RightPane } from "./components/right-pane";
 import { SettingsPage } from "./components/settings-page";
 import { TopBarLeft, TopBarMain, TopBarRight } from "./components/top-bar.tsx";
 import { UpdateBanner } from "./components/update-banner.tsx";
+import { UsageDashboard } from "./components/usage-dashboard.tsx";
 import { useKeybindingDispatch } from "./hooks/use-keybinding-dispatch.ts";
 import { useMenuShortcuts } from "./hooks/use-menu-shortcuts.ts";
 import { getRpcClient } from "./lib/rpc-client.ts";
@@ -169,6 +170,7 @@ function MainShell() {
     : null;
 
   const activeMainTab = useUiStore((s) => s.activeMainTab);
+  const usageScope = useUiStore((s) => s.usageScope);
   const openFile = useUiStore((s) => s.openFile);
   const closeFileTab = useUiStore((s) => s.closeFileTab);
   const leftSidebarOpen = useUiStore((s) => s.leftSidebarOpen);
@@ -330,6 +332,21 @@ function MainShell() {
                 <ArchivedChatsPage
                   projectId={selectedFolderId}
                   projectName={selectedFolder?.name ?? "No repository selected"}
+                />
+              )}
+            </div>
+            <div
+              hidden={activeMainTab !== "usage"}
+              className="flex min-h-0 flex-1 flex-col"
+            >
+              {activeMainTab === "usage" && (
+                <UsageDashboard
+                  projectId={usageScope === "project" ? selectedFolderId : null}
+                  scopeLabel={
+                    usageScope === "project"
+                      ? (selectedFolder?.name ?? "This project")
+                      : "All projects"
+                  }
                 />
               )}
             </div>
