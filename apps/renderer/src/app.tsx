@@ -24,6 +24,10 @@ import { ProjectsSidebar } from "./components/projects-sidebar";
 import { ProviderUpdatesToast } from "./components/provider-updates-toast.tsx";
 import { RightPane } from "./components/right-pane";
 import { SettingsPage } from "./components/settings-page";
+import {
+  SidebarPeekOverlay,
+  SidebarPeekTrigger,
+} from "./components/sidebar-peek.tsx";
 import { TopBarLeft, TopBarMain, TopBarRight } from "./components/top-bar.tsx";
 import { UpdateBanner } from "./components/update-banner.tsx";
 import { UsageDashboard } from "./components/usage-dashboard.tsx";
@@ -385,6 +389,8 @@ function MainShell() {
           </div>
         </Panel>
       </Group>
+      <SidebarPeekTrigger />
+      <SidebarPeekOverlay />
     </div>
   );
 }
