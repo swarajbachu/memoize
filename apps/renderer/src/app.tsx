@@ -95,16 +95,14 @@ export function App() {
     return win.onFullScreenChange((value) => setFullScreen(value));
   }, [setFullScreen]);
 
-  // One-shot RPC ping so we know the bridge is alive early.
+  // One-shot RPC ping so we know the bridge is alive early. Only the failure
+  // is logged — the success path is silent to keep the renderer console clean.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
         const client = await getRpcClient();
-        const result = await Effect.runPromise(client.ping.ping({}));
-        if (cancelled) return;
-        // eslint-disable-next-line no-console
-        console.log("[memoize] RPC smoke test:", JSON.stringify(result));
+        await Effect.runPromise(client.ping.ping({}));
       } catch (error) {
         if (cancelled) return;
         // eslint-disable-next-line no-console
