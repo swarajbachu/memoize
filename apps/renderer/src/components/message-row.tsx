@@ -273,7 +273,7 @@ function UserBubble({
               const iconUrl = isImage ? null : getFileIconUrl(a.originalName);
               const src = `memoize://attachments/${a.id}`;
               const className =
-                "inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted/60";
+                "inline-flex items-center gap-1.5 rounded-md border border-border/45 bg-[var(--chip-bg)] px-1.5 py-0.5 text-[11px] text-foreground/90 shadow-[inset_0_1px_0_color-mix(in_oklch,white_4%,transparent),0_1px_2px_color-mix(in_oklch,black_22%,transparent)] hover:bg-[color-mix(in_oklch,var(--chip-bg)_80%,var(--foreground)_4%)] hover:text-foreground";
               const inner = (
                 <>
                   {isImage ? (
@@ -331,7 +331,7 @@ function UserBubble({
             {(skillRefs ?? []).map((s) => (
               <span
                 key={s.name}
-                className="inline-flex items-center rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 text-xs text-muted-foreground"
+                className="inline-flex items-center rounded-md border border-border/45 bg-[var(--chip-bg)] px-1.5 py-0.5 text-[11px] text-foreground/90 shadow-[inset_0_1px_0_color-mix(in_oklch,white_4%,transparent),0_1px_2px_color-mix(in_oklch,black_22%,transparent)]"
               >
                 /{s.name}
               </span>
