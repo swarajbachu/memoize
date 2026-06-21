@@ -2,12 +2,23 @@ import { Rpc } from "@effect/rpc";
 import { Schema } from "effect";
 
 import { FolderId, WorktreeId } from "./ids.ts";
+import { PokemonSummary } from "./pokemon.ts";
+
+export const WorktreeSetupStatus = Schema.Literal(
+  "pending",
+  "running",
+  "succeeded",
+  "failed",
+  "skipped",
+);
+export type WorktreeSetupStatus = typeof WorktreeSetupStatus.Type;
 
 /**
- * A git worktree owned by memoize. Lives at `<repoPath>/.memoize/repo-worktree/<name>/`
- * by default; the user can override the base dir per-repo. Branch is always
- * `memoize/<name>` so the `memoize/` prefix lets users grep their git
- * branch list cleanly.
+ * A git worktree owned by memoize. Lives at
+ * `~/.memoize/<repo-name>-<projectId-short>/<name>/` so it stays out of the
+ * source repo (no `.git/info/exclude` rewriting, no stray entries in `git
+ * status`, no `.memoize/` paths leaking into file pickers). Branch matches
+ * `<name>` (e.g. `pikachu`).
  */
 export class Worktree extends Schema.Class<Worktree>("Worktree")({
   id: WorktreeId,
@@ -17,12 +28,42 @@ export class Worktree extends Schema.Class<Worktree>("Worktree")({
   branch: Schema.String,
   baseBranch: Schema.String,
   createdAt: Schema.DateFromString,
+  setupStatus: WorktreeSetupStatus,
+  setupOutput: Schema.String,
+  setupStartedAt: Schema.NullOr(Schema.DateFromString),
+  setupFinishedAt: Schema.NullOr(Schema.DateFromString),
+  pokemon: Schema.NullOr(PokemonSummary),
 }) {}
 
 export class WorktreeNotFoundError extends Schema.TaggedError<WorktreeNotFoundError>()(
   "WorktreeNotFoundError",
   { worktreeId: WorktreeId },
 ) {}
+
+/**
+ * Live setup events streamed while a worktree's setup script runs. `chunk`
+ * carries the FULL accumulated (already-truncated) output so the renderer can
+ * replace `setupOutput` wholesale; `status` carries each setupStatus
+ * transition + timestamps. The stream completes once setup reaches a terminal
+ * status (succeeded / failed / skipped).
+ */
+export const WorktreeSetupChunk = Schema.TaggedStruct("chunk", {
+  worktreeId: WorktreeId,
+  output: Schema.String,
+});
+
+export const WorktreeSetupStatusEvent = Schema.TaggedStruct("status", {
+  worktreeId: WorktreeId,
+  status: WorktreeSetupStatus,
+  setupStartedAt: Schema.NullOr(Schema.DateFromString),
+  setupFinishedAt: Schema.NullOr(Schema.DateFromString),
+});
+
+export const WorktreeSetupEvent = Schema.Union(
+  WorktreeSetupChunk,
+  WorktreeSetupStatusEvent,
+);
+export type WorktreeSetupEvent = typeof WorktreeSetupEvent.Type;
 
 export class WorktreeCreateError extends Schema.TaggedError<WorktreeCreateError>()(
   "WorktreeCreateError",
@@ -39,11 +80,17 @@ export class WorktreeDirtyError extends Schema.TaggedError<WorktreeDirtyError>()
   { worktreeId: WorktreeId },
 ) {}
 
+export class WorktreeSetupError extends Schema.TaggedError<WorktreeSetupError>()(
+  "WorktreeSetupError",
+  { worktreeId: WorktreeId, reason: Schema.String },
+) {}
+
 const WorktreeErrors = Schema.Union(
   WorktreeCreateError,
   WorktreeRemoveError,
   WorktreeNotFoundError,
   WorktreeDirtyError,
+  WorktreeSetupError,
 );
 
 export const WorktreeCreateRpc = Rpc.make("worktree.create", {
@@ -60,6 +107,35 @@ export const WorktreeListRpc = Rpc.make("worktree.list", {
 export const WorktreeGetRpc = Rpc.make("worktree.get", {
   payload: Schema.Struct({ worktreeId: WorktreeId }),
   success: Schema.NullOr(Worktree),
+});
+
+/**
+ * Subscribe to a worktree's live setup output + status. Mirrors `pty.output`:
+ * a long-lived stream the renderer drains while `setupStatus === "running"`.
+ * Seeds the current persisted snapshot on subscribe so a late subscriber
+ * (after a fast setup already finished) still sees the terminal state.
+ */
+export const WorktreeSetupStreamRpc = Rpc.make("worktree.setupStream", {
+  payload: Schema.Struct({ worktreeId: WorktreeId }),
+  success: WorktreeSetupEvent,
+  error: WorktreeNotFoundError,
+  stream: true,
+});
+
+export const WorktreeRerunSetupRpc = Rpc.make("worktree.rerunSetup", {
+  payload: Schema.Struct({ worktreeId: WorktreeId }),
+  success: Worktree,
+  error: WorktreeErrors,
+});
+
+export const WorktreeStartRunRpc = Rpc.make("worktree.startRun", {
+  payload: Schema.Struct({ worktreeId: WorktreeId }),
+  success: Schema.Struct({
+    cwd: Schema.String,
+    script: Schema.String,
+    env: Schema.Record({ key: Schema.String, value: Schema.String }),
+  }),
+  error: WorktreeErrors,
 });
 
 /**

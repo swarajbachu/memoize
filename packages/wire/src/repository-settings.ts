@@ -24,10 +24,28 @@ export class RepositorySettings extends Schema.Class<RepositorySettings>(
    */
   autoCreateWorktree: Schema.Boolean,
   /**
-   * Optional override for the worktree base dir. `null` means
-   * `<repoPath>/.memoize/repo-worktree/`.
+   * Optional override for the worktree base dir. `null` means the global
+   * default: `~/.memoize/<repo-name>-<projectId-short>/`.
    */
   worktreeBaseDir: Schema.NullOr(Schema.String),
+  /**
+   * Optional user-authored shell body to run before archiving a chat that is
+   * bound to a worktree. Empty/null means archive without cleanup.
+   */
+  archiveCleanupScript: Schema.NullOr(Schema.String),
+  /**
+   * When true, Memoize removes the chat's git worktree after a successful
+   * archive cleanup script. The branch is preserved and unarchive restores
+   * the checkout from the archived metadata.
+   */
+  archiveRemoveWorktree: Schema.Boolean,
+  setupScript: Schema.NullOr(Schema.String),
+  runScript: Schema.NullOr(Schema.String),
+  autoRunAfterSetup: Schema.Boolean,
+  environmentVariables: Schema.Record({
+    key: Schema.String,
+    value: Schema.String,
+  }),
 }) {}
 
 /**
@@ -41,6 +59,14 @@ export const RepositorySettingsPatch = Schema.Struct({
   defaultRuntimeMode: Schema.optional(Schema.NullOr(RuntimeMode)),
   autoCreateWorktree: Schema.optional(Schema.Boolean),
   worktreeBaseDir: Schema.optional(Schema.NullOr(Schema.String)),
+  archiveCleanupScript: Schema.optional(Schema.NullOr(Schema.String)),
+  archiveRemoveWorktree: Schema.optional(Schema.Boolean),
+  setupScript: Schema.optional(Schema.NullOr(Schema.String)),
+  runScript: Schema.optional(Schema.NullOr(Schema.String)),
+  autoRunAfterSetup: Schema.optional(Schema.Boolean),
+  environmentVariables: Schema.optional(
+    Schema.Record({ key: Schema.String, value: Schema.String }),
+  ),
 });
 export type RepositorySettingsPatch = typeof RepositorySettingsPatch.Type;
 

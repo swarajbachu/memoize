@@ -1,11 +1,12 @@
+import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  ArrowUpRight,
-  Check,
-  ChevronDown,
-  ChevronRight,
-  Info,
-  Search as SearchIcon,
-} from "lucide-react";
+  ArrowDown01Icon,
+  ArrowRight01Icon,
+  ArrowUpRight01Icon,
+  InformationCircleIcon,
+  Search01Icon,
+  Tick01Icon,
+} from "@hugeicons-pro/core-bulk-rounded";
 import {
   Fragment,
   useCallback,
@@ -37,11 +38,7 @@ import { useProvidersStore } from "~/store/providers";
 import { useSessionsStore } from "~/store/sessions";
 import { useSettingsStore } from "~/store/settings";
 import { ProviderIcon } from "./provider-icons";
-import {
-  Popover,
-  PopoverPrimitive,
-  PopoverTrigger,
-} from "./ui/popover";
+import { Popover, PopoverPrimitive, PopoverTrigger } from "./ui/popover";
 import {
   pushModelPickerEvent,
   readModelPickerEvents,
@@ -124,9 +121,7 @@ export function ModelPicker(props: ModelPickerProps) {
 
   const availability = useProvidersStore((s) => s.availability);
   const opencodeInventory = useOpencodeInventory((s) => s.inventory);
-  const ensureOpencodeInventory = useOpencodeInventory(
-    (s) => s.ensureLoaded,
-  );
+  const ensureOpencodeInventory = useOpencodeInventory((s) => s.ensureLoaded);
 
   const userMessageCount = useMessagesStore((s) => {
     if (isDefault) return 0;
@@ -197,14 +192,14 @@ export function ModelPicker(props: ModelPickerProps) {
   }, [availability]);
 
   const pickableProviders = useMemo<ReadonlyArray<ProviderId>>(() => {
-    return (Object.keys(MODELS_BY_PROVIDER) as ReadonlyArray<ProviderId>).filter(
-      (pid) => {
-        if (pid === providerId) return true;
-        if (providerEnabled[pid] === false) return false;
-        const a = availabilityById.get(pid);
-        return a?.status !== "error";
-      },
-    );
+    return (
+      Object.keys(MODELS_BY_PROVIDER) as ReadonlyArray<ProviderId>
+    ).filter((pid) => {
+      if (pid === providerId) return true;
+      if (providerEnabled[pid] === false) return false;
+      const a = availabilityById.get(pid);
+      return a?.status !== "error";
+    });
   }, [providerId, providerEnabled, availabilityById]);
 
   const allModels = useMemo<ModelPickerEntry[]>(() => {
@@ -224,7 +219,7 @@ export function ModelPicker(props: ModelPickerProps) {
         // Only surface a pill when the default is the larger window —
         // 200k-by-default rows would be noise.
         const contextWindowLabel =
-          ctxDefault === "1m" ? ctxLabel ?? "1M" : undefined;
+          ctxDefault === "1m" ? (ctxLabel ?? "1M") : undefined;
         out.push({
           providerId: pid,
           modelId: m.id,
@@ -252,27 +247,25 @@ export function ModelPicker(props: ModelPickerProps) {
       if (scope !== "all" && m.providerId !== scope) return false;
       if (q === "") return true;
       return (
-        m.label.toLowerCase().includes(q) ||
-        m.modelId.toLowerCase().includes(q)
+        m.label.toLowerCase().includes(q) || m.modelId.toLowerCase().includes(q)
       );
     });
   }, [allModels, scope, query]);
 
-  const scopedRecents = useMemo<Array<ModelPickerEntry & { count: number }>>(
-    () => {
-      const top: ModelPickerRecent[] = topRecents(events, scope, 4);
-      const out: Array<ModelPickerEntry & { count: number }> = [];
-      for (const r of top) {
-        const match = allModels.find(
-          (m) => m.providerId === r.providerId && m.modelId === r.modelId,
-        );
-        if (match === undefined) continue;
-        out.push({ ...match, count: r.count });
-      }
-      return out;
-    },
-    [events, scope, allModels],
-  );
+  const scopedRecents = useMemo<
+    Array<ModelPickerEntry & { count: number }>
+  >(() => {
+    const top: ModelPickerRecent[] = topRecents(events, scope, 4);
+    const out: Array<ModelPickerEntry & { count: number }> = [];
+    for (const r of top) {
+      const match = allModels.find(
+        (m) => m.providerId === r.providerId && m.modelId === r.modelId,
+      );
+      if (match === undefined) continue;
+      out.push({ ...match, count: r.count });
+    }
+    return out;
+  }, [events, scope, allModels]);
 
   const accordionGroups = useMemo(() => {
     if (scope !== "all" || query.trim() !== "") return [];
@@ -322,7 +315,9 @@ export function ModelPicker(props: ModelPickerProps) {
     setPicking(true);
     try {
       if (isCross && !isFresh && chatId !== undefined) {
-        const newId = await createSession(chatId, pid, modelId, { runtimeMode });
+        const newId = await createSession(chatId, pid, modelId, {
+          runtimeMode,
+        });
         if (newId === null) {
           const reason =
             useSessionsStore.getState().error ??
@@ -373,9 +368,7 @@ export function ModelPicker(props: ModelPickerProps) {
       });
     }
     if (inAccordionView) {
-      const group = accordionGroups.find(
-        (g) => g.providerId === expandedGroup,
-      );
+      const group = accordionGroups.find((g) => g.providerId === expandedGroup);
       if (group !== undefined) out.push(...group.models);
     } else {
       out.push(...flatMatches);
@@ -434,7 +427,7 @@ export function ModelPicker(props: ModelPickerProps) {
       >
         <ProviderIcon providerId={providerId} className="size-3" />
         <span>{currentLabel}</span>
-        <ChevronDown className="size-3 opacity-60" />
+        <HugeiconsIcon icon={ArrowDown01Icon} className="size-3 opacity-60" />
       </PopoverTrigger>
       <PopoverPrimitive.Portal>
         <PopoverPrimitive.Positioner
@@ -445,7 +438,7 @@ export function ModelPicker(props: ModelPickerProps) {
         >
           <PopoverPrimitive.Popup
             ref={popupRef}
-            className="flex max-h-[480px] w-[320px] flex-col overflow-hidden rounded-2xl border bg-popover/85 text-popover-foreground shadow-lg/10 outline-none backdrop-blur-md backdrop-saturate-150"
+            className="flex max-h-[480px] w-[320px] flex-col overflow-hidden rounded-lg border border-border/70 bg-popover text-popover-foreground shadow-lg/10 outline-none"
           >
             <div className="flex flex-col gap-1.5 p-2.5">
               <SearchField
@@ -546,9 +539,15 @@ export function ModelPicker(props: ModelPickerProps) {
                         >
                           <span className="flex size-3 items-center justify-center text-muted-foreground">
                             {expanded ? (
-                              <ChevronDown className="size-3" />
+                              <HugeiconsIcon
+                                icon={ArrowDown01Icon}
+                                className="size-3"
+                              />
                             ) : (
-                              <ChevronRight className="size-3" />
+                              <HugeiconsIcon
+                                icon={ArrowRight01Icon}
+                                className="size-3"
+                              />
                             )}
                           </span>
                           <ProviderIcon
@@ -631,7 +630,10 @@ function SearchField({
       : `in ${PROVIDER_CHIP_LABEL[scope]}…`;
   return (
     <div className="flex items-center gap-2 rounded-lg border bg-background px-2.5 py-1.5 focus-within:border-foreground/60 focus-within:ring-2 focus-within:ring-primary/30">
-      <SearchIcon className="size-3.5 text-muted-foreground" />
+      <HugeiconsIcon
+        icon={Search01Icon}
+        className="size-3.5 text-muted-foreground"
+      />
       <input
         type="text"
         value={value}
@@ -744,7 +746,11 @@ function ModelRow({
           className="flex items-center gap-0.5 rounded-md bg-gradient-to-r from-rose-400 via-amber-300 via-emerald-400 via-sky-400 to-violet-400 px-1.5 py-px text-[10px] font-medium text-white shadow-sm/10"
         >
           Ultracode
-          <Info className="size-2.5 opacity-80" aria-hidden />
+          <HugeiconsIcon
+            icon={InformationCircleIcon}
+            className="size-2.5 opacity-80"
+            aria-hidden
+          />
         </span>
       )}
       {entry.contextWindowLabel !== undefined && (
@@ -757,7 +763,8 @@ function ModelRow({
       )}
       <span className="flex-1" />
       {opensNewTab && (
-        <ArrowUpRight
+        <HugeiconsIcon
+          icon={ArrowUpRight01Icon}
           className="size-3 text-muted-foreground/70"
           aria-label="Open in new tab"
         />

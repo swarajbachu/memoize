@@ -1,26 +1,26 @@
-import { Effect, Fiber, Stream } from "effect";
+import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  Archive,
-  ArchiveRestore,
-  ChevronDown,
-  ChevronRight,
-  Eye,
-  EyeOff,
-  MoreHorizontal,
-  Pencil,
-  Plus,
-  Settings,
-  Shield,
-  SquarePen,
-  Trash2,
-} from "lucide-react";
-
+  Analytics01Icon,
+  ArrowDown01Icon,
+  ArrowRight01Icon,
+  Delete02Icon,
+  Edit01Icon,
+  HelpCircleIcon,
+  PencilIcon,
+  Settings01Icon,
+  TaskDone01Icon,
+} from "@hugeicons-pro/core-bulk-rounded";
+import {
+  ArchiveArrowDownIcon,
+  ArchiveArrowUpIcon,
+  ArchiveIcon,
+} from "@hugeicons-pro/core-solid-rounded";
+import { Effect, Fiber, Stream } from "effect";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   type Chat,
   type ChatId,
-  defaultModelFor,
   type FolderId,
   type GitOriginInfo,
   type ProviderId,
@@ -28,24 +28,31 @@ import {
 } from "@memoize/wire";
 
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
-import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
+import { Menu, MenuItem, MenuPopup } from "~/components/ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
+import {
+  deriveChatAttentionState,
+  type ChatAttentionState,
+  mergeChatAttentionStates,
+} from "~/lib/chat-attention-state";
 import { cn, formatCompactNumber } from "~/lib/utils";
+import { noteSessionStatusForCompletionSound } from "../lib/completion-sounds.ts";
 import { formatShortcut } from "../lib/shortcuts.ts";
 import { getRpcClient } from "../lib/rpc-client.ts";
-import { useChatsStore } from "../store/chats.ts";
+import { isChatUnread, useChatsStore } from "../store/chats.ts";
+import { gitDiffStatKey, useGitDiffStatStore } from "../store/git-diff-stat.ts";
 import { useMessagesStore } from "../store/messages.ts";
 import { prStateKey, usePrStateStore } from "../store/pr-state.ts";
-import { useProvidersStore } from "../store/providers.ts";
-import { useRepositorySettingsStore } from "../store/repository-settings.ts";
 import { useSessionsStore } from "../store/sessions.ts";
-import { useSettingsStore } from "../store/settings.ts";
-import { useWorktreesStore } from "../store/worktrees.ts";
+import {
+  useSidebarMessageStatusStore,
+  useSidebarMessageStatusSubscriptions,
+} from "../store/sidebar-message-status.ts";
 import { useUiStore } from "../store/ui.ts";
 import { useWorkspaceStore } from "../store/workspace.ts";
 import { BranchIcon, type BranchState } from "./branch-icon.tsx";
-import { PermissionsInspector } from "./permissions-inspector.tsx";
-import { Beacon, Diffusion } from "./ui/loaders";
+import { ProjectAddMenu } from "./project-add-menu.tsx";
+import { Spinner } from "./ui/spinner";
 
 const initialsOf = (name: string): string => {
   const parts = name.split(/[-_.\s]+/).filter(Boolean);
@@ -73,6 +80,16 @@ const formatRelative = (iso: Date): string => {
   return `${day}d ago`;
 };
 
+/** Resolve the chat that owns a session from the renderer session cache. */
+const chatIdForSession = (sessionId: SessionId): ChatId | null => {
+  const buckets = useSessionsStore.getState().sessionsByProject;
+  for (const list of Object.values(buckets)) {
+    const row = list.find((r) => r.id === sessionId);
+    if (row !== undefined) return row.chatId;
+  }
+  return null;
+};
+
 /**
  * Keep a live `session.streamStatus` subscription per known session so the
  * sidebar's busy indicators stay accurate even when a project is collapsed
@@ -82,9 +99,7 @@ const formatRelative = (iso: Date): string => {
  * fiber writes into `useMessagesStore.runningBySession[sessionId]`, which
  * every consumer already reads from.
  */
-function useSessionRunningSubscriptions(
-  sessionIds: ReadonlyArray<SessionId>,
-) {
+function useSessionRunningSubscriptions(sessionIds: ReadonlyArray<SessionId>) {
   // Stable ref-tracked fiber map. We diff incoming `sessionIds` against the
   // tracked set and only start/stop the deltas. Critically, an existing
   // session's fiber is NEVER torn down just because another session is
@@ -92,9 +107,9 @@ function useSessionRunningSubscriptions(
   // `streamStatus` subscribe whose initial event (read from the DB at
   // subscribe time) would clobber the live `true` flag with whatever's
   // persisted, making the previous session's loader disappear.
-  const fibersRef = useRef<Map<SessionId, Fiber.RuntimeFiber<unknown, unknown>>>(
-    new Map(),
-  );
+  const fibersRef = useRef<
+    Map<SessionId, Fiber.RuntimeFiber<unknown, unknown>>
+  >(new Map());
   const idsKey = sessionIds.join(",");
 
   useEffect(() => {
@@ -124,12 +139,40 @@ function useSessionRunningSubscriptions(
               client.session.streamStatus({ sessionId: id }),
               (event) =>
                 Effect.sync(() => {
-                  useMessagesStore.setState((s) => ({
-                    runningBySession: {
-                      ...s.runningBySession,
-                      [id]: event.status === "running",
-                    },
-                  }));
+                  // Capture the prior running flag BEFORE the status update so
+                  // we can detect the running→idle edge for unread tracking.
+                  const wasRunning =
+                    useMessagesStore.getState().runningBySession[id] === true;
+                  const isRunning = event.status === "running";
+                  noteSessionStatusForCompletionSound(id, event.status);
+                  useMessagesStore
+                    .getState()
+                    .observeSessionStatus(id, event.status);
+                  // Mirror the full status into the session row so the
+                  // chat surface can branch on `booting` (loading panel)
+                  // vs `idle` (composer ready) without a second stream.
+                  useSessionsStore
+                    .getState()
+                    .setSessionStatus(id, event.status);
+                  // running→idle = the agent just produced new output. Light
+                  // the owning chat unread — unless the user is looking at it,
+                  // in which case stamp it read instead. This is the live
+                  // signal that covers every hydrated session, even in
+                  // collapsed/background chats.
+                  if (wasRunning && !isRunning) {
+                    const chatId = chatIdForSession(id);
+                    if (chatId !== null) {
+                      const chats = useChatsStore.getState();
+                      if (chats.selectedChatId === chatId) {
+                        void chats.markRead(chatId);
+                      } else {
+                        chats.noteChatActivity(chatId);
+                      }
+                    }
+                  }
+                  if (event.status === "idle" || event.status === "closed") {
+                    useMessagesStore.getState().flushQueue(id);
+                  }
                 }),
             ),
           );
@@ -165,7 +208,6 @@ export function ProjectsSidebar() {
   const error = useWorkspaceStore((s) => s.error);
   const loading = useWorkspaceStore((s) => s.loading);
   const load = useWorkspaceStore((s) => s.load);
-  const add = useWorkspaceStore((s) => s.add);
   const remove = useWorkspaceStore((s) => s.remove);
   const select = useWorkspaceStore((s) => s.select);
 
@@ -174,12 +216,8 @@ export function ProjectsSidebar() {
   const sessionsError = useSessionsStore((s) => s.error);
 
   const chatsByProject = useChatsStore((s) => s.chatsByProject);
-  const showArchivedByProject = useChatsStore(
-    (s) => s.showArchivedByProject,
-  );
   const chatsError = useChatsStore((s) => s.error);
   const hydrateChats = useChatsStore((s) => s.hydrate);
-  const toggleShowArchived = useChatsStore((s) => s.toggleShowArchived);
 
   const [origins, setOrigins] = useState<Record<string, GitOriginInfo | null>>(
     {},
@@ -216,6 +254,17 @@ export function ProjectsSidebar() {
     hydrateChats,
     hydrateSessions,
   ]);
+
+  // Eagerly hydrate the (lightweight) chat list for EVERY project, regardless
+  // of expansion. This is what lets read/unread — and the cross-project "Next
+  // unread" button — see chats in collapsed/unvisited projects on startup.
+  // Sessions stay lazy (above); the live unread signal only needs them for
+  // projects the user actually opens.
+  useEffect(() => {
+    for (const folder of folders) {
+      if (!(folder.id in chatsByProject)) void hydrateChats(folder.id);
+    }
+  }, [folders, chatsByProject, hydrateChats]);
 
   // PR state is keyed per-session by `(folderId, worktreeId)` because each
   // worktree has its own branch and therefore its own PR. Hydration happens
@@ -263,8 +312,8 @@ export function ProjectsSidebar() {
     return ids;
   }, [folders, sessionsByProject]);
   useSessionRunningSubscriptions(allSessionIds);
+  useSidebarMessageStatusSubscriptions(allSessionIds);
 
-  const onAddProject = () => void add();
   const onToggleExpanded = (id: FolderId) =>
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
 
@@ -272,26 +321,7 @@ export function ProjectsSidebar() {
     <aside className="flex h-full min-h-0 w-full flex-col backdrop-blur-3xl text-sidebar-foreground">
       <div className="flex items-center justify-between px-3 py-2 text-xs text-muted-foreground">
         <span>Projects</span>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                onClick={onAddProject}
-                className="rounded p-1 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                aria-label="Add project"
-              >
-                <Plus className="size-3.5" />
-              </button>
-            }
-          />
-          <TooltipPopup>
-            <TooltipShortcut
-              label="Add project"
-              shortcut={formatShortcut("open-project")}
-            />
-          </TooltipPopup>
-        </Tooltip>
+        <ProjectAddMenu />
       </div>
 
       {(error ?? chatsError ?? sessionsError) !== null && (
@@ -316,11 +346,9 @@ export function ProjectsSidebar() {
             isExpanded={expanded[folder.id] === true}
             chats={chatsByProject[folder.id] ?? []}
             projectSessions={sessionsByProject[folder.id] ?? []}
-            showArchived={showArchivedByProject[folder.id] === true}
             onSelect={() => void select(folder.id)}
             onToggleExpanded={() => onToggleExpanded(folder.id)}
             onRemove={() => void remove(folder.id)}
-            onToggleShowArchived={() => toggleShowArchived(folder.id)}
           />
         ))}
       </ul>
@@ -331,9 +359,50 @@ export function ProjectsSidebar() {
 
 function SidebarFooter() {
   const setView = useUiStore((s) => s.setView);
+  const setSettingsSection = useUiStore((s) => s.setSettingsSection);
+  const openUsage = useUiStore((s) => s.openUsage);
+  const activeMainTab = useUiStore((s) => s.activeMainTab);
+  const usageScope = useUiStore((s) => s.usageScope);
   const view = useUiStore((s) => s.view);
+  const usageActive = view === "chat" && activeMainTab === "usage" && usageScope === "global";
   return (
-    <div className="border-t border-sidebar-border/40 px-2 py-1.5">
+    <div className="flex flex-col gap-0.5 border-t border-sidebar-border/40 px-2 py-1.5">
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              onClick={() => openUsage("global")}
+              className={cn(
+                "flex w-full items-center gap-2 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
+                usageActive && "bg-sidebar-accent/60 text-sidebar-accent-foreground",
+              )}
+            >
+              <HugeiconsIcon icon={Analytics01Icon} className="size-3.5" />
+              <span>Usage</span>
+            </button>
+          }
+        />
+        <TooltipPopup side="top">Token usage across all projects</TooltipPopup>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              onClick={() => {
+                setSettingsSection({ kind: "pokedex" });
+                setView("settings");
+              }}
+              className="flex w-full items-center gap-2 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
+            >
+              <HugeiconsIcon icon={TaskDone01Icon} className="size-3.5" />
+              <span>Pokedex</span>
+            </button>
+          }
+        />
+        <TooltipPopup side="top">Open Pokedex</TooltipPopup>
+      </Tooltip>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -346,7 +415,7 @@ function SidebarFooter() {
                   "bg-sidebar-accent/60 text-sidebar-accent-foreground",
               )}
             >
-              <Settings className="size-3.5" />
+              <HugeiconsIcon icon={Settings01Icon} className="size-3.5" />
               <span>Settings</span>
             </button>
           }
@@ -370,11 +439,9 @@ function ProjectGroup({
   isExpanded,
   chats,
   projectSessions,
-  showArchived,
   onSelect,
   onToggleExpanded,
   onRemove,
-  onToggleShowArchived,
 }: {
   id: FolderId;
   name: string;
@@ -387,39 +454,78 @@ function ProjectGroup({
     readonly chatId: ChatId;
     readonly archivedAt: Date | null;
   }>;
-  showArchived: boolean;
   onSelect: () => void;
   onToggleExpanded: () => void;
   onRemove: () => void;
-  onToggleShowArchived: () => void;
 }) {
   const displayName = origin?.repo ?? name;
   const avatarUrl = avatarUrlFor(origin);
   const fallbackText = initialsOf(origin?.owner ?? name);
-  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const setView = useUiStore((s) => s.setView);
+  const setSettingsSection = useUiStore((s) => s.setSettingsSection);
+  const setActiveMainTab = useUiStore((s) => s.setActiveMainTab);
+  const openUsage = useUiStore((s) => s.openUsage);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const anchorRef = useRef<{ getBoundingClientRect: () => DOMRect } | null>(
+    null,
+  );
+
+  const openRepositorySettings = () => {
+    setSettingsSection({ kind: "repository", projectId: id });
+    setView("settings");
+  };
+
+  const openArchives = () => {
+    onSelect();
+    setView("chat");
+    setActiveMainTab("archives");
+  };
+
+  const openProjectUsage = () => {
+    onSelect();
+    openUsage("project");
+  };
+
+  const onContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = new DOMRect(e.clientX, e.clientY, 0, 0);
+    anchorRef.current = { getBoundingClientRect: () => rect };
+    setMenuOpen(true);
+  };
 
   const visibleChats = useMemo(
-    () =>
-      showArchived
-        ? chats
-        : chats.filter((c) => c.archivedAt === null),
-    [chats, showArchived],
+    () => chats.filter((c) => c.archivedAt === null),
+    [chats],
   );
-  const archivedCount = chats.filter((c) => c.archivedAt !== null).length;
 
-  // Surface a busy hint on the collapsed project header when any session
-  // inside any of this project's live chats is running.
+  // Surface the highest-priority attention hint on the collapsed project
+  // header when any session inside this project needs attention.
   const liveSessionIds = useMemo(
-    () =>
-      projectSessions.filter((s) => s.archivedAt === null).map((s) => s.id),
+    () => projectSessions.filter((s) => s.archivedAt === null).map((s) => s.id),
     [projectSessions],
   );
-  const anyRunning = useMessagesStore((s) =>
-    liveSessionIds.some((id) => s.runningBySession[id] === true),
+  const headerRunning = useMessagesStore((s) =>
+    mergeChatAttentionStates(
+      liveSessionIds.map((id) =>
+        s.runningBySession[id] === true ? "running" : "idle",
+      ),
+    ),
   );
-  const showHeaderBusy = anyRunning && !isExpanded;
+  const headerMessageAttention = useSidebarMessageStatusStore((s) =>
+    mergeChatAttentionStates(
+      liveSessionIds.map((id) =>
+        deriveChatAttentionState(s.messagesBySession[id] ?? [], false),
+      ),
+    ),
+  );
+  const headerAttention = mergeChatAttentionStates([
+    headerRunning,
+    headerMessageAttention,
+  ]);
+  const showHeaderAttention = headerAttention !== "idle" && !isExpanded;
 
-  const Chevron = isExpanded ? ChevronDown : ChevronRight;
+  const chevron = isExpanded ? ArrowDown01Icon : ArrowRight01Icon;
 
   return (
     <Fragment>
@@ -430,6 +536,7 @@ function ProjectGroup({
         <div
           role="button"
           tabIndex={0}
+          onContextMenu={onContextMenu}
           onClick={() => {
             onSelect();
             onToggleExpanded();
@@ -451,7 +558,7 @@ function ProjectGroup({
               className={cn(
                 "col-start-1 row-start-1 size-5 rounded transition-opacity duration-150 ease-out",
                 "group-hover:opacity-0 motion-reduce:transition-none",
-                showHeaderBusy && "opacity-0",
+                showHeaderAttention && "opacity-0",
               )}
             >
               {avatarUrl !== null && (
@@ -461,24 +568,18 @@ function ProjectGroup({
                 {fallbackText}
               </AvatarFallback>
             </Avatar>
-            {showHeaderBusy && (
-              <span
+            {showHeaderAttention && (
+              <ChatAttentionIcon
+                state={headerAttention}
                 className={cn(
-                  "col-start-1 row-start-1 inline-flex size-3.5 items-center justify-center text-foreground transition-opacity duration-150 ease-out",
+                  "col-start-1 row-start-1 transition-opacity duration-150 ease-out",
                   "group-hover:opacity-0 motion-reduce:transition-none",
                 )}
-                aria-label="Agent is working in a session"
-                title="Agent is working in a session"
-              >
-                <Beacon
-                  dotSize={3}
-                  cellPadding={0.75}
-                  speed={1.8}
-                  color="currentColor"
-                />
-              </span>
+                context="project"
+              />
             )}
-            <Chevron
+            <HugeiconsIcon
+              icon={chevron}
               aria-hidden="true"
               className={cn(
                 "col-start-1 row-start-1 size-3.5 text-muted-foreground opacity-0 transition-opacity duration-150 ease-out",
@@ -492,22 +593,29 @@ function ProjectGroup({
           >
             {displayName}
           </span>
-          <ProjectActionsMenu
-            displayName={displayName}
-            showArchived={showArchived}
-            archivedCount={archivedCount}
-            onOpenPermissions={() => setInspectorOpen(true)}
-            onToggleShowArchived={onToggleShowArchived}
-            onRemove={onRemove}
-          />
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              openRepositorySettings();
+            }}
+            className="rounded p-0.5 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            aria-label={`Settings for ${displayName}`}
+            title="Repository settings"
+          >
+            <HugeiconsIcon icon={Settings01Icon} className="size-3.5" />
+          </button>
           <NewChatButton projectId={id} />
         </div>
 
-        <PermissionsInspector
-          open={inspectorOpen}
-          onOpenChange={setInspectorOpen}
-          projectId={id}
-          projectName={displayName}
+        <ProjectContextMenu
+          open={menuOpen}
+          anchor={anchorRef.current}
+          onOpenSettings={openRepositorySettings}
+          onOpenArchives={openArchives}
+          onOpenUsage={openProjectUsage}
+          onRemove={onRemove}
+          onOpenChange={setMenuOpen}
         />
       </li>
 
@@ -521,78 +629,63 @@ function ProjectGroup({
           {visibleChats.map((chat) => (
             <ChatRow key={chat.id} chat={chat} />
           ))}
-          {archivedCount > 0 && (
-            <li>
-              <button
-                type="button"
-                onClick={onToggleShowArchived}
-                className="ml-12 rounded px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
-              >
-                {showArchived
-                  ? `Hide archived (${archivedCount})`
-                  : `Show archived (${archivedCount})`}
-              </button>
-            </li>
-          )}
         </>
       )}
     </Fragment>
   );
 }
 
-function ProjectActionsMenu({
-  displayName,
-  showArchived,
-  archivedCount,
-  onOpenPermissions,
-  onToggleShowArchived,
+function ProjectContextMenu({
+  open,
+  anchor,
+  onOpenSettings,
+  onOpenArchives,
+  onOpenUsage,
   onRemove,
+  onOpenChange,
 }: {
-  displayName: string;
-  showArchived: boolean;
-  archivedCount: number;
-  onOpenPermissions: () => void;
-  onToggleShowArchived: () => void;
+  open: boolean;
+  anchor: { getBoundingClientRect: () => DOMRect } | null;
+  onOpenSettings: () => void;
+  onOpenArchives: () => void;
+  onOpenUsage: () => void;
   onRemove: () => void;
+  onOpenChange: (open: boolean) => void;
 }) {
   return (
-    <Menu>
-      <MenuTrigger
-        onClick={(e) => e.stopPropagation()}
-        className="rounded p-0.5 text-muted-foreground opacity-0 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group-hover:opacity-100 data-[popup-open]:opacity-100"
-        aria-label={`Actions for ${displayName}`}
-        title="More actions"
+    <Menu open={open} onOpenChange={onOpenChange}>
+      <MenuPopup
+        anchor={anchor ?? undefined}
+        align="start"
+        side="bottom"
+        className="min-w-[180px]"
       >
-        <MoreHorizontal className="size-3.5" />
-      </MenuTrigger>
-      <MenuPopup align="end" className="min-w-[180px]">
         <MenuItem
-          onClick={onOpenPermissions}
+          onClick={onOpenSettings}
           className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
         >
-          <Shield className="size-3.5" />
-          Permissions
+          <HugeiconsIcon icon={Settings01Icon} className="size-3.5" />
+          Settings
         </MenuItem>
-        {archivedCount > 0 && (
-          <MenuItem
-            onClick={onToggleShowArchived}
-            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
-          >
-            {showArchived ? (
-              <EyeOff className="size-3.5" />
-            ) : (
-              <Eye className="size-3.5" />
-            )}
-            {showArchived
-              ? `Hide archived (${archivedCount})`
-              : `Show archived (${archivedCount})`}
-          </MenuItem>
-        )}
+        <MenuItem
+          onClick={onOpenArchives}
+          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
+        >
+          <HugeiconsIcon icon={ArchiveIcon} className="size-3.5" />
+          Archived chats
+        </MenuItem>
+        <MenuItem
+          onClick={onOpenUsage}
+          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
+        >
+          <HugeiconsIcon icon={Analytics01Icon} className="size-3.5" />
+          Usage
+        </MenuItem>
         <MenuItem
           onClick={onRemove}
           className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-red-300 hover:bg-red-500/20"
         >
-          <Trash2 className="size-3.5" />
+          <HugeiconsIcon icon={Delete02Icon} className="size-3.5" />
           Remove project
         </MenuItem>
       </MenuPopup>
@@ -612,45 +705,30 @@ const LOGIN_HINT: Record<ProviderId, string> = {
 };
 
 /**
- * Spawn a new chat (sidebar container) plus its initial session in the
- * given project. Worktree is auto-created when the per-repo or global
- * setting says so. Reads from stores directly so callers (the sidebar
- * button + the Cmd+N menu shortcut) don't need prop drilling.
+ * Start a brand-new chat in the given project. Creation is deferred to the
+ * first message: clicking "New chat" must NOT branch a worktree or spin up a
+ * session — it just clears the active selection so `MainShell` falls through
+ * to `<ChatLanding/>` ("What should we build in <project>?"). The landing's
+ * `submit()` is the sole creation path (worktree → chat → queue). Reads from
+ * stores directly so callers (the sidebar button + the Cmd+N menu shortcut)
+ * don't need prop drilling.
  */
-export async function createNewSession(projectId: FolderId): Promise<void> {
-  await useProvidersStore.getState().refresh();
-  const settings = useSettingsStore.getState();
-  const defaultProviderId = settings.defaultProviderId;
-  const model =
-    settings.defaultModelByProvider[defaultProviderId] ??
-    defaultModelFor(defaultProviderId);
-  const repoSettings = await useRepositorySettingsStore
-    .getState()
-    .refresh(projectId);
-  const shouldAutoCreate =
-    repoSettings?.autoCreateWorktree === true ||
-    settings.defaultAutoCreateWorktree === true;
-  let worktreeId = null;
-  if (shouldAutoCreate) {
-    const wt = await useWorktreesStore.getState().create(projectId);
-    if (wt !== null) worktreeId = wt.id;
+export function createNewSession(projectId: FolderId): void {
+  // Select the project first (synchronous: `workspace.select` sets
+  // `selectedFolderId` before awaiting persistence), then clear the chat +
+  // session selection for it. `chats.select(null)` cascades into
+  // `sessions.select(null)`, so both the tab strip and the chat surface fall
+  // back to the empty landing for this project.
+  if (useWorkspaceStore.getState().selectedFolderId !== projectId) {
+    void useWorkspaceStore.getState().select(projectId);
   }
-  void useChatsStore
-    .getState()
-    .create(projectId, defaultProviderId, model, {
-      runtimeMode: settings.defaultRuntimeMode,
-      worktreeId,
-    });
+  useChatsStore.getState().select(null);
 }
 
 function NewChatButton({ projectId }: { projectId: FolderId }) {
-  const creating = useChatsStore(
-    (s) => s.creatingByProject[projectId] === true,
-  );
   const onClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (creating) return;
-    void createNewSession(projectId);
+    createNewSession(projectId);
   };
 
   return (
@@ -660,25 +738,15 @@ function NewChatButton({ projectId }: { projectId: FolderId }) {
           <button
             type="button"
             onClick={onClick}
-            disabled={creating}
-            className="rounded p-0.5 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground disabled:cursor-default disabled:hover:bg-transparent"
+            className="rounded p-0.5 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
             aria-label="New chat"
           >
-            {creating ? (
-              <span className="inline-flex size-3.5 items-center justify-center">
-                <Diffusion dotSize={3} cellPadding={1} />
-              </span>
-            ) : (
-              <SquarePen className="size-3.5" />
-            )}
+            <HugeiconsIcon icon={Edit01Icon} className="size-3.5" />
           </button>
         }
       />
       <TooltipPopup>
-        <TooltipShortcut
-          label={creating ? "Creating chat…" : "New chat"}
-          shortcut={creating ? "" : formatShortcut("new-chat")}
-        />
+        <TooltipShortcut label="New chat" shortcut={formatShortcut("new-chat")} />
       </TooltipPopup>
     </Tooltip>
   );
@@ -726,25 +794,45 @@ function ChatRow({ chat }: { chat: Chat }) {
     void hydratePrState(chat.projectId, chat.worktreeId);
   }, [hydratePrState, chat.projectId, chat.worktreeId]);
 
+  // Per-branch diff stats (additions/deletions vs base), shown even when no
+  // PR exists yet — so a working branch surfaces its size in the sidebar.
+  const diffStat = useGitDiffStatStore(
+    (s) => s.byKey[gitDiffStatKey(chat.projectId, chat.worktreeId)] ?? null,
+  );
+  const hydrateDiffStat = useGitDiffStatStore((s) => s.hydrate);
+  useEffect(() => {
+    void hydrateDiffStat(chat.projectId, chat.worktreeId);
+  }, [hydrateDiffStat, chat.projectId, chat.worktreeId]);
+
   // Ids of this chat's non-archived sessions — so the sidebar busy
   // indicator reflects ANY tab being active, not just the currently
   // selected one.
   const sessionIds = useMemo(
     () =>
       (sessionsByProject[chat.projectId] ?? [])
-        .filter(
-          (row) => row.chatId === chat.id && row.archivedAt === null,
-        )
+        .filter((row) => row.chatId === chat.id && row.archivedAt === null)
         .map((row) => row.id),
     [sessionsByProject, chat.projectId, chat.id],
   );
 
-  const isRunning = useMessagesStore((s) => {
-    for (const id of sessionIds) {
-      if (s.runningBySession[id] === true) return true;
-    }
-    return false;
-  });
+  const runningAttention = useMessagesStore((s) =>
+    mergeChatAttentionStates(
+      sessionIds.map((id) =>
+        s.runningBySession[id] === true ? "running" : "idle",
+      ),
+    ),
+  );
+  const messageAttention = useSidebarMessageStatusStore((s) =>
+    mergeChatAttentionStates(
+      sessionIds.map((id) =>
+        deriveChatAttentionState(s.messagesBySession[id] ?? [], false),
+      ),
+    ),
+  );
+  const attentionState = mergeChatAttentionStates([
+    runningAttention,
+    messageAttention,
+  ]);
 
   // Highlight this row when its own chat is selected, OR when the active
   // session (any tab inside this chat) lives in it. Covers the transient
@@ -755,20 +843,33 @@ function ChatRow({ chat }: { chat: Chat }) {
   }, [selectedSessionId, sessionIds]);
   const isSelected = selectedChatId === chat.id || sessionBelongsToChat;
   const isArchived = chat.archivedAt !== null;
+  // Unread = new activity the user hasn't seen. Never on the selected row.
+  const isUnread = !isSelected && isChatUnread(chat, selectedChatId);
 
-  const branchState: BranchState =
-    prInfo === null
+  const branchState: BranchState = isArchived
+    ? "archived"
+    : prInfo === null || prInfo.state === "none"
       ? "default"
-      : prInfo.state === "open"
-        ? "pr-open"
-        : prInfo.state === "merged" || prInfo.state === "closed"
+      : prInfo.state === "merged"
+        ? "pr-merged"
+        : prInfo.state === "closed"
           ? "pr-closed"
-          : "default";
-  const showDiff =
-    prInfo !== null &&
-    (prInfo.state === "open" ||
-      prInfo.state === "merged" ||
-      prInfo.state === "closed");
+          : // open PR — reflect CI / conflict status
+            prInfo.checks === "failure" || prInfo.mergeable === "conflicting"
+            ? "pr-failing"
+            : prInfo.checks === "pending"
+              ? "pr-pending"
+              : "pr-open";
+
+  // Prefer the live branch diff (works without a PR); fall back to the PR's
+  // own counts so merged/closed branches still show their size.
+  const stats =
+    diffStat !== null && (diffStat.additions > 0 || diffStat.deletions > 0)
+      ? diffStat
+      : prInfo !== null && (prInfo.additions > 0 || prInfo.deletions > 0)
+        ? { additions: prInfo.additions, deletions: prInfo.deletions }
+        : null;
+  const showDiff = stats !== null;
 
   const onRename = () => {
     const next = window.prompt("Rename chat", chat.title);
@@ -798,7 +899,7 @@ function ChatRow({ chat }: { chat: Chat }) {
     setMenuOpen(true);
   };
 
-  const PrimaryActionIcon = isArchived ? ArchiveRestore : Archive;
+  const primaryActionIcon = isArchived ? ArchiveArrowUpIcon : ArchiveArrowDownIcon;
   const primaryActionLabel = isArchived ? "Unarchive" : "Archive";
 
   return (
@@ -820,26 +921,24 @@ function ChatRow({ chat }: { chat: Chat }) {
           !isSelected &&
             isArchived &&
             "text-muted-foreground hover:bg-sidebar-accent/40",
-          !isSelected && !isArchived && "hover:bg-sidebar-accent/40",
+          // Read rows sit dim; unread rows brighten + bold so new activity pops.
+          !isSelected &&
+            !isArchived &&
+            !isUnread &&
+            "text-muted-foreground hover:bg-sidebar-accent/40",
+          !isSelected &&
+            !isArchived &&
+            isUnread &&
+            "font-bold text-white hover:bg-sidebar-accent/40",
         )}
         title={chat.title}
       >
-        {isRunning ? (
-          <span
-            className={cn(
-              "ml-3 inline-flex size-3.5 shrink-0 items-center justify-center",
-              isSelected ? "text-sidebar-accent-foreground" : "text-foreground",
-            )}
-            aria-label="Agent is working"
-            title="Agent is working"
-          >
-            <Beacon
-              dotSize={3}
-              cellPadding={0.75}
-              speed={1.8}
-              color="currentColor"
-            />
-          </span>
+        {attentionState !== "idle" ? (
+          <ChatAttentionIcon
+            state={attentionState}
+            selected={isSelected}
+            className="ml-3"
+          />
         ) : (
           <BranchIcon
             state={branchState}
@@ -850,13 +949,13 @@ function ChatRow({ chat }: { chat: Chat }) {
         <span className="min-w-0 flex-1 truncate">{chat.title}</span>
         <div className="relative flex h-4 w-16 shrink-0 items-center justify-end">
           <span className="tabular-nums text-[10px] text-muted-foreground transition-opacity duration-150 ease-out motion-reduce:transition-none group-hover:hidden">
-            {showDiff && prInfo !== null ? (
+            {showDiff && stats !== null ? (
               <>
-                <span className="text-emerald-400">
-                  +{formatCompactNumber(prInfo.additions)}
+                <span className="text-success">
+                  +{formatCompactNumber(stats.additions)}
                 </span>{" "}
-                <span className="text-red-400">
-                  −{formatCompactNumber(prInfo.deletions)}
+                <span className="text-destructive">
+                  −{formatCompactNumber(stats.deletions)}
                 </span>
               </>
             ) : (
@@ -873,7 +972,7 @@ function ChatRow({ chat }: { chat: Chat }) {
             aria-label={`${primaryActionLabel} ${chat.title}`}
             title={primaryActionLabel}
           >
-            <PrimaryActionIcon className="size-3.5" />
+            <HugeiconsIcon icon={primaryActionIcon} className="size-3.5" />
           </button>
         </div>
       </li>
@@ -888,7 +987,7 @@ function ChatRow({ chat }: { chat: Chat }) {
             onClick={onRename}
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
           >
-            <Pencil className="size-3.5" />
+            <HugeiconsIcon icon={PencilIcon} className="size-3.5" />
             Rename
           </MenuItem>
           {isArchived ? (
@@ -896,7 +995,7 @@ function ChatRow({ chat }: { chat: Chat }) {
               onClick={() => void unarchiveChat(chat.id)}
               className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
             >
-              <ArchiveRestore className="size-3.5" />
+              <HugeiconsIcon icon={ArchiveArrowUpIcon} className="size-3.5" />
               Unarchive
             </MenuItem>
           ) : (
@@ -904,7 +1003,7 @@ function ChatRow({ chat }: { chat: Chat }) {
               onClick={() => void archiveChat(chat.id)}
               className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
             >
-              <Archive className="size-3.5" />
+              <HugeiconsIcon icon={ArchiveArrowDownIcon} className="size-3.5" />
               Archive
             </MenuItem>
           )}
@@ -912,11 +1011,65 @@ function ChatRow({ chat }: { chat: Chat }) {
             onClick={onDelete}
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-red-300 hover:bg-red-500/20"
           >
-            <Trash2 className="size-3.5" />
+            <HugeiconsIcon icon={Delete02Icon} className="size-3.5" />
             Delete
           </MenuItem>
         </MenuPopup>
       </Menu>
     </>
+  );
+}
+
+function ChatAttentionIcon({
+  state,
+  selected = false,
+  className,
+  context = "chat",
+}: {
+  state: ChatAttentionState;
+  selected?: boolean;
+  className?: string;
+  context?: "chat" | "project";
+}) {
+  if (state === "idle") return null;
+
+  const color = selected
+    ? "text-sidebar-accent-foreground"
+    : state === "question"
+      ? "text-amber-300"
+      : state === "planReady"
+        ? "text-emerald-300"
+        : "text-foreground";
+  const label =
+    state === "question"
+      ? context === "project"
+        ? "A chat is waiting for your answer"
+        : "Waiting for your answer"
+      : state === "planReady"
+        ? context === "project"
+          ? "A chat has a plan ready to approve"
+          : "Plan ready to approve"
+        : context === "project"
+          ? "Agent is working in a session"
+          : "Agent is working";
+
+  return (
+    <span
+      className={cn(
+        "inline-flex size-3.5 shrink-0 items-center justify-center",
+        color,
+        className,
+      )}
+      aria-label={label}
+      title={label}
+    >
+      {state === "running" ? (
+        <Spinner className="size-4" />
+      ) : state === "question" ? (
+        <HugeiconsIcon icon={HelpCircleIcon} className="size-3.5" />
+      ) : (
+        <HugeiconsIcon icon={TaskDone01Icon} className="size-3.5" />
+      )}
+    </span>
   );
 }

@@ -1,5 +1,5 @@
-import { Check } from "lucide-react";
-
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Tick01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import {
   ModelSelect,
 } from "~/components/settings-page";
@@ -64,7 +64,7 @@ export function DefaultsStep() {
                   )}
                 >
                   <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-white/[0.06] text-foreground">
-                    <m.Icon className="size-3.5" strokeWidth={1.75} />
+                    <HugeiconsIcon icon={m.Icon} className="size-3.5" strokeWidth={1.75} />
                   </span>
                   <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <span className="text-[13px] font-medium leading-none text-foreground">
@@ -76,7 +76,7 @@ export function DefaultsStep() {
                   </span>
                   {active && (
                     <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-foreground text-background">
-                      <Check className="size-2.5" strokeWidth={3.5} />
+                      <HugeiconsIcon icon={Tick01Icon} className="size-2.5" strokeWidth={3.5} />
                     </span>
                   )}
                 </button>
@@ -85,13 +85,21 @@ export function DefaultsStep() {
           </div>
         </div>
 
-        <label className="flex cursor-pointer items-center gap-3 rounded-2xl bg-white/[0.025] px-3.5 py-3 transition-colors hover:bg-white/[0.05]">
-          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="text-[13px] font-medium leading-none text-foreground">
-              New worktree per chat
+        <label className="flex cursor-pointer items-start gap-3 rounded-2xl bg-white/[0.025] px-3.5 py-3 transition-colors hover:bg-white/[0.05]">
+          <span className="flex min-w-0 flex-1 flex-col gap-1">
+            <span className="flex items-center gap-2">
+              <span className="text-[13px] font-medium leading-none text-foreground">
+                New worktree per chat
+              </span>
+              <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-primary">
+                Recommended
+              </span>
             </span>
             <span className="text-[11px] leading-snug text-muted-foreground">
-              Each chat runs on its own branch under <code>.nuuk/repo-worktree/</code>.
+              A git worktree is a second checkout of your repo on its own branch.
+              Each chat gets one under <code>~/.memoize/</code>, so agents can run
+              in parallel without stepping on each other or your working tree.
+              You merge the branches you like.
             </span>
           </span>
           <Switch

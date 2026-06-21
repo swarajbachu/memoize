@@ -1,11 +1,6 @@
-import {
-  Ellipsis,
-  Pencil,
-  Plus,
-  RotateCcw,
-  Search,
-  TriangleAlert,
-} from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Alert01Icon, MoreHorizontalIcon, PencilIcon, RotateLeft01Icon, Search01Icon } from "@hugeicons-pro/core-bulk-rounded";
+import { Plus } from "lucide-react";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   useEffect,
@@ -277,7 +272,7 @@ export function KeybindingsEditor() {
                     disabled={isAdding}
                     aria-label="Add keybinding"
                   >
-                    <Plus className="size-3.5" />
+                    <Plus className="size-3.5" strokeWidth={1.8} />
                   </Button>
                 }
               />
@@ -426,7 +421,7 @@ function RowEditor({
                     }
                     aria-label={`Edit shortcut for ${meta.label}`}
                   >
-                    <Pencil className="size-3.5" />
+                    <HugeiconsIcon icon={PencilIcon} className="size-3.5" />
                   </Button>
                 }
               />
@@ -445,7 +440,7 @@ function RowEditor({
                         onClick={() => dispatch({ type: "reset", row })}
                         aria-label="Discard pending changes"
                       >
-                        <RotateCcw className="size-3.5" />
+                        <HugeiconsIcon icon={RotateLeft01Icon} className="size-3.5" />
                       </Button>
                     }
                   />
@@ -493,7 +488,7 @@ function RowEditor({
                 />
               }
             >
-              <Ellipsis className="size-3.5" />
+              <HugeiconsIcon icon={MoreHorizontalIcon} className="size-3.5" />
             </MenuTrigger>
             <MenuPopup align="end" className="min-w-36">
               {canReset && (
@@ -557,7 +552,7 @@ function NewRow({
   return (
     <div className="flex flex-col gap-2 bg-accent/20 px-3 py-3 text-sm">
       <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.07em] text-muted-foreground">
-        <Plus className="size-3" /> New binding
+        <Plus className="size-3" strokeWidth={1.8} /> New binding
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Select value={command} onValueChange={(v) => setCommand(v as Command)}>
@@ -616,7 +611,7 @@ function NewRow({
                       }
                       aria-label="Re-record shortcut for new binding"
                     >
-                      <Pencil className="size-3.5" />
+                      <HugeiconsIcon icon={PencilIcon} className="size-3.5" />
                     </Button>
                   }
                 />
@@ -632,7 +627,7 @@ function NewRow({
               aria-label="Record shortcut for new binding"
               className="inline-flex h-7 min-w-0 shrink-0 items-center gap-1.5 rounded-md border border-border/70 bg-background px-2 text-[11px] text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
             >
-              <Pencil className="size-3" />
+              <HugeiconsIcon icon={PencilIcon} className="size-3" />
               Click to record
             </button>
           )}
@@ -684,7 +679,7 @@ function ConflictWarning({
             aria-label={description}
             className="inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-amber-500 outline-none transition-colors hover:bg-amber-500/10 focus-visible:ring-[3px] focus-visible:ring-amber-500/25"
           >
-            <TriangleAlert className="size-3.5" />
+            <HugeiconsIcon icon={Alert01Icon} className="size-3.5" />
           </span>
         }
       />
@@ -733,7 +728,7 @@ function ExpandableSearch({
                 onClick={() => onOpenChange(true)}
                 aria-label="Search keybindings"
               >
-                <Search className="size-3.5" />
+                <HugeiconsIcon icon={Search01Icon} className="size-3.5" />
               </Button>
             }
           />
@@ -744,10 +739,7 @@ function ExpandableSearch({
   }
   return (
     <div className="relative">
-      <Search
-        className="pointer-events-none absolute left-2 top-1/2 size-3 -translate-y-1/2 text-muted-foreground"
-        aria-hidden
-      />
+      <HugeiconsIcon icon={Search01Icon} className="pointer-events-none absolute left-2 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" aria-hidden />
       <input
         ref={inputRef}
         autoFocus

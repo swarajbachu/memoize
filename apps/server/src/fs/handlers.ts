@@ -27,4 +27,23 @@ const WriteFile = MemoizeRpcs.toLayerHandler(
     ),
 );
 
-export const FsHandlersLayer = Layer.mergeAll(Tree, ReadFile, WriteFile);
+const ReadExternalFile = MemoizeRpcs.toLayerHandler(
+  "fs.readExternalFile",
+  ({ path }) => Effect.flatMap(FsService, (svc) => svc.readExternal(path)),
+);
+
+const WriteExternalFile = MemoizeRpcs.toLayerHandler(
+  "fs.writeExternalFile",
+  ({ path, content, expectedMtime }) =>
+    Effect.flatMap(FsService, (svc) =>
+      svc.writeExternal(path, content, expectedMtime),
+    ),
+);
+
+export const FsHandlersLayer = Layer.mergeAll(
+  Tree,
+  ReadFile,
+  WriteFile,
+  ReadExternalFile,
+  WriteExternalFile,
+);

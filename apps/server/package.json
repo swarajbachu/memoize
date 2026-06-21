@@ -18,7 +18,8 @@
     }
   },
   "scripts": {
-    "check-types": "tsc --noEmit"
+    "check-types": "tsc --noEmit",
+    "test": "bun test"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.126",
@@ -36,9 +37,11 @@
     "fuzzysort": "catalog:",
     "keytar": "^7.9.0",
     "node-pty": "^1.1.0",
+    "tokenmaxer": "*",
     "zod": "^4.0.0"
   },
   "devDependencies": {
+    "@effect/sql-sqlite-bun": "0.52.0",
     "@repo/typescript-config": "*",
     "@types/node": "catalog:",
     "typescript": "catalog:"

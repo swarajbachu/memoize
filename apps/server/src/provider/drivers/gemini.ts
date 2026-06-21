@@ -19,6 +19,9 @@ import {
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
 import { createAcpTranslator } from "./acp/translate.ts";
 import { applyPlanModePrefix } from "./planMode.ts";
+import { handleFsRequest } from "./acp/fs.ts";
+import { handleTerminalRequest } from "./acp/terminal.ts";
+import type { GetRuntimeMode, RequestPermission } from "./claude.ts";
 
 /**
  * Live-only handle for one Gemini conversation. Mirrors the Grok/Codex/Claude
@@ -225,6 +228,8 @@ export const startGeminiSession = (
   apiKey: string | null,
   geminiPath: string,
   sessionId: AgentSessionId,
+  requestPermission: RequestPermission,
+  getRuntimeMode: GetRuntimeMode,
   resumeCursor: string | null = null,
 ): Effect.Effect<GeminiSessionHandle, AgentSessionStartError, AttachmentService> =>
   Effect.gen(function* () {
@@ -235,6 +240,22 @@ export const startGeminiSession = (
     const events = yield* Mailbox.make<AgentEvent>();
 
     let currentMode: PermissionMode = input.permissionMode ?? "default";
+
+    // Shared context for the ACP fs/* and terminal/* handlers so file writes
+    // and command execution are gated through PermissionService + RuntimeMode,
+    // exactly like Claude/Codex. `currentMode` is read live.
+    const acpHandlerContext = () => ({
+      cwd,
+      sessionId,
+      projectId: input.folderId,
+      requestPermission: (
+        kind: import("@memoize/wire").PermissionKind,
+        options: { readonly forcePrompt: boolean },
+      ) => requestPermission(sessionId, kind, options),
+      getRuntimeMode,
+      getPermissionMode: () => currentMode,
+    });
+
     let acpSessionId: string | null = null;
     let nextRpcId = 1;
     let closed = false;
@@ -379,6 +400,23 @@ export const startGeminiSession = (
           }
           return;
         }
+
+        // Forward item/* and thread/* notifications (collab swarming, per-thread
+        // lifecycle) to the shared translator. Mirrors the Grok driver change.
+        if (msg.method.startsWith("item/") || msg.method.startsWith("thread/")) {
+          if (GEMINI_RPC_TRACE) {
+            process.stderr.write(
+              `[gemini.rpc] ${msg.method} params=${JSON.stringify(msg.params ?? {})}\n`,
+            );
+          }
+          if (msg.params !== undefined) {
+            for (const ev of translator.translate(msg.params)) {
+              events.unsafeOffer(ev);
+            }
+          }
+          return;
+        }
+
         if (msg.id !== undefined) {
           const isFs = msg.method.startsWith("fs/");
           if (GEMINI_RPC_TRACE || isFs) {
@@ -387,18 +425,70 @@ export const startGeminiSession = (
             );
           }
           if (isFs) {
+            handleFsRequest(msg.method, msg.params, acpHandlerContext())
+              .then((result) => {
+                writeMessage({ jsonrpc: "2.0", id: msg.id, result });
+              })
+              .catch((err) => {
+                const message = err instanceof Error ? err.message : String(err);
+                writeMessage({
+                  jsonrpc: "2.0",
+                  id: msg.id,
+                  error: { code: -32603, message },
+                });
+              });
+            return;
+          }
+
+          if (msg.method.startsWith("terminal/")) {
+            handleTerminalRequest(msg.method, msg.params, acpHandlerContext())
+              .then((result) => {
+                writeMessage({ jsonrpc: "2.0", id: msg.id, result });
+              })
+              .catch((err) => {
+                const message = err instanceof Error ? err.message : String(err);
+                writeMessage({
+                  jsonrpc: "2.0",
+                  id: msg.id,
+                  error: { code: -32603, message },
+                });
+              });
+            return;
+          }
+
+          // User question support for Gemini ACP (similar namespaced methods).
+          const isQuestionMethod =
+            msg.method?.includes("ask_user_question") ||
+            msg.method?.includes("user_question") ||
+            msg.method?.startsWith("_x.ai/") ||
+            msg.method?.startsWith("_google/");
+
+          if (isQuestionMethod) {
+            if (process.env.MEMOIZE_DEBUG_GEMINI) {
+              process.stderr.write(
+                `[gemini.rpc] auto-acking question method=${msg.method} id=${msg.id} params=${JSON.stringify(msg.params ?? {})}\n`,
+              );
+            }
+            // Gemini ACP may use a similar shape; provide `outcome` to avoid
+            // "missing field `outcome`" errors on the agent side.
             writeMessage({
               jsonrpc: "2.0",
               id: msg.id,
-              error: {
-                code: -32601,
-                message: `Method not implemented by memoize ACP client: ${msg.method}`,
-              },
+              result: { outcome: "approved" },
             });
             return;
           }
+
+          writeMessage({
+            jsonrpc: "2.0",
+            id: msg.id,
+            error: {
+              code: -32601,
+              message: `Method not supported by memoize ACP client: ${msg.method}`,
+            },
+          });
           console.warn(
-            `[gemini.rpc] unhandled server→client request method=${msg.method} id=${msg.id}`,
+            `[gemini.rpc] replied to unhandled server→client request method=${msg.method} id=${msg.id}`,
           );
           return;
         }
@@ -438,6 +528,7 @@ export const startGeminiSession = (
     child.on("error", (err) => {
       if (closed) return;
       events.unsafeOffer({ _tag: "Error", message: err.message });
+      void Effect.runPromise(events.end).catch(() => {});
     });
 
     child.on("close", (code, signal) => {
@@ -455,6 +546,7 @@ export const startGeminiSession = (
         events.unsafeOffer({ _tag: "Error", message: exitDetail });
         events.unsafeOffer({ _tag: "Status", status: "idle" });
       }
+      void Effect.runPromise(events.end).catch(() => {});
     });
 
     // === ACP handshake — synchronous, fails the start() RPC on error. ===
@@ -472,6 +564,9 @@ export const startGeminiSession = (
               moveFile: true,
             },
             terminal: true,
+            // Opt into experimental (collab/swarming) so future Gemini ACP
+            // agents can emit the same collabAgentToolCall data.
+            experimentalApi: true,
           },
         })) as { authMethods?: ReadonlyArray<{ id?: unknown }> };
 

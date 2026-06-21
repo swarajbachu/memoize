@@ -40,10 +40,50 @@ const bridge = {
       };
     },
   },
+  browser: {
+    /**
+     * Renderer hands the agent-browser `<webview>`'s webContentsId to main so
+     * main can attach Chrome DevTools Protocol once and dispatch real input
+     * events into the embedded Chromium. Idempotent — safe to call on every
+     * `dom-ready` (which fires on reload too).
+     */
+    registerWebview: (webContentsId: number) =>
+      ipcRenderer.invoke(
+        "browser:registerWebview",
+        webContentsId,
+      ) as Promise<boolean>,
+    /**
+     * Dispatch a single CDP input action against the registered webview. The
+     * renderer animates the cursor overlay locally and calls this in sync
+     * with the visual click pulse so what the user sees matches what the
+     * page receives.
+     */
+    dispatchInput: (webContentsId: number, action: unknown) =>
+      ipcRenderer.invoke(
+        "browser:dispatchInput",
+        webContentsId,
+        action,
+      ) as Promise<boolean>,
+  },
   app: {
     openExternal: (url: string) => {
       ipcRenderer.send("app:openExternal", url);
     },
+    listOpenTargets: (path: string) =>
+      ipcRenderer.invoke("app:listOpenTargets", path) as Promise<
+        ReadonlyArray<{
+          readonly id: string;
+          readonly label: string;
+          readonly available: boolean;
+          readonly iconDataUrl?: string | null;
+        }>
+      >,
+    openPathInApp: (path: string, appId: string) =>
+      ipcRenderer.invoke("app:openPathInApp", path, appId) as Promise<void>,
+    revealPath: (path: string) =>
+      ipcRenderer.invoke("app:revealPath", path) as Promise<void>,
+    copyPath: (path: string) =>
+      ipcRenderer.invoke("app:copyPath", path) as Promise<void>,
   },
   updates: {
     onStatus: (handler: (status: UpdateStatus) => void) => {

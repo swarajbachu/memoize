@@ -18,7 +18,7 @@ import { useSettingsStore } from "../store/settings.ts";
 import { useUiStore } from "../store/ui.ts";
 import { FileIcon } from "./file-icon.tsx";
 import { ProviderIcon } from "./provider-icons.tsx";
-import { Beacon } from "./ui/loaders";
+import { Spinner } from "./ui/spinner";
 
 type Props = {
   readonly projectId: FolderId | null;
@@ -71,7 +71,7 @@ export function MainTabs({ projectId, emptyLabel }: Props) {
       : EMPTY_SESSIONS,
   );
   const selectSession = useSessionsStore((s) => s.select);
-  // Per-session running flag — drives the provider-icon → Beacon swap on
+  // Per-session running flag — drives the provider-icon → Spinner swap on
   // each tab so the user sees which session is streaming at a glance.
   const runningBySession = useMessagesStore((s) => s.runningBySession);
 
@@ -93,9 +93,7 @@ export function MainTabs({ projectId, emptyLabel }: Props) {
   const tabs = useMemo(() => {
     if (activeChatId === null) return EMPTY_SESSIONS;
     return projectSessions
-      .filter(
-        (row) => row.chatId === activeChatId && row.archivedAt === null,
-      )
+      .filter((row) => row.chatId === activeChatId && row.archivedAt === null)
       .slice()
       .sort((a, b) => {
         const aTs = new Date(a.createdAt).getTime();
@@ -117,7 +115,10 @@ export function MainTabs({ projectId, emptyLabel }: Props) {
         {tabs.map((session) => {
           const isActive =
             activeMainTab === "chat" && selectedSessionId === session.id;
-          const modelLabel = lookupModelLabel(session.providerId, session.model);
+          const modelLabel = lookupModelLabel(
+            session.providerId,
+            session.model,
+          );
           const tooltip = modelLabel
             ? `${session.title} — ${PROVIDER_LABEL[session.providerId]} · ${modelLabel}`
             : session.title;
@@ -148,10 +149,17 @@ export function MainTabs({ projectId, emptyLabel }: Props) {
           <FileTabButton
             active={activeMainTab === "file"}
             name={openFile.name}
-            path={openFile.path}
-            dirty={fileDirty}
+            path={openFile.kind === "text" ? openFile.path : openFile.name}
+            dirty={openFile.kind === "text" ? fileDirty : false}
             onClick={() => setActiveMainTab("file")}
             onClose={closeFileTab}
+          />
+        )}
+        {activeMainTab === "archives" && (
+          <TabButton
+            active
+            onClick={() => setActiveMainTab("archives")}
+            label="Archived"
           />
         )}
       </div>
@@ -187,8 +195,7 @@ const closeChatTab = async (sessionId: SessionId): Promise<void> => {
   }
   if (projectId === null || session === null) return;
 
-  const projectRows =
-    sessions.sessionsByProject[projectId] ?? EMPTY_SESSIONS;
+  const projectRows = sessions.sessionsByProject[projectId] ?? EMPTY_SESSIONS;
   // Live siblings in the same chat (excluding the one we're closing) sorted
   // by creation time — used to pick the next active tab and to detect the
   // "last tab" case.
@@ -208,7 +215,9 @@ const closeChatTab = async (sessionId: SessionId): Promise<void> => {
   if (siblings.length > 0) {
     // Not the last tab — archive and refocus the right neighbor (else left).
     const idx = projectRows
-      .filter((row) => row.chatId === session!.chatId && row.archivedAt === null)
+      .filter(
+        (row) => row.chatId === session!.chatId && row.archivedAt === null,
+      )
       .sort(
         (a, b) =>
           new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
@@ -306,7 +315,7 @@ function ChatTabButton({
       >
         {running ? (
           <span className="inline-flex size-3.5 shrink-0 items-center justify-center text-foreground">
-            <Beacon dotSize={2} cellPadding={1} color="currentColor" />
+            <Spinner className="size-3.5" />
           </span>
         ) : (
           <ProviderIcon
@@ -325,15 +334,20 @@ function ChatTabButton({
         aria-label="Close chat"
         className="relative z-10 rounded p-0.5 opacity-0 transition-opacity hover:bg-foreground/10 group-hover:opacity-100"
       >
-        <X className="size-3" />
+        <X className="size-3" strokeWidth={1.8} />
       </button>
     </div>
   );
 }
 
-function NewChatTabButton({ chatId }: { chatId: import("@memoize/wire").ChatId }) {
+function NewChatTabButton({
+  chatId,
+}: {
+  chatId: import("@memoize/wire").ChatId;
+}) {
   const refresh = useProvidersStore((s) => s.refresh);
   const create = useSessionsStore((s) => s.create);
+  const creating = useSessionsStore((s) => s.creatingByChat[chatId] === true);
   const defaultProviderId = useSettingsStore((s) => s.defaultProviderId);
   const defaultModelByProvider = useSettingsStore(
     (s) => s.defaultModelByProvider,
@@ -341,9 +355,14 @@ function NewChatTabButton({ chatId }: { chatId: import("@memoize/wire").ChatId }
   const defaultRuntimeMode = useSettingsStore((s) => s.defaultRuntimeMode);
 
   // Creates a new session inside the active chat. Worktree is inherited
-  // from the chat row server-side.
+  // from the chat row server-side. Skip the awaited provider refresh when
+  // we already have a default model cached — saves 100–500ms per click on
+  // the warm path; cold cache still pays for the round-trip.
   const onClick = async () => {
-    await refresh();
+    if (creating) return;
+    if (defaultModelByProvider[defaultProviderId] === undefined) {
+      await refresh();
+    }
     const model =
       defaultModelByProvider[defaultProviderId] ??
       defaultModelFor(defaultProviderId);
@@ -356,11 +375,18 @@ function NewChatTabButton({ chatId }: { chatId: import("@memoize/wire").ChatId }
     <button
       type="button"
       onClick={() => void onClick()}
+      disabled={creating}
       title="New tab in this chat"
       aria-label="New tab in this chat"
-      className="relative flex items-center justify-center rounded px-2 text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground"
+      className="relative flex items-center justify-center rounded px-2 text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
     >
-      <Plus className="size-3.5" />
+      {creating ? (
+        <span className="inline-flex size-3.5 items-center justify-center">
+          <Spinner className="size-3.5" />
+        </span>
+      ) : (
+        <Plus className="size-3.5" strokeWidth={1.8} />
+      )}
     </button>
   );
 }
@@ -409,7 +435,7 @@ function FileTabButton({
         aria-label="Close file"
         className="relative z-10 rounded p-0.5 opacity-0 transition-opacity hover:bg-foreground/10 group-hover:opacity-100"
       >
-        <X className="size-3" />
+        <X className="size-3" strokeWidth={1.8} />
       </button>
     </div>
   );

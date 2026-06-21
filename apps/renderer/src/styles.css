@@ -3,8 +3,6 @@
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/inter";
 @import "@fontsource-variable/geist-mono";
-@import "./components/ui/loaders/grid.css";
-@import "./components/ui/loaders/reduced-motion.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -115,13 +113,13 @@ body,
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
 
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  --radius-sm: calc(var(--radius) * 0.45);
+  --radius-md: calc(var(--radius) * 0.65);
+  --radius-lg: calc(var(--radius) * 0.85);
+  --radius-xl: var(--radius);
+  --radius-2xl: calc(var(--radius) * 1.15);
+  --radius-3xl: calc(var(--radius) * 1.35);
+  --radius-4xl: calc(var(--radius) * 1.55);
 
   @keyframes skeleton {
     to {
@@ -207,7 +205,7 @@ body,
 /* Warm stone neutrals (hue 70). Subtle warmth, no cool blue cast. Light
    mode exists for parity / future toggle but we ship dark-by-default. */
 :root {
-  --radius: 0.625rem;
+  --radius: 0.5rem;
 
   --background: oklch(0.99 0.003 75);
   --foreground: oklch(0.18 0.008 70);
@@ -272,16 +270,16 @@ body,
   --user-bubble-foreground: oklch(0.22 0.01 260);
   --message-text: oklch(0.28 0.008 260);
   --message-heading: oklch(0.18 0.01 260);
-  --message-code: oklch(0.42 0.05 30);
-  --message-code-bg: oklch(0.95 0.006 260);
-  --message-pre-bg: oklch(0.97 0.005 260);
+  --message-code: oklch(0.36 0.065 122);
+  --message-code-bg: oklch(0.945 0.012 122);
+  --message-pre-bg: oklch(0.965 0.004 260);
   --message-quote: oklch(0.46 0.01 260);
   --message-rule: oklch(0.88 0.005 260);
 }
 
 .dark {
   /* Keep original surface values exactly as they were (no panel style changes) */
-  --background: oklch(0.18 0.004 260);
+  --background: oklch(0.2 0.004 260);
   --foreground: oklch(0.955 0.004 260);
 
   --bg-subtle: oklch(0.225 0.005 260);
@@ -333,22 +331,22 @@ body,
   --info: #4778f5;
   --info-foreground: oklch(0.985 0.003 260);
 
-  --alert-error-bg: oklch(0.36 0.07 18);
-  --alert-warning-bg: oklch(0.36 0.06 70);
-  --alert-info-bg: oklch(0.36 0.05 240);
-  --alert-success-bg: oklch(0.36 0.06 150);
+  --alert-error-bg: oklch(0.38 0.065 18);
+  --alert-warning-bg: oklch(0.39 0.055 70);
+  --alert-info-bg: oklch(0.39 0.045 240);
+  --alert-success-bg: oklch(0.39 0.052 150);
 
   --border: oklch(1 0 0 / 0.09);
   --input: oklch(1 0 0 / 0.14);
   --ring: var(--lime);
 
-  --sidebar: oklch(0.2 0.004 260);
+  --sidebar: oklch(0.22 0.004 260);
   --sidebar-foreground: oklch(0.955 0.004 260);
 
   --sidebar-primary: var(--lime);
   --sidebar-primary-foreground: oklch(0.18 0.02 122);
 
-  --sidebar-accent: oklch(0.285 0.006 260);
+  --sidebar-accent: oklch(0.32 0.006 260);
   --sidebar-accent-foreground: var(--foreground);
 
   --sidebar-border: oklch(1 0 0 / 0.09);
@@ -370,9 +368,9 @@ body,
   --user-bubble-foreground: oklch(0.96 0.005 260);
   --message-text: oklch(0.78 0.006 260);
   --message-heading: oklch(0.88 0.006 260);
-  --message-code: oklch(0.82 0.04 60);
-  --message-code-bg: oklch(0.28 0.008 260);
-  --message-pre-bg: oklch(0.235 0.006 260);
+  --message-code: oklch(0.84 0.085 122);
+  --message-code-bg: oklch(0.265 0.012 122);
+  --message-pre-bg: oklch(0.225 0.006 260);
   --message-quote: oklch(0.66 0.008 260);
   --message-rule: oklch(1 0 0 / 0.08);
 }
@@ -395,6 +393,80 @@ body,
   }
 }
 
+/* `@pierre/diffs` ships with stock GitHub-style fire-engine red / spring
+   green and pure white/black surfaces. That reads as a separate widget
+   bolted onto the app. Override the public CSS variables so the diff
+   inherits the app's stone-warm + slate-cool neutrals and uses softer,
+   teal-leaning add / rose-leaning delete colors. The custom properties
+   cascade into the shadow DOM Pierre renders into. */
+@layer components {
+  .fz-diff {
+    /* Surfaces — drop the diff onto the same neutral the pane uses so it
+       reads as part of the app, not a bolted-on widget. Pierre computes
+       its buffer / context / gutter tints from `--diffs-bg` mixed with a
+       `--diffs-mixer` (`#fff` in dark), which pushes toward zinc. We
+       override the computed values directly to keep everything anchored
+       on the app's `--background`. */
+    --diffs-light-bg: var(--background);
+    --diffs-dark-bg: var(--background);
+    --diffs-light: var(--foreground);
+    --diffs-dark: var(--foreground);
+    --diffs-bg-buffer-override: var(--background);
+    --diffs-bg-context-override: var(--background);
+    --diffs-bg-context-gutter-override: var(--bg-subtle);
+    --diffs-bg-separator-override: var(--border);
+
+    /* Add leans hard on the app's lime --primary — true yellow-chartreuse,
+       not teal. Delete stays warm rose so a glance still tells add from
+       delete. The text colors land on the marker / line text; the
+       backgrounds are a faint wash of the same hue against the app bg so
+       a + row reads as "a hint of lime" rather than "a green band." */
+    --diffs-added-light: oklch(0.55 0.2 108);
+    --diffs-added-dark: oklch(0.88 0.2 115);
+    --diffs-deleted-light: oklch(0.55 0.2 22);
+    --diffs-deleted-dark: oklch(0.78 0.15 20);
+    --diffs-modified-light: oklch(0.7 0.13 80);
+    --diffs-modified-dark: oklch(0.82 0.11 82);
+
+    --diffs-bg-addition-override: color-mix(
+      in oklab,
+      var(--diffs-added-dark) 10%,
+      var(--background)
+    );
+    --diffs-bg-addition-emphasis-override: color-mix(
+      in oklab,
+      var(--diffs-added-dark) 20%,
+      var(--background)
+    );
+    --diffs-bg-addition-number-override: color-mix(
+      in oklab,
+      var(--diffs-added-dark) 14%,
+      var(--bg-subtle)
+    );
+    --diffs-bg-deletion-override: color-mix(
+      in oklab,
+      var(--diffs-deleted-dark) 10%,
+      var(--background)
+    );
+    --diffs-bg-deletion-emphasis-override: color-mix(
+      in oklab,
+      var(--diffs-deleted-dark) 20%,
+      var(--background)
+    );
+    --diffs-bg-deletion-number-override: color-mix(
+      in oklab,
+      var(--diffs-deleted-dark) 14%,
+      var(--bg-subtle)
+    );
+
+    /* Typography — same monospace token as the rest of the app, slightly
+       smaller than Pierre's default so a diff doesn't dwarf the chat. */
+    --diffs-font-family: var(--font-mono);
+    --diffs-font-size: 12px;
+    --diffs-line-height: 18px;
+  }
+}
+
 /* Assistant message prose. Tuned for long-read comfort: body sits a touch
    below `--foreground`, headings sharper, code in a contained surface, and
    typographic rhythm (margins, line-height, list indents) calmed down so a
@@ -403,7 +475,7 @@ body,
   .fz-prose {
     color: var(--message-text);
     font-size: 0.9rem;
-    line-height: 1.65;
+    line-height: 1.62;
     word-break: break-word;
   }
   .fz-prose > :first-child {
@@ -424,8 +496,8 @@ body,
     color: var(--message-heading);
     font-weight: 600;
     line-height: 1.3;
-    letter-spacing: -0.01em;
-    margin: 1.4em 0 0.5em;
+    letter-spacing: 0;
+    margin: 1.35em 0 0.45em;
   }
   .fz-prose h1 {
     font-size: 1.4em;
@@ -446,13 +518,14 @@ body,
     font-weight: 600;
   }
   .fz-prose a {
-    color: var(--info);
+    color: color-mix(in oklch, var(--info) 78%, var(--foreground));
     text-decoration: underline;
-    text-decoration-color: color-mix(in srgb, var(--info), transparent 60%);
+    text-decoration-color: color-mix(in oklch, var(--info) 36%, transparent);
     text-underline-offset: 0.2em;
   }
   .fz-prose a:hover {
-    text-decoration-color: var(--info);
+    color: color-mix(in oklch, var(--info) 88%, var(--foreground));
+    text-decoration-color: color-mix(in oklch, var(--info) 68%, transparent);
   }
   .fz-prose ul,
   .fz-prose ol {
@@ -467,8 +540,9 @@ body,
   }
   .fz-prose blockquote {
     margin: 0.8em 0;
-    padding: 0.1em 0 0.1em 0.9em;
-    border-left: 2px solid var(--message-rule);
+    padding: 0.2em 0 0.2em 0.9em;
+    border-left: 2px solid
+      color-mix(in oklch, var(--primary) 36%, var(--message-rule));
     color: var(--message-quote);
     font-style: normal;
   }
@@ -480,13 +554,25 @@ body,
   .fz-prose code {
     font-family: var(--font-mono);
     font-size: 0.86em;
-    color: var(--message-code);
-    background-color: var(--message-code-bg);
-    padding: 0.1em 0.35em;
+    color: color-mix(in oklch, var(--foreground) 90%, transparent);
+    background-color: color-mix(
+      in oklch,
+      var(--bg-elevated) 34%,
+      var(--background)
+    );
+    border: 1px solid color-mix(in oklch, var(--border) 45%, transparent);
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklch, white 4%, transparent),
+      0 1px 2px color-mix(in oklch, black 22%, transparent);
+    padding: 0.08em 0.34em;
     border-radius: 0.3rem;
   }
   .fz-prose pre {
-    background-color: var(--message-pre-bg);
+    background-color: color-mix(
+      in oklch,
+      var(--message-pre-bg) 90%,
+      var(--background)
+    );
     border: 1px solid var(--message-rule);
     border-radius: 0.5rem;
     padding: 0.85em 1em;
@@ -498,6 +584,140 @@ body,
   .fz-prose pre code {
     color: var(--message-text);
     background: transparent;
+    border: 0;
+    padding: 0;
+    font-size: inherit;
+  }
+  .fz-prose .markdown-code-block {
+    margin: 0.9em 0;
+  }
+  .fz-prose .markdown-mermaid-block {
+    position: relative;
+    margin: 0.9em 0;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid color-mix(in oklch, var(--message-rule) 82%, transparent);
+    border-radius: 0.6rem;
+    background-color: var(--background);
+  }
+  .fz-prose .markdown-mermaid-block-error {
+    padding: 1rem 1rem 0;
+  }
+  .fz-prose .markdown-mermaid-loading,
+  .fz-prose .markdown-mermaid-error {
+    color: var(--text-muted);
+    font-size: 0.9em;
+  }
+  .fz-prose .markdown-mermaid-error {
+    color: color-mix(in oklch, var(--destructive) 78%, var(--foreground));
+  }
+  .markdown-mermaid-svg {
+    min-width: max-content;
+  }
+  .markdown-mermaid-svg svg {
+    display: block;
+    height: auto;
+    max-width: none;
+    margin: 0 auto;
+    overflow: visible;
+    shape-rendering: geometricPrecision;
+    text-rendering: geometricPrecision;
+  }
+  .markdown-mermaid-svg svg text,
+  .markdown-mermaid-svg svg tspan {
+    text-rendering: geometricPrecision;
+  }
+  .markdown-mermaid-zoom-label {
+    display: inline-flex;
+    min-width: 3.3rem;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    line-height: 1;
+  }
+  .markdown-mermaid-shell {
+    position: relative;
+    display: flex;
+    min-height: 0;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+    background-color: #09090b;
+  }
+  .markdown-mermaid-shell-inline {
+    height: min(58vh, 520px);
+    min-height: 260px;
+  }
+  .markdown-mermaid-shell-dialog {
+    min-height: 0;
+  }
+  .markdown-mermaid-viewer-controls {
+    position: absolute;
+    top: 0.55rem;
+    right: 0.55rem;
+    z-index: 2;
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.15rem;
+    border: 1px solid #3f3f46;
+    border-radius: 0.55rem;
+    background-color: #18181b;
+    box-shadow: 0 10px 28px rgb(0 0 0 / 0.28);
+  }
+  .markdown-mermaid-viewer {
+    position: relative;
+    display: grid;
+    min-height: 0;
+    flex: 1;
+    place-items: center;
+    overflow: auto;
+    background-color: #09090b;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+  }
+  .markdown-mermaid-viewer:active {
+    cursor: grabbing;
+  }
+  .markdown-mermaid-viewer-canvas {
+    min-width: max-content;
+    padding: 2rem;
+    border-radius: 0.7rem;
+    background-color: #09090b;
+    zoom: var(--markdown-mermaid-scale);
+  }
+  .markdown-mermaid-viewer-canvas .markdown-mermaid-svg {
+    min-width: 0;
+  }
+  .markdown-mermaid-viewer-canvas svg {
+    max-width: none;
+  }
+  .markdown-mermaid-pan-hint {
+    pointer-events: none;
+    position: absolute;
+    right: 0.9rem;
+    bottom: 0.9rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    border: 1px solid #3f3f46;
+    border-radius: 0.45rem;
+    color: var(--text-muted);
+    background-color: #18181b;
+  }
+  .fz-prose .markdown-code-block code,
+  .fz-prose .markdown-code-block pre code,
+  .fz-prose .code-block-shiki code {
+    color: inherit;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
     padding: 0;
     font-size: inherit;
   }
@@ -517,14 +737,14 @@ body,
     color: var(--message-heading);
     font-weight: 600;
     background-color: color-mix(
-      in srgb,
-      var(--message-pre-bg),
-      transparent 40%
+      in oklch,
+      var(--message-pre-bg) 72%,
+      var(--background)
     );
   }
 }
 
-/* Composer atomic chips. Outlined pill that visually replaces the underlying
+/* Composer atomic chips. Filled tag that visually replaces the underlying
    token (e.g. `@apps/foo.ts`) with an icon + label. Sized to sit on the
    prose baseline without disturbing line-height. */
 @layer components {
@@ -534,9 +754,16 @@ body,
     gap: 0.4rem;
     padding: 0.15rem 0.55rem 0.15rem 0.2rem;
     margin: 0 0.15rem;
-    border: 1px solid color-mix(in srgb, var(--border), transparent 40%);
+    border: 1px solid color-mix(in srgb, var(--border), transparent 55%);
     border-radius: 0.375rem;
-    background-color: transparent;
+    background-color: color-mix(
+      in oklch,
+      var(--bg-elevated) 34%,
+      var(--background)
+    );
+    box-shadow:
+      0 1px 0 color-mix(in oklch, white 4%, transparent) inset,
+      0 1px 2px color-mix(in oklch, black 22%, transparent);
     color: var(--foreground);
     font-size: 0.85em;
     line-height: 1.1;
@@ -551,7 +778,11 @@ body,
     width: 1.4em;
     height: 1.4em;
     border-radius: 0.25rem;
-    background-color: color-mix(in srgb, var(--muted), transparent 50%);
+    background-color: color-mix(
+      in oklch,
+      var(--bg-elevated) 52%,
+      var(--background)
+    );
     flex-shrink: 0;
   }
   .fz-chip-iconimg {
@@ -579,7 +810,8 @@ body,
   /* Skill chips read as a different category from file chips — accent
      border + tint. */
   .fz-chip[data-kind="skill"] {
-    border-color: color-mix(in srgb, var(--accent), transparent 30%);
+    border-color: color-mix(in srgb, var(--accent), transparent 24%);
+    background-color: color-mix(in oklch, var(--accent) 52%, var(--background));
   }
   .fz-chip[data-kind="skill"] .fz-chip-iconsvg {
     color: var(--accent-foreground);
@@ -589,7 +821,14 @@ body,
   }
   .fz-chip[data-kind="file"]:hover,
   .fz-chip[data-kind="image"]:hover {
-    background-color: color-mix(in srgb, var(--muted), transparent 60%);
+    background-color: color-mix(
+      in oklch,
+      var(--bg-elevated) 48%,
+      var(--background)
+    );
+    box-shadow:
+      0 1px 0 color-mix(in oklch, white 6%, transparent) inset,
+      0 2px 5px color-mix(in oklch, black 24%, transparent);
   }
   /* Image-thumb chips: thumbnail fills the icon slot with no inner bg. */
   .fz-chip[data-kind="image"] .fz-chip-icon:has(.fz-chip-thumb) {
@@ -708,11 +947,17 @@ body,
 @layer components {
   .code-block-shiki pre {
     margin: 0;
-    padding: 8px 0;
+    padding: 6px 0;
     background: transparent !important;
-    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+    font-family: var(
+      --font-mono,
+      ui-monospace,
+      SFMono-Regular,
+      Menlo,
+      monospace
+    );
     font-size: 12px;
-    line-height: 1.45;
+    line-height: 1.3;
     counter-reset: line;
   }
   .code-block-shiki code {
@@ -731,7 +976,8 @@ body,
     width: 2em;
     margin-right: 0.6em;
     text-align: right;
-    color: rgba(255, 255, 255, 0.25);
+    color: var(--text-faint);
+    opacity: 0.58;
     user-select: none;
   }
   /* Scrollbar polish — match xterm-viewport style. */

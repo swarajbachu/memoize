@@ -1,7 +1,7 @@
 {
   "name": "desktop",
-  "productName": "memoize",
-  "version": "0.2.1",
+  "productName": "memoize Alpha",
+  "version": "0.6.0",
   "description": "memoize desktop app",
   "private": true,
   "author": {

@@ -1,11 +1,6 @@
-import {
-  GitMerge,
-  GitPullRequestArrow,
-  TriangleAlert,
-  Upload,
-  Wrench,
-} from "lucide-react";
-
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Alert01Icon, GitMergeIcon, Upload01Icon, Wrench01Icon } from "@hugeicons-pro/core-bulk-rounded";
+import { GitPullRequestIcon } from "@hugeicons-pro/core-solid-rounded";
 import {
   GlassActionButton,
   GlassChip,
@@ -66,7 +61,7 @@ function Swatch({
   cssVar: string;
 }): React.ReactElement {
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-border/40 bg-muted/30 p-3">
+    <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-muted p-3">
       <div
         className="size-10 shrink-0 rounded-lg border border-white/8"
         style={{ backgroundColor: cssVar }}
@@ -93,37 +88,52 @@ const WORKFLOW_DEMOS: ReadonlyArray<WorkflowDemo> = [
     label: "dirty",
     tone: "amber",
     chip: "1 change",
-    action: { label: "Commit & push", icon: <Upload /> },
+    action: {
+      label: "Commit & push",
+      icon: <HugeiconsIcon icon={Upload01Icon} />,
+    },
   },
   {
     label: "ahead",
     tone: "pink",
     chip: "2 ahead",
-    action: { label: "Create PR", icon: <GitPullRequestArrow /> },
+    action: {
+      label: "Create PR",
+      icon: <HugeiconsIcon icon={GitPullRequestIcon} />,
+    },
   },
   {
     label: "open-pr",
     tone: "green",
     chip: "#142",
-    action: { label: "Merge", icon: <GitMerge /> },
+    action: { label: "Merge", icon: <HugeiconsIcon icon={GitMergeIcon} /> },
   },
   {
     label: "open-pr · draft",
     tone: "zinc",
     chip: "#142",
-    action: { label: "Mark ready", icon: <GitMerge /> },
+    action: {
+      label: "Mark ready",
+      icon: <HugeiconsIcon icon={GitMergeIcon} />,
+    },
   },
   {
     label: "open-pr · checks failing",
     tone: "red",
     chip: "#142",
-    action: { label: "Fix actions", icon: <Wrench /> },
+    action: {
+      label: "Fix actions",
+      icon: <HugeiconsIcon icon={Wrench01Icon} />,
+    },
   },
   {
     label: "open-pr · conflicts",
     tone: "red",
     chip: "#142",
-    action: { label: "Resolve conflicts", icon: <TriangleAlert /> },
+    action: {
+      label: "Resolve conflicts",
+      icon: <HugeiconsIcon icon={Alert01Icon} />,
+    },
   },
 ];
 
@@ -135,7 +145,7 @@ function WorkflowStatesSection(): React.ReactElement {
       <h2 className="text-xs font-semibold uppercase tracking-[0.07em] text-muted-foreground">
         Top-bar workflow states
       </h2>
-      <div className="flex flex-col divide-y divide-border/40 overflow-hidden rounded-xl border border-border/40 bg-muted/30">
+      <div className="flex flex-col divide-y divide-border/40 overflow-hidden rounded-lg border border-border/60 bg-muted">
         {WORKFLOW_DEMOS.map((s) => (
           <div
             key={s.label}

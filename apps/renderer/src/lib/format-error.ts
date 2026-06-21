@@ -1,6 +1,16 @@
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 
+// Tagged errors that carry only ids (no `reason`/`message`) would otherwise
+// fall through to a raw JSON dump like `{ "folderId": "…" }`. Map them to
+// human copy here so any surface that formats them stays readable.
+const TAG_MESSAGES: Record<string, string> = {
+  GitNotARepoError: "This folder isn't a Git repository.",
+  GitFolderNotFoundError: "Project folder not found.",
+  GitNotInstalledError: "Git is not installed.",
+  FsFolderNotFoundError: "Project folder not found.",
+};
+
 export const formatError = (err: unknown): string => {
   if (err instanceof Error) return err.message;
   if (!isRecord(err)) return String(err);
@@ -12,10 +22,29 @@ export const formatError = (err: unknown): string => {
     typeof err["providerId"] === "string" ? err["providerId"] : null;
   const sessionId =
     typeof err["sessionId"] === "string" ? err["sessionId"] : null;
+  const output = typeof err["output"] === "string" ? err["output"] : null;
+  const exitCode = typeof err["exitCode"] === "number" ? err["exitCode"] : null;
+  const timeoutMs =
+    typeof err["timeoutMs"] === "number" ? err["timeoutMs"] : null;
 
+  if (tag === "ChatArchiveScriptError") {
+    const status = exitCode === null ? "failed" : `exited ${exitCode}`;
+    return output !== null && output.trim().length > 0
+      ? `Archive cleanup ${status}:\n${output.trim()}`
+      : `Archive cleanup ${status}.`;
+  }
+  if (tag === "ChatArchiveTimeoutError") {
+    const seconds =
+      timeoutMs === null ? "the timeout" : `${Math.round(timeoutMs / 1000)}s`;
+    return output !== null && output.trim().length > 0
+      ? `Archive cleanup timed out after ${seconds}:\n${output.trim()}`
+      : `Archive cleanup timed out after ${seconds}.`;
+  }
   if (reason !== null && reason.length > 0) {
     const provider = providerId !== null ? `${providerId}: ` : "";
-    return tag !== null ? `${tag}: ${provider}${reason}` : `${provider}${reason}`;
+    return tag !== null
+      ? `${tag}: ${provider}${reason}`
+      : `${provider}${reason}`;
   }
   if (message !== null && message.length > 0) {
     return tag !== null ? `${tag}: ${message}` : message;
@@ -23,7 +52,7 @@ export const formatError = (err: unknown): string => {
   if (sessionId !== null && Object.keys(err).length === 1) {
     return `Internal session response was routed as an error: ${sessionId}`;
   }
-  if (tag !== null) return tag;
+  if (tag !== null) return TAG_MESSAGES[tag] ?? tag;
 
   try {
     return JSON.stringify(err, null, 2);

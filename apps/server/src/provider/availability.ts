@@ -6,6 +6,8 @@ import { join } from "node:path";
 import {
   AgentAvailability,
   type CliVersionStatus,
+  type CodexFeature,
+  type LatestVersionStatus,
   type ProviderAuthStatus,
   type ProviderHealthStatus,
   type ProviderId,
@@ -31,6 +33,25 @@ interface ProviderProbe {
    * because npm vs brew vs cargo channels differ.
    */
   readonly upgradeCommand: string | null;
+  /**
+   * npm package name used to resolve the *latest published* version (for the
+   * informational "update available" layer). `null` for providers installed
+   * outside npm (curl scripts) — those report `latestVersionStatus: "unknown"`
+   * and surface no update affordance.
+   */
+  readonly npmPackage: string | null;
+  /** Homebrew formula, when the CLI is also distributed via brew. */
+  readonly homebrewFormula: string | null;
+  /**
+   * Native self-update (e.g. `claude update`, `opencode upgrade`) used when
+   * the on-PATH binary is the provider's own native install rather than a
+   * package-manager one. `matches` is given the normalized (lowercased,
+   * forward-slash) binary path.
+   */
+  readonly nativeUpdate: {
+    readonly command: string;
+    readonly matches: (normalizedPath: string) => boolean;
+  } | null;
 }
 
 const PROBES: ReadonlyArray<ProviderProbe> = [
@@ -43,6 +64,14 @@ const PROBES: ReadonlyArray<ProviderProbe> = [
     // mode we can pin to a version.
     minVersion: null,
     upgradeCommand: null,
+    npmPackage: "@anthropic-ai/claude-code",
+    homebrewFormula: "claude-code",
+    // Native installer drops the binary in `~/.local/bin/claude` and ships a
+    // `claude update` self-updater. npm can't touch that install.
+    nativeUpdate: {
+      command: "claude update",
+      matches: (p) => p.endsWith("/.local/bin/claude"),
+    },
   },
   {
     providerId: "codex",
@@ -50,6 +79,13 @@ const PROBES: ReadonlyArray<ProviderProbe> = [
     cliBinary: "codex",
     minVersion: { major: 0, minor: 128, patch: 0, raw: "0.128.0" },
     upgradeCommand: "npm i -g @openai/codex@latest",
+    npmPackage: "@openai/codex",
+    homebrewFormula: "codex",
+    // Conductor can place a standalone Codex binary on PATH under
+    // `Application Support/.../agent-binaries/codex/<version>/codex`; npm
+    // cannot update that install. `buildUpdateCommand` special-cases this
+    // path so the updater runs the exact binary the app probed.
+    nativeUpdate: null,
   },
   {
     providerId: "grok",
@@ -60,6 +96,11 @@ const PROBES: ReadonlyArray<ProviderProbe> = [
     // Revisit if a future release breaks the streaming-json contract.
     minVersion: null,
     upgradeCommand: "curl -fsSL https://x.ai/cli/install.sh | bash",
+    // xAI ships Grok via a curl installer, not npm — no registry to poll.
+    // The installer reinstalls the latest build, so it doubles as the updater.
+    npmPackage: null,
+    homebrewFormula: null,
+    nativeUpdate: null,
   },
   {
     providerId: "gemini",
@@ -70,6 +111,9 @@ const PROBES: ReadonlyArray<ProviderProbe> = [
     // flag or breaks the handshake.
     minVersion: null,
     upgradeCommand: "npm i -g @google/gemini-cli",
+    npmPackage: "@google/gemini-cli",
+    homebrewFormula: "gemini-cli",
+    nativeUpdate: null,
   },
   {
     providerId: "cursor",
@@ -81,6 +125,11 @@ const PROBES: ReadonlyArray<ProviderProbe> = [
     // ACP-introducing version.
     minVersion: null,
     upgradeCommand: "curl https://cursor.com/install -fsS | bash",
+    // cursor-agent ships via a curl installer, not npm. Its install script
+    // reinstalls the latest build, so it doubles as the updater.
+    npmPackage: null,
+    homebrewFormula: null,
+    nativeUpdate: null,
   },
   {
     providerId: "opencode",
@@ -92,6 +141,14 @@ const PROBES: ReadonlyArray<ProviderProbe> = [
     // so we surface the upgrade card before the user hits that.
     minVersion: { major: 1, minor: 3, patch: 15, raw: "1.3.15" },
     upgradeCommand: "curl -fsSL https://opencode.ai/install | bash",
+    npmPackage: "opencode-ai",
+    homebrewFormula: "anomalyco/tap/opencode",
+    // Native installer drops the binary in `~/.opencode/bin/opencode` and
+    // ships an `opencode upgrade` self-updater.
+    nativeUpdate: {
+      command: "opencode upgrade",
+      matches: (p) => p.endsWith("/.opencode/bin/opencode"),
+    },
   },
 ];
 
@@ -114,6 +171,31 @@ const runCapture = (cmd: Command.Command) =>
     return { stdout: stdout.trim(), exitCode };
   }).pipe(Effect.scoped);
 
+const splitCommandPaths = (stdout: string): ReadonlyArray<string> =>
+  stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+export const selectCliPathCandidate = (
+  cliBinary: string,
+  candidates: ReadonlyArray<string>,
+): string | null => {
+  if (candidates.length === 0) return null;
+  if (cliBinary !== "codex") return candidates[0]!;
+
+  // Conductor can prepend its own standalone Codex binary to PATH for app
+  // internals. Provider settings should report the user's real Codex install
+  // when one exists later on PATH, matching what t3code does by resolving the
+  // provider binary before deriving version/update capabilities.
+  return (
+    candidates.find(
+      (candidate) =>
+        !isConductorManagedCodexPath(normalizeCommandPath(candidate)),
+    ) ?? candidates[0]!
+  );
+};
+
 /**
  * Resolve the absolute path to a provider's CLI binary on PATH, or `null` if
  * not found. Used by `ProviderService.start` to feed the SDK's
@@ -124,13 +206,17 @@ export const resolveCliPath = (
   cliBinary: string,
 ): Effect.Effect<string | null, never, CommandExecutor.CommandExecutor> =>
   Effect.gen(function* () {
-    const result = yield* runCapture(Command.make("which", cliBinary)).pipe(
+    const result = yield* runCapture(
+      Command.make("which", "-a", cliBinary),
+    ).pipe(
       Effect.timeoutOption(PROBE_TIMEOUT),
       Effect.catchAll(() => Effect.succeedNone),
     );
     if (result._tag !== "Some" || result.value.exitCode !== 0) return null;
-    const path = result.value.stdout;
-    return path.length > 0 ? path : null;
+    return selectCliPathCandidate(
+      cliBinary,
+      splitCommandPaths(result.value.stdout),
+    );
   });
 
 export interface CliVersion {
@@ -150,6 +236,49 @@ export const MIN_CODEX_CLI_VERSION: CliVersion = {
   patch: 0,
   raw: "0.128.0",
 };
+
+// Per-feature minimum Codex CLI version. This is the *pre-session* gate: the
+// renderer reads the resolved `capabilities` list off `AgentAvailability` to
+// show/hide a feature's control before any session exists. Each entry is one
+// `CodexFeature`. Adding a feature is additive — add it here and to the wire
+// `CodexFeature` literal, then gate the UI on the capability.
+//
+// Note for `fastMode`: the live `model/list` `serviceTiers` (emitted by the
+// driver as a `Capabilities` event) are the authoritative per-model gate, so
+// this floor only governs when the toggle first becomes visible — an
+// approximate value is safe.
+export const CODEX_FEATURE_FLOORS: ReadonlyArray<{
+  readonly feature: CodexFeature;
+  readonly min: CliVersion;
+}> = [
+  // Goal mode uses the `thread/goal/*` RPCs, which exist as of our SDK floor
+  // (0.128). Pinned at the floor so it's effectively always-on whenever Codex
+  // is new enough to run at all.
+  {
+    feature: "goalMode",
+    min: { major: 0, minor: 128, patch: 0, raw: "0.128.0" },
+  },
+  // Fast mode (`serviceTier: "fast"`) landed in a later release. TODO: confirm
+  // the exact CLI version; the runtime `serviceTiers` check is the real gate.
+  {
+    feature: "fastMode",
+    min: { major: 0, minor: 145, patch: 0, raw: "0.145.0" },
+  },
+];
+
+/**
+ * Resolve the version-gated features a Codex CLI of `parsed` version supports.
+ * Empty when the version couldn't be parsed (caller treats unknown versions as
+ * "no extra capabilities" — the renderer falls back to hiding gated controls).
+ */
+export const resolveCodexCapabilities = (
+  parsed: CliVersion | null,
+): ReadonlyArray<CodexFeature> =>
+  parsed === null
+    ? []
+    : CODEX_FEATURE_FLOORS.filter(
+        ({ min }) => compareCliVersion(parsed, min) >= 0,
+      ).map(({ feature }) => feature);
 
 // `codex --version` prints `codex-cli 0.27.0`; `claude --version` prints
 // `1.0.123 (Claude Code)`. Pull the first dotted triple we can find; ignore
@@ -182,14 +311,233 @@ export const probeCliVersion = (
   cliBinary: string,
 ): Effect.Effect<CliVersion | null, never, CommandExecutor.CommandExecutor> =>
   Effect.gen(function* () {
-    const result = yield* runCapture(
-      Command.make(cliBinary, "--version"),
-    ).pipe(
+    const result = yield* runCapture(Command.make(cliBinary, "--version")).pipe(
       Effect.timeoutOption(PROBE_TIMEOUT),
       Effect.catchAll(() => Effect.succeedNone),
     );
     if (result._tag !== "Some" || result.value.exitCode !== 0) return null;
     return parseCliVersion(result.value.stdout);
+  });
+
+// ---------------------------------------------------------------------------
+// Latest-version advisory (informational "update available" layer).
+//
+// Separate from the SDK floor above: this polls the npm registry for the
+// latest *published* release and compares it to what's installed. Everything
+// here is failure-tolerant — any miss collapses to `"unknown"` so a flaky
+// network never blocks (or even surfaces in) availability.
+// ---------------------------------------------------------------------------
+
+// In-memory cache so we hit the registry at most once per package per hour.
+// `probeAllProviders` runs on every settings open + window focus; without this
+// every focus would fan out a burst of registry calls.
+const LATEST_VERSION_CACHE_TTL_MS = 60 * 60 * 1_000;
+const latestVersionCache = new Map<
+  string,
+  { readonly version: string | null; readonly expiresAt: number }
+>();
+
+interface NpmLatestResponse {
+  readonly version?: unknown;
+}
+
+/**
+ * Resolve the latest published version of an npm package via the registry's
+ * lightweight `/<pkg>/latest` endpoint. Returns `null` on any failure
+ * (offline, non-2xx, malformed JSON, timeout) so callers treat it as
+ * "unknown" rather than erroring.
+ */
+const fetchNpmLatestVersion = (
+  packageName: string,
+): Effect.Effect<string | null> =>
+  Effect.tryPromise({
+    try: async (signal) => {
+      const res = await fetch(
+        `https://registry.npmjs.org/${encodeURIComponent(packageName)}/latest`,
+        { headers: { accept: "application/json" }, signal },
+      );
+      if (!res.ok) return null;
+      const body = (await res.json()) as NpmLatestResponse;
+      const version =
+        typeof body.version === "string" && body.version.trim().length > 0
+          ? body.version.trim()
+          : null;
+      return version;
+    },
+    catch: () => null,
+  }).pipe(
+    Effect.timeoutOption(PROBE_TIMEOUT),
+    Effect.map((opt) => (opt._tag === "Some" ? opt.value : null)),
+    Effect.catchAll(() => Effect.succeed(null)),
+  );
+
+/**
+ * Cached wrapper around {@link fetchNpmLatestVersion}. Returns `null` for
+ * providers with no npm package (curl-installed CLIs we don't version-check).
+ */
+const resolveLatestVersion = (
+  probe: ProviderProbe,
+): Effect.Effect<string | null> =>
+  Effect.gen(function* () {
+    if (probe.npmPackage === null) return null;
+    const now = Date.now();
+    const cached = latestVersionCache.get(probe.npmPackage);
+    if (cached !== undefined && cached.expiresAt > now) {
+      return cached.version;
+    }
+    const version = yield* fetchNpmLatestVersion(probe.npmPackage);
+    latestVersionCache.set(probe.npmPackage, {
+      version,
+      expiresAt: now + LATEST_VERSION_CACHE_TTL_MS,
+    });
+    return version;
+  });
+
+/**
+ * Compare the installed CLI version string against the latest published
+ * version. Reuses the SDK-floor parser/comparator so the semantics match.
+ * `"unknown"` whenever either side is missing or unparsable.
+ */
+export const deriveLatestAdvisory = (
+  cliVersion: string | undefined,
+  latestVersion: string | null,
+): LatestVersionStatus => {
+  if (cliVersion === undefined || latestVersion === null) return "unknown";
+  const installed = parseCliVersion(cliVersion);
+  const latest = parseCliVersion(latestVersion);
+  if (installed === null || latest === null) return "unknown";
+  return compareCliVersion(installed, latest) < 0 ? "behind" : "current";
+};
+
+// ---------------------------------------------------------------------------
+// Install-method detection. The right update command depends on HOW the
+// on-PATH binary was installed — a native install (`~/.local/bin/claude`)
+// can't be updated by npm, a brew install needs `brew upgrade`, etc. We
+// inspect the resolved binary path (and its realpath, since global bins are
+// symlinks into `…/lib/node_modules/…`) the same way the t3 reference does.
+// ---------------------------------------------------------------------------
+
+const normalizeCommandPath = (p: string): string =>
+  p.replaceAll("\\", "/").replaceAll("/./", "/").toLowerCase();
+
+const shellQuote = (value: string): string =>
+  `'${value.replaceAll("'", `'\\''`)}'`;
+
+const isBunGlobalPath = (p: string): boolean => p.includes("/.bun/bin/");
+
+const isPnpmGlobalPath = (p: string): boolean =>
+  p.includes("/.local/share/pnpm/") ||
+  p.includes("/library/pnpm/") ||
+  p.includes("/pnpm/global/");
+
+const isNpmGlobalPath = (p: string): boolean =>
+  p.includes("/lib/node_modules/") ||
+  p.includes("/node_modules/.bin/") ||
+  p.includes("/npm/node_modules/");
+
+const isHomebrewPath = (p: string): boolean =>
+  p.includes("/cellar/") ||
+  p.includes("/caskroom/") ||
+  p.startsWith("/opt/homebrew/bin/") ||
+  p.startsWith("/usr/local/bin/");
+
+const isConductorManagedCodexPath = (p: string): boolean =>
+  p.endsWith("/application support/com.conductor.app/bin/codex") ||
+  (p.includes("/application support/com.conductor.app/agent-binaries/codex/") &&
+    p.endsWith("/codex"));
+
+// A plain `npm i -g <pkg>@latest` re-install fails with ENOTEMPTY during npm's
+// "retire old dir" rename step when a prior install left files behind (common
+// with packages shipping optional per-platform binaries, e.g.
+// @anthropic-ai/claude-code). Uninstall first so install lays down a clean
+// tree; `|| true` keeps a not-installed case from aborting the chain.
+const npmGlobalUpdate = (pkg: string): string =>
+  `npm uninstall -g ${pkg} || true; npm install -g ${pkg}@latest`;
+
+/**
+ * Pure resolver: pick the update command for a provider given the candidate
+ * binary paths (the `which` result plus its realpath). Detection order mirrors
+ * the t3 reference: native self-update → bun → pnpm → npm → homebrew. Falls
+ * back to the provider's install one-liner (curl installers reinstall latest),
+ * else `null`.
+ */
+export const buildUpdateCommand = (
+  providerId: ProviderId,
+  candidatePaths: ReadonlyArray<string>,
+): string | null => {
+  const probe = PROBES.find((p) => p.providerId === providerId);
+  if (probe === undefined) return null;
+
+  const norms = candidatePaths
+    .filter((p) => p.length > 0)
+    .map(normalizeCommandPath);
+
+  const conductorManagedCodexPath = candidatePaths.find((p) =>
+    isConductorManagedCodexPath(normalizeCommandPath(p)),
+  );
+  if (providerId === "codex" && conductorManagedCodexPath !== undefined) {
+    return `${shellQuote(conductorManagedCodexPath)} update`;
+  }
+
+  if (
+    probe.nativeUpdate !== null &&
+    norms.some((p) => probe.nativeUpdate!.matches(p))
+  ) {
+    return probe.nativeUpdate.command;
+  }
+
+  if (probe.npmPackage !== null) {
+    if (norms.some(isBunGlobalPath)) {
+      return `bun i -g ${probe.npmPackage}@latest`;
+    }
+    if (norms.some(isPnpmGlobalPath)) {
+      return `pnpm add -g ${probe.npmPackage}@latest`;
+    }
+    if (norms.some(isNpmGlobalPath)) {
+      return npmGlobalUpdate(probe.npmPackage);
+    }
+    if (probe.homebrewFormula !== null && norms.some(isHomebrewPath)) {
+      return `brew upgrade ${probe.homebrewFormula}`;
+    }
+    if (candidatePaths.some((p) => p.includes("/") || p.includes("\\"))) {
+      return null;
+    }
+    // No path available: default to npm, which is how these packages are most
+    // commonly installed. Unknown absolute paths stay manual-only so we don't
+    // update a different install than the one being probed.
+    return npmGlobalUpdate(probe.npmPackage);
+  }
+
+  // Non-npm providers (Grok, Cursor): reinstall via the official one-liner.
+  return probe.upgradeCommand;
+};
+
+/**
+ * Resolve the update command for a provider by locating its binary and its
+ * realpath, then delegating to {@link buildUpdateCommand}. Run server-side via
+ * a login shell so PATH + pipes resolve — see `update-service.ts`.
+ */
+export const resolveUpdateCommand = (
+  providerId: ProviderId,
+): Effect.Effect<
+  string | null,
+  never,
+  CommandExecutor.CommandExecutor | FileSystem.FileSystem
+> =>
+  Effect.gen(function* () {
+    const probe = PROBES.find((p) => p.providerId === providerId);
+    if (probe === undefined) return null;
+    const cliPath = yield* resolveCliPath(probe.cliBinary);
+    if (cliPath === null) {
+      // Not on PATH — fall back to a path-less resolution (npm default /
+      // install one-liner) so the command still does something sensible.
+      return buildUpdateCommand(providerId, []);
+    }
+    const fs = yield* FileSystem.FileSystem;
+    const realPath = yield* fs
+      .realPath(cliPath)
+      .pipe(Effect.catchAll(() => Effect.succeed(cliPath)));
+    return buildUpdateCommand(providerId, [cliPath, realPath]);
   });
 
 // ---------------------------------------------------------------------------
@@ -392,16 +740,20 @@ const probeClaudeAccount: Effect.Effect<
 
 interface GrokAuthEntry {
   readonly key?: string; // JWT access token (contains "tier" claim)
+  readonly access_token?: string;
+  readonly token?: string;
+  readonly jwt?: string;
   readonly email?: string;
   readonly first_name?: string;
 }
 
 /**
- * Minimum `tier` value from the xAI OIDC JWT that includes SuperGrok Heavy
- * (the plan required for full Grok coding agent / `grok agent stdio` access).
- * Lower tiers will be treated as "requires subscription" (disabled + nag).
+ * Minimum `tier` value from the xAI OIDC JWT that includes Grok Build CLI
+ * access. xAI now exposes Grok Build to SuperGrok and X Premium+ subscribers;
+ * locally-observed X Premium+ tokens carry tier 4, while older SuperGrok Heavy
+ * tokens carried tier 5+.
  */
-const MIN_SUPERGROK_HEAVY_TIER = 5;
+const MIN_GROK_BUILD_TIER = 4;
 
 /** Base64url decode + parse a JWT payload (no signature verification). */
 const decodeJwtPayload = (jwt: string): Record<string, unknown> | null => {
@@ -420,27 +772,108 @@ const decodeJwtPayload = (jwt: string): Record<string, unknown> | null => {
   }
 };
 
+/**
+ * Best-effort extraction of a numeric `tier` claim from a JWT payload.
+ * Handles:
+ *  - top-level `tier`, `xai_tier`, `plan_tier`, `subscription.tier`
+ *  - string values that look like numbers
+ *  - deep search for any key containing "tier" whose value is a usable number
+ * Returns null when nothing plausible is found.
+ */
+const extractTier = (claims: unknown): number | null => {
+  if (!claims || typeof claims !== "object") return null;
+  const obj = claims as Record<string, unknown>;
+
+  const directCandidates = [
+    "tier",
+    "xai_tier",
+    "plan_tier",
+    "subscription_tier",
+    "agent_tier",
+  ];
+  for (const k of directCandidates) {
+    const v = obj[k];
+    if (typeof v === "number") return v;
+    if (typeof v === "string") {
+      const n = Number(v);
+      if (Number.isFinite(n)) return n;
+    }
+  }
+
+  // Nested objects (e.g. { subscription: { tier: 7 } }, { xai: { tier: 5 } })
+  const nested = ["subscription", "xai", "plan", "account", "user", "profile"];
+  for (const n of nested) {
+    const sub = obj[n];
+    if (sub && typeof sub === "object") {
+      const t = extractTier(sub);
+      if (t !== null) return t;
+    }
+  }
+
+  // Last resort: DFS for any *tier* key with a numeric-ish value
+  const stack: unknown[] = [obj];
+  while (stack.length > 0) {
+    const cur = stack.pop()!;
+    if (!cur || typeof cur !== "object") continue;
+    for (const [k, v] of Object.entries(cur as Record<string, unknown>)) {
+      if (k.toLowerCase().includes("tier")) {
+        if (typeof v === "number") return v;
+        if (typeof v === "string") {
+          const n = Number(v);
+          if (Number.isFinite(n)) return n;
+        }
+      }
+      if (v && typeof v === "object") stack.push(v);
+    }
+  }
+  return null;
+};
+
+const GROK_DEBUG = process.env.MEMOIZE_DEBUG_GROK === "1";
+
 const parseGrokAuthJson = (raw: string): AccountInfo => {
   try {
     const data = JSON.parse(raw) as Record<string, GrokAuthEntry>;
     const entry = Object.values(data)[0];
     if (!entry) {
+      // No entries but file existed → treat as authenticated (runtime will enforce)
       return {
         authStatus: "authenticated",
         authType: "cli",
-        authLabel: "Requires SuperGrok Heavy",
+        authLabel: "Grok",
       } satisfies AccountInfo;
     }
 
     const email = entry.email?.trim();
-    let authLabel = "Requires SuperGrok Heavy";
 
-    if (entry.key) {
-      const claims = decodeJwtPayload(entry.key);
-      const tier = claims?.tier;
-      if (typeof tier === "number" && tier >= MIN_SUPERGROK_HEAVY_TIER) {
-        authLabel = "SuperGrok Heavy";
+    // Try every plausible token field the CLI might use now or in the future
+    const token =
+      entry.key || entry.access_token || entry.token || entry.jwt || null;
+
+    let authLabel = "Grok";
+    let tierFound: number | null = null;
+
+    if (token) {
+      const claims = decodeJwtPayload(token);
+      tierFound = extractTier(claims);
+      if (GROK_DEBUG) {
+        process.stderr.write(
+          `[grok.probe] claimsKeys=${claims ? Object.keys(claims).slice(0, 8).join(",") : "null"} tier=${tierFound}\n`,
+        );
       }
+      if (typeof tierFound === "number") {
+        if (tierFound >= MIN_GROK_BUILD_TIER) {
+          authLabel = "Grok subscription";
+        } else {
+          authLabel = "Requires SuperGrok or X Premium+";
+        }
+      }
+      // else: we have a token but no usable tier claim → non-blocking "Grok"
+      // (runtime ACP still does the real entitlement check)
+    } else if (GROK_DEBUG) {
+      process.stderr.write(
+        `[grok.probe] entry present but no token field found\n`,
+      );
     }
 
     return {
@@ -449,76 +882,93 @@ const parseGrokAuthJson = (raw: string): AccountInfo => {
       ...(email ? { authEmail: email } : {}),
       authLabel,
     } satisfies AccountInfo;
-  } catch {
-    // Unparseable auth.json → conservative: treat as needing the plan.
+  } catch (e) {
+    if (GROK_DEBUG) {
+      process.stderr.write(`[grok.probe] parse error: ${e}\n`);
+    }
+    // Unparseable auth.json but file existed → authenticated (don't hard-block)
     return {
       authStatus: "authenticated",
       authType: "cli",
-      authLabel: "Requires SuperGrok Heavy",
+      authLabel: "Grok",
     } satisfies AccountInfo;
   }
 };
 
+// Exported for tests / debug only. Not part of the public module surface.
+export const grokAuthTestHelpers = {
+  parseGrokAuthJson,
+  extractTier,
+  decodeJwtPayload,
+};
+
 // Grok stores OIDC credentials (JWT + email + tier claim) in `~/.grok/auth.json`
 // after `grok login`. We parse the JWT to read the `tier` claim and decide the
-// plan status:
+// plan status (best-effort only — the ACP binary is the source of truth):
 //
-// - tier >= 5 → authLabel: "SuperGrok Heavy"   (good, card shows plan, toggle enabled)
-// - lower / no JWT / unreadable → authLabel: "Requires SuperGrok Heavy" (disabled + violet nag)
+// - tier >= 4 → "Grok subscription"   (nice label, toggle enabled)
+// - tier < 4  → "Requires SuperGrok or X Premium+" (violet nag + disabled)
+// - token present but tier unreadable / missing / new shape → "Grok" (non-blocking)
+//   The runtime will surface the precise AuthorizationRequired if the account
+//   truly lacks the agent entitlement.
 //
-// This gives real plan details in the UI while keeping the safety net for
-// accounts that don't have the required SuperGrok Heavy plan. The final gate
-// is still enforced server-side by the Grok ACP.
-const probeGrokAccount: Effect.Effect<AccountInfo, never, FileSystem.FileSystem> =
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const dir = join(homedir(), ".grok");
-    const authPath = join(dir, "auth.json");
+// This change (from always-requires on parse failure) stops paying SuperGrok
+// Heavy users from being incorrectly locked out by our heuristic when the
+// auth.json shape or claim location differs from what we first shipped.
+const probeGrokAccount: Effect.Effect<
+  AccountInfo,
+  never,
+  FileSystem.FileSystem
+> = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const dir = join(homedir(), ".grok");
+  const authPath = join(dir, "auth.json");
 
-    const authExists = yield* fs
-      .exists(authPath)
-      .pipe(Effect.catchAll(() => Effect.succeed(false)));
+  const authExists = yield* fs
+    .exists(authPath)
+    .pipe(Effect.catchAll(() => Effect.succeed(false)));
 
-    if (authExists) {
-      const raw = yield* fs
-        .readFileString(authPath)
-        .pipe(Effect.catchAll(() => Effect.succeed("")));
-      if (raw.length > 0) {
-        return parseGrokAuthJson(raw);
-      }
+  if (authExists) {
+    const raw = yield* fs
+      .readFileString(authPath)
+      .pipe(Effect.catchAll(() => Effect.succeed("")));
+    if (raw.length > 0) {
+      return parseGrokAuthJson(raw);
     }
+  }
 
-    // No auth.json (legacy dir, API key only, or first-run state).
-    // We conservatively report "Requires SuperGrok Heavy" so the UI disables
-    // the toggle and shows the subscription notice (same as before for unknown plans).
-    const dirExists = yield* fs
-      .exists(dir)
-      .pipe(Effect.catchAll(() => Effect.succeed(false)));
-    return dirExists
-      ? ({
-          authStatus: "authenticated",
-          authType: "cli",
-          authLabel: "Requires SuperGrok Heavy",
-        } satisfies AccountInfo)
-      : ({ authStatus: "unauthenticated" } satisfies AccountInfo);
-  });
+  // No auth.json at all → unauthenticated (user has never run `grok login`)
+  const dirExists = yield* fs
+    .exists(dir)
+    .pipe(Effect.catchAll(() => Effect.succeed(false)));
+  return dirExists
+    ? ({
+        authStatus: "authenticated",
+        authType: "cli",
+        authLabel: "Grok",
+      } satisfies AccountInfo)
+    : ({ authStatus: "unauthenticated" } satisfies AccountInfo);
+});
 
 // Gemini CLI writes OAuth tokens + settings under `~/.gemini/` after the
 // first interactive sign-in. Same file-existence heuristic as Grok — we
 // don't yet have a verified-auth call we can make to the gemini CLI to
 // extract email/plan, so the card stays at "Authenticated" without the
 // subscription label.
-const probeGeminiAccount: Effect.Effect<AccountInfo, never, FileSystem.FileSystem> =
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const path = join(homedir(), ".gemini");
-    const exists = yield* fs
-      .exists(path)
-      .pipe(Effect.catchAll(() => Effect.succeed(false)));
-    return exists
-      ? ({ authStatus: "authenticated", authType: "cli" } satisfies AccountInfo)
-      : ({ authStatus: "unauthenticated" } satisfies AccountInfo);
-  });
+const probeGeminiAccount: Effect.Effect<
+  AccountInfo,
+  never,
+  FileSystem.FileSystem
+> = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const path = join(homedir(), ".gemini");
+  const exists = yield* fs
+    .exists(path)
+    .pipe(Effect.catchAll(() => Effect.succeed(false)));
+  return exists
+    ? ({ authStatus: "authenticated", authType: "cli" } satisfies AccountInfo)
+    : ({ authStatus: "unauthenticated" } satisfies AccountInfo);
+});
 
 // Strip ANSI escape sequences (cursor-positioning, colors, etc). The
 // cursor-agent CLI emits a TUI-style status frame before its final answer,
@@ -586,7 +1036,9 @@ const probeCursorAccount: Effect.Effect<
   }
   // Exit code is not a reliable signal — the CLI returns 0 even when not
   // logged in. Parse the text instead.
-  return parseCursorStatusOutput(`${result.value.stdout}\n${result.value.stderr}`);
+  return parseCursorStatusOutput(
+    `${result.value.stdout}\n${result.value.stderr}`,
+  );
 });
 
 // OpenCode stores per-provider credentials in `~/.local/share/opencode/auth.json`
@@ -630,13 +1082,7 @@ const probeOpencodeAccount: Effect.Effect<
   FileSystem.FileSystem
 > = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
-  const authPath = join(
-    homedir(),
-    ".local",
-    "share",
-    "opencode",
-    "auth.json",
-  );
+  const authPath = join(homedir(), ".local", "share", "opencode", "auth.json");
   const exists = yield* fs
     .exists(authPath)
     .pipe(Effect.catchAll(() => Effect.succeed(false)));
@@ -702,17 +1148,9 @@ const probeOne = (
 > =>
   Effect.gen(function* () {
     const lastCheckedAt = new Date();
-    const whichResult = yield* runCapture(Command.make("which", probe.cliBinary)).pipe(
-      Effect.timeoutOption(PROBE_TIMEOUT),
-      Effect.catchAll(() => Effect.succeedNone),
-    );
+    const cliPath = yield* resolveCliPath(probe.cliBinary);
 
-    const cliPath =
-      whichResult._tag === "Some" && whichResult.value.exitCode === 0
-        ? whichResult.value.stdout
-        : undefined;
-
-    if (cliPath === undefined || cliPath.length === 0) {
+    if (cliPath === null || cliPath.length === 0) {
       return AgentAvailability.make({
         providerId: probe.providerId,
         displayName: probe.displayName,
@@ -726,7 +1164,7 @@ const probeOne = (
     }
 
     const versionResult = yield* runCapture(
-      Command.make(probe.cliBinary, "--version"),
+      Command.make(cliPath, "--version"),
     ).pipe(
       Effect.timeoutOption(PROBE_TIMEOUT),
       Effect.catchAll(() => Effect.succeedNone),
@@ -741,22 +1179,49 @@ const probeOne = (
     // doesn't need its own parser. `unknown` covers both "no min tracked for
     // this provider" and "we tried to parse and failed" — both are
     // "let them try" cases as far as the upgrade card is concerned.
+    const parsedVersion =
+      cliVersion !== undefined ? parseCliVersion(cliVersion) : null;
     let cliVersionStatus: CliVersionStatus = "unknown";
     let cliVersionMinRequired: string | undefined;
     let cliUpgradeCommand: string | undefined;
     if (probe.minVersion !== null) {
       cliVersionMinRequired = probe.minVersion.raw;
       cliUpgradeCommand = probe.upgradeCommand ?? undefined;
-      const parsed =
-        cliVersion !== undefined ? parseCliVersion(cliVersion) : null;
-      if (parsed === null) {
+      if (parsedVersion === null) {
         cliVersionStatus = "unknown";
-      } else if (compareCliVersion(parsed, probe.minVersion) < 0) {
+      } else if (compareCliVersion(parsedVersion, probe.minVersion) < 0) {
         cliVersionStatus = "outdated";
       } else {
         cliVersionStatus = "ok";
       }
     }
+
+    // Version-gated features the installed CLI supports (pre-session UI gate).
+    // Only Codex declares gated features today; others resolve to `[]`.
+    const capabilities =
+      probe.providerId === "codex"
+        ? resolveCodexCapabilities(parsedVersion)
+        : [];
+
+    // Informational "update available" layer — independent of the SDK floor.
+    // Only providers with a registry package are checked; the rest report
+    // `"unknown"` and surface no update affordance.
+    const latestVersionRaw = yield* resolveLatestVersion(probe);
+    const latestVersion = latestVersionRaw ?? undefined;
+    const latestVersionStatus = deriveLatestAdvisory(
+      cliVersion,
+      latestVersionRaw,
+    );
+    // Install-method-aware update command (native / brew / bun / pnpm / npm /
+    // curl). Resolve the binary's realpath too, since global bins are symlinks
+    // into `…/lib/node_modules/…`. Set for every provider that has any update
+    // path so the renderer can offer one-click update.
+    const fs = yield* FileSystem.FileSystem;
+    const realPath = yield* fs
+      .realPath(cliPath)
+      .pipe(Effect.catchAll(() => Effect.succeed(cliPath)));
+    const updateCommand =
+      buildUpdateCommand(probe.providerId, [cliPath, realPath]) ?? undefined;
 
     const account = yield* probeAccount(probe.providerId, cliPath);
     const cliLoggedIn = account.authStatus === "authenticated";
@@ -786,6 +1251,10 @@ const probeOne = (
       cliVersionStatus,
       cliVersionMinRequired,
       cliUpgradeCommand,
+      capabilities,
+      latestVersion,
+      latestVersionStatus,
+      updateCommand,
       authStatus: account.authStatus,
       authEmail: account.authEmail,
       authLabel: account.authLabel,

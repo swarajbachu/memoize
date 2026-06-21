@@ -6,13 +6,22 @@ import type {
   AttachmentRef,
   Chat,
   ChatAlreadyStartedError,
+  ChatArchiveResult,
+  ChatArchiveScriptError,
+  ChatArchiveTimeoutError,
+  ChatArchiveWorktreeError,
   ChatId,
   ChatNotFoundError,
+  ChatUnarchiveResult,
+  CodeAnnotation,
+  ComposerInput,
   FileRef,
   FolderId,
+  GoalUnsupportedError,
   Message,
   PermissionMode,
   ProviderId,
+  QueuedMessage,
   RuntimeMode,
   Session,
   SessionAlreadyStartedError,
@@ -21,6 +30,8 @@ import type {
   SessionStartError,
   SessionStatus,
   SkillRef,
+  ThreadGoal,
+  ThreadGoalSetInput,
   UserQuestionAnswer,
   WorktreeId,
 } from "@memoize/wire";
@@ -75,6 +86,16 @@ export interface CreateSessionInput {
    * the flag is here so 0.04's code-index MCP servers can ride on it.
    */
   readonly toolSearch?: boolean;
+  /**
+   * Defer `provider.start` to a background fiber and return as soon as the
+   * row is inserted. The returned `Session` has `status = "booting"`; a
+   * status pubsub event fires when boot finishes (`idle`/`running`) or
+   * fails (`error`). Used by the `session.create` RPC so a new in-chat tab
+   * appears in ~hundreds of ms instead of ~60s. `chat.create` keeps the
+   * default synchronous behavior so its existing staged loading panel
+   * timing is preserved.
+   */
+  readonly background?: boolean;
 }
 
 export interface CreateChatInput {
@@ -125,10 +146,7 @@ export interface MessageStoreShape {
     sessionId: SessionId,
     providerId: ProviderId,
     model: string,
-  ) => Effect.Effect<
-    void,
-    SessionNotFoundError | SessionAlreadyStartedError
-  >;
+  ) => Effect.Effect<void, SessionNotFoundError | SessionAlreadyStartedError>;
 
   /**
    * Update the per-session permission posture. The change applies to the
@@ -170,10 +188,7 @@ export interface MessageStoreShape {
   readonly setWorktree: (
     sessionId: SessionId,
     worktreeId: WorktreeId | null,
-  ) => Effect.Effect<
-    void,
-    SessionNotFoundError | SessionAlreadyStartedError
-  >;
+  ) => Effect.Effect<void, SessionNotFoundError | SessionAlreadyStartedError>;
 
   readonly archiveSession: (
     sessionId: SessionId,
@@ -196,18 +211,21 @@ export interface MessageStoreShape {
     includeArchived: boolean,
   ) => Effect.Effect<ReadonlyArray<Chat>>;
 
-  readonly getChat: (
-    chatId: ChatId,
-  ) => Effect.Effect<Chat, ChatNotFoundError>;
+  readonly getChat: (chatId: ChatId) => Effect.Effect<Chat, ChatNotFoundError>;
 
   /**
    * Creates the chat row AND its initial session in one transaction.
-   * Returns both so the renderer lands directly on the new session.
+   * Returns both so the renderer lands directly on the new session, plus
+   * the persisted initial user message (when `initialPrompt` was supplied)
+   * so the renderer can seed its messages store and skip the empty-state
+   * flash while the live stream connects.
    */
-  readonly createChat: (
-    input: CreateChatInput,
-  ) => Effect.Effect<
-    { readonly chat: Chat; readonly initialSession: Session },
+  readonly createChat: (input: CreateChatInput) => Effect.Effect<
+    {
+      readonly chat: Chat;
+      readonly initialSession: Session;
+      readonly initialMessage: Message | null;
+    },
     SessionStartError
   >;
 
@@ -215,6 +233,22 @@ export interface MessageStoreShape {
     chatId: ChatId,
     title: string,
   ) => Effect.Effect<void, ChatNotFoundError>;
+
+  /**
+   * Mark a chat read by stamping `last_read_at` to "now". Returns the
+   * refreshed chat. Idempotent.
+   */
+  readonly markChatRead: (
+    chatId: ChatId,
+  ) => Effect.Effect<Chat, ChatNotFoundError>;
+
+  /**
+   * Live feed of chat-row changes (title / worktree) for one project. Emits
+   * only live patches — no backfill — so the renderer keeps its `chat.list`
+   * snapshot and applies updates (e.g. the background auto-namer rewriting a
+   * title) on top. Never fails.
+   */
+  readonly streamChatChanges: (projectId: FolderId) => Stream.Stream<Chat>;
 
   /**
    * Update the chat's worktree. Allowed only when no session in the chat
@@ -238,11 +272,20 @@ export interface MessageStoreShape {
 
   readonly archiveChat: (
     chatId: ChatId,
-  ) => Effect.Effect<void, ChatNotFoundError>;
+  ) => Effect.Effect<
+    ChatArchiveResult,
+    | ChatNotFoundError
+    | ChatArchiveScriptError
+    | ChatArchiveTimeoutError
+    | ChatArchiveWorktreeError
+  >;
 
   readonly unarchiveChat: (
     chatId: ChatId,
-  ) => Effect.Effect<void, ChatNotFoundError>;
+  ) => Effect.Effect<
+    ChatUnarchiveResult,
+    ChatNotFoundError | ChatArchiveWorktreeError
+  >;
 
   readonly deleteChat: (
     chatId: ChatId,
@@ -273,15 +316,81 @@ export interface MessageStoreShape {
     SessionNotFoundError
   >;
 
+  readonly getGoal: (
+    sessionId: SessionId,
+  ) => Effect.Effect<
+    ThreadGoal | null,
+    SessionNotFoundError | GoalUnsupportedError
+  >;
+
+  readonly setGoal: (
+    sessionId: SessionId,
+    goal: ThreadGoalSetInput,
+  ) => Effect.Effect<
+    ThreadGoal,
+    SessionNotFoundError | SessionStartError | GoalUnsupportedError
+  >;
+
+  readonly clearGoal: (
+    sessionId: SessionId,
+  ) => Effect.Effect<void, SessionNotFoundError | GoalUnsupportedError>;
+
+  readonly streamGoal: (
+    sessionId: SessionId,
+  ) => Stream.Stream<
+    { readonly sessionId: SessionId; readonly goal: ThreadGoal | null },
+    SessionNotFoundError | GoalUnsupportedError
+  >;
+
   readonly sendMessage: (
     sessionId: SessionId,
     text: string,
     attachments?: ReadonlyArray<AttachmentRef>,
     fileRefs?: ReadonlyArray<FileRef>,
     skillRefs?: ReadonlyArray<SkillRef>,
+    annotations?: ReadonlyArray<CodeAnnotation>,
+    asGoal?: boolean,
   ) => Effect.Effect<void, SessionNotFoundError>;
 
   readonly interruptSession: (
+    sessionId: SessionId,
+  ) => Effect.Effect<void, SessionNotFoundError>;
+
+  readonly listQueuedMessages: (
+    sessionId: SessionId,
+  ) => Effect.Effect<ReadonlyArray<QueuedMessage>, SessionNotFoundError>;
+
+  readonly streamQueuedMessages: (
+    sessionId: SessionId,
+  ) => Stream.Stream<ReadonlyArray<QueuedMessage>, SessionNotFoundError>;
+
+  readonly addQueuedMessage: (
+    sessionId: SessionId,
+    input: ComposerInput,
+  ) => Effect.Effect<QueuedMessage, SessionNotFoundError>;
+
+  readonly updateQueuedMessage: (
+    sessionId: SessionId,
+    queueId: string,
+    input: ComposerInput,
+  ) => Effect.Effect<QueuedMessage, SessionNotFoundError>;
+
+  readonly deleteQueuedMessage: (
+    sessionId: SessionId,
+    queueId: string,
+  ) => Effect.Effect<void, SessionNotFoundError>;
+
+  readonly sendQueuedMessageNow: (
+    sessionId: SessionId,
+    queueId: string,
+  ) => Effect.Effect<void, SessionNotFoundError>;
+
+  readonly reorderQueuedMessages: (
+    sessionId: SessionId,
+    queueIds: ReadonlyArray<string>,
+  ) => Effect.Effect<ReadonlyArray<QueuedMessage>, SessionNotFoundError>;
+
+  readonly flushQueuedMessages: (
     sessionId: SessionId,
   ) => Effect.Effect<void, SessionNotFoundError>;
 }

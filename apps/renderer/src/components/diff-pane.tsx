@@ -1,13 +1,7 @@
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Alert01Icon, ArrowRight01Icon, ArrowTurnDownIcon, Loading02Icon, MinusSignIcon, RotateLeft01Icon, Tick02Icon, Upload01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import { Effect } from "effect";
-import {
-  AlertTriangle,
-  ArrowRight,
-  CornerDownLeft,
-  Loader2,
-  Minus,
-  Plus,
-  Upload,
-} from "lucide-react";
+import { Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import type {
@@ -18,6 +12,7 @@ import type {
 } from "@memoize/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
+import { GitInitCta } from "./git-init-cta.tsx";
 import { gitChangesKey, useGitChangesStore } from "../store/git-changes.ts";
 import { gitStatusKey, useGitStatusStore } from "../store/git-status.ts";
 import { prDetailsKey, usePrDetailsStore } from "../store/pr-details.ts";
@@ -82,10 +77,18 @@ export function DiffPane({
       ? (s.errorByKey[gitChangesKey(folderId, worktreeId)] ?? null)
       : null,
   );
+  const changesErrorTag = useGitChangesStore((s) =>
+    folderId
+      ? (s.errorTagByKey[gitChangesKey(folderId, worktreeId)] ?? null)
+      : null,
+  );
   const refreshChanges = useGitChangesStore((s) => s.refresh);
   const refreshStatus = useGitStatusStore((s) => s.refresh);
   const refreshPrState = usePrStateStore((s) => s.refresh);
   const refreshPrDetails = usePrDetailsStore((s) => s.refresh);
+
+  // Paths the user has unchecked for the next commit (see `committable` below).
+  const [excluded, setExcluded] = useState<Set<string>>(() => new Set());
 
   // Poll the working tree on the same 5s cadence the top bar uses for
   // `git status`, so the Changes tab stays in sync with the dirty-count badge.
@@ -112,53 +115,165 @@ export function DiffPane({
     ]);
   };
 
+  const conflicts = (changes ?? []).filter((c) => c.kind === "unmerged");
   const tracked = (changes ?? []).filter(
-    (c) => c.kind !== "untracked" && c.kind !== "ignored",
+    (c) =>
+      c.kind !== "untracked" && c.kind !== "ignored" && c.kind !== "unmerged",
   );
   const untracked = (changes ?? []).filter((c) => c.kind === "untracked");
-  const totalChanges = tracked.length + untracked.length;
 
   const prFiles = prDetails?.files ?? [];
+
+  const revertFile = async (
+    path: string,
+    kind: GitChangeKind,
+    oldPath?: string | null,
+  ) => {
+    const confirmText =
+      kind === "untracked"
+        ? `Delete "${basename(path)}"? It will be removed from disk.`
+        : `Revert changes to "${basename(path)}"? This discards its uncommitted changes.`;
+    if (!window.confirm(confirmText)) return;
+    try {
+      const client = await getRpcClient();
+      await Effect.runPromise(
+        client.git.revertFile({
+          folderId,
+          worktreeId,
+          path,
+          oldPath: oldPath ?? null,
+          kind,
+        }),
+      );
+      await refreshAll();
+    } catch (err) {
+      window.alert(`Couldn't revert: ${formatErr(err)}`);
+    }
+  };
+
+  const revertAll = async () => {
+    if (
+      !window.confirm(
+        "Revert all changes? This discards every uncommitted change and deletes untracked files. This cannot be undone.",
+      )
+    )
+      return;
+    try {
+      const client = await getRpcClient();
+      await Effect.runPromise(client.git.revertAll({ folderId, worktreeId }));
+      await refreshAll();
+    } catch (err) {
+      window.alert(`Couldn't revert: ${formatErr(err)}`);
+    }
+  };
+
+  // Which files are included in the next commit. We track an *exclude* set
+  // (paths the user unchecked) so newly-appeared files default to selected and
+  // the selection survives the 5s poll without re-adding every path.
+  const committable = [...tracked, ...untracked];
+  const committablePaths = committable.map((c) => c.path);
+  const selectedEntries = committable.filter((c) => !excluded.has(c.path));
+  const selectedCount = selectedEntries.length;
+  // The pathspec handed to `git commit` — renames need their old path too so
+  // the deletion side of the move lands in the same commit.
+  const commitPaths = selectedEntries.flatMap((c) =>
+    c.oldPath !== null && c.oldPath !== c.path ? [c.path, c.oldPath] : [c.path],
+  );
+  const allSelected =
+    committablePaths.length > 0 && selectedCount === committablePaths.length;
+  const someSelected = selectedCount > 0 && !allSelected;
+
+  const togglePath = (path: string) =>
+    setExcluded((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  const toggleAll = () =>
+    setExcluded(allSelected ? new Set(committablePaths) : new Set());
+
+  const onAfterCommit = async () => {
+    setExcluded(new Set());
+    await refreshAll();
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-3 py-3 text-xs">
+        {conflicts.length > 0 ? (
+          <Section
+            title="Conflicts"
+            counter={conflicts.length}
+            tone="warning"
+          >
+            <p className="text-muted-foreground">
+              Resolve these files, then commit. Click a file to open it.
+            </p>
+            <ChangeList
+              folderId={folderId}
+              worktreeId={worktreeId}
+              entries={conflicts}
+            />
+          </Section>
+        ) : null}
+
         <Section
           title="Uncommitted"
           counter={
-            changesLoading && changes === null
+            changesErrorTag === "GitNotARepoError" ||
+            (changesLoading && changes === null)
               ? null
-              : totalChanges
+              : tracked.length + untracked.length
+          }
+          leading={
+            committable.length > 0 ? (
+              <CheckBox
+                checked={allSelected}
+                indeterminate={someSelected}
+                onClick={toggleAll}
+                title={allSelected ? "Deselect all" : "Select all"}
+              />
+            ) : null
+          }
+          action={
+            committable.length > 0 ? (
+              <button
+                type="button"
+                onClick={revertAll}
+                className="flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-destructive"
+                title="Discard every uncommitted change"
+              >
+                <HugeiconsIcon icon={RotateLeft01Icon} className="size-2.5" strokeWidth={2} />
+                Revert all
+              </button>
+            ) : null
           }
         >
-          {changesError !== null ? (
-            <p className="text-rose-300/80">Couldn't read git status: {changesError}</p>
+          {changesErrorTag === "GitNotARepoError" ? (
+            <GitInitCta folderId={folderId} worktreeId={worktreeId} />
+          ) : changesError !== null ? (
+            <p className="text-destructive">Couldn't read git status: {changesError}</p>
           ) : changesLoading && changes === null ? (
             <Indicator title="Reading working tree…" />
-          ) : totalChanges === 0 ? (
+          ) : tracked.length + untracked.length === 0 ? (
             <Indicator
-              title="Working tree clean"
-              body="Nothing to commit."
+              title={conflicts.length > 0 ? "No other changes" : "Working tree clean"}
+              body={
+                conflicts.length > 0
+                  ? "Resolve the conflicts above to continue."
+                  : "Nothing to commit."
+              }
             />
           ) : (
-            <>
-              {tracked.length > 0 ? (
-                <ChangeList
-                  label="Tracked"
-                  folderId={folderId}
-                  worktreeId={worktreeId}
-                  entries={tracked}
-                />
-              ) : null}
-              {untracked.length > 0 ? (
-                <ChangeList
-                  label="Untracked"
-                  folderId={folderId}
-                  worktreeId={worktreeId}
-                  entries={untracked}
-                />
-              ) : null}
-            </>
+            <ChangeList
+              folderId={folderId}
+              worktreeId={worktreeId}
+              entries={committable}
+              onRevert={revertFile}
+              isSelected={(path) => !excluded.has(path)}
+              onToggleSelect={togglePath}
+            />
           )}
         </Section>
 
@@ -189,9 +304,11 @@ export function DiffPane({
         worktreeId={worktreeId}
         branch={status?.branch ?? null}
         ahead={status?.ahead ?? 0}
-        canCommit={tracked.length + untracked.length > 0}
+        paths={commitPaths}
+        selectedCount={selectedCount}
+        totalCount={committablePaths.length}
         canPush={(status?.ahead ?? 0) > 0}
-        onAfterCommit={refreshAll}
+        onAfterCommit={onAfterCommit}
         onAfterPush={refreshAll}
       />
     </div>
@@ -199,21 +316,26 @@ export function DiffPane({
 }
 
 function ChangeList({
-  label,
   folderId,
   worktreeId,
   entries,
+  onRevert,
+  isSelected,
+  onToggleSelect,
 }: {
-  label: string;
   folderId: FolderId;
   worktreeId: WorktreeId | null;
   entries: ReadonlyArray<GitChange>;
+  onRevert?: (
+    path: string,
+    kind: GitChangeKind,
+    oldPath?: string | null,
+  ) => void;
+  isSelected?: (path: string) => boolean;
+  onToggleSelect?: (path: string) => void;
 }) {
   return (
-    <div className="flex flex-col gap-1">
-      <div className="text-[10px] uppercase tracking-wide text-muted-foreground/80">
-        {label}
-      </div>
+    <div className="flex flex-col">
       <ul className="flex flex-col">
         {entries.map((c) => (
           <FileRow
@@ -223,6 +345,13 @@ function ChangeList({
             path={c.path}
             oldPath={c.oldPath}
             kind={c.kind}
+            onRevert={
+              onRevert ? () => onRevert(c.path, c.kind, c.oldPath) : undefined
+            }
+            selected={isSelected ? isSelected(c.path) : undefined}
+            onToggleSelect={
+              onToggleSelect ? () => onToggleSelect(c.path) : undefined
+            }
           />
         ))}
       </ul>
@@ -238,6 +367,9 @@ function FileRow({
   kind,
   additions,
   deletions,
+  onRevert,
+  selected,
+  onToggleSelect,
 }: {
   folderId: FolderId;
   worktreeId: WorktreeId | null;
@@ -246,45 +378,77 @@ function FileRow({
   kind: GitChangeKind;
   additions?: number;
   deletions?: number;
+  onRevert?: () => void;
+  selected?: boolean;
+  onToggleSelect?: () => void;
 }) {
   const openFileInTab = useUiStore((s) => s.openFileInTab);
   const renamed = oldPath !== null && oldPath !== undefined && oldPath !== path;
   const tooltip = renamed ? `${oldPath} → ${path}` : path;
   return (
-    <li>
+    <li className="group -mx-1 flex w-[calc(100%+0.5rem)] items-center gap-2 rounded-sm px-1.5 py-1 transition-colors hover:bg-foreground/5">
+      {onToggleSelect ? (
+        <CheckBox
+          checked={selected === true}
+          onClick={onToggleSelect}
+          title={selected ? "Exclude from commit" : "Include in commit"}
+        />
+      ) : null}
       <button
         type="button"
         onClick={() =>
-          openFileInTab({ folderId, worktreeId, path, name: basename(path) })
+          openFileInTab({
+            kind: "text",
+            folderId,
+            worktreeId,
+            path,
+            name: basename(path),
+            view: "diff",
+          })
         }
-        className="-mx-1 flex w-[calc(100%+0.5rem)] items-center justify-between gap-2 rounded-sm px-1 py-0.5 text-left transition-colors hover:bg-foreground/5"
+        className="flex min-w-0 flex-1 items-baseline gap-1.5 text-left"
         title={tooltip}
       >
-        <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
-          {renamed ? <RenameLabel oldPath={oldPath!} newPath={path} /> : (
-            <PathLabel path={path} />
-          )}
-        </span>
-        <span className="flex shrink-0 items-center gap-1.5">
-          {typeof additions === "number" || typeof deletions === "number" ? (
-            <span className="font-mono text-[10px]">
-              {typeof additions === "number" && additions > 0 ? (
-                <span className="text-emerald-300/90">+{additions}</span>
-              ) : null}
-              {typeof additions === "number" &&
-              typeof deletions === "number" &&
-              additions > 0 &&
-              deletions > 0 ? (
-                " "
-              ) : null}
-              {typeof deletions === "number" && deletions > 0 ? (
-                <span className="text-rose-300/90">−{deletions}</span>
-              ) : null}
-            </span>
-          ) : null}
-          <KindBox kind={kind} />
-        </span>
+        {renamed ? <RenameLabel oldPath={oldPath!} newPath={path} /> : (
+          <PathLabel path={path} />
+        )}
       </button>
+      <span className="flex shrink-0 items-center gap-1.5">
+        {typeof additions === "number" || typeof deletions === "number" ? (
+          <span className="font-mono text-[11px]">
+            {typeof additions === "number" && additions > 0 ? (
+              <span className="text-success">+{additions}</span>
+            ) : null}
+            {typeof additions === "number" &&
+            typeof deletions === "number" &&
+            additions > 0 &&
+            deletions > 0 ? (
+              " "
+            ) : null}
+            {typeof deletions === "number" && deletions > 0 ? (
+              <span className="text-destructive">−{deletions}</span>
+            ) : null}
+          </span>
+        ) : null}
+        {onRevert ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRevert();
+            }}
+            className="flex size-[14px] shrink-0 items-center justify-center rounded-[3px] text-muted-foreground opacity-0 transition hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
+            title={
+              kind === "untracked"
+                ? "Delete this untracked file"
+                : "Revert changes to this file"
+            }
+          >
+            <HugeiconsIcon icon={RotateLeft01Icon} className="size-3" strokeWidth={2} />
+          </button>
+        ) : null}
+        <KindBox kind={kind} />
+      </span>
     </li>
   );
 }
@@ -292,16 +456,12 @@ function FileRow({
 function PathLabel({ path }: { path: string }) {
   const dir = dirname(path);
   return (
-    <>
-      <span className="truncate font-mono text-[11px] text-foreground/90">
-        {basename(path)}
-      </span>
+    <span className="flex min-w-0 items-baseline font-mono text-xs">
       {dir.length > 0 ? (
-        <span className="truncate font-mono text-[10px] text-muted-foreground">
-          {dir}
-        </span>
+        <span className="truncate text-muted-foreground">{dir}/</span>
       ) : null}
-    </>
+      <span className="shrink-0 text-foreground">{basename(path)}</span>
+    </span>
   );
 }
 
@@ -319,12 +479,12 @@ function RenameLabel({ oldPath, newPath }: { oldPath: string; newPath: string })
   const sameDir = oldDir === newDir;
   return (
     <>
-      <span className="flex min-w-0 items-baseline gap-1 truncate font-mono text-[11px] text-foreground/90">
+      <span className="flex min-w-0 items-baseline gap-1 truncate font-mono text-xs text-foreground">
         <span className="truncate">{oldName}</span>
-        <ArrowRight className="size-3 shrink-0 text-muted-foreground" />
+        <HugeiconsIcon icon={ArrowRight01Icon} className="size-3 shrink-0 text-muted-foreground" />
         <span className="truncate">{newName}</span>
       </span>
-      <span className="truncate font-mono text-[10px] text-muted-foreground">
+      <span className="truncate font-mono text-[11px] text-muted-foreground">
         {sameDir
           ? newDir
           : `${oldDir.length > 0 ? oldDir : "."} → ${newDir.length > 0 ? newDir : "."}`}
@@ -345,13 +505,13 @@ function KindBox({ kind }: { kind: GitChangeKind }) {
     case "untracked":
       return (
         <Box tone="emerald">
-          <Plus className="size-2.5" strokeWidth={3} />
+          <Plus className="size-2.5" strokeWidth={2} />
         </Box>
       );
     case "deleted":
       return (
         <Box tone="rose">
-          <Minus className="size-2.5" strokeWidth={3} />
+          <HugeiconsIcon icon={MinusSignIcon} className="size-2.5" strokeWidth={3} />
         </Box>
       );
     case "modified":
@@ -366,7 +526,7 @@ function KindBox({ kind }: { kind: GitChangeKind }) {
     case "unmerged":
       return (
         <Box tone="rose">
-          <AlertTriangle className="size-2.5" strokeWidth={2.5} />
+          <HugeiconsIcon icon={Alert01Icon} className="size-2.5" strokeWidth={2.5} />
         </Box>
       );
     case "ignored":
@@ -382,10 +542,10 @@ const BOX_TONE: Record<
   "emerald" | "rose" | "amber" | "zinc",
   string
 > = {
-  emerald: "border-emerald-400/60 text-emerald-300",
-  rose: "border-rose-300/60 text-rose-300",
-  amber: "border-amber-300/60 text-amber-200",
-  zinc: "border-zinc-500/60 text-muted-foreground",
+  emerald: "border-success text-success",
+  rose: "border-destructive text-destructive",
+  amber: "border-warning text-warning",
+  zinc: "border-muted-foreground text-muted-foreground",
 };
 
 function Box({
@@ -405,18 +565,61 @@ function Box({
 }
 
 /**
+ * Small square checkbox used to pick which files go into the commit. Filled
+ * monochrome (foreground) when checked, a dash when the header box is in the
+ * "some selected" indeterminate state.
+ */
+function CheckBox({
+  checked,
+  indeterminate,
+  onClick,
+  title,
+}: {
+  checked: boolean;
+  indeterminate?: boolean;
+  onClick: () => void;
+  title?: string;
+}) {
+  const on = checked || indeterminate === true;
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={indeterminate ? "mixed" : checked}
+      title={title}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      className={`flex size-[13px] shrink-0 items-center justify-center rounded-[3px] border transition-colors ${
+        on
+          ? "border-foreground bg-foreground text-background"
+          : "border-muted-foreground/50 text-transparent hover:border-foreground"
+      }`}
+    >
+      {indeterminate ? (
+        <HugeiconsIcon icon={MinusSignIcon} className="size-2" strokeWidth={3.5} />
+      ) : (
+        <HugeiconsIcon icon={Tick02Icon} className="size-2" strokeWidth={3.5} />
+      )}
+    </button>
+  );
+}
+
+/**
  * Commit composer modeled on GitHub Desktop's bottom-of-pane control: branch
  * indicator, an upstream/Push button, the message input, and a "Commit" CTA.
- * Auto-stages everything (`git add -A`) before committing so the user doesn't
- * have to think about staging — matches the "Commit Tracked + Untracked"
- * default in the screenshot.
+ * Only the files checked in the list (`paths`) are staged + committed, so the
+ * user controls exactly what goes into each commit.
  */
 function CommitComposer({
   folderId,
   worktreeId,
   branch,
   ahead,
-  canCommit,
+  paths,
+  selectedCount,
+  totalCount,
   canPush,
   onAfterCommit,
   onAfterPush,
@@ -425,7 +628,9 @@ function CommitComposer({
   worktreeId: WorktreeId | null;
   branch: string | null;
   ahead: number;
-  canCommit: boolean;
+  paths: ReadonlyArray<string>;
+  selectedCount: number;
+  totalCount: number;
   canPush: boolean;
   onAfterCommit: () => Promise<void>;
   onAfterPush: () => Promise<void>;
@@ -434,15 +639,17 @@ function CommitComposer({
   const [busy, setBusy] = useState<null | "commit" | "push">(null);
   const [error, setError] = useState<string | null>(null);
 
+  const canCommit = selectedCount > 0;
+
   const onCommit = async () => {
     const trimmed = message.trim();
-    if (trimmed.length === 0 || busy !== null) return;
+    if (trimmed.length === 0 || !canCommit || busy !== null) return;
     setBusy("commit");
     setError(null);
     try {
       const client = await getRpcClient();
       await Effect.runPromise(
-        client.git.commit({ folderId, worktreeId, message: trimmed }),
+        client.git.commit({ folderId, worktreeId, message: trimmed, paths }),
       );
       setMessage("");
       await onAfterCommit();
@@ -472,11 +679,11 @@ function CommitComposer({
     <div className="shrink-0 border-t border-border bg-foreground/[0.02] px-3 py-2">
       <div className="mb-2 flex items-center justify-between gap-2 text-[11px]">
         <span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
-          <span className="truncate font-mono text-foreground/90">
+          <span className="truncate font-mono text-foreground">
             {branch ?? "(detached)"}
           </span>
           {ahead > 0 ? (
-            <span className="font-mono text-[10px] text-sky-300/90">
+            <span className="font-mono text-[10px] text-info">
               ↑{ahead}
             </span>
           ) : null}
@@ -489,9 +696,9 @@ function CommitComposer({
           title={canPush ? "Push commits to origin" : "No commits ahead of upstream"}
         >
           {busy === "push" ? (
-            <Loader2 className="size-3 animate-spin" />
+            <HugeiconsIcon icon={Loading02Icon} className="size-3 animate-spin" />
           ) : (
-            <Upload className="size-3" />
+            <HugeiconsIcon icon={Upload01Icon} className="size-3" />
           )}
           Push
         </button>
@@ -513,23 +720,27 @@ function CommitComposer({
       <div className="mt-1.5 flex items-center justify-between gap-2">
         <span className="text-[10px] text-muted-foreground">
           {error !== null ? (
-            <span className="text-rose-300/90">{error}</span>
+            <span className="text-destructive">{error}</span>
+          ) : totalCount === 0 ? (
+            <>Nothing to commit</>
           ) : (
-            <>⌘↵ to commit</>
+            <>
+              {selectedCount} of {totalCount} selected · ⌘↵
+            </>
           )}
         </span>
         <button
           type="button"
           onClick={onCommit}
           disabled={!canCommit || message.trim().length === 0 || busy === "commit"}
-          className="flex items-center gap-1.5 rounded-sm bg-emerald-500/15 px-2 py-1 text-[11px] font-medium text-emerald-200 transition-colors hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex items-center gap-1.5 rounded-sm bg-success/15 px-2 py-1 text-[11px] font-medium text-success transition-colors hover:bg-success/25 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {busy === "commit" ? (
-            <Loader2 className="size-3 animate-spin" />
+            <HugeiconsIcon icon={Loading02Icon} className="size-3 animate-spin" />
           ) : (
-            <CornerDownLeft className="size-3" />
+            <HugeiconsIcon icon={ArrowTurnDownIcon} className="size-3" />
           )}
-          Commit
+          {selectedCount > 0 ? `Commit ${selectedCount}` : "Commit"}
         </button>
       </div>
     </div>
@@ -550,22 +761,39 @@ const formatErr = (err: unknown): string => {
 function Section({
   title,
   counter,
+  tone,
+  leading,
+  action,
   children,
 }: {
   title: string;
   counter?: number | null;
+  tone?: "warning";
+  leading?: React.ReactNode;
+  action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <section className="flex flex-col gap-1.5">
-      <h3 className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-        {title}
-        {typeof counter === "number" ? (
-          <span className="font-mono text-[10px] text-foreground/70">
-            {counter}
-          </span>
-        ) : null}
-      </h3>
+      <div className="flex items-center justify-between gap-2">
+        <h3
+          className={`flex items-center gap-1.5 text-[10px] uppercase tracking-wide ${
+            tone === "warning" ? "text-warning" : "text-muted-foreground"
+          }`}
+        >
+          {leading ?? null}
+          {tone === "warning" ? (
+            <HugeiconsIcon icon={Alert01Icon} className="size-3" strokeWidth={2.5} />
+          ) : null}
+          {title}
+          {typeof counter === "number" ? (
+            <span className="font-mono text-[10px] text-muted-foreground">
+              {counter}
+            </span>
+          ) : null}
+        </h3>
+        {action ?? null}
+      </div>
       <div className="flex flex-col gap-1">{children}</div>
     </section>
   );

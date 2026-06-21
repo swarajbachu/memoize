@@ -27,6 +27,28 @@ export interface CredentialsServiceShape {
     ReadonlyArray<ProviderId>,
     CredentialsError
   >;
+
+  /**
+   * In-app agent browser credentials — DUMMY/TEST logins only. Keyed by web
+   * origin, namespaced `browserCred:<origin>` in the same keychain. Stored as
+   * `{ username, password }`. `listBrowser` deliberately drops the password so
+   * the settings UI only ever sees origin + username.
+   */
+  readonly setBrowser: (
+    origin: string,
+    username: string,
+    password: string,
+  ) => Effect.Effect<void, CredentialsError>;
+  readonly getBrowser: (
+    origin: string,
+  ) => Effect.Effect<{ username: string; password: string } | null, CredentialsError>;
+  readonly removeBrowser: (
+    origin: string,
+  ) => Effect.Effect<void, CredentialsError>;
+  readonly listBrowser: () => Effect.Effect<
+    ReadonlyArray<{ origin: string; username: string }>,
+    CredentialsError
+  >;
 }
 
 export class CredentialsService extends Context.Tag(

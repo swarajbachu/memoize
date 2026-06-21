@@ -1,5 +1,5 @@
-import { Check } from "lucide-react";
-
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Tick01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import { Button } from "~/components/ui/button";
 
 export function DoneStep({ onFinish }: { onFinish: () => void }) {
@@ -8,7 +8,7 @@ export function DoneStep({ onFinish }: { onFinish: () => void }) {
       <div className="relative flex size-16 items-center justify-center">
         <span className="absolute inset-0 rounded-full bg-emerald-400/15 blur-xl" />
         <span className="relative flex size-14 items-center justify-center rounded-full bg-emerald-400/15 text-emerald-300">
-          <Check className="size-6" strokeWidth={2.25} />
+          <HugeiconsIcon icon={Tick01Icon} className="size-6" strokeWidth={2.25} />
         </span>
       </div>
       <div className="flex flex-col gap-2.5">
@@ -22,7 +22,7 @@ export function DoneStep({ onFinish }: { onFinish: () => void }) {
         </p>
       </div>
       <Button size="default" onClick={onFinish} className="rounded-full px-6">
-        Open Nuuk
+        Open Memoize
       </Button>
     </div>
   );

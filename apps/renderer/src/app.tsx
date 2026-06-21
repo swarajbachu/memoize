@@ -10,7 +10,9 @@ import {
 
 import { ChatComposer } from "./components/chat-composer";
 import { ChatLanding } from "./components/chat-landing.tsx";
+import { ArchivedChatsPage } from "./components/archived-chats-page.tsx";
 import { CliUpgradeBanner } from "./components/cli-upgrade-banner.tsx";
+import { NextUnreadButton } from "./components/next-unread-button.tsx";
 import { IndexProgressBanner } from "./components/index-progress-banner.tsx";
 import { TooltipProvider } from "./components/ui/tooltip.tsx";
 import { ChatView } from "./components/chat-view";
@@ -19,21 +21,25 @@ import { FileEditor } from "./components/file-editor.tsx";
 import { closeActiveChatTab, MainTabs } from "./components/main-tabs.tsx";
 import { OnboardingWizard } from "./components/onboarding/onboarding-wizard.tsx";
 import { ProjectsSidebar } from "./components/projects-sidebar";
+import { ProviderUpdatesToast } from "./components/provider-updates-toast.tsx";
 import { RightPane } from "./components/right-pane";
 import { SettingsPage } from "./components/settings-page";
 import { TopBarLeft, TopBarMain, TopBarRight } from "./components/top-bar.tsx";
 import { UpdateBanner } from "./components/update-banner.tsx";
+import { UsageDashboard } from "./components/usage-dashboard.tsx";
 import { useKeybindingDispatch } from "./hooks/use-keybinding-dispatch.ts";
 import { useMenuShortcuts } from "./hooks/use-menu-shortcuts.ts";
 import { getRpcClient } from "./lib/rpc-client.ts";
 import { useKeybindingsStore } from "./store/keybindings.ts";
 import { usePermissionsStore } from "./store/permissions.ts";
+import { useProvidersStore } from "./store/providers.ts";
 import { useSessionsStore } from "./store/sessions.ts";
 import { useSettingsStore } from "./store/settings.ts";
 import { hydrateSubagentsStore } from "./store/subagents.ts";
 import { useIndexStore } from "./store/code-index.ts";
 import { useUiStore } from "./store/ui.ts";
 import { useWorkspaceStore } from "./store/workspace.ts";
+import { useWorktreesStore } from "./store/worktrees.ts";
 
 const PANEL_GROUP_ID = "memoize.shell.v3";
 const PANEL_IDS = ["projects", "main", "files"];
@@ -73,6 +79,14 @@ export function App() {
     void hydrateSubagentsStore();
   }, [hydrateSettings, hydrateKeybindings]);
 
+  // Probe provider availability once on boot so the "update available" launch
+  // toast can fire without the user first opening settings. ProvidersPane
+  // keeps its own mount/focus refresh for live updates while settings is open.
+  const refreshProviders = useProvidersStore((s) => s.refresh);
+  useEffect(() => {
+    void refreshProviders();
+  }, [refreshProviders]);
+
   // Mirror Electron's fullscreen state into the ui store so the top bars
   // can drop the macOS traffic-light gutter.
   const setFullScreen = useUiStore((s) => s.setFullScreen);
@@ -82,16 +96,14 @@ export function App() {
     return win.onFullScreenChange((value) => setFullScreen(value));
   }, [setFullScreen]);
 
-  // One-shot RPC ping so we know the bridge is alive early.
+  // One-shot RPC ping so we know the bridge is alive early. Only the failure
+  // is logged — the success path is silent to keep the renderer console clean.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
         const client = await getRpcClient();
-        const result = await Effect.runPromise(client.ping.ping({}));
-        if (cancelled) return;
-        // eslint-disable-next-line no-console
-        console.log("[memoize] RPC smoke test:", JSON.stringify(result));
+        await Effect.runPromise(client.ping.ping({}));
       } catch (error) {
         if (cancelled) return;
         // eslint-disable-next-line no-console
@@ -109,7 +121,7 @@ export function App() {
   if (!onboardingCompleted) {
     return (
       <TooltipProvider>
-        <div className="dark relative flex h-dvh max-h-dvh min-h-0 w-screen overflow-hidden bg-background/40 text-foreground">
+        <div className="dark relative flex h-dvh max-h-dvh min-h-0 w-screen overflow-hidden bg-background text-foreground">
           <OnboardingWizard />
         </div>
       </TooltipProvider>
@@ -119,7 +131,7 @@ export function App() {
   if (view === "settings") {
     return (
       <TooltipProvider>
-        <div className="dark flex h-dvh max-h-dvh min-h-0 w-screen overflow-hidden bg-background/70 text-foreground">
+        <div className="dark flex h-dvh max-h-dvh min-h-0 w-screen overflow-hidden bg-background text-foreground">
           <SettingsPage />
         </div>
       </TooltipProvider>
@@ -156,6 +168,7 @@ function MainShell() {
     : null;
 
   const activeMainTab = useUiStore((s) => s.activeMainTab);
+  const usageScope = useUiStore((s) => s.usageScope);
   const openFile = useUiStore((s) => s.openFile);
   const closeFileTab = useUiStore((s) => s.closeFileTab);
   const leftSidebarOpen = useUiStore((s) => s.leftSidebarOpen);
@@ -167,6 +180,7 @@ function MainShell() {
   // under the new project's root anyway.
   useEffect(() => {
     if (openFile === null) return;
+    if (openFile.kind !== "text") return;
     if (selectedFolderId !== null && openFile.folderId === selectedFolderId) {
       return;
     }
@@ -183,12 +197,29 @@ function MainShell() {
     void hydrateIndex(selectedFolderId);
   }, [selectedFolderId, hydrateIndex]);
 
+  // Eagerly hydrate worktrees on project select so the active context can
+  // resolve worktree paths without waiting for the chat composer to mount.
+  // Without this, terminal/file-tree/branch label stay in "preparing
+  // worktree" until the user opens the chat tab.
+  const refreshWorktrees = useWorktreesStore((s) => s.refresh);
+  useEffect(() => {
+    if (selectedFolderId === null) return;
+    void refreshWorktrees(selectedFolderId);
+  }, [selectedFolderId, refreshWorktrees]);
+
   // Cmd+W in the menu dispatches `menu:close-tab` over IPC; the renderer
-  // owns the close-tab logic because it knows which chat tab is active.
+  // owns the close-tab logic because it knows which surface is active. If
+  // the file tab is foregrounded we close that; otherwise we fall through
+  // to the chat-tab archive path.
   useEffect(() => {
     const menu = window.memoize?.menu;
     if (menu === undefined) return;
     return menu.onCloseTab(() => {
+      const { activeMainTab, closeFileTab, openFile } = useUiStore.getState();
+      if (activeMainTab === "file" && openFile !== null) {
+        closeFileTab();
+        return;
+      }
       void closeActiveChatTab();
     });
   }, []);
@@ -196,6 +227,13 @@ function MainShell() {
   const emptyTabLabel = selectedFolder
     ? selectedFolder.name
     : "no project selected";
+
+  // The empty new-chat landing reads as a clean, chrome-free surface: no top
+  // bar, no tab strip — just the centered composer. Keep the chrome whenever a
+  // session/file is open, or when the left panel is collapsed (so the user
+  // always has a way back to the projects panel + the window drag region).
+  const showMainChrome =
+    selectedSessionId !== null || openFile !== null || !leftSidebarOpen;
 
   // Persist the three-pane layout in localStorage so widths survive reloads.
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
@@ -246,7 +284,7 @@ function MainShell() {
             if (open !== leftSidebarOpen) setLeftSidebarOpen(open);
           }}
         >
-          <div className="flex h-full min-h-0 flex-col bg-background/20">
+          <div className="flex h-full min-h-0 flex-col bg-background">
             <TopBarLeft />
             <div className="flex min-h-0 flex-1 flex-col">
               <ProjectsSidebar />
@@ -255,29 +293,59 @@ function MainShell() {
         </Panel>
         <Separator className="w-px bg-border transition-colors hover:bg-foreground/20 active:bg-foreground/30" />
         <Panel id="main" minSize="30%">
-          <main className="flex h-full min-h-0 min-w-0 flex-col bg-background/70 backdrop-blur-3xl">
-            <TopBarMain folderId={selectedFolderId} />
+          <main className="flex h-full min-h-0 min-w-0 flex-col bg-background">
+            {showMainChrome ? <TopBarMain /> : null}
             <UpdateBanner />
+            <ProviderUpdatesToast />
             <IndexProgressBanner />
-            <MainTabs
-              projectId={selectedFolderId}
-              emptyLabel={emptyTabLabel}
-            />
+            {showMainChrome ? (
+              <MainTabs projectId={selectedFolderId} emptyLabel={emptyTabLabel} />
+            ) : null}
             <div
               hidden={activeMainTab !== "chat"}
               className="flex min-h-0 flex-1 flex-col"
             >
               {selectedSessionId !== null && selectedSession !== null ? (
+                // Render the chat as soon as the session exists — even while
+                // its worktree is still branching or the provider is booting.
+                // All that progress is surfaced inline by `WorktreeSetupCard`
+                // at the top of the timeline, with the composer pinned at the
+                // bottom (no full-screen takeover).
                 <>
                   <ChatView sessionId={selectedSessionId} />
                   <CostFooter sessionId={selectedSessionId} />
-                  <CliUpgradeBanner
-                    providerId={selectedSession.providerId}
-                  />
+                  <CliUpgradeBanner providerId={selectedSession.providerId} />
+                  <NextUnreadButton />
                   <ChatComposer session={selectedSession} />
                 </>
               ) : (
                 <ChatLanding />
+              )}
+            </div>
+            <div
+              hidden={activeMainTab !== "archives"}
+              className="flex min-h-0 flex-1 flex-col"
+            >
+              {activeMainTab === "archives" && (
+                <ArchivedChatsPage
+                  projectId={selectedFolderId}
+                  projectName={selectedFolder?.name ?? "No repository selected"}
+                />
+              )}
+            </div>
+            <div
+              hidden={activeMainTab !== "usage"}
+              className="flex min-h-0 flex-1 flex-col"
+            >
+              {activeMainTab === "usage" && (
+                <UsageDashboard
+                  projectId={usageScope === "project" ? selectedFolderId : null}
+                  scopeLabel={
+                    usageScope === "project"
+                      ? (selectedFolder?.name ?? "This project")
+                      : "All projects"
+                  }
+                />
               )}
             </div>
             {openFile !== null && (
@@ -299,13 +367,18 @@ function MainShell() {
           collapsible
           collapsedSize="0%"
           panelRef={rightPanelRef}
-          onResize={(size) => {
+          onResize={(size, _id, prev) => {
+            // Ignore the initial mount call (prev === undefined). The right
+            // dock defaults to closed (`rightSidebarOpen: false`); the
+            // persisted/default panel width would otherwise fire here and
+            // flip the sidebar open before the collapse effect runs.
+            if (prev === undefined) return;
             const open = size.asPercentage > 0;
             if (open !== rightSidebarOpen) setRightSidebarOpen(open);
           }}
         >
-          <div className="flex h-full min-h-0 flex-col bg-sidebar/40 backdrop-blur-3xl">
-            <TopBarRight folderId={selectedFolderId} />
+          <div className="flex h-full min-h-0 flex-col bg-sidebar">
+            <TopBarRight />
             <div className="flex min-h-0 flex-1 flex-col">
               <RightPane />
             </div>

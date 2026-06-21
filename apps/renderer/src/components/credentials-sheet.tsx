@@ -1,4 +1,5 @@
-import { Eye, EyeOff } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ViewIcon, ViewOffIcon } from "@hugeicons-pro/core-bulk-rounded";
 import { useState } from "react";
 
 import type { AgentAvailability, ProviderId } from "@memoize/wire";
@@ -68,7 +69,7 @@ function ProviderRow({ availability }: { availability: AgentAvailability }) {
   };
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-3">
+    <div className="flex flex-col gap-2 rounded-lg border bg-muted p-3">
       <div className="flex items-center justify-between">
         <Label className="font-medium">{availability.displayName}</Label>
         <div className="flex items-center gap-2 text-xs">
@@ -102,7 +103,11 @@ function ProviderRow({ availability }: { availability: AgentAvailability }) {
             aria-label={reveal ? "Hide key" : "Reveal key"}
             tabIndex={-1}
           >
-            {reveal ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+            {reveal ? (
+              <HugeiconsIcon icon={ViewOffIcon} className="size-3.5" />
+            ) : (
+              <HugeiconsIcon icon={ViewIcon} className="size-3.5" />
+            )}
           </button>
         </div>
         <Button

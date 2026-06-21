@@ -1,4 +1,6 @@
-import { ChevronDown, ChevronRight, Plus } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ArrowDown01Icon, ArrowRight01Icon } from "@hugeicons-pro/core-bulk-rounded";
+import { Plus } from "lucide-react";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Effect } from "effect";
 
@@ -13,11 +15,7 @@ import { useComposerBridge } from "../store/composer-bridge.ts";
 import { useUiStore } from "../store/ui.ts";
 import { FileIcon } from "./file-icon.tsx";
 import { Skeleton } from "./ui/skeleton.tsx";
-import {
-  Tooltip,
-  TooltipPopup,
-  TooltipTrigger,
-} from "./ui/tooltip.tsx";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip.tsx";
 
 type DirState =
   | { status: "loading" }
@@ -118,7 +116,9 @@ export function FileTree({ folderId }: { folderId: FolderId }) {
 
   const openFileInTab = useUiStore((s) => s.openFileInTab);
   const setActiveMainTab = useUiStore((s) => s.setActiveMainTab);
-  const activePath = useUiStore((s) => s.openFile?.path ?? null);
+  const activePath = useUiStore((s) =>
+    s.openFile?.kind === "text" ? s.openFile.path : null,
+  );
 
   const onActivate = useCallback(
     (entry: FsEntry) => {
@@ -129,6 +129,7 @@ export function FileTree({ folderId }: { folderId: FolderId }) {
         return;
       }
       openFileInTab({
+        kind: "text",
         folderId,
         path: entry.path,
         name: entry.name,
@@ -232,7 +233,7 @@ const TreeNode = memo(
     const isDir = entry.kind === "directory";
     const isOpen = isDir && expanded[entry.path] === true;
     const child = isOpen ? childStates[entry.path] : undefined;
-    const Chevron = isOpen ? ChevronDown : ChevronRight;
+    const chevron = isOpen ? ArrowDown01Icon : ArrowRight01Icon;
     const isActive = !isDir && activePath === entry.path;
 
     return (
@@ -268,16 +269,19 @@ const TreeNode = memo(
                     }}
                     className="pointer-events-auto flex size-5 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-foreground/10 hover:text-foreground group-hover/row:opacity-100"
                   >
-                    <Plus className="size-3.5" />
+                    <Plus className="size-3.5" strokeWidth={1.8} />
                   </button>
                 }
               />
               <TooltipPopup>Attach to chat</TooltipPopup>
             </Tooltip>
             {isDir ? (
-              <Chevron
+              <HugeiconsIcon
+                icon={chevron}
                 className={`size-3.5 text-muted-foreground transition-opacity ${
-                  isOpen ? "opacity-100" : "opacity-0 group-hover/row:opacity-100"
+                  isOpen
+                    ? "opacity-100"
+                    : "opacity-0 group-hover/row:opacity-100"
                 }`}
               />
             ) : (
@@ -324,8 +328,7 @@ const TreeNode = memo(
     // Open: subtree may have changed. Map identity is the conservative check
     // — we only get a new ref when something actually mutated.
     return (
-      prev.expanded === next.expanded &&
-      prev.childStates === next.childStates
+      prev.expanded === next.expanded && prev.childStates === next.childStates
     );
   },
 );

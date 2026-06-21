@@ -1,4 +1,7 @@
 import { Effect, Mailbox, Stream } from "effect";
+import { execFileSync } from "node:child_process";
+import { appendFileSync, mkdirSync } from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
 
 import {
   AgentSessionStartError,
@@ -13,6 +16,9 @@ import {
   type PermissionMode,
   type SkillRef,
   type StartSessionInput,
+  ThreadGoal,
+  type ThreadGoalSetInput,
+  type ThreadGoalStatus,
   type UserQuestionAnswer,
 } from "@memoize/wire";
 
@@ -22,6 +28,9 @@ import { CodexAppServerClient } from "../codex-app-server-client.ts";
 import type { ServerNotification } from "../codex-app-protocol/ServerNotification";
 import type { ServerRequest } from "../codex-app-protocol/ServerRequest";
 import type { SandboxPolicy } from "../codex-app-protocol/v2/SandboxPolicy";
+import type { Model } from "../codex-app-protocol/v2/Model";
+import type { ModelListResponse } from "../codex-app-protocol/v2/ModelListResponse";
+import type { ThreadGoal as CodexThreadGoal } from "../codex-app-protocol/v2/ThreadGoal";
 import type { ThreadItem } from "../codex-app-protocol/v2/ThreadItem";
 import type { UserInput } from "../codex-app-protocol/v2/UserInput";
 
@@ -43,13 +52,56 @@ const toSandboxMode = (
 ): "read-only" | "workspace-write" =>
   mode === "plan" ? "read-only" : "workspace-write";
 
+const dedupe = (paths: ReadonlyArray<string>): ReadonlyArray<string> => [
+  ...new Set(paths),
+];
+
+const gitRevParsePaths = (
+  cwd: string,
+  args: ReadonlyArray<string>,
+): ReadonlyArray<string> => {
+  try {
+    return execFileSync("git", ["rev-parse", ...args], {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    })
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+  } catch {
+    return [];
+  }
+};
+
+export const codexWritableRootsForCwd = (
+  cwd: string,
+): ReadonlyArray<string> => {
+  const gitPaths = gitRevParsePaths(cwd, [
+    "--path-format=absolute",
+    "--git-dir",
+    "--git-common-dir",
+  ]);
+  const fallbackGitPaths =
+    gitPaths.length > 0
+      ? []
+      : gitRevParsePaths(cwd, ["--git-dir", "--git-common-dir"]);
+  return dedupe([
+    cwd,
+    ...gitPaths,
+    ...fallbackGitPaths.map((path) =>
+      isAbsolute(path) ? path : resolve(cwd, path),
+    ),
+  ]);
+};
+
 const toSandboxPolicy = (mode: PermissionMode, cwd: string): SandboxPolicy =>
   mode === "plan"
     ? { type: "readOnly", networkAccess: false }
     : {
         type: "workspaceWrite",
-        writableRoots: [cwd],
-        networkAccess: false,
+        writableRoots: [...codexWritableRootsForCwd(cwd)],
+        networkAccess: true,
         excludeTmpdirEnvVar: false,
         excludeSlashTmp: false,
       };
@@ -69,6 +121,9 @@ export interface CodexSessionHandle {
     itemId: AgentItemId,
     answers: ReadonlyArray<UserQuestionAnswer>,
   ) => Effect.Effect<void>;
+  readonly getGoal: () => Effect.Effect<ThreadGoal | null>;
+  readonly setGoal: (goal: ThreadGoalSetInput) => Effect.Effect<ThreadGoal>;
+  readonly clearGoal: () => Effect.Effect<void>;
 }
 
 let itemCounter = 0;
@@ -80,6 +135,292 @@ const firstLine = (text: string): string => text.split("\n", 1)[0] ?? "";
 const asText = (value: unknown): string =>
   typeof value === "string" ? value : JSON.stringify(value, null, 2);
 
+const asRecord = (value: unknown): Record<string, unknown> =>
+  value !== null && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : {};
+
+const asString = (value: unknown): string | null =>
+  typeof value === "string" && value.length > 0 ? value : null;
+
+const normalizeGoalStatus = (status: string): ThreadGoalStatus => {
+  switch (status) {
+    case "active":
+    case "paused":
+    case "budgetLimited":
+    case "usageLimited":
+    case "blocked":
+    case "complete":
+      return status;
+    case "budget_limited":
+      return "budgetLimited";
+    case "usage_limited":
+      return "usageLimited";
+    default:
+      return "blocked";
+  }
+};
+
+const normalizeThreadGoal = (goal: CodexThreadGoal | ThreadGoal): ThreadGoal =>
+  ThreadGoal.make({
+    threadId: goal.threadId,
+    objective: goal.objective,
+    status: normalizeGoalStatus(goal.status),
+    tokenBudget: goal.tokenBudget,
+    tokensUsed: goal.tokensUsed,
+    timeUsedSeconds: goal.timeUsedSeconds,
+    createdAt: goal.createdAt,
+    updatedAt: goal.updatedAt,
+  });
+
+const goalFromResponse = (value: unknown): CodexThreadGoal | null => {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const nested = record["goal"];
+  if (nested === null) return null;
+  if (nested !== undefined && typeof nested === "object") {
+    return nested as CodexThreadGoal;
+  }
+  return value as CodexThreadGoal;
+};
+
+/**
+ * Whether a model advertises a "fast" service tier. Codex exposes speed tiers
+ * via `serviceTiers` (current) and `additionalSpeedTiers` (deprecated); we
+ * match either id/name containing "fast" so we stay robust to label changes.
+ */
+const modelAdvertisesFastTier = (model: Model): boolean =>
+  [
+    ...model.serviceTiers.flatMap((tier) => [tier.id, tier.name]),
+    ...model.additionalSpeedTiers,
+  ].some((label) => label.toLowerCase().includes("fast"));
+
+/**
+ * Whether the model a session resolved to advertises a fast service tier,
+ * from the live `model/list`. Returns `null` when the model isn't in the
+ * catalog (unknown — caller should trust the pre-session FE gate rather than
+ * block). The version floor + static model catalog gate the FE *control*; this
+ * is the authoritative per-model confirmation enforced at turn time.
+ */
+const probeModelFastTier = async (
+  app: CodexAppServerClient,
+  activeModel: string | null,
+): Promise<boolean | null> => {
+  const response = await app.request<ModelListResponse>("model/list", {
+    includeHidden: true,
+  });
+  const model =
+    response.data.find(
+      (entry) => entry.id === activeModel || entry.model === activeModel,
+    ) ?? response.data.find((entry) => entry.isDefault);
+  return model === undefined ? null : modelAdvertisesFastTier(model);
+};
+
+const toolIdentifierPart = (value: string): string =>
+  value.replace(/[^A-Za-z0-9_]/g, "_");
+
+const toMcpToolName = (server: string, tool: string): string =>
+  `mcp__${toolIdentifierPart(server)}__${toolIdentifierPart(tool)}`;
+
+const dynamicToolName = (namespace: string | null, tool: string): string =>
+  namespace !== null ? `${namespace}.${tool}` : tool;
+
+const niceToolLabel = (raw: string): string =>
+  raw
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_\-.\/]+/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ") || "Tool";
+
+const firstTextBlock = (value: unknown): string | null => {
+  if (typeof value === "string") return value;
+  if (!Array.isArray(value)) return null;
+  const parts: string[] = [];
+  for (const item of value) {
+    if (item === null || typeof item !== "object") continue;
+    const record = item as Record<string, unknown>;
+    if (typeof record["text"] === "string") {
+      parts.push(record["text"] as string);
+      continue;
+    }
+    const inner = record["content"];
+    if (inner !== null && typeof inner === "object") {
+      const text = (inner as Record<string, unknown>)["text"];
+      if (typeof text === "string") parts.push(text);
+    }
+  }
+  return parts.length > 0 ? parts.join("") : null;
+};
+
+const dynamicOutputText = (items: unknown): unknown => {
+  if (!Array.isArray(items)) return items ?? null;
+  const text = items
+    .map((item) =>
+      item !== null &&
+      typeof item === "object" &&
+      (item as Record<string, unknown>)["type"] === "inputText" &&
+      typeof (item as Record<string, unknown>)["text"] === "string"
+        ? ((item as Record<string, unknown>)["text"] as string)
+        : null,
+    )
+    .filter((item): item is string => item !== null)
+    .join("");
+  return text.length > 0 ? text : items;
+};
+
+const webSearchQueryFromAction = (
+  item: Extract<ThreadItem, { type: "webSearch" }>,
+): string => {
+  const action = item.action;
+  if (action?.type === "search") {
+    return (
+      action.query ?? action.queries?.filter(Boolean).join(", ") ?? item.query
+    );
+  }
+  if (action?.type === "openPage") return action.url ?? item.query;
+  if (action?.type === "findInPage")
+    return action.pattern ?? action.url ?? item.query;
+  return item.query;
+};
+
+const codexCommandToolUse = (
+  item: Extract<ThreadItem, { type: "commandExecution" }>,
+): Extract<AgentEvent, { _tag: "ToolUse" }> => {
+  const action =
+    item.commandActions.length === 1 ? item.commandActions[0] : null;
+  if (action?.type === "read") {
+    return {
+      _tag: "ToolUse",
+      itemId: item.id as AgentItemId,
+      tool: "Read",
+      input: { file_path: action.path },
+    };
+  }
+  if (action?.type === "listFiles") {
+    return {
+      _tag: "ToolUse",
+      itemId: item.id as AgentItemId,
+      tool: "ListDir",
+      input: { path: action.path ?? item.cwd },
+    };
+  }
+  if (action?.type === "search") {
+    const input: Record<string, unknown> = {
+      pattern: action.query ?? action.command,
+    };
+    if (action.path !== null) input["path"] = action.path;
+    return {
+      _tag: "ToolUse",
+      itemId: item.id as AgentItemId,
+      tool: "Grep",
+      input,
+    };
+  }
+  return {
+    _tag: "ToolUse",
+    itemId: item.id as AgentItemId,
+    tool: "Bash",
+    input: {
+      command: item.command,
+      cwd: item.cwd,
+      description: firstLine(item.command),
+    },
+  };
+};
+
+const codexCommandResultOutput = (
+  item: Extract<ThreadItem, { type: "commandExecution" }>,
+): string => {
+  const output = item.aggregatedOutput ?? "";
+  if (output.length > 0 || item.exitCode === 0 || item.exitCode === null) {
+    return output;
+  }
+  return `Command exited with code ${item.exitCode}.`;
+};
+
+const codexFileChangeInput = (
+  item: Extract<ThreadItem, { type: "fileChange" }>,
+): { tool: "Edit" | "MultiEdit"; input: Record<string, unknown> } => {
+  const patches = item.changes.map((change) => ({
+    file_path: change.path,
+    kind: change.kind.type,
+    patch: change.diff,
+    move_path:
+      change.kind.type === "update" ? change.kind.move_path : undefined,
+  }));
+  if (patches.length === 1) {
+    const patch = patches[0]!;
+    return {
+      tool: "Edit",
+      input: {
+        file_path: patch.file_path,
+        kind: patch.kind,
+        patch: patch.patch,
+        ...(patch.move_path !== undefined
+          ? { move_path: patch.move_path }
+          : {}),
+      },
+    };
+  }
+  return {
+    tool: "MultiEdit",
+    input: {
+      file_path: patches.map((patch) => patch.file_path).join(", "),
+      patches,
+    },
+  };
+};
+
+const normalizeDynamicToolUse = (
+  item: Extract<ThreadItem, { type: "dynamicToolCall" }>,
+): { tool: string; input: unknown } => {
+  const rawName = dynamicToolName(item.namespace, item.tool);
+  const input = asRecord(item.arguments);
+  switch (rawName) {
+    case "functions.exec_command":
+    case "exec_command": {
+      const command = asString(input["cmd"]) ?? asString(input["command"]);
+      if (command !== null) {
+        return {
+          tool: "Bash",
+          input: {
+            command,
+            ...(asString(input["workdir"]) !== null
+              ? { cwd: asString(input["workdir"]) }
+              : {}),
+          },
+        };
+      }
+      break;
+    }
+    case "functions.apply_patch":
+    case "apply_patch": {
+      return {
+        tool: "Edit",
+        input: { file_path: "(patch)", patch: item.arguments },
+      };
+    }
+    case "web.run": {
+      const searches = Array.isArray(input["search_query"])
+        ? (input["search_query"] as unknown[])
+        : Array.isArray(input["image_query"])
+          ? (input["image_query"] as unknown[])
+          : [];
+      const first = searches[0];
+      const query =
+        first !== null && typeof first === "object"
+          ? asString((first as Record<string, unknown>)["q"])
+          : null;
+      if (query !== null) return { tool: "WebSearch", input: { query } };
+      break;
+    }
+  }
+  return { tool: niceToolLabel(rawName), input: item.arguments };
+};
+
 const decisionToCodex = (
   decision: PermissionDecision,
 ): "accept" | "acceptForSession" | "decline" =>
@@ -89,17 +430,87 @@ const decisionToCodex = (
       ? "accept"
       : "decline";
 
-const translateItem = (
+const codexResetDate = (value: number | null): string | null => {
+  if (value === null || !Number.isFinite(value)) return null;
+  return new Date(
+    value > 1_000_000_000_000 ? value : value * 1000,
+  ).toISOString();
+};
+
+const codexLimitLabel = (value: string | null): string =>
+  value !== null && value.trim().length > 0 ? value.trim() : "Codex usage";
+
+interface CodexToolTranslationLogger {
+  readonly path: string;
+  readonly append: (
+    phase: "started" | "completed",
+    item: ThreadItem,
+    events: ReadonlyArray<AgentEvent>,
+  ) => void;
+}
+
+const createCodexToolTranslationLogger = (
+  cwd: string,
+  sessionId: AgentSessionId,
+): CodexToolTranslationLogger => {
+  const dir = join(cwd, ".context");
+  const path = join(dir, `codex-tools.${sessionId}.ndjson`);
+  const safeJson = (value: unknown): string => {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return JSON.stringify("(unserializable)");
+    }
+  };
+  return {
+    path,
+    append: (phase, item, events) => {
+      if (
+        events.length === 0 ||
+        (item.type !== "commandExecution" &&
+          item.type !== "fileChange" &&
+          item.type !== "mcpToolCall" &&
+          item.type !== "dynamicToolCall" &&
+          item.type !== "webSearch")
+      ) {
+        return;
+      }
+      try {
+        mkdirSync(dir, { recursive: true });
+        appendFileSync(
+          path,
+          `${safeJson({
+            ts: new Date().toISOString(),
+            provider: "codex",
+            phase,
+            itemType: item.type,
+            itemId: "id" in item ? item.id : null,
+            raw: item,
+            events,
+          })}\n`,
+        );
+      } catch {
+        // Best-effort debug log: never disrupt the agent loop.
+      }
+    },
+  };
+};
+
+export const translateCodexItem = (
   item: ThreadItem,
   phase: "started" | "completed",
 ): ReadonlyArray<AgentEvent> => {
   switch (item.type) {
     case "agentMessage":
       if (phase !== "completed") return [];
-      return [{ _tag: "AssistantMessage", itemId: nextItemId(), text: item.text }];
+      return [
+        { _tag: "AssistantMessage", itemId: nextItemId(), text: item.text },
+      ];
     case "plan":
       if (phase !== "completed") return [];
-      return [{ _tag: "AssistantMessage", itemId: nextItemId(), text: item.text }];
+      return [
+        { _tag: "AssistantMessage", itemId: nextItemId(), text: item.text },
+      ];
     case "reasoning": {
       if (phase !== "completed") return [];
       const text = [...item.summary, ...item.content].join("\n").trim();
@@ -109,40 +520,33 @@ const translateItem = (
     }
     case "commandExecution":
       if (phase === "started") {
-        return [
-          {
-            _tag: "ToolUse",
-            itemId: item.id as AgentItemId,
-            tool: "command_execution",
-            input: { command: item.command, cwd: item.cwd },
-          },
-        ];
+        return [codexCommandToolUse(item)];
       }
       return [
         {
           _tag: "ToolResult",
           itemId: item.id as AgentItemId,
-          output: {
-            command: item.command,
-            exit_code: item.exitCode,
-            output: item.aggregatedOutput ?? "",
-          },
+          output: codexCommandResultOutput(item),
           isError: item.status === "failed",
         },
       ];
     case "fileChange":
       if (phase !== "completed") return [];
+      const fileChange = codexFileChangeInput(item);
       return [
         {
           _tag: "ToolUse",
           itemId: item.id as AgentItemId,
-          tool: "file_change",
-          input: { changes: item.changes },
+          tool: fileChange.tool,
+          input: fileChange.input,
         },
         {
           _tag: "ToolResult",
           itemId: item.id as AgentItemId,
-          output: { changes: item.changes, status: item.status },
+          output:
+            item.status === "completed"
+              ? `Applied ${item.changes.length} file change${item.changes.length === 1 ? "" : "s"}.`
+              : { changes: item.changes, status: item.status },
           isError: item.status === "failed",
         },
       ];
@@ -152,7 +556,7 @@ const translateItem = (
           {
             _tag: "ToolUse",
             itemId: item.id as AgentItemId,
-            tool: `${item.server}/${item.tool}`,
+            tool: toMcpToolName(item.server, item.tool),
             input: item.arguments,
           },
         ];
@@ -161,21 +565,22 @@ const translateItem = (
         {
           _tag: "ToolResult",
           itemId: item.id as AgentItemId,
-          output: item.result ?? item.error ?? null,
+          output:
+            item.result !== null
+              ? (firstTextBlock(item.result.content) ?? item.result.content)
+              : (item.error ?? null),
           isError: item.status === "failed",
         },
       ];
     case "dynamicToolCall":
       if (phase === "started") {
+        const toolUse = normalizeDynamicToolUse(item);
         return [
           {
             _tag: "ToolUse",
             itemId: item.id as AgentItemId,
-            tool:
-              item.namespace !== null
-                ? `${item.namespace}/${item.tool}`
-                : item.tool,
-            input: item.arguments,
+            tool: toolUse.tool,
+            input: toolUse.input,
           },
         ];
       }
@@ -183,7 +588,7 @@ const translateItem = (
         {
           _tag: "ToolResult",
           itemId: item.id as AgentItemId,
-          output: item.contentItems ?? null,
+          output: dynamicOutputText(item.contentItems),
           isError: item.success === false,
         },
       ];
@@ -197,7 +602,7 @@ const translateItem = (
           _tag: "ToolUse",
           itemId: item.id as AgentItemId,
           tool: "WebSearch",
-          input: { query: item.query, action: item.action },
+          input: { query: webSearchQueryFromAction(item), action: item.action },
         },
       ];
     case "enteredReviewMode":
@@ -227,6 +632,44 @@ const translateItem = (
   }
 };
 
+export const translateCodexStatusNotification = (
+  notification: ServerNotification,
+  activeThreadId: string | null,
+): ReadonlyArray<AgentEvent> | null => {
+  switch (notification.method) {
+    case "thread/tokenUsage/updated":
+      if (notification.params.threadId !== activeThreadId) return [];
+      return [
+        {
+          _tag: "ContextUsage",
+          providerId: "codex",
+          usedTokens: notification.params.tokenUsage.total.totalTokens,
+          windowTokens:
+            notification.params.tokenUsage.modelContextWindow ?? null,
+          precision: "exact",
+          source: "Codex app-server",
+        },
+      ];
+    case "account/rateLimits/updated": {
+      const limits = notification.params.rateLimits;
+      const primary = limits.primary;
+      if (primary === null) return [];
+      return [
+        {
+          _tag: "UsageLimit",
+          providerId: "codex",
+          label: codexLimitLabel(limits.limitName),
+          usedPercent: primary.usedPercent,
+          resetsAt: codexResetDate(primary.resetsAt),
+          windowMinutes: primary.windowDurationMins,
+        },
+      ];
+    }
+    default:
+      return null;
+  }
+};
+
 export const startCodexSession = (
   input: StartSessionInput,
   cwd: string,
@@ -235,16 +678,27 @@ export const startCodexSession = (
   sessionId: AgentSessionId,
   requestPermission: RequestPermission,
   resumeCursor: string | null = null,
-): Effect.Effect<CodexSessionHandle, AgentSessionStartError, AttachmentService> =>
+): Effect.Effect<
+  CodexSessionHandle,
+  AgentSessionStartError,
+  AttachmentService
+> =>
   Effect.gen(function* () {
     const attachments = yield* AttachmentService;
     const events = yield* Mailbox.make<AgentEvent>();
+    const toolTranslationLog = createCodexToolTranslationLogger(cwd, sessionId);
     let currentMode: PermissionMode = input.permissionMode ?? "default";
     let activeThreadId = resumeCursor;
     let currentTurnId: string | null = null;
     let latestDiff = "";
     let closed = false;
     let pending: Promise<void> = Promise.resolve();
+    // Runtime fast-tier gate for the model this session resolved to, from the
+    // live `model/list` `serviceTiers`. `null` = unknown (probe not done /
+    // failed) → trust the FE gate; `true`/`false` = the model definitively
+    // does / does not advertise a fast tier. Only a definitive `false` blocks
+    // the `serviceTier: "fast"` request in `runTurn`.
+    let modelFastTier: boolean | null = null;
 
     type QuestionWaiter = {
       readonly questionIds: ReadonlyArray<string>;
@@ -261,13 +715,16 @@ export const startCodexSession = (
         CodexAppServerClient.start({
           codexPath,
           onNotification: (notification) => {
-            for (const event of translateNotification(notification)) emit(event);
+            for (const event of translateNotification(notification))
+              emit(event);
           },
           onServerRequest: (request, respond) => {
-            void handleServerRequest(request).then(respond).catch((cause) => {
-              console.warn("[codex-app-server] request failed", cause);
-              respond(defaultServerRequestResponse(request));
-            });
+            void handleServerRequest(request)
+              .then(respond)
+              .catch((cause) => {
+                console.warn("[codex-app-server] request failed", cause);
+                respond(defaultServerRequestResponse(request));
+              });
           },
         }),
       catch: (cause) =>
@@ -281,7 +738,9 @@ export const startCodexSession = (
       // app-server uses the same CLI auth stack as the TUI. The key is still
       // accepted by the legacy SDK path, but app-server currently reads auth
       // from the user's Codex home; keep a visible note for future debugging.
-      console.warn("[codex] API key credential present; app-server uses Codex CLI auth");
+      console.warn(
+        "[codex] API key credential present; app-server uses Codex CLI auth",
+      );
     }
 
     const commonThreadParams = {
@@ -314,6 +773,27 @@ export const startCodexSession = (
         cursor: activeThreadId,
         strategy: "codex-thread-id",
       });
+      try {
+        const currentGoal = await app.request<unknown>("thread/goal/get", {
+          threadId: activeThreadId,
+        });
+        const goal = goalFromResponse(currentGoal);
+        if (goal !== null) {
+          emit({ _tag: "GoalUpdated", goal: normalizeThreadGoal(goal) });
+        }
+      } catch (cause) {
+        console.warn("[codex] goal hydration failed", cause);
+      }
+      // Runtime fast-mode confirmation: the version floor (AgentAvailability
+      // `capabilities`) + the static model catalog decide whether the FE
+      // *shows* the fast toggle; the live `model/list` `serviceTiers` are the
+      // authoritative per-model gate enforced at turn time (see `runTurn`).
+      // Best-effort — a failure leaves `modelFastTier` null (trust the FE).
+      try {
+        modelFastTier = await probeModelFastTier(app, input.model ?? null);
+      } catch (cause) {
+        console.warn("[codex] fast-tier probe failed", cause);
+      }
     };
 
     yield* Effect.tryPromise({
@@ -348,7 +828,11 @@ export const startCodexSession = (
     const findSkillPath = async (name: string): Promise<string | null> => {
       const response = await app.request<{
         data: ReadonlyArray<{
-          skills: ReadonlyArray<{ name: string; path: string; enabled: boolean }>;
+          skills: ReadonlyArray<{
+            name: string;
+            path: string;
+            enabled: boolean;
+          }>;
         }>;
       }>("skills/list", { cwds: [cwd], forceReload: false });
       for (const entry of response.data) {
@@ -411,14 +895,37 @@ export const startCodexSession = (
         reasoning === "low" || reasoning === "medium" || reasoning === "high"
           ? reasoning
           : null;
+      // Fast mode: the `fastMode` per-model boolean knob maps onto Codex's
+      // `serviceTier: "fast"` (the 1.5× speed tier). The FE only shows the
+      // toggle when the CLI version + static model catalog allow it; the live
+      // `model/list` `serviceTiers` are the authoritative per-model gate, so we
+      // drop the field (and tell the user) when the resolved model definitively
+      // lacks a fast tier. `modelFastTier === null` (unknown) trusts the FE.
+      const fastModeRequested = input.modelOptions?.["fastMode"] === "true";
+      const fastMode = fastModeRequested && modelFastTier !== false;
+      if (fastModeRequested && modelFastTier === false) {
+        emit({
+          _tag: "AssistantMessage",
+          itemId: nextItemId(),
+          text: "Fast mode isn't available for this model — running at the standard tier.",
+        });
+      }
       const turn = await app.request<{ turn: { id: string } }>("turn/start", {
         threadId: activeThreadId,
-        input: [...(await buildUserInput(promptText, attachmentRefs, fileRefs, skillRefs))],
+        input: [
+          ...(await buildUserInput(
+            promptText,
+            attachmentRefs,
+            fileRefs,
+            skillRefs,
+          )),
+        ],
         cwd,
         approvalPolicy: "never",
         sandboxPolicy: toSandboxPolicy(currentMode, cwd),
         model: input.model ?? null,
         ...(effort !== null ? { effort } : {}),
+        ...(fastMode ? { serviceTier: "fast" } : {}),
       });
       currentTurnId = turn.turn.id;
     };
@@ -451,7 +958,9 @@ export const startCodexSession = (
 
       switch (command) {
         case "compact":
-          await app.request("thread/compact/start", { threadId: activeThreadId });
+          await app.request("thread/compact/start", {
+            threadId: activeThreadId,
+          });
           say("Compaction started.");
           return true;
         case "fork": {
@@ -477,7 +986,9 @@ export const startCodexSession = (
             threadId: activeThreadId,
             numTurns: 1,
           });
-          say("Rolled back the last Codex turn. Local file changes are not reverted by Codex app-server rollback.");
+          say(
+            "Rolled back the last Codex turn. Local file changes are not reverted by Codex app-server rollback.",
+          );
           return true;
         case "review":
           emit({ _tag: "Status", status: "running" });
@@ -492,7 +1003,12 @@ export const startCodexSession = (
           return true;
         case "status": {
           const status = await app.request<{
-            thread: { id: string; status: string; modelProvider: string; cwd: string };
+            thread: {
+              id: string;
+              status: string;
+              modelProvider: string;
+              cwd: string;
+            };
           }>("thread/read", { threadId: activeThreadId, includeTurns: false });
           say(
             `Codex thread ${status.thread.id}\nstatus: ${status.thread.status}\nprovider: ${status.thread.modelProvider}\ncwd: ${status.thread.cwd}`,
@@ -500,7 +1016,11 @@ export const startCodexSession = (
           return true;
         }
         case "diff":
-          say(latestDiff.length > 0 ? latestDiff : "No Codex turn diff is available yet.");
+          say(
+            latestDiff.length > 0
+              ? latestDiff
+              : "No Codex turn diff is available yet.",
+          );
           return true;
         case "mcp": {
           const result = await app.request("mcpServerStatus/list", {});
@@ -527,18 +1047,22 @@ export const startCodexSession = (
           say(`Codex config:\n${asText(result)}`);
           return true;
         }
+        case "tool-log":
+        case "debug-tools":
+          say(`Codex tool translation log:\n${toolTranslationLog.path}`);
+          return true;
         case "permissions":
-          say("Codex approval policy is managed by this app. Current embedded policy: never.");
+          say(
+            "Codex approval policy is managed by this app. Current embedded policy: never.",
+          );
           return true;
         case "approval":
-          say("Codex embedded approval policy is currently fixed at never; permission prompts are bridged through this app when app-server requests them.");
+          say(
+            "Codex embedded approval policy is currently fixed at never; permission prompts are bridged through this app when app-server requests them.",
+          );
           return true;
         case "sandbox":
-          if (
-            args === "read-only" ||
-            args === "plan" ||
-            args === "readonly"
-          ) {
+          if (args === "read-only" || args === "plan" || args === "readonly") {
             currentMode = "plan";
             emit({ _tag: "PermissionModeChanged", mode: "plan" });
             say("Codex sandbox set to read-only.");
@@ -601,6 +1125,12 @@ export const startCodexSession = (
     function translateNotification(
       notification: ServerNotification,
     ): ReadonlyArray<AgentEvent> {
+      const statusEvents = translateCodexStatusNotification(
+        notification,
+        activeThreadId,
+      );
+      if (statusEvents !== null) return statusEvents;
+
       switch (notification.method) {
         case "thread/started":
           activeThreadId = notification.params.thread.id;
@@ -624,14 +1154,49 @@ export const startCodexSession = (
             latestDiff = notification.params.diff;
           }
           return [];
+        case "thread/goal/updated":
+          if (notification.params.threadId !== activeThreadId) return [];
+          return [
+            {
+              _tag: "GoalUpdated",
+              goal: normalizeThreadGoal(notification.params.goal),
+            },
+          ];
+        case "thread/goal/cleared":
+          if (notification.params.threadId !== activeThreadId) return [];
+          return [{ _tag: "GoalCleared" }];
         case "item/started":
           if (notification.params.threadId !== activeThreadId) return [];
-          return translateItem(notification.params.item, "started");
+          {
+            const translated = translateCodexItem(
+              notification.params.item,
+              "started",
+            );
+            toolTranslationLog.append(
+              "started",
+              notification.params.item,
+              translated,
+            );
+            return translated;
+          }
         case "item/completed":
           if (notification.params.threadId !== activeThreadId) return [];
-          return translateItem(notification.params.item, "completed");
+          {
+            const translated = translateCodexItem(
+              notification.params.item,
+              "completed",
+            );
+            toolTranslationLog.append(
+              "completed",
+              notification.params.item,
+              translated,
+            );
+            return translated;
+          }
         case "error":
-          return [{ _tag: "Error", message: notification.params.error.message }];
+          return [
+            { _tag: "Error", message: notification.params.error.message },
+          ];
         default:
           return [];
       }
@@ -714,7 +1279,8 @@ export const startCodexSession = (
             },
           );
           const waiter = questionWaiters.get(p.itemId);
-          const questionIds = waiter?.questionIds ?? p.questions.map((q) => q.id);
+          const questionIds =
+            waiter?.questionIds ?? p.questions.map((q) => q.id);
           const out: Record<string, { answers: string[] }> = {};
           for (const answer of answers) {
             const question = p.questions[answer.questionIndex];
@@ -821,6 +1387,46 @@ export const startCodexSession = (
           if (waiter === undefined) return;
           questionWaiters.delete(itemId);
           waiter.resolve(answers);
+        }),
+      getGoal: () =>
+        Effect.promise(async () => {
+          if (activeThreadId === null) return null;
+          const response = await app.request<unknown>("thread/goal/get", {
+            threadId: activeThreadId,
+          });
+          const goal = goalFromResponse(response);
+          return goal === null ? null : normalizeThreadGoal(goal);
+        }),
+      setGoal: (goalInput) =>
+        Effect.promise(async () => {
+          if (activeThreadId === null) {
+            throw new Error("Codex thread is not ready for goals.");
+          }
+          const response = await app.request<unknown>("thread/goal/set", {
+            threadId: activeThreadId,
+            ...(goalInput.objective !== undefined
+              ? { objective: goalInput.objective }
+              : {}),
+            ...(goalInput.status !== undefined
+              ? { status: goalInput.status }
+              : {}),
+            ...(goalInput.tokenBudget !== undefined
+              ? { tokenBudget: goalInput.tokenBudget }
+              : {}),
+          });
+          const responseGoal = goalFromResponse(response);
+          if (responseGoal === null) {
+            throw new Error("Codex did not return a goal.");
+          }
+          const normalized = normalizeThreadGoal(responseGoal);
+          emit({ _tag: "GoalUpdated", goal: normalized });
+          return normalized;
+        }),
+      clearGoal: () =>
+        Effect.promise(async () => {
+          if (activeThreadId === null) return;
+          await app.request("thread/goal/clear", { threadId: activeThreadId });
+          emit({ _tag: "GoalCleared" });
         }),
     };
   });

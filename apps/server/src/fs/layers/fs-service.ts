@@ -6,6 +6,9 @@ import { Effect, Layer, Option } from "effect";
 import {
   FsConflictError,
   FsEntry,
+  FsExternalConflictError,
+  FsExternalReadError,
+  FsExternalTooLargeError,
   FsFolderNotFoundError,
   FsPathOutsideError,
   FsReadError,
@@ -21,7 +24,7 @@ import { FsService } from "../services/fs-service.ts";
 // Skip directories that are large, irrelevant, or just noise in a code-tree
 // view. Match by basename. Hidden dotfiles other than `.git` still show up —
 // users often want to see `.env`, `.github/`, `.vscode/`, etc.
-const SKIP_DIRS = new Set([".git", "node_modules", ".DS_Store"]);
+const SKIP_DIRS = new Set([".git", "node_modules", ".memoize", ".DS_Store"]);
 
 // Cap how much we'll ship across the RPC for a single file. Anything larger
 // surfaces as `FsTooLargeError` so the editor can render a placeholder
@@ -267,6 +270,112 @@ export const FsServiceLive = Layer.effect(
         return { mtime: mtimeToString(afterStat.mtime) };
       });
 
-    return { tree, readFile, writeFile } as const;
+    // External (outside-folder) read/write. Same decode / size-cap / mtime
+    // concurrency as readFile/writeFile, but the path is absolute and there's
+    // no folder containment check — deliberately so, to open files the agent
+    // wrote elsewhere on disk. Errors key off `path` instead of `folderId`.
+    const readExternal: FsService["Type"]["readExternal"] = (absPath) =>
+      Effect.gen(function* () {
+        const target = pathSvc.resolve(absPath);
+        const stat = yield* fs.stat(target).pipe(
+          Effect.mapError(
+            (cause) =>
+              new FsExternalReadError({
+                path: absPath,
+                reason: cause.message ?? String(cause),
+              }),
+          ),
+        );
+        const size = Number(stat.size);
+        if (size > MAX_FILE_BYTES) {
+          return yield* Effect.fail(
+            new FsExternalTooLargeError({
+              path: absPath,
+              size,
+              limit: MAX_FILE_BYTES,
+            }),
+          );
+        }
+        const bytes = yield* fs.readFile(target).pipe(
+          Effect.mapError(
+            (cause) =>
+              new FsExternalReadError({
+                path: absPath,
+                reason: cause.message ?? String(cause),
+              }),
+          ),
+        );
+        try {
+          const decoder = new TextDecoder("utf-8", { fatal: true });
+          const content = decoder.decode(bytes);
+          return {
+            kind: "text" as const,
+            content,
+            mtime: mtimeToString(stat.mtime),
+            size,
+          };
+        } catch {
+          return { kind: "binary" as const, size };
+        }
+      });
+
+    const writeExternal: FsService["Type"]["writeExternal"] = (
+      absPath,
+      content,
+      expectedMtime,
+    ) =>
+      Effect.gen(function* () {
+        const target = pathSvc.resolve(absPath);
+        const byteLen = new TextEncoder().encode(content).byteLength;
+        if (byteLen > MAX_FILE_BYTES) {
+          return yield* Effect.fail(
+            new FsExternalTooLargeError({
+              path: absPath,
+              size: byteLen,
+              limit: MAX_FILE_BYTES,
+            }),
+          );
+        }
+        const beforeStat = yield* fs.stat(target).pipe(
+          Effect.mapError(
+            (cause) =>
+              new FsExternalReadError({
+                path: absPath,
+                reason: cause.message ?? String(cause),
+              }),
+          ),
+        );
+        const actualMtime = mtimeToString(beforeStat.mtime);
+        if (actualMtime !== expectedMtime) {
+          return yield* Effect.fail(
+            new FsExternalConflictError({
+              path: absPath,
+              expectedMtime,
+              actualMtime,
+            }),
+          );
+        }
+        yield* fs.writeFileString(target, content).pipe(
+          Effect.mapError(
+            (cause) =>
+              new FsExternalReadError({
+                path: absPath,
+                reason: cause.message ?? String(cause),
+              }),
+          ),
+        );
+        const afterStat = yield* fs.stat(target).pipe(
+          Effect.mapError(
+            (cause) =>
+              new FsExternalReadError({
+                path: absPath,
+                reason: cause.message ?? String(cause),
+              }),
+          ),
+        );
+        return { mtime: mtimeToString(afterStat.mtime) };
+      });
+
+    return { tree, readFile, writeFile, readExternal, writeExternal } as const;
   }),
 );

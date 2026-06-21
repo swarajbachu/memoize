@@ -3,6 +3,7 @@ import { Effect, Layer } from "effect";
 
 import { FileSearchService } from "./services/file-search.ts";
 import { FolderPicker } from "./services/folder-picker.ts";
+import { ProjectScaffold } from "./services/project-scaffold.ts";
 import { WorkspaceService } from "./services/workspace-service.ts";
 
 const Add = MemoizeRpcs.toLayerHandler("workspace.add", ({ path }) =>
@@ -44,6 +45,53 @@ const SearchFiles = MemoizeRpcs.toLayerHandler(
     ),
 );
 
+// Clone → register pipeline. The scaffold service produces the absolute
+// path of the new working tree, then we hand it to `WorkspaceService.add`
+// for SQLite registration + the standard sidebar/code-index side effects.
+const CloneRepo = MemoizeRpcs.toLayerHandler(
+  "workspace.cloneRepo",
+  ({ url, parent }) =>
+    Effect.gen(function* () {
+      const scaffold = yield* ProjectScaffold;
+      const ws = yield* WorkspaceService;
+      const path = yield* scaffold.cloneRepo(url, parent);
+      return yield* ws.add(path);
+    }),
+);
+
+// Scaffold → register pipeline. Same shape as CloneRepo. We coerce the
+// optional `alsoCreateGithubRepo` to a definite boolean here so the
+// scaffold service never has to worry about `undefined`.
+const CreateProject = MemoizeRpcs.toLayerHandler(
+  "workspace.createProject",
+  ({ name, parent, template, alsoCreateGithubRepo }) =>
+    Effect.gen(function* () {
+      const scaffold = yield* ProjectScaffold;
+      const ws = yield* WorkspaceService;
+      const path = yield* scaffold.createFromTemplate(
+        name,
+        parent,
+        template,
+        alsoCreateGithubRepo === true,
+      );
+      return yield* ws.add(path);
+    }),
+);
+
+// `gh repo list` proxy for the Clone dialog's recents list. Returns an
+// empty array for any failure — the renderer treats the empty case as
+// "show a sign-in hint."
+const ListGithubRepos = MemoizeRpcs.toLayerHandler(
+  "workspace.listGithubRepos",
+  ({ limit }) =>
+    Effect.flatMap(ProjectScaffold, (svc) => svc.listGithubRepos(limit ?? 30)),
+);
+
+const GhAuthStatus = MemoizeRpcs.toLayerHandler(
+  "workspace.ghAuthStatus",
+  () => Effect.flatMap(ProjectScaffold, (svc) => svc.ghAuthStatus()),
+);
+
 export const WorkspaceHandlersLayer = Layer.mergeAll(
   Add,
   List,
@@ -52,4 +100,8 @@ export const WorkspaceHandlersLayer = Layer.mergeAll(
   GetSelected,
   SetSelected,
   SearchFiles,
+  CloneRepo,
+  CreateProject,
+  ListGithubRepos,
+  GhAuthStatus,
 );

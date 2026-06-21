@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import type { FolderId, WorktreeId } from "@memoize/wire";
+import type { CodeAnnotation, FolderId, WorktreeId } from "@memoize/wire";
 
 /**
  * Top-level renderer view. The settings page replaces the chat surface in the
@@ -17,6 +17,8 @@ export type SettingsSection =
   | { readonly kind: "general" }
   | { readonly kind: "providers" }
   | { readonly kind: "workspace" }
+  | { readonly kind: "pokedex" }
+  | { readonly kind: "browser" }
   | { readonly kind: "shortcuts" }
   | { readonly kind: "developer" }
   | { readonly kind: "repository"; readonly projectId: FolderId };
@@ -26,24 +28,101 @@ export type SettingsSection =
  * the file tab only exists when `openFile !== null`. Opening a different file
  * replaces (never stacks) the file tab — see specs/0.02-MVP/features/file-viewer.md.
  */
-export type MainTab = "chat" | "file";
+export type MainTab = "chat" | "file" | "archives" | "usage";
 
 /**
- * Tabs in the right-hand workspace pane. Lifted from `RightPane`'s local
- * state so the native menu (Cmd+J → Toggle Terminal) can drive it.
+ * Whether the Usage dashboard shows every project's usage (`global`, opened
+ * from the sidebar footer) or just the selected project's usage across all its
+ * sessions (`project`, opened from a project's context menu).
  */
-export type RightTab = "files" | "terminal" | "changes" | "pr";
+export type UsageScope = "global" | "project";
 
-export type OpenFile = {
-  readonly folderId: FolderId;
-  readonly path: string;
-  readonly name: string;
+/**
+ * Panel kinds the right-hand dock can host. The dock is user-managed: panels
+ * are added from a launcher / "+" menu and closed individually, rather than
+ * being a fixed tab set.
+ */
+export type PanelKind = "files" | "terminal" | "changes" | "pr" | "browser";
+
+/**
+ * Kinds that may have at most one open instance. Terminal is the only
+ * multi-instance kind — each terminal is its own dock tab.
+ */
+export const SINGLETON_PANEL_KINDS: ReadonlySet<PanelKind> = new Set([
+  "files",
+  "changes",
+  "pr",
+  "browser",
+]);
+
+/**
+ * A panel tab in the right dock. `id` is a stable per-tab key used to
+ * activate/close it. Terminal panels also carry a workspace-relative `slot`
+ * (0-based) that resolves to the active workspace's Nth terminal instance at
+ * render time — see `terminals.ts` `ensureSlot`. The dock layout is global
+ * (one workbench arrangement); the four singletons are already context-aware
+ * internally, and terminals stay correctly keyed by (folderId, worktreeId)
+ * via the slot indirection.
+ */
+export type PanelInstance =
+  | { readonly id: string; readonly kind: "files" }
+  | { readonly id: string; readonly kind: "changes" }
+  | { readonly id: string; readonly kind: "pr" }
+  | { readonly id: string; readonly kind: "browser" }
+  | { readonly id: string; readonly kind: "terminal"; readonly slot: number };
+
+/**
+ * Which body the file viewer is showing. `edit` is the CodeMirror editor;
+ * `diff` is the side-by-side patch view (working tree vs HEAD) — wired up
+ * for clicks from the Changes panel and from Edit/Write/MultiEdit tool
+ * rows. Toggled in the toolbar; defaults set per entry point.
+ */
+export type FileView = "edit" | "diff";
+
+/**
+ * Discriminated by `kind`. `text` is the project-root-relative path the file
+ * editor reads via `fs.readFile`; `image` is a raw URL the renderer renders
+ * inline (currently used for `memoize://attachments/<id>` so screenshots
+ * stay inside the app instead of bouncing to the OS handler).
+ */
+export type OpenFile =
+  | {
+      readonly kind: "text";
+      readonly folderId: FolderId;
+      readonly path: string;
+      readonly name: string;
+      /**
+       * Worktree the file lives in. Persisted on the OpenFile so a save
+       * still targets the right tree even if the user switches selected
+       * sessions while the file is open. `null` means main checkout.
+       */
+      readonly worktreeId: WorktreeId | null;
+      readonly view: FileView;
+    }
+  | {
+      readonly kind: "image";
+      readonly src: string;
+      readonly name: string;
+    }
+  | {
+      /**
+       * A file outside any project folder (e.g. a plan or markdown file the
+       * agent wrote elsewhere on disk). Read/written by absolute path via the
+       * `fs.*ExternalFile` RPCs, which deliberately skip the workspace
+       * sandbox. Edit-only — there's no git/folder context for a diff.
+       */
+      readonly kind: "external";
+      readonly absPath: string;
+      readonly name: string;
+      readonly view: FileView;
+    };
+
+export type RevealedAnnotation = CodeAnnotation & {
   /**
-   * Worktree the file lives in. Persisted on the OpenFile so a save still
-   * targets the right tree even if the user switches selected sessions
-   * while the file is open. `null` means main checkout.
+   * Monotonic token so clicking the same annotation again still re-scrolls and
+   * refreshes the editor highlight.
    */
-  readonly worktreeId: WorktreeId | null;
+  readonly revealToken: number;
 };
 
 type UiState = {
@@ -52,6 +131,7 @@ type UiState = {
   readonly settingsSection: SettingsSection;
   readonly setSettingsSection: (section: SettingsSection) => void;
   readonly activeMainTab: MainTab;
+  readonly usageScope: UsageScope;
   readonly openFile: OpenFile | null;
   readonly fileDirty: boolean;
   // 0.02 hard-codes false. The future settings-page autosave toggle flips
@@ -60,38 +140,160 @@ type UiState = {
   readonly leftSidebarOpen: boolean;
   readonly rightSidebarOpen: boolean;
   readonly isFullScreen: boolean;
-  readonly activeRightTab: RightTab;
+  readonly rightPanels: ReadonlyArray<PanelInstance>;
+  readonly activeRightPanelId: string | null;
+  readonly revealedAnnotation: RevealedAnnotation | null;
   readonly setActiveMainTab: (tab: MainTab) => void;
-  readonly openFileInTab: (file: OpenFile) => void;
+  /** Open the Usage dashboard in the main pane at the given scope. */
+  readonly openUsage: (scope: UsageScope) => void;
+  readonly openFileInTab: (
+    file:
+      | (Omit<Extract<OpenFile, { kind: "text" }>, "view"> & {
+          view?: FileView;
+        })
+      | (Omit<Extract<OpenFile, { kind: "external" }>, "view"> & {
+          view?: FileView;
+        })
+      | Extract<OpenFile, { kind: "image" }>,
+  ) => void;
+  readonly setOpenFileView: (view: FileView) => void;
   readonly closeFileTab: () => void;
   readonly setFileDirty: (dirty: boolean) => void;
   readonly setLeftSidebarOpen: (open: boolean) => void;
   readonly setRightSidebarOpen: (open: boolean) => void;
   readonly setFullScreen: (full: boolean) => void;
-  readonly setActiveRightTab: (tab: RightTab) => void;
+  /** Add a panel to the dock. Singletons that are already open are focused
+   * instead of duplicated; terminals always append a new slot. */
+  readonly addPanel: (kind: PanelKind) => void;
+  /** Add a terminal panel pinned to a SPECIFIC terminal-list slot (rather
+   * than the auto-computed next slot) and activate it. Used to surface a
+   * command terminal (e.g. Run) whose instance lives at a known list index. */
+  readonly addTerminalPanelForSlot: (slot: number) => void;
+  /** Remove a dock panel by id. Layout-only: callers that close a terminal
+   * panel must also drop its backing PTY instance (the active workspace key
+   * lives in the component layer). Re-indexes remaining terminal slots. */
+  readonly closePanel: (id: string) => void;
+  readonly setActiveRightPanel: (id: string) => void;
+  /** Open the sidebar and ensure a panel of `kind` is present + active.
+   * Replaces the old `setRightSidebarOpen(true) + setActiveRightTab(kind)`
+   * pairs. For terminals, focuses an existing one or adds a new slot. */
+  readonly revealPanel: (kind: PanelKind) => void;
+  readonly revealAnnotation: (annotation: CodeAnnotation) => void;
+  readonly clearRevealedAnnotation: () => void;
 };
 
-export const useUiStore = create<UiState>((set) => ({
+const newPanelId = (): string =>
+  globalThis.crypto?.randomUUID?.() ??
+  `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+/** Renumber terminal panels' slots to stay contiguous (0..n-1) in tab order
+ * after one is removed, so they keep mapping to the active workspace's
+ * terminal list without gaps. */
+const reindexTerminalSlots = (
+  panels: ReadonlyArray<PanelInstance>,
+): ReadonlyArray<PanelInstance> => {
+  let next = 0;
+  return panels.map((p) =>
+    p.kind === "terminal" ? { ...p, slot: next++ } : p,
+  );
+};
+
+export const useUiStore = create<UiState>((set, get) => ({
   view: "chat",
   setView: (view) => set({ view }),
   settingsSection: { kind: "general" },
   setSettingsSection: (section) => set({ settingsSection: section }),
   activeMainTab: "chat",
+  usageScope: "global",
   openFile: null,
   fileDirty: false,
   autosave: false,
   leftSidebarOpen: true,
-  rightSidebarOpen: true,
+  rightSidebarOpen: false,
   isFullScreen: false,
-  activeRightTab: "files",
+  rightPanels: [],
+  activeRightPanelId: null,
+  revealedAnnotation: null,
   setActiveMainTab: (tab) => set({ activeMainTab: tab }),
+  openUsage: (scope) => set({ view: "chat", activeMainTab: "usage", usageScope: scope }),
   openFileInTab: (file) =>
-    set({ openFile: file, activeMainTab: "file", fileDirty: false }),
+    set({
+      openFile:
+        file.kind === "image" ? file : { ...file, view: file.view ?? "edit" },
+      activeMainTab: "file",
+      fileDirty: false,
+    }),
+  setOpenFileView: (view) =>
+    set((s) => {
+      if (s.openFile === null || s.openFile.kind !== "text") return s;
+      return { openFile: { ...s.openFile, view } };
+    }),
   closeFileTab: () =>
     set({ openFile: null, activeMainTab: "chat", fileDirty: false }),
   setFileDirty: (dirty) => set({ fileDirty: dirty }),
   setLeftSidebarOpen: (open) => set({ leftSidebarOpen: open }),
   setRightSidebarOpen: (open) => set({ rightSidebarOpen: open }),
   setFullScreen: (full) => set({ isFullScreen: full }),
-  setActiveRightTab: (tab) => set({ activeRightTab: tab }),
+  addPanel: (kind) =>
+    set((s) => {
+      if (SINGLETON_PANEL_KINDS.has(kind)) {
+        const existing = s.rightPanels.find((p) => p.kind === kind);
+        if (existing !== undefined) {
+          return { activeRightPanelId: existing.id };
+        }
+        const panel = { id: newPanelId(), kind } as PanelInstance;
+        return {
+          rightPanels: [...s.rightPanels, panel],
+          activeRightPanelId: panel.id,
+        };
+      }
+      // terminal: append a new slot at the next contiguous index.
+      const slot = s.rightPanels.filter((p) => p.kind === "terminal").length;
+      const panel: PanelInstance = { id: newPanelId(), kind: "terminal", slot };
+      return {
+        rightPanels: [...s.rightPanels, panel],
+        activeRightPanelId: panel.id,
+      };
+    }),
+  addTerminalPanelForSlot: (slot) =>
+    set((s) => {
+      const panel: PanelInstance = { id: newPanelId(), kind: "terminal", slot };
+      return {
+        rightPanels: [...s.rightPanels, panel],
+        activeRightPanelId: panel.id,
+      };
+    }),
+  closePanel: (id) =>
+    set((s) => {
+      const idx = s.rightPanels.findIndex((p) => p.id === id);
+      if (idx === -1) return s;
+      const next = reindexTerminalSlots(
+        s.rightPanels.filter((p) => p.id !== id),
+      );
+      const wasActive = s.activeRightPanelId === id;
+      const activeRightPanelId = wasActive
+        ? (next[Math.max(0, idx - 1)]?.id ?? next[0]?.id ?? null)
+        : s.activeRightPanelId;
+      return { rightPanels: next, activeRightPanelId };
+    }),
+  setActiveRightPanel: (id) => set({ activeRightPanelId: id }),
+  revealPanel: (kind) => {
+    const s = get();
+    if (!s.rightSidebarOpen) set({ rightSidebarOpen: true });
+    const existing = s.rightPanels.find((p) => p.kind === kind);
+    if (existing !== undefined) {
+      set({ activeRightPanelId: existing.id });
+      return;
+    }
+    // No panel of this kind yet — add one (terminals add a fresh slot).
+    s.addPanel(kind);
+  },
+  revealAnnotation: (annotation) =>
+    set((s) => ({
+      revealedAnnotation: {
+        ...annotation,
+        revealToken: (s.revealedAnnotation?.revealToken ?? 0) + 1,
+      },
+    })),
+  clearRevealedAnnotation: () => set({ revealedAnnotation: null }),
 }));

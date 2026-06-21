@@ -1,9 +1,11 @@
 import { createContext, useContext } from "react";
 
-import type { FolderId, WorktreeId } from "@memoize/wire";
+import type { CodeAnnotation, FolderId, WorktreeId } from "@memoize/wire";
 
 import { cn } from "~/lib/utils";
-import { useUiStore } from "~/store/ui";
+import { useUiStore, type FileView } from "~/store/ui";
+import { useWorkspaceStore } from "~/store/workspace";
+import { useWorktreesStore } from "~/store/worktrees";
 import { FileIcon } from "./file-icon.tsx";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip.tsx";
 
@@ -36,10 +38,99 @@ export function FileChipProvider({
 
 export const useFileChipContext = () => useContext(FileChipContext);
 
-const basename = (p: string): string => {
+export const basename = (p: string): string => {
   const i = p.lastIndexOf("/");
   return i === -1 ? p : p.slice(i + 1);
 };
+
+export type FileOpenTarget = Parameters<
+  ReturnType<typeof useUiStore.getState>["openFileInTab"]
+>[0];
+
+export const resolveFileOpenTarget = ({
+  relPath,
+  absPath,
+  kind = "file",
+  folderId,
+  worktreeId,
+  folderPath,
+  worktreePath,
+  view,
+}: {
+  readonly relPath: string;
+  readonly absPath?: string;
+  readonly kind?: "file" | "directory";
+  readonly folderId: FolderId | null;
+  readonly worktreeId: WorktreeId | null;
+  readonly folderPath: string | null;
+  readonly worktreePath: string | null;
+  readonly view?: FileView;
+}): FileOpenTarget | null => {
+  const name = basename(relPath);
+  const rootPath = worktreePath ?? folderPath;
+  const looksAbsolute = absPath !== undefined || relPath.startsWith("/");
+  const resolvedAbs = absPath ?? (relPath.startsWith("/") ? relPath : null);
+  const insideWorkspace =
+    rootPath !== null &&
+    resolvedAbs !== null &&
+    (resolvedAbs === rootPath || resolvedAbs.startsWith(`${rootPath}/`));
+  const workspaceRelPath =
+    insideWorkspace && resolvedAbs !== null && rootPath !== null
+      ? resolvedAbs.slice(rootPath.length + 1)
+      : !looksAbsolute
+        ? relPath
+        : null;
+
+  if (kind !== "file") return null;
+  if (folderId !== null && workspaceRelPath !== null) {
+    return {
+      kind: "text",
+      folderId,
+      path: workspaceRelPath,
+      name,
+      worktreeId,
+      view,
+    };
+  }
+  if (resolvedAbs !== null && !insideWorkspace) {
+    return { kind: "external", absPath: resolvedAbs, name, view };
+  }
+  return null;
+};
+
+const annotationRangeLabel = (a: CodeAnnotation): string =>
+  a.startLine === a.endLine ? `${a.startLine}` : `${a.startLine}-${a.endLine}`;
+
+export function AnnotationFileChip({
+  annotation,
+  className,
+}: {
+  readonly annotation: CodeAnnotation;
+  readonly className?: string;
+}) {
+  const name = basename(annotation.relPath);
+  const range = annotationRangeLabel(annotation);
+
+  return (
+    <span
+      className={cn(
+        "inline-flex max-w-full shrink-0 items-center gap-1.5 rounded-[0.375rem] border border-border/45 bg-[color-mix(in_oklch,var(--bg-elevated)_34%,var(--background))] px-1.5 py-0.5 text-[11px] text-foreground/90 shadow-[inset_0_1px_0_color-mix(in_oklch,white_4%,transparent),0_1px_2px_color-mix(in_oklch,black_22%,transparent)]",
+        className,
+      )}
+      title={`${annotation.relPath}:${range}`}
+    >
+      <FileIcon
+        name={name}
+        kind="file"
+        className="inline-flex size-3.5 shrink-0 items-center justify-center"
+      />
+      <span className="min-w-0 truncate font-mono">{name}</span>
+      <span className="shrink-0 font-mono tabular-nums text-foreground/60">
+        :{range}
+      </span>
+    </span>
+  );
+}
 
 /**
  * Pill that pairs a file-type icon with a filename, plus a tooltip and
@@ -54,6 +145,8 @@ export function FileChip({
   relPath,
   absPath,
   kind = "file",
+  view,
+  diffStats,
   className,
 }: {
   /** Path shown in the tooltip + used as the chip label (basename only). */
@@ -65,26 +158,55 @@ export function FileChip({
    */
   readonly absPath?: string;
   readonly kind?: "file" | "directory";
+  /**
+   * Which body the file viewer should open with. Tool rows for Edit/Write/
+   * MultiEdit pass `"diff"` so clicking the file goes straight to the
+   * side-by-side diff; everything else defaults to the CodeMirror editor.
+   */
+  readonly view?: FileView;
+  readonly diffStats?: { readonly added: number; readonly removed: number };
   readonly className?: string;
 }) {
   const { folderId, worktreeId } = useFileChipContext();
   const openFileInTab = useUiStore((s) => s.openFileInTab);
+  const folderPath = useWorkspaceStore((s) => {
+    if (folderId === null) return null;
+    return s.folders.find((f) => f.id === folderId)?.path ?? null;
+  });
+  const worktreePath = useWorktreesStore((s) => {
+    if (folderId === null || worktreeId === null) return null;
+    const list = s.byProject[folderId] ?? [];
+    return list.find((w) => w.id === worktreeId)?.path ?? null;
+  });
 
+  // Resolve the chip's effective root + workspace-relative path. Tool rows
+  // sometimes carry an absolute path from another workspace (Conductor
+  // side-checkouts, sibling repos); opening those would trigger
+  // `FsPathOutsideError` on the server. Detect early, surface as a
+  // non-clickable chip with an explanatory tooltip.
   const name = basename(relPath);
-  const canOpen =
-    kind === "file" && folderId !== null && (absPath !== undefined || relPath.startsWith("/"));
+  const openTarget = resolveFileOpenTarget({
+    relPath,
+    absPath,
+    kind,
+    folderId,
+    worktreeId,
+    folderPath,
+    worktreePath,
+    view,
+  });
+  const canOpen = openTarget !== null;
 
   const tooltip =
-    kind === "directory" ? `View ${relPath}` : canOpen ? `Open ${relPath}` : relPath;
+    kind === "directory"
+      ? `View ${relPath}`
+      : canOpen
+        ? `Open ${relPath}`
+        : relPath;
 
   const onClick = () => {
-    if (!canOpen || folderId === null) return;
-    openFileInTab({
-      folderId,
-      path: absPath ?? relPath,
-      name,
-      worktreeId,
-    });
+    if (openTarget === null) return;
+    openFileInTab(openTarget);
   };
 
   // Rendered as a `<span role="button">` rather than a real `<button>` so the
@@ -121,9 +243,9 @@ export function FileChip({
             onClick={canOpen ? onChipClick : undefined}
             onKeyDown={canOpen ? onKeyDown : undefined}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-md border border-border/60 px-1.5 py-0.5 text-[11px] text-foreground/90 transition-colors",
+              "inline-flex items-center gap-1.5 rounded-md border border-border/45 bg-[color-mix(in_oklch,var(--bg-elevated)_34%,var(--background))] px-1.5 py-0.5 text-[11px] text-foreground/90 shadow-[inset_0_1px_0_color-mix(in_oklch,white_4%,transparent),0_1px_2px_color-mix(in_oklch,black_22%,transparent)] transition-[background-color,color,box-shadow]",
               canOpen
-                ? "cursor-pointer hover:bg-muted/60 hover:text-foreground"
+                ? "cursor-pointer hover:bg-[color-mix(in_oklch,var(--bg-elevated)_48%,var(--background))] hover:text-foreground hover:shadow-[inset_0_1px_0_color-mix(in_oklch,white_6%,transparent),0_2px_5px_color-mix(in_oklch,black_24%,transparent)]"
                 : "cursor-default",
               className,
             )}
@@ -134,6 +256,16 @@ export function FileChip({
               className="inline-flex size-3.5 shrink-0 items-center justify-center"
             />
             <span className="max-w-[28ch] truncate font-mono">{name}</span>
+            {diffStats !== undefined && diffStats.added > 0 ? (
+              <span className="shrink-0 font-mono tabular-nums text-emerald-400">
+                +{diffStats.added}
+              </span>
+            ) : null}
+            {diffStats !== undefined && diffStats.removed > 0 ? (
+              <span className="shrink-0 font-mono tabular-nums text-red-400">
+                -{diffStats.removed}
+              </span>
+            ) : null}
           </span>
         }
       />

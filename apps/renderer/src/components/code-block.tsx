@@ -2,14 +2,81 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createHighlighter,
   type BundledLanguage,
-  type BundledTheme,
   type Highlighter,
+  type ThemeRegistration,
 } from "shiki";
 
 import { cn } from "~/lib/utils";
+import { CopyButton } from "./copy-button.tsx";
 import { FileIcon } from "./file-icon.tsx";
 
-const THEME: BundledTheme = "github-dark-dimmed";
+const THEME = "memoize-dark" as const;
+
+const MEMOIZE_SHIKI_THEME: ThemeRegistration = {
+  name: THEME,
+  type: "dark",
+  colors: {
+    "editor.background": "#00000000",
+    "editor.foreground": "#e4e4e7",
+    "editorLineNumber.foreground": "#71717a",
+    "editor.selectionBackground": "#a855f72e",
+  },
+  tokenColors: [
+    {
+      scope: ["comment", "punctuation.definition.comment"],
+      settings: { foreground: "#71717a", fontStyle: "italic" },
+    },
+    {
+      scope: ["keyword", "storage", "storage.type", "constant.language"],
+      settings: { foreground: "#c084fc" },
+    },
+    {
+      scope: ["string", "constant.character", "markup.inline.raw.string"],
+      settings: { foreground: "#86efac" },
+    },
+    {
+      scope: ["constant.numeric", "constant.language.boolean"],
+      settings: { foreground: "#fbbf24" },
+    },
+    {
+      scope: ["entity.name.function", "support.function", "variable.function"],
+      settings: { foreground: "#7dd3fc" },
+    },
+    {
+      scope: [
+        "entity.name.type",
+        "entity.name.class",
+        "support.type",
+        "support.class",
+      ],
+      settings: { foreground: "#67e8f9" },
+    },
+    {
+      scope: ["entity.other.attribute-name", "variable.parameter"],
+      settings: { foreground: "#fda4af" },
+    },
+    {
+      scope: ["entity.name.tag", "support.class.component"],
+      settings: { foreground: "#f87171" },
+    },
+    {
+      scope: ["punctuation", "meta.brace", "keyword.operator"],
+      settings: { foreground: "#a1a1aa" },
+    },
+    {
+      scope: ["markup.heading", "entity.name.section"],
+      settings: { foreground: "#fafafa", fontStyle: "bold" },
+    },
+    {
+      scope: ["markup.link", "string.other.link"],
+      settings: { foreground: "#7dd3fc", fontStyle: "underline" },
+    },
+    {
+      scope: ["invalid", "invalid.illegal"],
+      settings: { foreground: "#f87171" },
+    },
+  ],
+};
 
 /** Languages we eagerly load on highlighter init. Anything outside this set
  *  renders as plain text — Shiki throws if asked to highlight an unloaded
@@ -80,6 +147,42 @@ const langForExtension = (ext: string): BundledLanguage | null => {
   }
 };
 
+const LANG_ALIASES: Readonly<Record<string, BundledLanguage>> = {
+  cjs: "js",
+  mjs: "js",
+  javascript: "js",
+  jsx: "jsx",
+  mdx: "md",
+  markdown: "md",
+  py: "python",
+  python3: "python",
+  rs: "rust",
+  rust: "rust",
+  shell: "bash",
+  shellscript: "bash",
+  sh: "bash",
+  zsh: "bash",
+  typescript: "ts",
+  yml: "yaml",
+};
+
+const langForLanguage = (
+  language: string | undefined,
+): BundledLanguage | null => {
+  if (language === undefined) return null;
+  const normalized = language
+    .trim()
+    .toLowerCase()
+    .replace(/^language-/, "");
+  if (normalized.length === 0) return null;
+  const aliased = LANG_ALIASES[normalized];
+  if (aliased !== undefined) return aliased;
+  if (LANGS.includes(normalized as BundledLanguage)) {
+    return normalized as BundledLanguage;
+  }
+  return langForExtension(normalized);
+};
+
 const langForFilename = (filename: string): BundledLanguage | null => {
   const slash = filename.lastIndexOf("/");
   const base = slash === -1 ? filename : filename.slice(slash + 1);
@@ -100,7 +203,7 @@ const basename = (p: string): string => {
 let highlighterPromise: Promise<Highlighter> | null = null;
 const getHighlighter = (): Promise<Highlighter> => {
   highlighterPromise ??= createHighlighter({
-    themes: [THEME],
+    themes: [MEMOIZE_SHIKI_THEME],
     langs: [...LANGS],
   });
   return highlighterPromise;
@@ -114,6 +217,8 @@ const MAX_HIGHLIGHT_BYTES = 200_000;
 interface Props {
   readonly filename: string;
   readonly text: string;
+  readonly language?: string;
+  readonly title?: string;
   readonly maxHeight?: number;
   readonly isError?: boolean;
 }
@@ -128,10 +233,15 @@ interface Props {
 export function CodeBlock({
   filename,
   text,
+  language,
+  title,
   maxHeight = 420,
   isError = false,
 }: Props) {
-  const lang = useMemo(() => langForFilename(filename), [filename]);
+  const lang = useMemo(
+    () => langForLanguage(language) ?? langForFilename(filename),
+    [filename, language],
+  );
   const safeText = useMemo(
     () =>
       text.length > MAX_HIGHLIGHT_BYTES
@@ -176,7 +286,7 @@ export function CodeBlock({
     };
   }, [safeText, lang]);
 
-  const name = basename(filename);
+  const name = title ?? basename(filename);
   const lineCount = safeText.length === 0 ? 0 : safeText.split("\n").length;
 
   return (
@@ -186,21 +296,28 @@ export function CodeBlock({
         isError ? "border-alert-error-bg" : "border-border/60",
       )}
     >
-      <div className="flex items-center gap-2 border-b border-border/40 bg-muted/30 px-2 py-1 text-[11px] text-muted-foreground">
+      <div className="flex items-center gap-2 border-b border-border/40 bg-muted px-2 py-1 text-[11px] text-muted-foreground">
         <FileIcon
           name={name}
           kind="file"
           className="inline-flex size-3.5 shrink-0 items-center justify-center"
         />
-        <span className="truncate font-mono text-foreground/80">{name}</span>
-        <span className="ml-auto tabular-nums opacity-70">
+        <span className="min-w-0 flex-1 truncate font-mono text-foreground/80">
+          {name}
+        </span>
+        <CopyButton
+          text={text}
+          label={`Copy ${name}`}
+          className="size-5 rounded text-muted-foreground/60 hover:bg-muted/60"
+        />
+        <span className="tabular-nums opacity-70">
           {lineCount} {lineCount === 1 ? "line" : "lines"}
         </span>
       </div>
       <div
         ref={hostRef}
         className={cn(
-          "code-block-scroll overflow-auto bg-muted/15 text-[12px] leading-[1.45]",
+          "code-block-scroll overflow-auto bg-message-pre-bg text-[12px] leading-[1.3]",
           isError ? "bg-alert-error-bg/40" : undefined,
         )}
         style={{ maxHeight }}

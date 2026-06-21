@@ -14,6 +14,7 @@ import { PtyService } from "../services/pty-service.ts";
 
 interface ActivePty {
   readonly pty: pty.IPty;
+  readonly cwd: string;
   readonly mailbox: Mailbox.Mailbox<typeof PtyEvent.Type, PtyNotFoundError>;
 }
 
@@ -50,6 +51,7 @@ export const PtyServiceLive = Layer.effect(
               cwd,
               env: {
                 ...(process.env as Record<string, string>),
+                ...(command?.env ?? {}),
                 TERM: "xterm-256color",
               },
             }),
@@ -82,7 +84,7 @@ export const PtyServiceLive = Layer.effect(
 
         yield* Ref.update(ref, (m) => {
           const next = new Map(m);
-          next.set(id, { pty: child, mailbox });
+          next.set(id, { pty: child, cwd, mailbox });
           return next;
         });
 
@@ -127,6 +129,27 @@ export const PtyServiceLive = Layer.effect(
         }),
       );
 
+    const closeByCwdPrefix: PtyService["Type"]["closeByCwdPrefix"] = (
+      cwdPrefix,
+    ) =>
+      Effect.gen(function* () {
+        const prefix = cwdPrefix.endsWith("/") ? cwdPrefix : `${cwdPrefix}/`;
+        const active = yield* Ref.get(ref);
+        for (const [id, item] of active) {
+          if (item.cwd !== cwdPrefix && !item.cwd.startsWith(prefix)) continue;
+          try {
+            item.pty.kill();
+          } catch {
+            // already dead
+          }
+          yield* Ref.update(ref, (m) => {
+            const next = new Map(m);
+            next.delete(id);
+            return next;
+          });
+        }
+      });
+
     const subscribe: PtyService["Type"]["subscribe"] = (ptyId) =>
       Stream.unwrap(
         Effect.map(getActive(ptyId), ({ mailbox }) =>
@@ -134,6 +157,6 @@ export const PtyServiceLive = Layer.effect(
         ),
       );
 
-    return { open, write, resize, close, subscribe } as const;
+    return { open, write, resize, close, closeByCwdPrefix, subscribe } as const;
   }),
 );

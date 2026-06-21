@@ -7,9 +7,12 @@ import {
 import { CommandExecutor } from "@effect/platform";
 import { Effect, Layer, Stream } from "effect";
 
-import { resolveCliPath } from "./availability.ts";
+import { resolveCliPath, resolveUpdateCommand } from "./availability.ts";
 import { loadOpencodeInventory } from "./drivers/opencode.ts";
+import { BrowserBridgeService } from "./services/browser-bridge-service.ts";
+import { CredentialsService } from "./services/credentials-service.ts";
 import { startProviderLogin } from "./services/login-service.ts";
+import { startProviderUpdate } from "./services/update-service.ts";
 import { MessageStore } from "./services/message-store.ts";
 import { PermissionService } from "./services/permission-service.ts";
 import { ProviderService } from "./services/provider-service.ts";
@@ -62,9 +65,7 @@ const Close = MemoizeRpcs.toLayerHandler("agent.close", ({ sessionId }) =>
 );
 
 const Events = MemoizeRpcs.toLayerHandler("agent.events", ({ sessionId }) =>
-  Stream.unwrap(
-    Effect.map(ProviderService, (svc) => svc.events(sessionId)),
-  ),
+  Stream.unwrap(Effect.map(ProviderService, (svc) => svc.events(sessionId))),
 );
 
 // Renderer subscribes to this when the user clicks the "Sign in" button on a
@@ -76,6 +77,20 @@ const Events = MemoizeRpcs.toLayerHandler("agent.events", ({ sessionId }) =>
 const StartLogin = MemoizeRpcs.toLayerHandler(
   "agent.startLogin",
   ({ providerId }) => startProviderLogin(providerId),
+);
+
+// Renderer subscribes to this when the user clicks "Update" on a provider
+// card. Spawns the provider's install/upgrade command in a login shell,
+// streams output, and ends with `done`. On success the renderer re-probes
+// availability so the new version shows immediately.
+const UpdateProvider = MemoizeRpcs.toLayerHandler(
+  "agent.updateProvider",
+  ({ providerId }) =>
+    Stream.unwrap(
+      resolveUpdateCommand(providerId).pipe(
+        Effect.map((command) => startProviderUpdate(providerId, command)),
+      ),
+    ),
 );
 
 // Renderer calls this on first open of the opencode model picker to refresh
@@ -115,10 +130,8 @@ const SessionList = MemoizeRpcs.toLayerHandler(
     ),
 );
 
-const SessionGet = MemoizeRpcs.toLayerHandler(
-  "session.get",
-  ({ sessionId }) =>
-    Effect.flatMap(MessageStore, (svc) => svc.getSession(sessionId)),
+const SessionGet = MemoizeRpcs.toLayerHandler("session.get", ({ sessionId }) =>
+  Effect.flatMap(MessageStore, (svc) => svc.getSession(sessionId)),
 );
 
 const SessionCreate = MemoizeRpcs.toLayerHandler("session.create", (input) =>
@@ -134,6 +147,11 @@ const SessionCreate = MemoizeRpcs.toLayerHandler("session.create", (input) =>
       enableSubagents: input.enableSubagents,
       permissionMode: input.permissionMode,
       toolSearch: input.toolSearch,
+      // Detach `provider.start` so the new in-chat tab appears in
+      // ~hundreds of ms; the booting status flips when the CLI handshake
+      // finishes (or fails). Chat-create stays synchronous to preserve
+      // its existing staged loading panel timing.
+      background: true,
     }),
   ),
 );
@@ -172,6 +190,18 @@ const ChatRename = MemoizeRpcs.toLayerHandler(
   "chat.rename",
   ({ chatId, title }) =>
     Effect.flatMap(MessageStore, (svc) => svc.renameChat(chatId, title)),
+);
+
+const ChatMarkRead = MemoizeRpcs.toLayerHandler("chat.markRead", ({ chatId }) =>
+  Effect.flatMap(MessageStore, (svc) => svc.markChatRead(chatId)),
+);
+
+const ChatStreamChanges = MemoizeRpcs.toLayerHandler(
+  "chat.streamChanges",
+  ({ projectId }) =>
+    Stream.unwrap(
+      Effect.map(MessageStore, (svc) => svc.streamChatChanges(projectId)),
+    ),
 );
 
 const ChatSetWorktree = MemoizeRpcs.toLayerHandler(
@@ -306,9 +336,33 @@ const SessionStreamStatus = MemoizeRpcs.toLayerHandler(
     ),
 );
 
+const SessionGoalGet = MemoizeRpcs.toLayerHandler(
+  "session.goal.get",
+  ({ sessionId }) =>
+    Effect.flatMap(MessageStore, (svc) => svc.getGoal(sessionId)),
+);
+
+const SessionGoalSet = MemoizeRpcs.toLayerHandler(
+  "session.goal.set",
+  ({ sessionId, goal }) =>
+    Effect.flatMap(MessageStore, (svc) => svc.setGoal(sessionId, goal)),
+);
+
+const SessionGoalClear = MemoizeRpcs.toLayerHandler(
+  "session.goal.clear",
+  ({ sessionId }) =>
+    Effect.flatMap(MessageStore, (svc) => svc.clearGoal(sessionId)),
+);
+
+const SessionGoalStream = MemoizeRpcs.toLayerHandler(
+  "session.goal.stream",
+  ({ sessionId }) =>
+    Stream.unwrap(Effect.map(MessageStore, (svc) => svc.streamGoal(sessionId))),
+);
+
 const MessagesSend = MemoizeRpcs.toLayerHandler(
   "messages.send",
-  ({ sessionId, text, input }) => {
+  ({ sessionId, text, input, asGoal }) => {
     console.log(
       `[rpc.messages.send] sessionId=${sessionId} hasInput=${input !== undefined} attachments=${
         input?.attachments?.length ?? 0
@@ -328,6 +382,8 @@ const MessagesSend = MemoizeRpcs.toLayerHandler(
         input?.attachments,
         input?.fileRefs,
         input?.skillRefs,
+        input?.annotations,
+        asGoal,
       ),
     );
   },
@@ -339,6 +395,66 @@ const MessagesInterrupt = MemoizeRpcs.toLayerHandler(
     Effect.flatMap(MessageStore, (svc) => svc.interruptSession(sessionId)),
 );
 
+const MessagesQueueList = MemoizeRpcs.toLayerHandler(
+  "messages.queue.list",
+  ({ sessionId }) =>
+    Effect.flatMap(MessageStore, (svc) => svc.listQueuedMessages(sessionId)),
+);
+
+const MessagesQueueStream = MemoizeRpcs.toLayerHandler(
+  "messages.queue.stream",
+  ({ sessionId }) =>
+    Stream.unwrap(
+      Effect.map(MessageStore, (svc) => svc.streamQueuedMessages(sessionId)),
+    ),
+);
+
+const MessagesQueueAdd = MemoizeRpcs.toLayerHandler(
+  "messages.queue.add",
+  ({ sessionId, input }) =>
+    Effect.flatMap(MessageStore, (svc) =>
+      svc.addQueuedMessage(sessionId, input),
+    ),
+);
+
+const MessagesQueueUpdate = MemoizeRpcs.toLayerHandler(
+  "messages.queue.update",
+  ({ sessionId, queueId, input }) =>
+    Effect.flatMap(MessageStore, (svc) =>
+      svc.updateQueuedMessage(sessionId, queueId, input),
+    ),
+);
+
+const MessagesQueueDelete = MemoizeRpcs.toLayerHandler(
+  "messages.queue.delete",
+  ({ sessionId, queueId }) =>
+    Effect.flatMap(MessageStore, (svc) =>
+      svc.deleteQueuedMessage(sessionId, queueId),
+    ),
+);
+
+const MessagesQueueSendNow = MemoizeRpcs.toLayerHandler(
+  "messages.queue.sendNow",
+  ({ sessionId, queueId }) =>
+    Effect.flatMap(MessageStore, (svc) =>
+      svc.sendQueuedMessageNow(sessionId, queueId),
+    ),
+);
+
+const MessagesQueueReorder = MemoizeRpcs.toLayerHandler(
+  "messages.queue.reorder",
+  ({ sessionId, queueIds }) =>
+    Effect.flatMap(MessageStore, (svc) =>
+      svc.reorderQueuedMessages(sessionId, queueIds),
+    ),
+);
+
+const MessagesQueueFlush = MemoizeRpcs.toLayerHandler(
+  "messages.queue.flush",
+  ({ sessionId }) =>
+    Effect.flatMap(MessageStore, (svc) => svc.flushQueuedMessages(sessionId)),
+);
+
 // ---------------------------------------------------------------------------
 // permission.* — Phase 4 surface. The renderer subscribes to
 // `permission.requests`, shows a toast, and posts back via `permission.decide`.
@@ -347,8 +463,7 @@ const MessagesInterrupt = MemoizeRpcs.toLayerHandler(
 
 const PermissionRequests = MemoizeRpcs.toLayerHandler(
   "permission.requests",
-  () =>
-    Stream.unwrap(Effect.map(PermissionService, (svc) => svc.requests())),
+  () => Stream.unwrap(Effect.map(PermissionService, (svc) => svc.requests())),
 );
 
 const PermissionDecide = MemoizeRpcs.toLayerHandler(
@@ -377,6 +492,58 @@ const PermissionRevokeDecision = MemoizeRpcs.toLayerHandler(
     Effect.flatMap(PermissionService, (svc) => svc.revokeDecision(requestId)),
 );
 
+// ---------------------------------------------------------------------------
+// browser.* — in-app agent browser bridge. The renderer's BrowserPane
+// subscribes to `browser.commands`, drives the `<webview>`, and posts the
+// outcome back via `browser.respond`, resolving the Deferred the MCP browser
+// tool is awaiting. Mirrors the permission.* request/decide pair.
+// ---------------------------------------------------------------------------
+
+const BrowserCommands = MemoizeRpcs.toLayerHandler("browser.commands", () =>
+  Stream.unwrap(Effect.map(BrowserBridgeService, (svc) => svc.commands())),
+);
+
+const BrowserRespond = MemoizeRpcs.toLayerHandler(
+  "browser.respond",
+  ({ result }) =>
+    Effect.flatMap(BrowserBridgeService, (svc) => svc.respond(result)),
+);
+
+// Browser credentials — DUMMY/TEST logins kept in the keychain. A keychain
+// failure is swallowed to a safe value (void / [] / null) rather than
+// surfacing a defect: a missing credential just means autofill no-ops.
+const BrowserSetCredential = MemoizeRpcs.toLayerHandler(
+  "browser.setCredential",
+  ({ origin, username, password }) =>
+    Effect.flatMap(CredentialsService, (svc) =>
+      svc.setBrowser(origin, username, password),
+    ).pipe(Effect.catchAll(() => Effect.void)),
+);
+
+const BrowserListCredentials = MemoizeRpcs.toLayerHandler(
+  "browser.listCredentials",
+  () =>
+    Effect.flatMap(CredentialsService, (svc) => svc.listBrowser()).pipe(
+      Effect.catchAll(() => Effect.succeed([])),
+    ),
+);
+
+const BrowserRemoveCredential = MemoizeRpcs.toLayerHandler(
+  "browser.removeCredential",
+  ({ origin }) =>
+    Effect.flatMap(CredentialsService, (svc) => svc.removeBrowser(origin)).pipe(
+      Effect.catchAll(() => Effect.void),
+    ),
+);
+
+const BrowserFillForOrigin = MemoizeRpcs.toLayerHandler(
+  "browser.fillForOrigin",
+  ({ origin }) =>
+    Effect.flatMap(CredentialsService, (svc) => svc.getBrowser(origin)).pipe(
+      Effect.catchAll(() => Effect.succeed(null)),
+    ),
+);
+
 export const ProviderHandlersLayer = Layer.mergeAll(
   Availability,
   SetCredential,
@@ -386,6 +553,7 @@ export const ProviderHandlersLayer = Layer.mergeAll(
   Close,
   Events,
   StartLogin,
+  UpdateProvider,
   OpencodeInventory,
   SessionList,
   SessionGet,
@@ -400,6 +568,8 @@ export const ProviderHandlersLayer = Layer.mergeAll(
   ChatGet,
   ChatCreate,
   ChatRename,
+  ChatMarkRead,
+  ChatStreamChanges,
   ChatSetWorktree,
   ChatSetActiveSession,
   ChatArchive,
@@ -411,13 +581,31 @@ export const ProviderHandlersLayer = Layer.mergeAll(
   SessionAnswerQuestion,
   SessionSetWorktree,
   SessionStreamStatus,
+  SessionGoalGet,
+  SessionGoalSet,
+  SessionGoalClear,
+  SessionGoalStream,
   MessagesList,
   MessagesStream,
   MessagesSend,
   MessagesInterrupt,
+  MessagesQueueList,
+  MessagesQueueStream,
+  MessagesQueueAdd,
+  MessagesQueueUpdate,
+  MessagesQueueDelete,
+  MessagesQueueSendNow,
+  MessagesQueueReorder,
+  MessagesQueueFlush,
   PermissionRequests,
   PermissionDecide,
   PermissionListPending,
   PermissionListDecisions,
   PermissionRevokeDecision,
+  BrowserCommands,
+  BrowserRespond,
+  BrowserSetCredential,
+  BrowserListCredentials,
+  BrowserRemoveCredential,
+  BrowserFillForOrigin,
 );

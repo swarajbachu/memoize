@@ -1,12 +1,7 @@
 import { Rpc } from "@effect/rpc";
 import { Schema } from "effect";
 
-import {
-  AgentItemId,
-  AgentSessionId,
-  AgentTurnId,
-  FolderId,
-} from "./ids.ts";
+import { AgentItemId, AgentSessionId, AgentTurnId, FolderId } from "./ids.ts";
 
 /**
  * Identifier for a provider implementation (driver). v1 ships claude + codex;
@@ -81,11 +76,7 @@ export const DEFAULT_RUNTIME_MODE: RuntimeMode = "approval-required";
  * switches `permissionMode` back to `default` and the existing `RuntimeMode`
  * resumes governing prompts.
  */
-export const PermissionMode = Schema.Literal(
-  "default",
-  "plan",
-  "acceptEdits",
-);
+export const PermissionMode = Schema.Literal("default", "plan", "acceptEdits");
 export type PermissionMode = typeof PermissionMode.Type;
 export const DEFAULT_PERMISSION_MODE: PermissionMode = "default";
 
@@ -168,6 +159,38 @@ export const CliVersionStatus = Schema.Literal("ok", "outdated", "unknown");
 export type CliVersionStatus = typeof CliVersionStatus.Type;
 
 /**
+ * Version-gated Codex features. The installed Codex CLI only speaks these on
+ * recent releases, so we surface support as a capability list on
+ * {@link AgentAvailability} (computed from `cliVersion` against per-feature
+ * floors in `availability.ts`) and the renderer shows/hides the matching
+ * control. Adding a feature here is additive — pair it with a floor in
+ * `CODEX_FEATURE_FLOORS` and a UI gate.
+ *
+ *   - `goalMode` — `thread/goal/*` RPCs (the goal banner + `/goal`).
+ *   - `fastMode` — `serviceTier: "fast"` on `turn/start` (1.5× speed tier).
+ */
+export const CodexFeature = Schema.Literal("goalMode", "fastMode");
+export type CodexFeature = typeof CodexFeature.Type;
+
+/**
+ * Per-provider verdict on whether a *newer published release* exists, distinct
+ * from {@link CliVersionStatus} (which is the blocking SDK floor). This layer
+ * is purely informational — it powers the "update available" hover affordance
+ * in settings and the launch toast, and never blocks a session.
+ *
+ *   - `current` — installed version is at or ahead of the latest published
+ *   - `behind` — a newer version is published (`latestVersion` carries it)
+ *   - `unknown` — couldn't reach the registry, parse failed, or the provider
+ *     isn't published to a registry we check (e.g. curl-installed CLIs)
+ */
+export const LatestVersionStatus = Schema.Literal(
+  "current",
+  "behind",
+  "unknown",
+);
+export type LatestVersionStatus = typeof LatestVersionStatus.Type;
+
+/**
  * Server-side verdict on whether a provider is usable right now. Distinct
  * from `cliVersionStatus` (which only describes the CLI version) and from
  * `authStatus` (which only describes credentials): this is the rolled-up
@@ -230,11 +253,40 @@ export const AgentAvailability = Schema.Struct({
    */
   cliVersionMinRequired: Schema.optional(Schema.String),
   /**
+   * Version-gated features the *installed CLI* supports, computed by comparing
+   * `cliVersion` against per-feature floors (see `CODEX_FEATURE_FLOORS` in
+   * availability.ts). Values are {@link CodexFeature} ids. Empty/omitted when
+   * the version is unknown or no features are gated for this provider. The
+   * renderer reads this to show/hide feature controls *before* a session
+   * exists (the live `model/list` `serviceTiers` refine it per-model once a
+   * session is connected — see the `Capabilities` event).
+   */
+  capabilities: Schema.optional(Schema.Array(Schema.String)),
+  /**
    * One-line shell command we recommend the user run to fix an outdated
    * CLI. Co-located with the version probe so renderer doesn't need its
    * own per-provider install lookup.
    */
   cliUpgradeCommand: Schema.optional(Schema.String),
+  /**
+   * Latest version published to the registry (e.g. `"1.0.140"`), when we were
+   * able to resolve one. Set in tandem with `latestVersionStatus`.
+   */
+  latestVersion: Schema.optional(Schema.String),
+  /**
+   * Verdict on whether a newer published release exists. Drives the
+   * informational "update available" UI (hover icon + launch toast) — never
+   * blocks a session. `"unknown"` for providers we don't version-check (no
+   * registry package) or when the registry lookup failed.
+   */
+  latestVersionStatus: Schema.optional(LatestVersionStatus),
+  /**
+   * Copy-able one-liner the user can run to update to the latest published
+   * release (e.g. `"npm i -g @openai/codex@latest"`). Distinct from
+   * `cliUpgradeCommand` (which targets the blocking SDK floor) — though they
+   * often coincide.
+   */
+  updateCommand: Schema.optional(Schema.String),
   /**
    * Verified auth state. Distinct from `cliLoggedIn` (which only checks for
    * a credential file): set when an out-of-process probe (Codex
@@ -412,6 +464,32 @@ const UsageDeltaEvent = Schema.TaggedStruct("UsageDelta", {
   model: Schema.String,
 });
 
+export const ContextUsagePrecision = Schema.Literal(
+  "exact",
+  "estimated",
+  "capacity-only",
+);
+export type ContextUsagePrecision = typeof ContextUsagePrecision.Type;
+
+const ContextUsageEvent = Schema.TaggedStruct("ContextUsage", {
+  providerId: ProviderId,
+  usedTokens: Schema.NullOr(Schema.Number),
+  windowTokens: Schema.NullOr(Schema.Number),
+  precision: ContextUsagePrecision,
+  source: Schema.optional(Schema.String),
+});
+
+const UsageLimitEvent = Schema.TaggedStruct("UsageLimit", {
+  providerId: ProviderId,
+  label: Schema.String,
+  usedPercent: Schema.NullOr(Schema.Number),
+  // ISO-8601 string, not a `Date` schema: the value crosses IPC and the
+  // persistence layer as JSON, and a `DateFromString` transform trips the
+  // struct constructor (which validates against the decoded `Date` side).
+  resetsAt: Schema.NullOr(Schema.String),
+  windowMinutes: Schema.NullOr(Schema.Number),
+});
+
 const CompletedEvent = Schema.TaggedStruct("Completed", {
   reason: Schema.Literal("ended", "interrupted", "error"),
 });
@@ -484,6 +562,32 @@ const PermissionModeChangedEvent = Schema.TaggedStruct(
   { mode: PermissionMode },
 );
 
+const GoalStatus = Schema.Literal(
+  "active",
+  "paused",
+  "budgetLimited",
+  "usageLimited",
+  "blocked",
+  "complete",
+);
+
+const GoalPayload = Schema.Struct({
+  threadId: Schema.String,
+  objective: Schema.String,
+  status: GoalStatus,
+  tokenBudget: Schema.NullOr(Schema.Number),
+  tokensUsed: Schema.Number,
+  timeUsedSeconds: Schema.Number,
+  createdAt: Schema.Number,
+  updatedAt: Schema.Number,
+});
+
+const GoalUpdatedEvent = Schema.TaggedStruct("GoalUpdated", {
+  goal: GoalPayload,
+});
+
+const GoalClearedEvent = Schema.TaggedStruct("GoalCleared", {});
+
 export const AgentEvent = Schema.Union(
   StartedEvent,
   StatusEvent,
@@ -497,9 +601,13 @@ export const AgentEvent = Schema.Union(
   PermissionRequestEvent,
   SubagentSummaryEvent,
   UsageDeltaEvent,
+  ContextUsageEvent,
+  UsageLimitEvent,
   SessionCursorEvent,
   UserQuestionEvent,
   PermissionModeChangedEvent,
+  GoalUpdatedEvent,
+  GoalClearedEvent,
   CompletedEvent,
   ErrorEvent,
 );
@@ -664,11 +772,13 @@ const claudeEffortDescriptor = (args: {
 });
 
 /**
- * Boolean descriptor for Claude's per-model toggles. `fastMode` halves the
- * token cost and roughly doubles throughput at the cost of some quality;
- * `thinking` enables Haiku 4.5's always-on adaptive thinking.
+ * Boolean descriptor for a per-model toggle. Used by Claude (`fastMode` halves
+ * the token cost and roughly doubles throughput at the cost of some quality;
+ * `thinking` enables Haiku 4.5's always-on adaptive thinking) and by Codex
+ * (`fastMode` → `serviceTier: "fast"`, the 1.5× speed tier on the latest
+ * models). The driver keys behavior off the descriptor `id`.
  */
-const claudeBooleanDescriptor = (
+const booleanDescriptor = (
   id: string,
   label: string,
 ): BooleanOptionDescriptor => ({
@@ -694,7 +804,21 @@ const claudeContextWindowDescriptor = (): SelectOptionDescriptor => ({
   defaultId: "1m",
 });
 
-export const MODELS_BY_PROVIDER: Record<ProviderId, ReadonlyArray<ModelOption>> = {
+const staticContextWindowDescriptor = (
+  id: string,
+  label: string,
+): SelectOptionDescriptor => ({
+  kind: "select",
+  id: "contextWindow",
+  label: "Context Window",
+  options: [{ id, label }],
+  defaultId: id,
+});
+
+export const MODELS_BY_PROVIDER: Record<
+  ProviderId,
+  ReadonlyArray<ModelOption>
+> = {
   // Claude 4.x catalog (May 2026). Effort tiers and per-model knobs match
   // the published Claude Agent SDK contract — see also the t3code reference
   // (`/Users/whizzy/Developer/temp/t3code/.../ClaudeProvider.ts`) which
@@ -718,7 +842,7 @@ export const MODELS_BY_PROVIDER: Record<ProviderId, ReadonlyArray<ModelOption>> 
           defaultId: "high",
           promptInjectedValues: ["ultrathink"],
         }),
-        claudeBooleanDescriptor("fastMode", "Fast Mode"),
+        booleanDescriptor("fastMode", "Fast Mode"),
         claudeContextWindowDescriptor(),
       ],
       supportsPlanMode: true,
@@ -736,12 +860,13 @@ export const MODELS_BY_PROVIDER: Record<ProviderId, ReadonlyArray<ModelOption>> 
             { id: "high", label: "High" },
             { id: "xhigh", label: "Extra High" },
             { id: "max", label: "Max" },
+            { id: "ultracode", label: "Ultracode" },
             { id: "ultrathink", label: "Ultrathink" },
           ],
           defaultId: "xhigh",
           promptInjectedValues: ["ultrathink"],
         }),
-        claudeBooleanDescriptor("fastMode", "Fast Mode"),
+        booleanDescriptor("fastMode", "Fast Mode"),
         claudeContextWindowDescriptor(),
       ],
       supportsPlanMode: true,
@@ -757,12 +882,13 @@ export const MODELS_BY_PROVIDER: Record<ProviderId, ReadonlyArray<ModelOption>> 
             { id: "medium", label: "Medium" },
             { id: "high", label: "High" },
             { id: "max", label: "Max" },
+            { id: "ultracode", label: "Ultracode" },
             { id: "ultrathink", label: "Ultrathink" },
           ],
           defaultId: "high",
           promptInjectedValues: ["ultrathink"],
         }),
-        claudeBooleanDescriptor("fastMode", "Fast Mode"),
+        booleanDescriptor("fastMode", "Fast Mode"),
         claudeContextWindowDescriptor(),
       ],
       supportsPlanMode: true,
@@ -778,6 +904,7 @@ export const MODELS_BY_PROVIDER: Record<ProviderId, ReadonlyArray<ModelOption>> 
             { id: "medium", label: "Medium" },
             { id: "high", label: "High" },
             { id: "max", label: "Max" },
+            { id: "ultracode", label: "Ultracode" },
             { id: "ultrathink", label: "Ultrathink" },
           ],
           defaultId: "high",
@@ -791,7 +918,7 @@ export const MODELS_BY_PROVIDER: Record<ProviderId, ReadonlyArray<ModelOption>> 
     {
       id: "claude-haiku-4-5",
       label: "Haiku 4.5",
-      optionDescriptors: [claudeBooleanDescriptor("thinking", "Thinking")],
+      optionDescriptors: [booleanDescriptor("thinking", "Thinking")],
       supportsPlanMode: true,
       supportsWebSearch: "native",
     },
@@ -800,7 +927,14 @@ export const MODELS_BY_PROVIDER: Record<ProviderId, ReadonlyArray<ModelOption>> 
     {
       id: "gpt-5.4",
       label: "GPT-5.4",
-      optionDescriptors: [reasoningSelectDescriptor("medium")],
+      // `fastMode` → `serviceTier: "fast"`. OpenAI only offers the fast tier on
+      // the latest models (GPT-5.4 / GPT-5.5); older Codex CLIs don't accept
+      // the field, so the toggle is additionally gated on the `fastMode`
+      // capability (CLI version) + the live model's `serviceTiers`.
+      optionDescriptors: [
+        reasoningSelectDescriptor("medium"),
+        booleanDescriptor("fastMode", "Fast"),
+      ],
       supportsPlanMode: true,
       supportsWebSearch: "native",
     },
@@ -808,6 +942,17 @@ export const MODELS_BY_PROVIDER: Record<ProviderId, ReadonlyArray<ModelOption>> 
       id: "gpt-5.4-mini",
       label: "GPT-5.4 mini",
       optionDescriptors: [reasoningSelectDescriptor("medium")],
+      supportsPlanMode: true,
+      supportsWebSearch: "native",
+    },
+    {
+      id: "gpt-5.5",
+      label: "GPT-5.5",
+      // Fast tier supported — see gpt-5.4 note above.
+      optionDescriptors: [
+        reasoningSelectDescriptor("medium"),
+        booleanDescriptor("fastMode", "Fast"),
+      ],
       supportsPlanMode: true,
       supportsWebSearch: "native",
     },
@@ -828,15 +973,20 @@ export const MODELS_BY_PROVIDER: Record<ProviderId, ReadonlyArray<ModelOption>> 
   ],
   // Seed list — Grok CLI's `-m` flag accepts any model id it knows, so a
   // custom slug typed by the user still works; this list is just what the
-  // picker shows by default. `grok-build` is the only model free-tier
-  // accounts can run (verified via `grok models`); the rest unlock with a
-  // SuperGrok subscription. Passing a slug the account can't access yields
+  // picker shows by default. `grok-build` unlocks with a paid Grok entitlement
+  // such as SuperGrok or X Premium+. Passing a slug the account can't access yields
   // a clean 403 surfaced through grok's streaming-json `type: "error"`
   // envelope, so no client-side validation needed.
   grok: [
     {
       id: "grok-build",
       label: "Grok Build",
+      supportsPlanMode: true,
+      supportsWebSearch: "queryOnly",
+    },
+    {
+      id: "grok-composer-2.5-fast",
+      label: "Grok Composer 2.5 Fast",
       supportsPlanMode: true,
       supportsWebSearch: "queryOnly",
     },
@@ -896,14 +1046,31 @@ export const MODELS_BY_PROVIDER: Record<ProviderId, ReadonlyArray<ModelOption>> 
   // seed, not a whitelist. Selection is applied at session start via ACP
   // `session/set_config_option { configId: "model" }`. Plan mode lands
   // natively via `setSessionMode("plan")`.
+  // Cursor's ACP server validates model slugs against its OWN list which
+  // differs from `cursor-agent --list-models`. The valid set lives in the
+  // `models.availableModels` block returned by `session/new` — slugs like
+  // `composer-2-fast` (the CLI default) are rejected by ACP with -32602.
+  // The seed below uses ACP-valid IDs only. The `default` slug means
+  // "Auto" (cursor picks). Custom slugs typed in the picker still work.
   cursor: [
-    { id: "composer-2-fast", label: "Composer 2 Fast", supportsPlanMode: true },
+    { id: "default", label: "Auto", supportsPlanMode: true },
     { id: "composer-2", label: "Composer 2", supportsPlanMode: true },
-    { id: "gpt-5.5-medium", label: "GPT-5.5", supportsPlanMode: true },
-    { id: "gpt-5.5-high", label: "GPT-5.5 High", supportsPlanMode: true },
+    { id: "composer-2.5", label: "Composer 2.5", supportsPlanMode: true },
+    { id: "gpt-5.5", label: "GPT-5.5", supportsPlanMode: true },
     { id: "gpt-5.3-codex", label: "Codex 5.3", supportsPlanMode: true },
+    {
+      id: "claude-sonnet-4-6",
+      label: "Sonnet 4.6",
+      optionDescriptors: [staticContextWindowDescriptor("1m", "1M")],
+      supportsPlanMode: true,
+    },
+    {
+      id: "claude-opus-4-7",
+      label: "Opus 4.7",
+      optionDescriptors: [staticContextWindowDescriptor("1m", "1M")],
+      supportsPlanMode: true,
+    },
     { id: "gemini-3.1-pro", label: "Gemini 3.1 Pro", supportsPlanMode: true },
-    { id: "auto", label: "Auto", supportsPlanMode: true },
   ],
   // OpenCode is a meta-provider: it spawns a local `opencode serve` and
   // forwards prompts to whichever underlying provider (anthropic, openai,
@@ -958,7 +1125,10 @@ export const findModelDescriptor = (
  * persisted user settings and incoming requests through this map so existing
  * sessions don't crash.
  */
-export const MODEL_ALIASES_BY_PROVIDER: Record<ProviderId, Record<string, string>> = {
+export const MODEL_ALIASES_BY_PROVIDER: Record<
+  ProviderId,
+  Record<string, string>
+> = {
   // Short / vendor-formatted slugs and pre-pricing-reset names route to the
   // canonical 4.x slugs above. Mirror of t3code's
   // `MODEL_SLUG_ALIASES_BY_PROVIDER[CLAUDE_DRIVER_KIND]` so a user typing
@@ -992,16 +1162,39 @@ export const MODEL_ALIASES_BY_PROVIDER: Record<ProviderId, Record<string, string
   // re-aliased to current cursor catalogue entries so re-opening the app
   // doesn't send the agent a slug it'll silently ignore.
   cursor: {
-    "gpt-5": "composer-2-fast",
-    "sonnet-4": "composer-2-fast",
-    "sonnet-4-thinking": "composer-2-fast",
-    "opus-4.1": "composer-2-fast",
+    // Legacy slugs from earlier builds (pre-2025.11 cursor-agent CLI list).
+    "gpt-5": "composer-2",
+    "sonnet-4": "claude-sonnet-4-6",
+    "sonnet-4-thinking": "claude-sonnet-4-6",
+    "opus-4.1": "claude-opus-4-7",
+    // CLI slugs (from `cursor-agent --list-models`) that the ACP server
+    // rejects with -32602: it has its own narrower set. Re-route to the
+    // closest ACP-valid neighbour so a previously persisted user choice
+    // doesn't crash on session start.
+    "composer-2-fast": "composer-2",
+    "composer-2.5-fast": "composer-2.5",
+    "gpt-5.5-medium": "gpt-5.5",
+    "gpt-5.5-medium-fast": "gpt-5.5",
+    "gpt-5.5-high": "gpt-5.5",
+    "gpt-5.5-high-fast": "gpt-5.5",
+    "gpt-5.5-low": "gpt-5.5",
+    "gpt-5.5-low-fast": "gpt-5.5",
+    "gpt-5.5-extra-high": "gpt-5.5",
+    "gpt-5.5-extra-high-fast": "gpt-5.5",
+    "gpt-5.5-none": "gpt-5.5",
+    "gpt-5.5-none-fast": "gpt-5.5",
+    "gpt-5.4-high": "gpt-5.4",
+    "gpt-5.4-high-fast": "gpt-5.4",
+    "gpt-5.3-codex-fast": "gpt-5.3-codex",
+    auto: "default",
   },
   opencode: {},
 };
 
-export const resolveModelSlug = (providerId: ProviderId, slug: string): string =>
-  MODEL_ALIASES_BY_PROVIDER[providerId][slug] ?? slug;
+export const resolveModelSlug = (
+  providerId: ProviderId,
+  slug: string,
+): string => MODEL_ALIASES_BY_PROVIDER[providerId][slug] ?? slug;
 
 /**
  * Per-million-token USD pricing used by the renderer to compute the
@@ -1022,11 +1215,36 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   // to $10 in / $50 out for ~2.5x throughput; we don't encode that here,
   // the renderer's cost footer applies the multiplier when the session
   // flips the boolean. 1M context window: no per-token premium.
-  "claude-opus-4-8": { input: 5, output: 25, cacheRead: 0.5, cacheCreate: 6.25 },
-  "claude-opus-4-7": { input: 5, output: 25, cacheRead: 0.5, cacheCreate: 6.25 },
-  "claude-opus-4-6": { input: 5, output: 25, cacheRead: 0.5, cacheCreate: 6.25 },
-  "claude-sonnet-4-6": { input: 3, output: 15, cacheRead: 0.3, cacheCreate: 3.75 },
-  "claude-haiku-4-5": { input: 1, output: 5, cacheRead: 0.1, cacheCreate: 1.25 },
+  "claude-opus-4-8": {
+    input: 5,
+    output: 25,
+    cacheRead: 0.5,
+    cacheCreate: 6.25,
+  },
+  "claude-opus-4-7": {
+    input: 5,
+    output: 25,
+    cacheRead: 0.5,
+    cacheCreate: 6.25,
+  },
+  "claude-opus-4-6": {
+    input: 5,
+    output: 25,
+    cacheRead: 0.5,
+    cacheCreate: 6.25,
+  },
+  "claude-sonnet-4-6": {
+    input: 3,
+    output: 15,
+    cacheRead: 0.3,
+    cacheCreate: 3.75,
+  },
+  "claude-haiku-4-5": {
+    input: 1,
+    output: 5,
+    cacheRead: 0.1,
+    cacheCreate: 1.25,
+  },
 };
 
 export const SendInput = Schema.Struct({
@@ -1209,6 +1427,31 @@ export type LoginEvent = typeof LoginEvent.Type;
 export const AgentStartLoginRpc = Rpc.make("agent.startLogin", {
   payload: Schema.Struct({ providerId: ProviderId }),
   success: LoginEvent,
+  error: AgentSessionStartError,
+  stream: true,
+});
+
+// ---------------------------------------------------------------------------
+// One-click provider CLI update. The renderer subscribes to
+// `agent.updateProvider`, which spawns the provider's install/upgrade command
+// in a login shell (so `npm`/`bun` are on PATH and `curl … | bash` installers
+// work), streams the command's output back as `log` lines, and ends with a
+// terminal `done`. On success the renderer re-probes availability so the new
+// version is reflected immediately.
+// ---------------------------------------------------------------------------
+
+export const ProviderUpdateEvent = Schema.Union(
+  Schema.TaggedStruct("log", { text: Schema.String }),
+  Schema.TaggedStruct("done", {
+    ok: Schema.Boolean,
+    reason: Schema.optional(Schema.String),
+  }),
+);
+export type ProviderUpdateEvent = typeof ProviderUpdateEvent.Type;
+
+export const AgentUpdateProviderRpc = Rpc.make("agent.updateProvider", {
+  payload: Schema.Struct({ providerId: ProviderId }),
+  success: ProviderUpdateEvent,
   error: AgentSessionStartError,
   stream: true,
 });

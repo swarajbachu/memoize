@@ -1,16 +1,27 @@
-import { GitBranchIcon } from "@hugeicons/core-free-icons";
+import { GitBranchIcon } from "@hugeicons-pro/core-solid-rounded";
 import { HugeiconsIcon } from "@hugeicons/react";
 
 import { cn } from "~/lib/utils";
 
 /**
- * Branch / PR state for a session row's leading glyph. v1 only paints color;
- * the icon shape stays the same so the row never reflows when state flips.
- *   - default — no PR linked yet (muted text or selected-foreground)
- *   - pr-open — PR open against base branch (emerald)
- *   - pr-closed — PR merged or closed (purple)
+ * Branch / PR state for a session row's leading glyph. Only color changes
+ * with state — the icon shape stays the same so the row never reflows.
+ *   - default    — no PR linked yet (muted)
+ *   - pr-open    — PR open, checks passing / none (green)
+ *   - pr-pending — PR open, checks still running (amber)
+ *   - pr-failing — PR open with a failing check or a merge conflict (red)
+ *   - pr-merged  — PR merged (purple)
+ *   - pr-closed  — PR closed without merging (muted)
+ *   - archived   — chat archived (dimmed)
  */
-export type BranchState = "default" | "pr-open" | "pr-closed";
+export type BranchState =
+  | "default"
+  | "pr-open"
+  | "pr-pending"
+  | "pr-failing"
+  | "pr-merged"
+  | "pr-closed"
+  | "archived";
 
 const COLOR_BY_STATE: Record<BranchState, { idle: string; selected: string }> =
   {
@@ -18,8 +29,18 @@ const COLOR_BY_STATE: Record<BranchState, { idle: string; selected: string }> =
       idle: "text-muted-foreground",
       selected: "text-sidebar-accent-foreground",
     },
-    "pr-open": { idle: "text-emerald-400", selected: "text-emerald-300" },
-    "pr-closed": { idle: "text-purple-400", selected: "text-purple-300" },
+    "pr-open": { idle: "text-success", selected: "text-success" },
+    "pr-pending": { idle: "text-warning", selected: "text-warning" },
+    "pr-failing": { idle: "text-destructive", selected: "text-destructive" },
+    "pr-merged": { idle: "text-purple-400", selected: "text-purple-300" },
+    "pr-closed": {
+      idle: "text-muted-foreground",
+      selected: "text-sidebar-accent-foreground",
+    },
+    archived: {
+      idle: "text-muted-foreground/60",
+      selected: "text-muted-foreground/60",
+    },
   };
 
 export function BranchIcon({
@@ -35,7 +56,6 @@ export function BranchIcon({
   return (
     <HugeiconsIcon
       icon={GitBranchIcon}
-      strokeWidth={2}
       className={cn(
         "size-3.5 shrink-0 transition-colors",
         selected ? color.selected : color.idle,

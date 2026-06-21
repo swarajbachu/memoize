@@ -1,27 +1,29 @@
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  ArrowDown01Icon,
+  AttachmentIcon,
+  DashboardSpeedIcon,
+  Delete02Icon,
+  FlashIcon,
+  Folder01Icon,
+  GitBranchIcon,
+  InformationCircleIcon,
+  LockIcon,
+  MapsIcon,
+  PencilIcon,
+  PlayIcon,
+  SentIcon,
+  SquareIcon,
+  Tick01Icon,
+  Upload01Icon,
+} from "@hugeicons-pro/core-bulk-rounded";
 import type { EditorView } from "@codemirror/view";
-import {
-  Check,
-  ChevronDown,
-  FolderClosed,
-  GitBranch,
-  Gauge,
-  Info,
-  Lock,
-  Map,
-  Paperclip,
-  Send,
-  Square,
-  Upload,
-} from "lucide-react";
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  ComposerInput,
   findModelDescriptor,
+  type BooleanOptionDescriptor,
   type Message,
   type PermissionMode,
   type PermissionRequest,
@@ -30,12 +32,25 @@ import {
   type SelectOptionDescriptor,
   type Session,
   type SessionId,
+  type ThreadGoal,
 } from "@memoize/wire";
 import { ModelPicker } from "./model-picker.tsx";
+import { ActiveLocationChip } from "./active-location-chip.tsx";
 
 import { Card, CardPanel } from "~/components/ui/card";
 import { Frame, FrameFooter } from "~/components/ui/frame";
 import { Button } from "~/components/ui/button";
+import {
+  Dialog,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+} from "~/components/ui/dialog";
+import { Input } from "~/components/ui/input";
+import { Textarea } from "~/components/ui/textarea";
 import {
   composerDoc,
   createComposerView,
@@ -51,16 +66,22 @@ import {
   updateImageChipEffect,
 } from "~/lib/codemirror/composer-chips";
 import { useActiveWorkspaceRoot } from "../store/active-workspace.ts";
+import {
+  annotationsForSession,
+  useAnnotationsStore,
+} from "../store/annotations.ts";
 import { useAttachmentsStore } from "../store/attachments.ts";
 import { useComposerBridge } from "../store/composer-bridge.ts";
-import { cn } from "~/lib/utils";
+import { cn, formatCompactNumber } from "~/lib/utils";
 import {
   matchBuiltin,
   type BuiltinCommand,
 } from "../composer/builtin-commands.ts";
 import { parseComposerInput } from "../composer/segment-parser.ts";
+import { AnnotationTray } from "./composer/annotation-tray.tsx";
 import { ComposerChipOverlay } from "./composer/composer-chip-overlay.tsx";
 import { FileTagPopover } from "./composer/file-tag-popover.tsx";
+import { ProjectPlanTray } from "./composer/project-plan-tray.tsx";
 import { QueueTray } from "./composer/queue-tray.tsx";
 import { SlashCommandPopover } from "./composer/slash-command-popover.tsx";
 import {
@@ -98,15 +119,58 @@ const MIN_HEIGHT = 56;
 const MAX_HEIGHT = 240;
 const MAX_ATTACHMENTS_PER_TURN = 20;
 
-
-export function ChatComposer({ session }: { session: Session }) {
+export function ChatComposer({
+  session,
+  onDraftSubmit,
+}: {
+  session: Session;
+  /**
+   * When set, the composer runs in "draft" mode for the new-chat landing:
+   * `session` is a synthetic draft (see `sessions.beginDraft`) with no real
+   * server row. Submit routes here instead of send/queue so the landing can
+   * create the worktree + chat on first send; session-state trays (queue,
+   * plan, annotations, context, location, workspace) are hidden; and the
+   * permission-hydration polling is skipped (there's nothing to hydrate). The
+   * model/runtime/permission/provider toggles still work — their store setters
+   * route to the draft slot — so the user's picks carry into `create()`.
+   */
+  onDraftSubmit?: (input: ComposerInput, opts: { asGoal: boolean }) => void;
+}) {
   const sessionId: SessionId = session.id;
+  const isDraft = onDraftSubmit !== undefined;
+  const [reasoningLevel, setReasoningLevel] = useState<string | null>(null);
   const inFlight = useMessagesStore(
     (s) => s.runningBySession[sessionId] === true,
   );
+  // The first message(s) sit in the queue while the worktree branches / setup
+  // runs / the provider boots — the worktrees setup stream flushes them once
+  // the tree is ready. Until then, any submit must APPEND to the queue
+  // (preserving order), never fire a live send into a not-yet-ready session.
+  // The composer is now visible throughout setup, so this path is reachable.
+  const hasQueued = useMessagesStore(
+    (s) => (s.queueBySession[sessionId]?.length ?? 0) > 0,
+  );
+  const worktreeSetupActive = useWorktreesStore((s) => {
+    const wtId = session.worktreeId;
+    if (wtId === null) return false;
+    for (const list of Object.values(s.byProject)) {
+      const wt = (list ?? EMPTY_WORKTREES).find((w) => w.id === wtId);
+      if (wt !== undefined) {
+        // Only while setup is genuinely in flight — a `failed` status is
+        // terminal (its queue already flushed), so later messages send.
+        return wt.setupStatus === "running" || wt.setupStatus === "pending";
+      }
+    }
+    return false;
+  });
+  const holdForSetup =
+    hasQueued || worktreeSetupActive || session.status === "booting";
+  const goal = useMessagesStore((s) => s.goalBySession[sessionId] ?? null);
   const send = useMessagesStore((s) => s.send);
   const interrupt = useMessagesStore((s) => s.interrupt);
   const queue = useMessagesStore((s) => s.queue);
+  const setGoal = useMessagesStore((s) => s.setGoal);
+  const clearGoal = useMessagesStore((s) => s.clearGoal);
 
   // Pending AskUserQuestion takes over the composer slot — that's where
   // the user types anyway, and floating it inline above the chat
@@ -165,20 +229,51 @@ export function ChatComposer({ session }: { session: Session }) {
     return out;
   }, [requestsById, sessionId]);
   useEffect(() => {
+    if (isDraft) return;
     void hydratePermissions(sessionId);
-  }, [sessionId, hydratePermissions]);
+  }, [isDraft, sessionId, hydratePermissions]);
   // Reconcile permission requests whenever the running flag transitions
   // true → false. A turn that ended (or aborted) sometimes leaves a stale
   // pending-permission row in the client cache — the row's UI then takes
   // over the composer slot and looks like the input is disabled. Re-asking
   // the server clears anything it already resolved.
   useEffect(() => {
-    if (inFlight) return;
+    if (isDraft || inFlight) return;
     void hydratePermissions(sessionId);
-  }, [inFlight, sessionId, hydratePermissions]);
+  }, [isDraft, inFlight, sessionId, hydratePermissions]);
+  // Deterministic fallback delivery. The reconcile hydrate above is gated off
+  // while a turn is in flight, yet that's exactly when the agent blocks on a
+  // permission request. If the live `permission.requests` stream ever drops
+  // the request (subscribe race / stream death), the card would never appear
+  // and the agent hangs invisibly. Poll `listPending` (the server's durable
+  // truth) while running so the card always surfaces within ~2s. Idempotent —
+  // `requestsById` is keyed by id, so it's a no-op merge when the stream is
+  // healthy. The interval is cleared the instant the turn ends or the session
+  // changes.
+  useEffect(() => {
+    if (isDraft || !inFlight) return;
+    const id = window.setInterval(() => {
+      void hydratePermissions(sessionId);
+    }, 2000);
+    return () => window.clearInterval(id);
+  }, [isDraft, inFlight, sessionId, hydratePermissions]);
   const headPermission = pendingPermissions[0];
+  useEffect(() => {
+    if (isDraft || !inFlight || headPermission !== undefined) return;
+    void hydratePermissions(sessionId);
+    const id = window.setInterval(() => {
+      void hydratePermissions(sessionId);
+    }, 1_000);
+    return () => window.clearInterval(id);
+  }, [isDraft, inFlight, headPermission, sessionId, hydratePermissions]);
 
   const [hasText, setHasText] = useState(false);
+  const [goalSendMode, setGoalSendMode] = useState(false);
+  // Version-gated Codex features the installed CLI supports (from the
+  // availability probe). Drives whether goal/fast controls render at all.
+  const codexCapabilities = useProvidersStore((s) =>
+    s.capabilitiesFor(session.providerId),
+  );
   const [trigger, setTrigger] = useState<ActiveTrigger | null>(null);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -204,13 +299,17 @@ export function ChatComposer({ session }: { session: Session }) {
   const setModel = useSessionsStore((s) => s.setModel);
   const setRuntimeMode = useSessionsStore((s) => s.setRuntimeMode);
   const setPermissionMode = useSessionsStore((s) => s.setPermissionMode);
-  const setRightSidebarOpen = useUiStore((s) => s.setRightSidebarOpen);
-  const setActiveRightTab = useUiStore((s) => s.setActiveRightTab);
+  const revealPanel = useUiStore((s) => s.revealPanel);
   const setView = useUiStore((s) => s.setView);
   const setSettingsSection = useUiStore((s) => s.setSettingsSection);
   const workspaceRoot = useActiveWorkspaceRoot(session.projectId);
+  const annotationCount = useAnnotationsStore(
+    (s) => (s.bySession[sessionId] ?? []).length,
+  );
 
-  const canSend = hasText;
+  // Stacked annotations are a valid message on their own, so they enable Send
+  // even with an empty text box.
+  const canSend = hasText || annotationCount > 0;
 
   // Mount the CodeMirror view once per ChatComposer instance. Switching
   // sessions remounts the component (`session.id` is the chat-view key),
@@ -333,14 +432,23 @@ export function ChatComposer({ session }: { session: Session }) {
       case "run":
         void setPermissionMode(sessionId, "default");
         break;
+      case "goal":
+        if (parsed.args.length > 0) {
+          void send(sessionId, parsed.args, { asGoal: true });
+        } else {
+          setGoalSendMode(true);
+        }
+        break;
       case "diff":
-        setRightSidebarOpen(true);
-        setActiveRightTab("changes");
+        revealPanel("changes");
         break;
       case "copy": {
-        const latest = [...(sessionMessages ?? [])].reverse().find((m) =>
-          m.content._tag === "assistant" || m.content._tag === "thinking"
-        );
+        const latest = [...(sessionMessages ?? [])]
+          .reverse()
+          .find(
+            (m) =>
+              m.content._tag === "assistant" || m.content._tag === "thinking",
+          );
         const text =
           latest?.content._tag === "assistant" ||
           latest?.content._tag === "thinking"
@@ -505,7 +613,10 @@ export function ChatComposer({ session }: { session: Session }) {
     const view = editorViewRef.current;
     if (view === null) return false;
     const docText = composerDoc(view).trim();
-    if (docText.length === 0) return false;
+    const annotations = annotationsForSession(sessionId);
+    // Allow a pure-annotation submit (no typed text) — the stacked comments
+    // are the message.
+    if (docText.length === 0 && annotations.length === 0) return false;
 
     const builtin = matchBuiltin(docText, session.providerId);
     if (builtin !== null) {
@@ -514,11 +625,34 @@ export function ChatComposer({ session }: { session: Session }) {
       return true;
     }
 
-    const input = parseComposerInput(view.state, session.providerId);
+    const parsed = parseComposerInput(view.state, session.providerId);
+    const input =
+      annotations.length > 0
+        ? ComposerInput.make({
+            text: parsed.text,
+            attachments: parsed.attachments,
+            fileRefs: parsed.fileRefs,
+            skillRefs: parsed.skillRefs,
+            annotations,
+          })
+        : parsed;
     clearComposer(view);
-    if (inFlight) {
-      // Mid-turn submit becomes a queue chip; auto-flushed when the turn
-      // ends or steered manually.
+    setGoalSendMode(false);
+    // Drain the tray: the annotations now live on `input` (carried into the
+    // queue too, so a mid-turn submit flushes them intact).
+    useAnnotationsStore.getState().clear(sessionId);
+    // Draft mode (new-chat landing): hand the input back to the landing, which
+    // creates the worktree + chat and queues this as the first message.
+    if (onDraftSubmit !== undefined) {
+      onDraftSubmit(input, { asGoal: goalSendMode });
+      return true;
+    }
+    if (goalSendMode) {
+      void send(sessionId, input, { asGoal: true });
+    } else if (inFlight || holdForSetup) {
+      // Mid-turn submit — or a submit while the worktree/provider is still
+      // coming up — becomes a queue chip; auto-flushed when the turn ends,
+      // setup completes, or steered manually.
       queue(sessionId, input);
     } else {
       void send(sessionId, input);
@@ -544,6 +678,7 @@ export function ChatComposer({ session }: { session: Session }) {
   };
 
   const inPlanMode = session.permissionMode === "plan";
+  const inUltracodeMode = reasoningLevel === "ultracode";
   // Keep the editor mounted at all times. Permissions / questions render as
   // a sibling above it, and we hide the editor block with `display: none`
   // while a card is up. Unmounting the editor branch detaches the CodeMirror
@@ -579,13 +714,47 @@ export function ChatComposer({ session }: { session: Session }) {
         aria-hidden={showCard || undefined}
       >
         <div className="mx-auto">
+          {!isDraft ? (
+            <>
+              <ActiveLocationChip />
+              <ProjectPlanTray key={sessionId} sessionId={sessionId} />
+              <AnnotationTray
+                sessionId={sessionId}
+                folderId={session.projectId}
+                worktreeId={session.worktreeId}
+              />
+            </>
+          ) : null}
+          {!isDraft && session.providerId === "codex" && goal !== null ? (
+            <GoalBanner
+              goal={goal}
+              inPlanMode={inPlanMode}
+              onPause={() =>
+                void setGoal(sessionId, {
+                  status: goal.status === "active" ? "paused" : "active",
+                })
+              }
+              onSave={(objective, tokenBudget) =>
+                void setGoal(sessionId, {
+                  objective,
+                  status: "active",
+                  tokenBudget,
+                })
+              }
+              onClear={() => void clearGoal(sessionId)}
+            />
+          ) : null}
           <Frame>
             <Card
               className={cn(
-                "rounded-xl min-h-30 transition-colors",
-                inPlanMode
-                  ? "border-2 border-dashed border-rose-300/60 dark:border-rose-300/40"
-                  : "border-border/50",
+                "min-h-30 rounded-lg transition-colors",
+                goalSendMode
+                  ? "border-2 border-dashed border-amber-300/60 dark:border-amber-300/45"
+                  : inPlanMode
+                    ? "border-2 border-dashed border-rose-300/60 dark:border-rose-300/40"
+                    : inUltracodeMode
+                      ? "border-2 border-transparent [background:linear-gradient(var(--color-card),var(--color-card))_padding-box,linear-gradient(90deg,#fb7185,#f97316,#facc15,#22c55e,#06b6d4,#8b5cf6,#d946ef)_border-box]"
+                      : "border-border/50",
               )}
               onDragEnter={onDragEnter}
               onDragOver={onDragOver}
@@ -594,9 +763,9 @@ export function ChatComposer({ session }: { session: Session }) {
               onPaste={onPaste}
             >
               {isDragging && (
-                <div className="pointer-events-none absolute inset-1 z-40 flex items-center justify-center rounded-lg border border-dashed border-accent-foreground/40 bg-popover/80 backdrop-blur-sm">
+                <div className="pointer-events-none absolute inset-1 z-40 flex items-center justify-center rounded-lg border border-dashed border-accent-foreground/40 bg-popover">
                   <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                    <Upload className="size-3.5" />
+                    <HugeiconsIcon icon={Upload01Icon} className="size-3.5" />
                     <span>Drop files to attach</span>
                   </div>
                 </div>
@@ -608,7 +777,7 @@ export function ChatComposer({ session }: { session: Session }) {
                 hidden
                 onChange={onPickFiles}
               />
-              <QueueTray sessionId={sessionId} />
+              {!isDraft ? <QueueTray sessionId={sessionId} /> : null}
               <CardPanel className="relative flex items-stretch gap-2 px-3 py-2">
                 {trigger !== null && editorViewRef.current !== null ? (
                   trigger.kind === "slash" ? (
@@ -662,7 +831,10 @@ export function ChatComposer({ session }: { session: Session }) {
                         aria-label="Attach files"
                         className="flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/60 hover:text-foreground"
                       >
-                        <Paperclip className="size-3.5" />
+                        <HugeiconsIcon
+                          icon={AttachmentIcon}
+                          className="size-3.5"
+                        />
                       </button>
                     }
                   />
@@ -683,9 +855,34 @@ export function ChatComposer({ session }: { session: Session }) {
                   sessionId={sessionId}
                   providerId={session.providerId}
                   model={session.model}
+                  onLevelChange={setReasoningLevel}
                 />
+                {findModelDescriptor(
+                  session.providerId,
+                  session.model,
+                )?.optionDescriptors?.some(
+                  (d): d is BooleanOptionDescriptor =>
+                    d.kind === "boolean" && d.id === "fastMode",
+                ) === true &&
+                  // For Codex, the fast tier also requires a new-enough CLI
+                  // (the `fastMode` capability). Claude declares its own
+                  // `fastMode` descriptor and isn't version-gated, so only
+                  // filter when the provider gates it.
+                  (session.providerId !== "codex" ||
+                    codexCapabilities.includes("fastMode")) && (
+                    <FastModeToggle sessionId={sessionId} />
+                  )}
+                {session.providerId === "codex" &&
+                codexCapabilities.includes("goalMode") ? (
+                  <GoalModeToggle
+                    active={goalSendMode}
+                    hasGoal={goal !== null}
+                    onClick={() => setGoalSendMode((v) => !v)}
+                  />
+                ) : null}
                 {(findModelDescriptor(session.providerId, session.model)
-                  ?.supportsPlanMode ?? true) && (
+                  ?.supportsPlanMode ??
+                  true) && (
                   <PlanModeToggle
                     sessionId={sessionId}
                     current={session.permissionMode}
@@ -697,7 +894,10 @@ export function ChatComposer({ session }: { session: Session }) {
                   sessionId={sessionId}
                   current={session.runtimeMode}
                 />
-                <SessionTimer sessionId={sessionId} inFlight={inFlight} />
+                {!isDraft ? <ContextStatusPopover session={session} /> : null}
+                {!isDraft ? (
+                  <SessionTimer sessionId={sessionId} inFlight={inFlight} />
+                ) : null}
                 {inFlight ? (
                   <Tooltip>
                     <TooltipTrigger
@@ -708,7 +908,10 @@ export function ChatComposer({ session }: { session: Session }) {
                           onClick={() => void interrupt(sessionId)}
                           aria-label="Interrupt"
                         >
-                          <Square className="size-3.5" />
+                          <HugeiconsIcon
+                            icon={SquareIcon}
+                            className="size-3.5"
+                          />
                         </Button>
                       }
                     />
@@ -725,7 +928,7 @@ export function ChatComposer({ session }: { session: Session }) {
                           disabled={!canSend}
                           aria-label="Send"
                         >
-                          <Send className="size-3.5" />
+                          <HugeiconsIcon icon={SentIcon} className="size-3.5" />
                         </Button>
                       }
                     />
@@ -734,10 +937,12 @@ export function ChatComposer({ session }: { session: Session }) {
                 )}
               </div>
             </FrameFooter>
-            <div className="flex items-center justify-between gap-2 border-t border-border/40 px-2 py-1 text-[11px] text-muted-foreground">
-              <WorkspacePicker session={session} />
-              <WorkspaceBranchLabel session={session} />
-            </div>
+            {!isDraft ? (
+              <div className="flex items-center justify-between gap-2 border-t border-border/40 px-2 py-1 text-[11px] text-muted-foreground">
+                <WorkspacePicker session={session} />
+                <WorkspaceBranchLabel session={session} />
+              </div>
+            ) : null}
           </Frame>
         </div>
       </div>
@@ -760,7 +965,7 @@ function RuntimeModeToggle({
 }) {
   const setRuntimeMode = useSessionsStore((s) => s.setRuntimeMode);
   const meta = MODE_META[current];
-  const TriggerIcon = meta.Icon;
+  const triggerIcon = meta.Icon;
 
   const onSelect = (mode: RuntimeMode) => {
     if (mode !== current) void setRuntimeMode(sessionId, mode);
@@ -772,14 +977,14 @@ function RuntimeModeToggle({
         className="flex items-center gap-1.5 rounded-md border border-border/60 bg-background px-2 py-1 text-[11px] text-foreground shadow-xs/5 transition-colors hover:bg-muted/60 data-[popup-open]:bg-muted/60"
         aria-label={`Permissions: ${meta.label}`}
       >
-        <TriggerIcon className="size-3.5" />
+        <HugeiconsIcon icon={triggerIcon} className="size-3.5" />
         <span>{meta.label}</span>
-        <ChevronDown className="size-3 opacity-60" />
+        <HugeiconsIcon icon={ArrowDown01Icon} className="size-3 opacity-60" />
       </MenuTrigger>
       <MenuPopup side="top" align="end" className="w-72 p-1">
         {MODES_ORDER.map((mode) => {
           const m = MODE_META[mode];
-          const ItemIcon = m.Icon;
+          const itemIcon = m.Icon;
           const active = mode === current;
           return (
             <MenuItem
@@ -793,9 +998,17 @@ function RuntimeModeToggle({
               )}
             >
               <span className="col-start-1 row-start-1 flex h-5 items-center justify-center">
-                {active && <Check className="size-3.5 opacity-90" />}
+                {active && (
+                  <HugeiconsIcon
+                    icon={Tick01Icon}
+                    className="size-3.5 opacity-90"
+                  />
+                )}
               </span>
-              <ItemIcon className="col-start-2 row-start-1 mt-0.5 size-4 shrink-0" />
+              <HugeiconsIcon
+                icon={itemIcon}
+                className="col-start-2 row-start-1 mt-0.5 size-4 shrink-0"
+              />
               <div className="col-start-3 row-start-1 flex flex-col gap-0.5">
                 <span className="font-medium leading-none">{m.label}</span>
                 <span className="text-xs text-muted-foreground leading-snug">
@@ -807,6 +1020,66 @@ function RuntimeModeToggle({
         })}
       </MenuPopup>
     </Menu>
+  );
+}
+
+/**
+ * Claude Fast Mode is a boolean model option, persisted in the same
+ * per-session sessionStorage namespace the send path already reads.
+ */
+function FastModeToggle({ sessionId }: { sessionId: SessionId }) {
+  const storageKey = `memoize.modelOptions.${sessionId}.fastMode`;
+  const [enabled, setEnabled] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.sessionStorage.getItem(storageKey) === "true";
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      setEnabled(false);
+      return;
+    }
+    setEnabled(window.sessionStorage.getItem(storageKey) === "true");
+  }, [storageKey]);
+
+  const onClick = () => {
+    const next = !enabled;
+    setEnabled(next);
+    if (typeof window !== "undefined") {
+      if (next) {
+        window.sessionStorage.setItem(storageKey, "true");
+      } else {
+        window.sessionStorage.removeItem(storageKey);
+      }
+    }
+  };
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            onClick={onClick}
+            aria-label={
+              enabled ? "Disable Claude fast mode" : "Enable Claude fast mode"
+            }
+            aria-pressed={enabled}
+            className={cn(
+              "flex h-6 items-center gap-1.5 rounded-md px-2 text-[11px] transition-colors",
+              enabled
+                ? "bg-amber-300/15 text-amber-200 dark:text-amber-200 hover:bg-amber-300/25"
+                : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+            )}
+          >
+            <HugeiconsIcon icon={FlashIcon} className="size-3.5" />
+            {enabled ? <span>Fast</span> : null}
+          </button>
+        }
+      />
+      <TooltipPopup>
+        {enabled ? "Disable Claude fast mode" : "Enable Claude fast mode"}
+      </TooltipPopup>
+    </Tooltip>
   );
 }
 
@@ -850,7 +1123,7 @@ function PlanModeToggle({
                 : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
             )}
           >
-            <Map className="size-3.5" />
+            <HugeiconsIcon icon={MapsIcon} className="size-3.5" />
             {isPlan ? <span>Plan</span> : null}
           </button>
         }
@@ -863,8 +1136,238 @@ function PlanModeToggle({
   );
 }
 
+function GoalModeToggle({
+  active,
+  hasGoal,
+  onClick,
+}: {
+  active: boolean;
+  hasGoal: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            onClick={onClick}
+            aria-label={active ? "Send next message as goal" : "Set goal"}
+            aria-pressed={active}
+            className={cn(
+              "flex h-6 items-center gap-1.5 rounded-md px-2 text-[11px] transition-colors",
+              active
+                ? "bg-amber-300/15 text-amber-200 hover:bg-amber-300/25"
+                : hasGoal
+                  ? "text-amber-200 hover:bg-muted/60"
+                  : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+            )}
+          >
+            <HugeiconsIcon icon={DashboardSpeedIcon} className="size-3.5" />
+            {active ? <span>Goal</span> : null}
+          </button>
+        }
+      />
+      <TooltipPopup>
+        {active ? "Next send sets a goal" : "Send next message as goal"}
+      </TooltipPopup>
+    </Tooltip>
+  );
+}
 
+const GOAL_LABEL: Record<ThreadGoal["status"], string> = {
+  active: "Pursuing goal",
+  paused: "Goal paused",
+  budgetLimited: "Goal budget reached",
+  usageLimited: "Goal usage limited",
+  blocked: "Goal blocked",
+  complete: "Goal complete",
+};
 
+function GoalBanner({
+  goal,
+  inPlanMode,
+  onPause,
+  onSave,
+  onClear,
+}: {
+  goal: ThreadGoal;
+  inPlanMode: boolean;
+  onPause: () => void;
+  onSave: (objective: string, tokenBudget: number | null) => void;
+  onClear: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const objective = goal.objective.trim();
+  const elapsed =
+    goal.timeUsedSeconds > 0
+      ? `${Math.floor(goal.timeUsedSeconds / 60)}m ${Math.floor(
+          goal.timeUsedSeconds % 60,
+        )}s`
+      : "0s";
+  return (
+    <div className="mb-2 rounded-lg border border-border/70 bg-card/70 px-3 py-2 text-sm">
+      <div className="flex min-w-0 items-center gap-2">
+        <HugeiconsIcon
+          icon={DashboardSpeedIcon}
+          className="size-4 shrink-0 text-muted-foreground"
+        />
+        <div className="min-w-0 flex-1 truncate">
+          <span className="font-medium text-foreground">
+            {GOAL_LABEL[goal.status]}
+          </span>{" "}
+          <span className="text-muted-foreground">{objective}</span>
+        </div>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                onClick={onPause}
+                className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                aria-label={
+                  goal.status === "active" ? "Pause goal" : "Resume goal"
+                }
+              >
+                <HugeiconsIcon
+                  icon={goal.status === "active" ? SquareIcon : PlayIcon}
+                  className="size-3.5"
+                />
+              </button>
+            }
+          />
+          <TooltipPopup>
+            {goal.status === "active" ? "Pause goal" : "Resume goal"}
+          </TooltipPopup>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                onClick={() => setOpen(true)}
+                className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                aria-label="Edit goal"
+              >
+                <HugeiconsIcon icon={PencilIcon} className="size-3.5" />
+              </button>
+            }
+          />
+          <TooltipPopup>Edit goal</TooltipPopup>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                onClick={onClear}
+                className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                aria-label="Delete goal"
+              >
+                <HugeiconsIcon icon={Delete02Icon} className="size-3.5" />
+              </button>
+            }
+          />
+          <TooltipPopup>Delete goal</TooltipPopup>
+        </Tooltip>
+      </div>
+      {inPlanMode && goal.status === "active" ? (
+        <div className="mt-1 text-xs text-amber-200/80">
+          Plan mode is active; Codex will not continue this goal until plan mode
+          exits.
+        </div>
+      ) : null}
+      <GoalEditorDialog
+        open={open}
+        onOpenChange={setOpen}
+        goal={goal}
+        elapsed={elapsed}
+        onSave={onSave}
+      />
+    </div>
+  );
+}
+
+function GoalEditorDialog({
+  open,
+  onOpenChange,
+  goal,
+  elapsed,
+  onSave,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  goal: ThreadGoal;
+  elapsed: string;
+  onSave: (objective: string, tokenBudget: number | null) => void;
+}) {
+  const [objective, setObjective] = useState(goal.objective);
+  const [budget, setBudget] = useState(
+    goal.tokenBudget === null ? "" : String(goal.tokenBudget),
+  );
+  useEffect(() => {
+    if (!open) return;
+    setObjective(goal.objective);
+    setBudget(goal.tokenBudget === null ? "" : String(goal.tokenBudget));
+  }, [goal, open]);
+  const trimmed = objective.trim();
+  const validBudget =
+    budget.trim().length === 0 || Number.isFinite(Number(budget));
+  const canSave = trimmed.length > 0 && trimmed.length <= 4000 && validBudget;
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogPopup>
+        <DialogHeader>
+          <DialogTitle>Edit Goal</DialogTitle>
+          <DialogDescription>
+            Changing the objective replaces the Codex goal and resets goal
+            usage.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogPanel className="space-y-3">
+          <Textarea
+            value={objective}
+            onChange={(event) => setObjective(event.currentTarget.value)}
+            maxLength={4000}
+            aria-label="Goal objective"
+          />
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>{objective.length}/4000</span>
+            <span>
+              {goal.tokensUsed.toLocaleString()} tokens · {elapsed}
+            </span>
+          </div>
+          <Input
+            nativeInput
+            type="number"
+            min={1}
+            value={budget}
+            onChange={(event) => setBudget(event.currentTarget.value)}
+            placeholder="Token budget"
+            aria-label="Token budget"
+          />
+        </DialogPanel>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            disabled={!canSave}
+            onClick={() => {
+              onSave(
+                trimmed,
+                budget.trim().length === 0 ? null : Number(budget),
+              );
+              onOpenChange(false);
+            }}
+          >
+            Save Goal
+          </Button>
+        </DialogFooter>
+      </DialogPopup>
+    </Dialog>
+  );
+}
 
 /**
  * Reasoning / variant selector. For non-opencode providers this reads
@@ -882,10 +1385,12 @@ function ReasoningPicker({
   sessionId,
   providerId,
   model,
+  onLevelChange,
 }: {
   sessionId: SessionId;
   providerId: ProviderId;
   model: string;
+  onLevelChange?: (level: string | null) => void;
 }) {
   const opencodeInventory = useOpencodeInventory((s) => s.inventory);
 
@@ -949,6 +1454,14 @@ function ReasoningPicker({
     return defaultId;
   });
 
+  useEffect(() => {
+    if (resolved === null || !resolved.options.some((o) => o.id === level)) {
+      onLevelChange?.(null);
+      return;
+    }
+    onLevelChange?.(level);
+  }, [level, onLevelChange, resolved]);
+
   if (resolved === null) return null;
 
   const options = resolved.options;
@@ -980,10 +1493,16 @@ function ReasoningPicker({
             : `${resolved.label} for the next message`
         }
       >
-        <Gauge className="size-3" />
+        <HugeiconsIcon icon={DashboardSpeedIcon} className="size-3" />
         <span>{activeLabel}</span>
-        {isUltracode && <Info className="size-3 opacity-90" aria-hidden />}
-        <ChevronDown className="size-3 opacity-60" />
+        {isUltracode && (
+          <HugeiconsIcon
+            icon={InformationCircleIcon}
+            className="size-3 opacity-90"
+            aria-hidden
+          />
+        )}
+        <HugeiconsIcon icon={ArrowDown01Icon} className="size-3 opacity-60" />
       </MenuTrigger>
       <MenuPopup side="top" align="start" className="w-44">
         <MenuGroup>
@@ -998,6 +1517,286 @@ function ReasoningPicker({
         </MenuGroup>
       </MenuPopup>
     </Menu>
+  );
+}
+
+const contextWindowTokensFromId = (id: string | undefined): number | null => {
+  switch (id?.toLowerCase()) {
+    case "200k":
+      return 200_000;
+    case "1m":
+      return 1_000_000;
+    default:
+      return null;
+  }
+};
+
+const descriptorContextWindowTokens = (
+  providerId: ProviderId,
+  model: string,
+): number | null => {
+  const descriptor = findModelDescriptor(providerId, model);
+  const contextDescriptor = descriptor?.optionDescriptors?.find(
+    (d): d is SelectOptionDescriptor =>
+      d.kind === "select" && d.id === "contextWindow",
+  );
+  return contextWindowTokensFromId(contextDescriptor?.defaultId);
+};
+
+/**
+ * Best-known context window for a session before Claude/Codex report the
+ * exact number — the user's selected window if any, else the model's
+ * default. This is a real capacity (not a fabricated usage figure), so the
+ * control can stay visible from the first message.
+ */
+const selectedContextWindowTokens = (
+  sessionId: SessionId,
+  providerId: ProviderId,
+  model: string,
+): number | null => {
+  if (typeof window === "undefined") {
+    return descriptorContextWindowTokens(providerId, model);
+  }
+  const stored = window.sessionStorage.getItem(
+    `memoize.modelOptions.${sessionId}.contextWindow`,
+  );
+  return (
+    contextWindowTokensFromId(stored ?? undefined) ??
+    descriptorContextWindowTokens(providerId, model)
+  );
+};
+
+const formatTokens = (value: number): string => {
+  const formatted = formatCompactNumber(value);
+  return formatted.endsWith("m") || formatted.endsWith("k")
+    ? formatted
+    : `${formatted}`;
+};
+
+const resetLabel = (iso: string | null): string | null => {
+  if (iso === null) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  const now = new Date();
+  const sameDay =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+  const time = new Intl.DateTimeFormat([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+  // Same day → just the time; otherwise prefix the day so "resets 20 Jun
+  // 08:00" still tells you when, not only which day.
+  if (sameDay) return time;
+  const day = new Intl.DateTimeFormat([], {
+    day: "numeric",
+    month: "short",
+  }).format(date);
+  return `${day} ${time}`;
+};
+
+/**
+ * Mini donut gauge for the composer status trigger. The faint track is the
+ * full window; the bright arc fills clockwise from the top with the percent
+ * of context used. `percent === null` (no usage reported yet) shows just the
+ * track. Inherits `currentColor`, so it turns amber when the button does.
+ */
+function ContextRing({ percent }: { percent: number | null }) {
+  const r = 6;
+  const circumference = 2 * Math.PI * r;
+  const clamped = Math.min(Math.max(percent ?? 0, 0), 100);
+  return (
+    <svg viewBox="0 0 16 16" fill="none" className="size-3.5 -rotate-90">
+      <circle
+        cx="8"
+        cy="8"
+        r={r}
+        stroke="currentColor"
+        strokeWidth="2"
+        className="opacity-25"
+      />
+      {percent !== null ? (
+        <circle
+          cx="8"
+          cy="8"
+          r={r}
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={circumference * (1 - clamped / 100)}
+          className="transition-[stroke-dashoffset]"
+        />
+      ) : null}
+    </svg>
+  );
+}
+
+function ContextStatusPopover({ session }: { session: Session }) {
+  const messages = useMessagesStore(
+    (s) => s.messagesBySession[session.id] ?? EMPTY_MESSAGES,
+  );
+
+  const latestContext = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const content = messages[i]!.content;
+      if (
+        content._tag === "context_usage" &&
+        content.providerId === session.providerId
+      ) {
+        return content;
+      }
+    }
+    return null;
+  }, [messages, session.providerId]);
+
+  const usageLimits = useMemo(
+    () =>
+      messages
+        .filter(
+          (m) =>
+            m.content._tag === "usage_limit" &&
+            m.content.providerId === session.providerId,
+        )
+        .slice(-2)
+        .map((m) => (m.content._tag === "usage_limit" ? m.content : null))
+        .filter((v): v is NonNullable<typeof v> => v !== null),
+    [messages, session.providerId],
+  );
+
+  // Real numbers only — but the context window itself is a real capacity we
+  // know from the model, so we show it from the first message and fill in
+  // the live bar once Claude/Codex report exact usage.
+  const usedTokens = latestContext?.usedTokens ?? null;
+  const windowTokens =
+    latestContext?.windowTokens ??
+    selectedContextWindowTokens(session.id, session.providerId, session.model);
+
+  const percent =
+    usedTokens !== null && windowTokens !== null && windowTokens > 0
+      ? Math.min(100, (usedTokens / windowTokens) * 100)
+      : null;
+  const freeTokens =
+    usedTokens !== null && windowTokens !== null
+      ? Math.max(0, windowTokens - usedTokens)
+      : null;
+
+  const hasContext = usedTokens !== null || windowTokens !== null;
+  const hasLimits = usageLimits.length > 0;
+  if (!hasContext && !hasLimits) return null;
+
+  const high = percent !== null && percent >= 90;
+  const headerValue =
+    usedTokens !== null && windowTokens !== null
+      ? `${formatTokens(usedTokens)} / ${formatTokens(windowTokens)}`
+      : windowTokens !== null
+        ? formatTokens(windowTokens)
+        : formatTokens(usedTokens!);
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            className={cn(
+              "flex h-6 items-center justify-center rounded-md px-2 transition-colors hover:bg-muted/60",
+              high
+                ? "text-amber-400 hover:text-amber-300"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+            aria-label="Context and usage status"
+          >
+            <ContextRing percent={percent} />
+          </button>
+        }
+      />
+      <TooltipPopup
+        side="top"
+        align="end"
+        sideOffset={8}
+        className="w-[256px] overflow-hidden rounded-xl border-border bg-popover p-0 text-[13px] shadow-lg"
+      >
+        {hasContext ? (
+          <div className="flex flex-col gap-2.5 p-3">
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="font-medium text-foreground">Context</span>
+              <span className="tabular-nums text-muted-foreground">
+                {headerValue}
+              </span>
+            </div>
+            {percent !== null ? (
+              <>
+                <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className={cn(
+                      "h-full rounded-full transition-[width]",
+                      high ? "bg-amber-400" : "bg-foreground",
+                    )}
+                    style={{ width: `${Math.max(percent, 2)}%` }}
+                  />
+                </div>
+                <div className="flex items-center justify-between text-muted-foreground">
+                  <span className="tabular-nums">
+                    {percent.toFixed(1)}% used
+                  </span>
+                  {freeTokens !== null ? (
+                    <span className="tabular-nums">
+                      {formatTokens(freeTokens)} free
+                    </span>
+                  ) : null}
+                </div>
+              </>
+            ) : (
+              <div className="text-muted-foreground/70">
+                Usage appears after the first response
+              </div>
+            )}
+          </div>
+        ) : null}
+        {hasLimits ? (
+          <div
+            className={cn(
+              "flex flex-col gap-2 p-3",
+              hasContext && "border-t border-border",
+            )}
+          >
+            <span className="font-medium text-foreground">Usage limits</span>
+            <div className="flex flex-col gap-1.5">
+              {usageLimits.map((limit, index) => {
+                const reset = resetLabel(limit.resetsAt);
+                const remaining =
+                  limit.usedPercent !== null
+                    ? `${Math.max(0, 100 - limit.usedPercent).toFixed(0)}% left`
+                    : "Active";
+                return (
+                  <div
+                    key={`${limit.label}-${index}`}
+                    className="flex flex-col gap-0.5"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="truncate text-foreground">
+                        {limit.label}
+                      </span>
+                      <span className="shrink-0 tabular-nums text-muted-foreground">
+                        {remaining}
+                      </span>
+                    </div>
+                    {reset !== null ? (
+                      <span className="tabular-nums text-muted-foreground/50">
+                        resets {reset}
+                      </span>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+      </TooltipPopup>
+    </Tooltip>
   );
 }
 
@@ -1114,16 +1913,16 @@ function WorkspacePicker({ session }: { session: Session }) {
     () =>
       session.worktreeId === null
         ? null
-        : worktrees.find((w) => w.id === session.worktreeId) ?? null,
+        : (worktrees.find((w) => w.id === session.worktreeId) ?? null),
     [session.worktreeId, worktrees],
   );
 
   const triggerLabel =
     session.worktreeId === null
       ? "Current checkout"
-      : current?.name ?? "Worktree";
-  const TriggerIcon =
-    session.worktreeId === null ? FolderClosed : GitBranch;
+      : (current?.name ?? "Worktree");
+  const triggerIcon =
+    session.worktreeId === null ? Folder01Icon : GitBranchIcon;
 
   if (locked) {
     return (
@@ -1131,9 +1930,9 @@ function WorkspacePicker({ session }: { session: Session }) {
         className="flex items-center gap-1.5 rounded-md px-2 py-1"
         title="Workspace locked — first message already sent"
       >
-        <TriggerIcon className="size-3.5" />
+        <HugeiconsIcon icon={triggerIcon} className="size-3.5" />
         <span>{triggerLabel}</span>
-        <Lock className="size-3 opacity-60" />
+        <HugeiconsIcon icon={LockIcon} className="size-3 opacity-60" />
       </span>
     );
   }
@@ -1155,9 +1954,9 @@ function WorkspacePicker({ session }: { session: Session }) {
         aria-label="Change workspace"
         title="Change workspace — locks once the first message is sent"
       >
-        <TriggerIcon className="size-3.5" />
+        <HugeiconsIcon icon={triggerIcon} className="size-3.5" />
         <span>{triggerLabel}</span>
-        <ChevronDown className="size-3 opacity-60" />
+        <HugeiconsIcon icon={ArrowDown01Icon} className="size-3 opacity-60" />
       </MenuTrigger>
       <MenuPopup side="top" align="start" className="w-64 p-1">
         <MenuItem
@@ -1171,10 +1970,16 @@ function WorkspacePicker({ session }: { session: Session }) {
         >
           <span className="col-start-1 row-start-1 flex h-5 items-center justify-center">
             {session.worktreeId === null && (
-              <Check className="size-3.5 opacity-90" />
+              <HugeiconsIcon
+                icon={Tick01Icon}
+                className="size-3.5 opacity-90"
+              />
             )}
           </span>
-          <FolderClosed className="col-start-2 row-start-1 mt-0.5 size-4 shrink-0" />
+          <HugeiconsIcon
+            icon={Folder01Icon}
+            className="col-start-2 row-start-1 mt-0.5 size-4 shrink-0"
+          />
           <div className="col-start-3 row-start-1 flex flex-col gap-0.5">
             <span className="font-medium leading-none">Current checkout</span>
             <span className="text-xs text-muted-foreground leading-snug">
@@ -1188,10 +1993,16 @@ function WorkspacePicker({ session }: { session: Session }) {
         >
           <span className="col-start-1 row-start-1 flex h-5 items-center justify-center">
             {session.worktreeId !== null && (
-              <Check className="size-3.5 opacity-90" />
+              <HugeiconsIcon
+                icon={Tick01Icon}
+                className="size-3.5 opacity-90"
+              />
             )}
           </span>
-          <GitBranch className="col-start-2 row-start-1 mt-0.5 size-4 shrink-0" />
+          <HugeiconsIcon
+            icon={GitBranchIcon}
+            className="col-start-2 row-start-1 mt-0.5 size-4 shrink-0"
+          />
           <div className="col-start-3 row-start-1 flex flex-col gap-0.5">
             <span className="font-medium leading-none">New worktree</span>
             <span className="text-xs text-muted-foreground leading-snug">
@@ -1221,7 +2032,10 @@ function WorkspaceBranchLabel({ session }: { session: Session }) {
       className="flex items-center gap-1 truncate font-mono text-foreground/80"
       title={`Branch ${wt.branch}`}
     >
-      <GitBranch className="size-3 shrink-0 opacity-70" />
+      <HugeiconsIcon
+        icon={GitBranchIcon}
+        className="size-3 shrink-0 opacity-70"
+      />
       <span className="truncate font-medium">{wt.branch}</span>
     </span>
   );

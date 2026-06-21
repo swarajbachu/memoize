@@ -12,6 +12,7 @@ import {
   type PermissionDecision,
   type PermissionKind,
   type ProviderId,
+  type ThreadGoalSetInput,
 } from "@memoize/wire";
 
 import { probeAllProviders, resolveCliPath } from "../availability.ts";
@@ -23,15 +24,13 @@ import {
   startCodexSession,
   type CodexSessionHandle,
 } from "../drivers/codex.ts";
-import {
-  startGrokSession,
-  type GrokSessionHandle,
-} from "../drivers/grok.ts";
+import { startGrokSession, type GrokSessionHandle } from "../drivers/grok.ts";
 import {
   startGeminiSession,
   type GeminiSessionHandle,
 } from "../drivers/gemini.ts";
 import {
+  prewarmCursor,
   startCursorSession,
   type CursorSessionHandle,
 } from "../drivers/cursor.ts";
@@ -41,7 +40,9 @@ import {
 } from "../drivers/opencode.ts";
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
 import { buildIndexTools } from "../../code-index/claude-tools.ts";
+import { buildBrowserTools } from "../drivers/browser-tools.ts";
 import { IndexRegistry } from "../../code-index/services/index-registry.ts";
+import { BrowserBridgeService } from "../services/browser-bridge-service.ts";
 import { CredentialsService } from "../services/credentials-service.ts";
 import { PermissionService } from "../services/permission-service.ts";
 import { ProviderService } from "../services/provider-service.ts";
@@ -81,10 +82,30 @@ export const ProviderServiceLive = Layer.effect(
     const workspace = yield* WorkspaceService;
     const permissions = yield* PermissionService;
     const attachmentService = yield* AttachmentService;
+    const browserBridge = yield* BrowserBridgeService;
     const indexRegistry = yield* IndexRegistry;
     const runtime = yield* Effect.runtime<never>();
     const sessions = yield* Ref.make<Map<AgentSessionId, SessionEntry>>(
       new Map(),
+    );
+
+    // Prewarm a cursor-agent child at layer boot if cursor is installed.
+    // The ACP authenticate step is the slowest part of cold start (~8s);
+    // having one warm child standing by means the user's first cursor
+    // session skips straight to `session/new`. Fire-and-forget — layer
+    // construction does not depend on it.
+    yield* Effect.forkDaemon(
+      Effect.gen(function* () {
+        const cursorPath = yield* resolveCliPath("cursor-agent").pipe(
+          Effect.provideService(CommandExecutor.CommandExecutor, executor),
+          Effect.catchAll(() => Effect.succeed<string | null>(null)),
+        );
+        if (cursorPath === null) return;
+        const apiKey = yield* credentials
+          .get("cursor")
+          .pipe(Effect.catchAll(() => Effect.succeed<string | null>(null)));
+        yield* Effect.sync(() => prewarmCursor(cursorPath, apiKey));
+      }),
     );
 
     // The Claude SDK's `canUseTool` callback returns a Promise; here we
@@ -114,11 +135,13 @@ export const ProviderServiceLive = Layer.effect(
         // listConfigured is best-effort — a keychain failure here shouldn't
         // wipe out the CLI-logged-in picture, which is the primary auth path
         // and works without any keychain entry of ours.
-        const configured = yield* credentials.listConfigured().pipe(
-          Effect.catchAll(() =>
-            Effect.succeed([] as ReadonlyArray<ProviderId>),
-          ),
-        );
+        const configured = yield* credentials
+          .listConfigured()
+          .pipe(
+            Effect.catchAll(() =>
+              Effect.succeed([] as ReadonlyArray<ProviderId>),
+            ),
+          );
         const configuredSet = new Set<ProviderId>(configured);
         return list.map(
           (a): AgentAvailability => ({
@@ -154,9 +177,9 @@ export const ProviderServiceLive = Layer.effect(
             );
           }
           const cwd = input.cwdOverride ?? folder.path;
-          const apiKey = yield* credentials.get(input.providerId).pipe(
-            Effect.catchAll(() => Effect.succeed<string | null>(null)),
-          );
+          const apiKey = yield* credentials
+            .get(input.providerId)
+            .pipe(Effect.catchAll(() => Effect.succeed<string | null>(null)));
           const sessionId = input.sessionId ?? nextSessionId();
           let handle: SessionHandle;
           if (input.providerId === "gemini") {
@@ -181,6 +204,8 @@ export const ProviderServiceLive = Layer.effect(
               apiKey,
               geminiPath,
               sessionId,
+              buildRequestPermission(input.folderId),
+              runtimeModeGetter,
               resumeCursor,
             ).pipe(Effect.provideService(AttachmentService, attachmentService));
           } else if (input.providerId === "grok") {
@@ -206,6 +231,8 @@ export const ProviderServiceLive = Layer.effect(
               apiKey,
               grokPath,
               sessionId,
+              buildRequestPermission(input.folderId),
+              runtimeModeGetter,
               resumeCursor,
             ).pipe(Effect.provideService(AttachmentService, attachmentService));
           } else if (input.providerId === "opencode") {
@@ -259,6 +286,8 @@ export const ProviderServiceLive = Layer.effect(
               apiKey,
               cursorPath,
               sessionId,
+              buildRequestPermission(input.folderId),
+              runtimeModeGetter,
               resumeCursor,
             ).pipe(Effect.provideService(AttachmentService, attachmentService));
           } else if (input.providerId === "claude") {
@@ -280,13 +309,22 @@ export const ProviderServiceLive = Layer.effect(
                 }),
               );
             }
-            // Phase B: resolve the per-workspace IndexService and bind the
+            // Phase B: resolve the per-worktree IndexService and bind the
             // five Tier-1 tools (code_search, symbol_lookup, find_references,
             // read_chunk, list_module) so the Claude SDK sees them alongside
             // ask_user_question. Branch defaults to "HEAD" — the manifest
             // resolves it; Phase E adds a real git-checkout subscription.
             const indexHandle = yield* indexRegistry.getHandle(cwd, "HEAD");
             const indexTools = buildIndexTools(indexHandle);
+            // Browser tools drive the renderer's shared `<webview>` through
+            // the bridge. Bind `send` to this session id + the live runtime so
+            // the SDK's async tool handlers stay free of Effect wiring (same
+            // shape as `buildIndexTools` binding the worktree handle).
+            const browserTools = buildBrowserTools((command) =>
+              Runtime.runPromise(runtime)(
+                browserBridge.send(sessionId, command),
+              ),
+            );
 
             handle = yield* startClaudeSession(
               input,
@@ -297,7 +335,7 @@ export const ProviderServiceLive = Layer.effect(
               buildRequestPermission(input.folderId),
               runtimeModeGetter,
               resumeCursor,
-              indexTools,
+              [...indexTools, ...browserTools],
             ).pipe(Effect.provideService(AttachmentService, attachmentService));
           } else {
             // Same story as Claude: we don't ship the SDK's bundled native
@@ -375,6 +413,24 @@ export const ProviderServiceLive = Layer.effect(
       answerQuestion: (sessionId, itemId, answers) =>
         Effect.flatMap(lookup(sessionId), ({ handle }) =>
           handle.answerQuestion(itemId, answers),
+        ),
+      getGoal: (sessionId) =>
+        Effect.flatMap(lookup(sessionId), ({ providerId, handle }) =>
+          providerId === "codex"
+            ? (handle as CodexSessionHandle).getGoal()
+            : Effect.fail(new AgentSessionNotFoundError({ sessionId })),
+        ),
+      setGoal: (sessionId, goal: ThreadGoalSetInput) =>
+        Effect.flatMap(lookup(sessionId), ({ providerId, handle }) =>
+          providerId === "codex"
+            ? (handle as CodexSessionHandle).setGoal(goal)
+            : Effect.fail(new AgentSessionNotFoundError({ sessionId })),
+        ),
+      clearGoal: (sessionId) =>
+        Effect.flatMap(lookup(sessionId), ({ providerId, handle }) =>
+          providerId === "codex"
+            ? (handle as CodexSessionHandle).clearGoal()
+            : Effect.fail(new AgentSessionNotFoundError({ sessionId })),
         ),
     };
   }),

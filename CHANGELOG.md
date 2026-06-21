@@ -5,6 +5,140 @@ All notable changes to memoize will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.6.0]
+
+### Changed
+- Add tokenmaxer onboarding and usage fixes (#166)
+- Add multi-source token usage dashboard (#164)
+- Drive the agent browser with real input + a rendered cursor (#165)
+- [codex] Show active task in project plan header (#160)
+- Make release skill available to Claude and Codex (#163)
+
+## [0.5.0]
+
+### Added
+- Worktree setup now streams live progress in the app, with a dedicated setup card and the Run action moved into the top bar for faster project startup. (#159)
+- The right sidebar can be customized as a panel dock, making terminal, browser, files, and supporting tools easier to arrange per workflow. (#156)
+- Codex goal mode is supported in chat sessions, giving agents a persistent objective and visible goal state during longer work. (#151)
+- Context window and usage-limit status popovers expose model usage and limit state without digging through raw provider output. (#154)
+- The website now has a direct download route for the latest signed macOS build. (#150)
+- Codex feature controls are gated by CLI capability, with fast mode surfaced only when the installed CLI can support it. (#158)
+
+### Changed
+- Worktree creation is faster, Pokemon chips are cleaner, and rare unlocks now appear as toasts instead of taking over the chip UI. (#157)
+- Code annotation composition and navigation are more polished, including clearer tray behavior and source reveal handling. (#153)
+- Loading states now use a simpler solid spinner treatment instead of the previous dotted loader set. (#155)
+
+### Fixed
+- Claude sessions now initialize with the correct worktree current working directory, so prompts run in the intended workspace. (#161)
+- Project Plan tray parsing supports newer TaskCreate and TaskUpdate tool event shapes. (#152)
+
+## [0.4.0]
+
+### Added
+- Worktree setup scripts can now run per project/worktree, giving agents a first-class way to prepare dependencies and local environment before starting work. (#126)
+- Mermaid diagrams render directly in markdown responses. (#128)
+- Chat titles and worktree branches can be generated from the first user message, making new agent runs easier to scan and easier to identify in git. (#129)
+- GPT-5.5 Codex is available in the Codex model picker. (#130)
+- Chat rows now include state icons for faster scanning across idle, running, and attention-needed sessions. (#132)
+- Agent completion sounds and deeper permission diagnostics make long-running work and blocked permission flows easier to notice and debug. (#133)
+- Agent message queue persistence keeps queued follow-up messages across renderer/server restarts and improves queue handling for multi-message agent workflows. (#136)
+- Chats now track read/unread state, with Next unread navigation for moving through updated sessions quickly. (#137)
+- Pokémon worktree Pokédex gives the new Pokémon-named worktree system a dedicated browsing surface. (#140)
+- Code annotations composer adds a richer composer path for referencing and annotating source code while prompting agents. (#141)
+- Public Memoize landing site. (#142)
+
+### Changed
+- Grok auth noise is hidden more aggressively and agent activity is grouped for a cleaner timeline. (#127)
+- Claude Ultracode UI is refined so the new model/provider controls fit the rest of the provider experience. (#131)
+- Loaders were standardized around a smoother circle/comet treatment. (#135)
+- Renderer iconography moved from Lucide to Hugeicons Pro, with real provider logos replacing generic marks. (#138)
+- Changes tab cleanup improves file selection, revert flows, conflict handling, and sidebar diff stats. (#139)
+- Renderer surfaces were cleaned up across the app for a tighter, more consistent desktop UI. (#143)
+- Renderer icons were polished after the Hugeicons migration. (#144)
+- Settings UI was cleaned up for a clearer, denser configuration experience. (#145)
+
+### Fixed
+- Permission prompts are now delivered reliably mid-turn, preventing stuck or missed approval flows while an agent is running. (#134)
+
+## [0.3.3]
+
+### Added
+- Claude provider updates: Opus 4.8 and Ultracode model options, plus plan mode now always routes edits through prompts. (#111)
+- ACP agents (Grok, Gemini, Cursor) can execute real terminal/output commands instead of rendering terminal requests as inert tool calls. (#112)
+- In-app agent browser control drives the existing Electron webview, so agents can navigate and inspect pages without opening a separate browser surface. (#117)
+- Top bar can now show live CI state and offers direct merge / auto-merge actions. (#113)
+- Provider cards surface available CLI updates for supported providers. (#114)
+- Claude fast mode toggle for faster lower-latency Claude sessions. (#119)
+- Archive cleanup scripts and related repository cleanup controls. (#120)
+- Repository branch toolbar for faster branch/context switching. (#124)
+
+### Changed
+- Markdown rendering is more polished and consistent in chat output. (#121)
+- Grok access detection now accepts X Premium+ / SuperGrok entitlements. (#122)
+
+### Fixed
+- Grok sessions no longer abort mid-turn when the ACP child surfaces transient `AuthorizationRequired` noise inside `session/update` error frames while the turn is still completing normally. The shared ACP translator now filters that frame on the grok channel so in-flight prompts aren't rejected and the session doesn't flip to idle prematurely.
+- New chats run inside their selected worktree and create branches from a fresh `origin` base. (#115)
+- Codex tool translation handles the current tool event shape correctly. (#123)
+
+## [0.3.2]
+
+### Added
+- Three-way "add project" menu (Open project / Open GitHub project / Quick start) with clone and create-project dialogs — templates Empty / Next.js / Turborepo and an optional private GitHub repo on create (gh-authed). (#104)
+- Project Plan tray docked above the composer: surfaces the agent's TodoWrite task list as a collapsible panel with an "X of Y Done" count and per-item status icons, reading the list from either the Claude (`tool_use` input) or Grok (`tool_result` output) shape. (#107)
+
+### Changed
+- Git-not-a-repo handling: a new `git.init` RPC and a shared "Initialize Git repository" CTA replace the raw error payload across the Changes, PR, and Diff tabs; the failure is classified inside the Effect (typed `GitNotARepoError`) so the CTA fires reliably, and the Diff view re-fetches immediately after an in-place init. (#104, #105)
+- A lone terminal now spans the full pane width; the terminal-list sidebar appears only once there are 2+ shells, with a floating hover-revealed `+` to add more. (#104)
+- Grok native tool results (`list_dir` / `grep` / `read` / `edit`) now render as clean rows — directory tree, grouped grep matches, file contents, and real diffs — instead of raw JSON envelopes or byte-array char codes. (#106)
+
+### Fixed
+- Auto-update on macOS was stranded: `electron-updater` (Squirrel.Mac) needs a ZIP of the `.app`, but releases only shipped a DMG. Each release now ships a `zip/universal` target alongside the DMG, so auto-update works from 0.3.2 onward. (#108)
+- External (http/https) links now open in the system browser instead of hijacking the app window or spawning an in-app Chromium window; the Vite dev origin is whitelisted so HMR is unaffected. (#108)
+- Create-project dialog no longer crashes — the base-ui Checkbox hook error is gone, replaced with a native checkbox. (#105)
+- Files outside the project folder can be opened, edited, and saved via dedicated external-file RPCs, with clickable out-of-workspace file chips. (#105)
+
+## [0.3.1]
+
+### Added
+- Multi-terminal sub-sidebar in the right pane: the Terminal tab now lists every terminal for the workspace with a `+` to spawn more, click-to-switch, and hover-X to close. All instances stay mounted so xterm scrollback and PTY connections survive switches, and closing the last terminal re-seeds a fresh one. (#95)
+- In-app Browser tab driven by an Electron `<webview>` with back/forward/refresh and a URL bar, sandboxed in its own process. Bare hosts default to `https://`, except `localhost`/`127.0.0.1` which default to `http://` for dev servers. (#95)
+- Standalone MCP server now wires up the full hybrid `code_search` pipeline (symbol + BM25 + vector + RRF + rerank) instead of the symbol-only stub, shared with `IndexService` via a single `search()` module. `index_status` reports populated blob/chunk/symbol/ref counts, and a new `reindex` tool exposes a full pass to agents. (#97)
+- ACP file-system handlers for `create_directory`, `delete_file`, and `move_file`, plus method aliases (`writeTextFile`, `mkdir`, `unlink`, `rename`, …) and flexible write payloads (`dataBase64` / `content` / `text` / `data`). (#98)
+
+### Changed
+- Creating a new chat session no longer freezes the UI for ~60s. The `+` on the tab strip now opens an instant tab backed by a loading panel while the provider CLI boots on a background daemon; sessions start in a `booting` state and flip to `idle`/`running` (or `error`) once the handshake completes. (#99)
+- Single source of truth for sensitive-path detection and FS-operation policy (read / write / create / delete / move), honoring runtime and permission modes, with every ACP mutation routed through it. (#98)
+
+### Fixed
+- Grok agent reliability: a 4s startup grace window swallows transient `Auth(AuthorizationRequired)` stderr during cached-token refresh so the first message no longer shows a red error card; the worker now transparently respawns on death instead of asking you to close the chat; and MCP-style tool output is flattened so `read_file` results render as code instead of raw JSON. (#101)
+- Cursor driver: `cursor-agent` is prewarmed at boot (time-to-first-token 18s → 5.8s), the model picker uses ACP-valid slugs with aliases for old persisted settings, `session/load` resumes sessions (falling back to `session/new`), and tool-call frames are logged to `~/.cache/memoize/cursor.log` with arguments and tool names preserved across updates. (#96)
+- UX cluster: external links now open in the system browser instead of inside the app, switching a chat's worktree restarts member sessions in the new cwd, out-of-workspace file chips are flagged non-clickable with a tooltip, image attachments open inline in a tab, and Cmd+W closes the active file tab before falling through to archiving the chat tab. (#102)
+- Auto-acknowledge `ask_user_question` and `_x.ai` / `_google` namespaced ACP methods in the grok, gemini, and cursor drivers so interactive prompts no longer hang the agent turn. (#98)
+
+## [0.3.0]
+
+### Changed
+- **App renamed to "memoize Alpha"** to signal that this build is pre-1.0 and may contain bugs. The bundle identifier (`app.memoize.desktop`) is unchanged, so existing installs auto-update to the renamed app in place. Dock title, About panel, and macOS app menu now read "memoize Alpha"; the in-app brand and CLI / URL scheme stay as `memoize`.
+
+### Added
+- Full-pane diff view in the file viewer with a Diff / Edit toggle, so reviewing a tool's edits no longer requires scrolling between two side-by-side columns. (#93)
+- Worktree UX overhaul: new worktrees are created outside the repo root (no more accidental nesting in `git status`), get Pokémon-themed names instead of UUIDs, and the new-chat panel opens instantly instead of waiting for the worktree to materialize. (#92)
+- Local code index (MVP 0.04) — phases A–F land together with auto-reindex on file change, giving the agent a fast structural view of the repo without re-walking the tree on every query. (#86)
+
+### Changed
+- Renderer now has a single source of truth for the active directory and branch, replacing the previous fan-out of duplicated state across panels. (#91)
+
+### Fixed
+- Grok agent reliability on local login — the driver now uses the cached OAuth token instead of re-prompting on every session start. (#78)
+- Cursor driver: ACP now fails fast on auth errors instead of silently retrying, OAuth flow is wired end-to-end, the model list is refreshed on each session, and provider errors surface in the UI instead of being swallowed. (#90)
+- Settings writes occasionally raised `ENOENT` mid-rename when two writes raced. Writes through the config store are now serialized. (#89)
+- Provider boot crashes: codex no longer crashes when spawned without a TTY, missing cursor binaries surface a clear error, and claude/opencode gate correctly on availability. (#88)
+- Onboarding provider step tightened — copy now makes it clear that you pick a provider and go; no extra setup required. (#87)
+
 ## [0.2.1]
 
 ### Added

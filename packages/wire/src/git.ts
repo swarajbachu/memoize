@@ -21,6 +21,19 @@ export class GitStatusSummary extends Schema.Class<GitStatusSummary>(
   dirtyFiles: Schema.Number,
 }) {}
 
+export const GitBranchKind = Schema.Literal("local", "remote");
+export type GitBranchKind = typeof GitBranchKind.Type;
+
+export class GitBranchInfo extends Schema.Class<GitBranchInfo>("GitBranchInfo")(
+  {
+    name: Schema.String,
+    current: Schema.Boolean,
+    remote: Schema.NullOr(Schema.String),
+    upstream: Schema.NullOr(Schema.String),
+    kind: GitBranchKind,
+  },
+) {}
+
 export class GitNotARepoError extends Schema.TaggedError<GitNotARepoError>()(
   "GitNotARepoError",
   { folderId: FolderId },
@@ -64,6 +77,47 @@ export const GitStatusRpc = Rpc.make("git.status", {
     worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
   }),
   success: GitStatusSummary,
+  error: GitErrors,
+});
+
+export const GitBranchesRpc = Rpc.make("git.branches", {
+  payload: Schema.Struct({
+    folderId: FolderId,
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
+  }),
+  success: Schema.Array(GitBranchInfo),
+  error: GitErrors,
+});
+
+export const GitSwitchBranchRpc = Rpc.make("git.switchBranch", {
+  payload: Schema.Struct({
+    folderId: FolderId,
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
+    branch: Schema.String,
+    remote: Schema.optional(Schema.NullOr(Schema.String)),
+  }),
+  success: GitStatusSummary,
+  error: GitErrors,
+});
+
+export const GitRenameBranchRpc = Rpc.make("git.renameBranch", {
+  payload: Schema.Struct({
+    folderId: FolderId,
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
+    name: Schema.String,
+  }),
+  success: GitStatusSummary,
+  error: GitErrors,
+});
+
+/**
+ * `git config user.name` for the folder, trimmed. Returns an empty string
+ * when unset. Used by the auto-namer to build `username/<slug>` branch names
+ * (the name is slugified before use).
+ */
+export const GitUserNameRpc = Rpc.make("git.userName", {
+  payload: Schema.Struct({ folderId: FolderId }),
+  success: Schema.Struct({ userName: Schema.String }),
   error: GitErrors,
 });
 
@@ -132,6 +186,21 @@ export class GitPrInfo extends Schema.Class<GitPrInfo>("GitPrInfo")({
   isDraft: Schema.Boolean,
   checks: GitPrChecks,
   mergeable: GitPrMergeable,
+  /**
+   * Per-check counts derived from the same `statusCheckRollup` that feeds
+   * `checks`. Lets the top bar render "N checks running" without the heavier
+   * `prDetails` round-trip. `checksTotal === 0` means the PR has no checks.
+   */
+  checksTotal: Schema.Number,
+  checksRunning: Schema.Number,
+  checksPassing: Schema.Number,
+  checksFailing: Schema.Number,
+  /**
+   * True when GitHub has a pending auto-merge request on this PR (`gh pr view
+   * --json autoMergeRequest` is non-null). Reflects the "Auto-merge on success"
+   * toggle's real, server-side state.
+   */
+  autoMergeEnabled: Schema.Boolean,
 }) {}
 
 export const GitPrStateRpc = Rpc.make("git.prState", {
@@ -195,12 +264,14 @@ export const GitPrCheckRunConclusion = Schema.Literal(
 );
 export type GitPrCheckRunConclusion = typeof GitPrCheckRunConclusion.Type;
 
-export class GitPrCheckRun extends Schema.Class<GitPrCheckRun>("GitPrCheckRun")({
-  name: Schema.String,
-  status: GitPrCheckRunStatus,
-  conclusion: Schema.NullOr(GitPrCheckRunConclusion),
-  url: Schema.NullOr(Schema.String),
-}) {}
+export class GitPrCheckRun extends Schema.Class<GitPrCheckRun>("GitPrCheckRun")(
+  {
+    name: Schema.String,
+    status: GitPrCheckRunStatus,
+    conclusion: Schema.NullOr(GitPrCheckRunConclusion),
+    url: Schema.NullOr(Schema.String),
+  },
+) {}
 
 /**
  * Heavier per-PR payload than {@link GitPrInfo}: title, body, reviews, comments,
@@ -300,11 +371,53 @@ export const GitChangesRpc = Rpc.make("git.changes", {
   error: GitErrors,
 });
 
+/**
+ * Diff modes returned by `git.diff`. `worktree` is the common case
+ * (tracked file with edits); `untracked` is a synthetic /dev/null diff
+ * for new files; `deleted` means the file is gone from the working
+ * tree but still in HEAD; `binary` and `unchanged` carry no patch text.
+ */
+export const GitDiffMode = Schema.Literal(
+  "worktree",
+  "untracked",
+  "deleted",
+  "binary",
+  "unchanged",
+);
+export type GitDiffMode = typeof GitDiffMode.Type;
+
+export class GitDiffResult extends Schema.Class<GitDiffResult>("GitDiffResult")(
+  {
+    mode: GitDiffMode,
+    patch: Schema.String,
+    truncated: Schema.Boolean,
+    bytes: Schema.Number,
+  },
+) {}
+
+export const GitDiffRpc = Rpc.make("git.diff", {
+  payload: Schema.Struct({
+    folderId: FolderId,
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
+    path: Schema.String,
+  }),
+  success: GitDiffResult,
+  error: GitErrors,
+});
+
 export const GitCommitRpc = Rpc.make("git.commit", {
   payload: Schema.Struct({
     folderId: FolderId,
     worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
     message: Schema.String,
+    /**
+     * Explicit set of paths to commit. When provided (and non-empty), only
+     * these paths are staged + committed (`git add -- <paths>` then
+     * `git commit -m … -- <paths>`), so the Changes tab can let the user pick
+     * which files go into the commit. Omitted/empty falls back to the legacy
+     * "commit everything" behaviour (`git add -A`).
+     */
+    paths: Schema.optional(Schema.Array(Schema.String)),
   }),
   success: Schema.Struct({ sha: Schema.String }),
   error: GitErrors,
@@ -316,5 +429,114 @@ export const GitPushRpc = Rpc.make("git.push", {
     worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
   }),
   success: Schema.Struct({ output: Schema.String }),
+  error: GitErrors,
+});
+
+/**
+ * Merge method passed to `gh pr merge`. Mirrors GitHub's three merge buttons;
+ * the renderer remembers the last-used value (default `merge`).
+ */
+export const GitMergeMethod = Schema.Literal("merge", "squash", "rebase");
+export type GitMergeMethod = typeof GitMergeMethod.Type;
+
+/**
+ * Direct PR merge via `gh pr merge`. No agent involved.
+ *   merge        — merge now: `gh pr merge --<method> [--delete-branch]`
+ *   enable-auto  — arm GitHub-native auto-merge so the PR merges once required
+ *                  checks pass: `gh pr merge --auto --<method> [--delete-branch]`
+ *                  (requires the repo's "Allow auto-merge" setting).
+ *   disable-auto — cancel a pending auto-merge: `gh pr merge --disable-auto`.
+ * `gh`'s stderr is surfaced verbatim via GitCommandError so the renderer can
+ * show e.g. "auto-merge is not allowed for this repository".
+ */
+export const GitMergePrRpc = Rpc.make("git.mergePr", {
+  payload: Schema.Struct({
+    folderId: FolderId,
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
+    action: Schema.Literal("merge", "enable-auto", "disable-auto"),
+    method: GitMergeMethod,
+    deleteBranch: Schema.Boolean,
+  }),
+  success: Schema.Struct({ output: Schema.String }),
+  error: GitErrors,
+});
+
+/**
+ * Mark a draft PR ready for review via `gh pr ready`. No agent involved.
+ */
+export const GitMarkReadyRpc = Rpc.make("git.markReady", {
+  payload: Schema.Struct({
+    folderId: FolderId,
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
+  }),
+  success: Schema.Struct({ output: Schema.String }),
+  error: GitErrors,
+});
+
+// Initialize a git repository in a project folder that doesn't have one yet.
+// Surfaced from the Changes tab's "not a Git repository" empty state. Always
+// runs against the folder root (a worktree can't exist without a repo), so no
+// `worktreeId` here.
+export const GitInitRpc = Rpc.make("git.init", {
+  payload: Schema.Struct({
+    folderId: FolderId,
+  }),
+  success: Schema.Struct({ branch: Schema.String }),
+  error: GitErrors,
+});
+
+/**
+ * Discard a single file's uncommitted changes. Behaviour depends on `kind`:
+ *   - untracked → delete the new file from disk (`git clean -f`)
+ *   - everything else → restore index + working tree to HEAD (`git restore`)
+ * Surfaced from the Changes tab's per-row hover "revert" affordance, always
+ * behind a confirm dialog. `kind` lets the server pick the right git command
+ * without re-running `status`.
+ */
+export const GitRevertFileRpc = Rpc.make("git.revertFile", {
+  payload: Schema.Struct({
+    folderId: FolderId,
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
+    path: Schema.String,
+    oldPath: Schema.optional(Schema.NullOr(Schema.String)),
+    kind: GitChangeKind,
+  }),
+  success: Schema.Struct({ reverted: Schema.Boolean }),
+  error: GitErrors,
+});
+
+/**
+ * Discard every uncommitted change in the working tree: `git reset --hard
+ * HEAD` followed by `git clean -fd` to also remove untracked files/dirs.
+ * Destructive and unrecoverable — the Changes tab gates this behind a strong
+ * confirm dialog ("Revert all").
+ */
+export const GitRevertAllRpc = Rpc.make("git.revertAll", {
+  payload: Schema.Struct({
+    folderId: FolderId,
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
+  }),
+  success: Schema.Struct({ reverted: Schema.Boolean }),
+  error: GitErrors,
+});
+
+/**
+ * Total additions/deletions of a worktree's branch — including uncommitted
+ * working-tree edits — relative to its base branch. Computed as
+ * `git diff --numstat <merge-base(base, HEAD)>`, where `base` is the repo's
+ * default branch (`origin/HEAD`, falling back to origin/main, main, …). Drives
+ * the projects sidebar's per-chat `+N −N` stats so a branch shows its diff
+ * even before a PR is opened. Returns zeros rather than failing when there's
+ * no base, no commits, or no diff.
+ */
+export const GitDiffStatRpc = Rpc.make("git.diffStat", {
+  payload: Schema.Struct({
+    folderId: FolderId,
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
+  }),
+  success: Schema.Struct({
+    additions: Schema.Number,
+    deletions: Schema.Number,
+  }),
   error: GitErrors,
 });

@@ -1,6 +1,10 @@
 import {
+  ArrowDown01Icon,
+  ArrowRight01Icon,
   Brain01Icon,
+  BrowserIcon,
   BubbleChatIcon,
+  Camera01Icon,
   CheckListIcon,
   Copy01Icon,
   File01Icon,
@@ -12,12 +16,9 @@ import {
   TerminalIcon,
   Tick02Icon,
   Wrench01Icon,
-} from "@hugeicons/core-free-icons";
+} from "@hugeicons-pro/core-bulk-rounded";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 
 import type {
   SessionId,
@@ -35,7 +36,10 @@ import {
   diffStats,
   EditDiff,
   extractEdits,
+  extractPatchEntries,
   type FileEdit,
+  patchStats,
+  UnifiedPatchDiff,
 } from "./inline-diff.tsx";
 
 type IconHandle = Parameters<typeof HugeiconsIcon>[0]["icon"];
@@ -66,21 +70,44 @@ export const iconForTool = (tool: string): IconHandle => {
       return Folder01Icon;
     case "Task":
     case "Agent":
+    case "SpawnAgent":
+    case "CollabSpawnAgent":
+    case "CollabSendInput":
+    case "CollabResumeAgent":
+    case "CollabCloseAgent":
+    case "CollabWait":
       return Robot01Icon;
     case "WebFetch":
     case "WebSearch":
       return GlobeIcon;
     case "TodoWrite":
       return CheckListIcon;
+    case "mcp__memoize__browser_navigate":
+      return BrowserIcon;
+    case "mcp__memoize__browser_screenshot":
+      return Camera01Icon;
     default: {
+      // Agent browser tools arrive as their MCP FQN; match by suffix so the
+      // exact-case list above stays the source of truth.
+      if (tool.endsWith("__browser_screenshot")) return Camera01Icon;
+      if (tool.includes("__browser_")) return BrowserIcon;
       // Heuristic fallback for any Grok-native or future tool we haven't
       // wired an exact case for yet. "list dir", "read file", "run shell"
       // etc. will now get a reasonable icon instead of the generic wrench.
       const t = tool.toLowerCase();
-      if (t.includes("dir") || t.includes("folder") || t.includes("list")) return Folder01Icon;
-      if (t.includes("file") || t.includes("read") || t.includes("write")) return File01Icon;
-      if (t.includes("bash") || t.includes("shell") || t.includes("cmd") || t.includes("exec")) return TerminalIcon;
-      if (t.includes("search") || t.includes("grep") || t.includes("glob")) return SearchIcon;
+      if (t.includes("dir") || t.includes("folder") || t.includes("list"))
+        return Folder01Icon;
+      if (t.includes("file") || t.includes("read") || t.includes("write"))
+        return File01Icon;
+      if (
+        t.includes("bash") ||
+        t.includes("shell") ||
+        t.includes("cmd") ||
+        t.includes("exec")
+      )
+        return TerminalIcon;
+      if (t.includes("search") || t.includes("grep") || t.includes("glob"))
+        return SearchIcon;
       if (t.includes("web") || t.includes("http")) return GlobeIcon;
       return Wrench01Icon;
     }
@@ -129,9 +156,26 @@ const toResultText = (output: unknown): string => {
     for (const block of output) {
       if (block === null || typeof block !== "object") continue;
       const b = block as Record<string, unknown>;
-      if (typeof b.text === "string") parts.push(b.text);
+      // Direct {type: "text", text: "..."}
+      if (typeof b.text === "string") {
+        parts.push(b.text);
+        continue;
+      }
+      // MCP-wrapped {type: "content", content: {type: "text", text: "..."}}
+      const inner = b.content;
+      if (inner !== null && typeof inner === "object") {
+        const it = (inner as Record<string, unknown>).text;
+        if (typeof it === "string") parts.push(it);
+      }
     }
-    if (parts.length > 0) return parts.join("\n");
+    if (parts.length > 0) return parts.join("");
+  }
+  if (output !== null && typeof output === "object") {
+    const o = output as Record<string, unknown>;
+    if (typeof o.text === "string") return o.text;
+    const inner = o.content;
+    if (typeof inner === "string") return inner;
+    if (Array.isArray(inner)) return toResultText(inner);
   }
   return stringifyJson(output);
 };
@@ -162,9 +206,7 @@ function InlineCodeChip({ value }: { value: string }) {
 
 function InlineTextHint({ value }: { value: string }) {
   return (
-    <span className="ml-1 truncate text-muted-foreground italic">
-      {value}
-    </span>
+    <span className="ml-1 truncate text-muted-foreground italic">{value}</span>
   );
 }
 
@@ -180,10 +222,10 @@ function TerminalBlock({
   return (
     <div
       className={cn(
-        "rounded px-3 py-2 font-mono text-[11px] leading-relaxed overflow-x-auto",
+        "overflow-x-auto rounded border px-3 py-2 font-mono text-[11px] leading-relaxed",
         isError
-          ? "bg-alert-error-bg"
-          : "bg-zinc-900/70",
+          ? "border-alert-error-bg bg-alert-error-bg"
+          : "border-message-rule bg-message-pre-bg",
       )}
     >
       {command !== undefined ? (
@@ -237,28 +279,79 @@ function FileListBlock({ paths }: { paths: ReadonlyArray<string> }) {
   );
 }
 
-function MarkdownBlock({ text }: { text: string }) {
+/**
+ * Render a `list_dir` tree (the indented "- name" / "  - sub/" text Grok's
+ * tool emits) as a calm monospace block — directories muted, files bright —
+ * instead of a raw JSON dump. Indentation is preserved verbatim.
+ */
+function DirTreeBlock({ text }: { text: string }) {
+  const lines = text.replace(/\n+$/, "").split("\n");
+  const hasContent = lines.some((l) => l.trim().length > 0);
+  if (!hasContent) {
+    return (
+      <p className="text-[11px] italic text-muted-foreground">
+        Empty directory.
+      </p>
+    );
+  }
   return (
-    <div className="prose prose-invert prose-sm max-w-none break-words text-[12px] [&>:first-child]:mt-0 [&>:last-child]:mb-0 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-3 [&_pre>code]:bg-transparent [&_pre>code]:p-0">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+    <pre className="overflow-x-auto rounded border border-message-rule bg-message-pre-bg px-3 py-2 font-mono text-[11px] leading-relaxed">
+      {lines.map((line, i) => {
+        const isDir = line.trimEnd().endsWith("/");
+        return (
+          <div
+            key={i}
+            className={cn(
+              "whitespace-pre",
+              isDir ? "text-muted-foreground" : "text-foreground/90",
+            )}
+          >
+            {line.length > 0 ? line : " "}
+          </div>
+        );
+      })}
+    </pre>
+  );
+}
+
+/**
+ * Render grep matches grouped by file: a clickable file chip header followed
+ * by the matched lines. Far nicer than the raw `{ stdout: [char codes],
+ * file_matches: [...] }` envelope Grok returns.
+ */
+function GrepGroupsBlock({
+  groups,
+}: {
+  groups: ReadonlyArray<{ path: string; matches: ReadonlyArray<string> }>;
+}) {
+  return (
+    <div className="space-y-2">
+      {groups.map((g, i) => (
+        <div key={i} className="space-y-0.5">
+          <FileBadge path={g.path} />
+          {g.matches.length > 0 ? (
+            <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded border border-message-rule bg-message-pre-bg px-3 py-1.5 font-mono text-[11px] text-foreground/80">
+              {g.matches.join("\n")}
+            </pre>
+          ) : null}
+        </div>
+      ))}
     </div>
   );
 }
 
-function PreBlock({
-  text,
-  isError,
-}: {
-  text: string;
-  isError?: boolean;
-}) {
+function MarkdownBlock({ text }: { text: string }) {
+  return <MarkdownBody className="text-[12px]">{text}</MarkdownBody>;
+}
+
+function PreBlock({ text, isError }: { text: string; isError?: boolean }) {
   return (
     <pre
       className={cn(
-        "overflow-x-auto whitespace-pre-wrap break-words rounded px-3 py-2 font-mono text-[11px] text-foreground/80",
+        "overflow-x-auto whitespace-pre-wrap break-words rounded border px-3 py-2 font-mono text-[11px] text-foreground/80",
         isError
-          ? "bg-alert-error-bg"
-          : "bg-zinc-900/70",
+          ? "border-alert-error-bg bg-alert-error-bg"
+          : "border-message-rule bg-message-pre-bg",
       )}
     >
       {text || "(empty)"}
@@ -273,7 +366,10 @@ function PreBlock({
 const splitLines = (s: string): ReadonlyArray<string> => {
   const trimmed = s.trim();
   if (trimmed.length === 0) return [];
-  return trimmed.split("\n").map((line) => line.trim()).filter((l) => l.length > 0);
+  return trimmed
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((l) => l.length > 0);
 };
 
 // Grep / Glob results are usually one path per line, sometimes followed
@@ -282,6 +378,39 @@ const parseFileList = (output: string): ReadonlyArray<string> => {
   const lines = splitLines(output);
   return lines.filter((l) => !/^found\s+\d+\s+/i.test(l) && !/^no\s+/i.test(l));
 };
+
+interface GrepGroup {
+  readonly path: string;
+  readonly matches: ReadonlyArray<string>;
+}
+
+/**
+ * Parse grep output into per-file groups. A flush-left line is a file path;
+ * indented lines are matches under the current file. Plain path-per-line
+ * output (files-with-matches mode) yields groups with no matches, which the
+ * caller renders as a simple file list. Summary lines ("Found N files", "No
+ * matches") are dropped.
+ */
+const parseGrepGroups = (output: string): ReadonlyArray<GrepGroup> => {
+  const groups: Array<{ path: string; matches: string[] }> = [];
+  let current: { path: string; matches: string[] } | null = null;
+  for (const raw of output.split("\n")) {
+    if (raw.trim().length === 0) continue;
+    if (/^\s/.test(raw) && current !== null) {
+      current.matches.push(raw.trim());
+      continue;
+    }
+    const line = raw.trim();
+    if (/^found\s+\d+\s+/i.test(line) || /^no\s+/i.test(line)) continue;
+    current = { path: line, matches: [] };
+    groups.push(current);
+  }
+  return groups;
+};
+
+// Count the leaf files in a `list_dir` tree (lines that aren't directories).
+const countTreeFiles = (tree: string): number =>
+  splitLines(tree).filter((l) => !l.endsWith("/")).length;
 
 // ---------------------------------------------------------------------------
 // Expandable row primitive (icon ↔ chevron hover swap, click to toggle)
@@ -301,7 +430,7 @@ function ExpandableIconRow({
   hasContent: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const Chevron = expanded ? ChevronDown : ChevronRight;
+  const chevron = expanded ? ArrowDown01Icon : ArrowRight01Icon;
   return (
     <div className="px-4">
       <button
@@ -324,7 +453,8 @@ function ExpandableIconRow({
             )}
           />
           {hasContent ? (
-            <Chevron
+            <HugeiconsIcon
+              icon={chevron}
               aria-hidden="true"
               className={cn(
                 "col-start-1 row-start-1 size-3.5 text-muted-foreground opacity-0 transition-opacity duration-150 ease-out",
@@ -388,9 +518,10 @@ const buildToolView = (
         icon: TerminalIcon,
         label: desc ?? "Bash",
         trailing:
-          cmd !== null ? <InlineCodeChip value={truncate(cmd, 120)} /> : undefined,
-        inputPanel:
-          cmd !== null ? <TerminalBlock command={cmd} /> : undefined,
+          cmd !== null ? (
+            <InlineCodeChip value={truncate(cmd, 120)} />
+          ) : undefined,
+        inputPanel: cmd !== null ? <TerminalBlock command={cmd} /> : undefined,
         resultPanel: (result) => (
           <TerminalBlock
             output={toResultText(result.output) || "(no output)"}
@@ -398,9 +529,7 @@ const buildToolView = (
           />
         ),
         fallbackBody:
-          cmd === null ? (
-            <PreBlock text={stringifyJson(input)} />
-          ) : undefined,
+          cmd === null ? <PreBlock text={stringifyJson(input)} /> : undefined,
       };
     }
 
@@ -447,11 +576,7 @@ const buildToolView = (
             );
           }
           return (
-            <CodeBlock
-              filename={path}
-              text={text}
-              isError={result.isError}
-            />
+            <CodeBlock filename={path} text={text} isError={result.isError} />
           );
         },
       };
@@ -461,31 +586,51 @@ const buildToolView = (
     case "Write":
     case "MultiEdit": {
       const path = asString(obj.file_path);
-      const edits = extractEdits(tool, input);
+      const patches = extractPatchEntries(input);
+      const edits = patches.length > 0 ? [] : extractEdits(tool, input);
       const label =
         tool === "Write"
           ? "Write"
           : tool === "MultiEdit"
-            ? `MultiEdit (${edits.length})`
+            ? `MultiEdit (${edits.length || patches.length})`
             : "Edit";
-      const stats = edits.length > 0 ? diffStats(edits) : null;
+      const stats =
+        patches.length > 0
+          ? patchStats(patches)
+          : edits.length > 0
+            ? diffStats(edits)
+            : null;
       return {
         icon: PencilEdit01Icon,
         label,
         trailing:
           path !== null ? (
             <span className="flex items-center gap-2 tabular-nums">
-              <FileBadge path={path} />
-              {stats !== null && stats.added > 0 ? (
-                <span className="text-emerald-400">+{stats.added}</span>
-              ) : null}
-              {stats !== null && stats.removed > 0 ? (
-                <span className="text-red-400">-{stats.removed}</span>
-              ) : null}
+              <FileBadge
+                path={path}
+                view="diff"
+                diffStats={
+                  stats !== null
+                    ? { added: stats.added, removed: stats.removed }
+                    : undefined
+                }
+              />
             </span>
           ) : undefined,
         fallbackBody:
-          edits.length > 0 ? (
+          patches.length > 0 ? (
+            <div className="space-y-2">
+              {patches.map((patch, i) => (
+                <UnifiedPatchDiff
+                  key={i}
+                  path={patch.file_path}
+                  patch={patch.patch}
+                  kind={patch.kind}
+                  showHeader={patches.length > 1}
+                />
+              ))}
+            </div>
+          ) : edits.length > 0 ? (
             <div className="space-y-px">
               {edits.map((edit, i) => (
                 <EditDiff
@@ -511,15 +656,16 @@ const buildToolView = (
       const glob = asString(obj.glob);
       const type = asString(obj.type);
       const where = path ?? glob ?? type;
-      const matches =
+      // Count distinct files matched (grouped or files-with-matches output).
+      const files =
         result !== undefined && !result.isError
-          ? parseFileList(toResultText(result.output)).length
+          ? parseGrepGroups(toResultText(result.output)).length
           : null;
       const matchesHint =
-        matches !== null
-          ? matches === 0
+        files !== null
+          ? files === 0
             ? "no matches"
-            : `${matches} match${matches === 1 ? "" : "es"}`
+            : `${files} file${files === 1 ? "" : "s"}`
           : null;
       return {
         icon: SearchIcon,
@@ -538,11 +684,13 @@ const buildToolView = (
           pattern !== null ? (
             <div className="text-[11px] text-muted-foreground space-y-0.5">
               <div>
-                pattern <span className="font-mono text-foreground/90">{pattern}</span>
+                pattern{" "}
+                <span className="font-mono text-foreground/90">{pattern}</span>
               </div>
               {where !== null ? (
                 <div>
-                  scope <span className="font-mono text-foreground/90">{where}</span>
+                  scope{" "}
+                  <span className="font-mono text-foreground/90">{where}</span>
                 </div>
               ) : null}
             </div>
@@ -550,11 +698,15 @@ const buildToolView = (
         resultPanel: (result) => {
           const text = toResultText(result.output);
           if (result.isError) return <PreBlock text={text} isError />;
-          const paths = parseFileList(text);
-          return paths.length > 0 ? (
-            <FileListBlock paths={paths} />
+          const groups = parseGrepGroups(text);
+          if (groups.length === 0) {
+            return <PreBlock text={text || "No matches."} />;
+          }
+          // Files-with-matches mode (no per-line content) → plain file list.
+          return groups.some((g) => g.matches.length > 0) ? (
+            <GrepGroupsBlock groups={groups} />
           ) : (
-            <PreBlock text={text || "No matches."} />
+            <FileListBlock paths={groups.map((g) => g.path)} />
           );
         },
       };
@@ -593,6 +745,42 @@ const buildToolView = (
           ) : (
             <PreBlock text={text || "No matches."} />
           );
+        },
+      };
+    }
+
+    case "ListDir":
+    case "ListDirectory": {
+      const path =
+        asString(obj.path) ??
+        asString(obj.dir_path) ??
+        asString(obj.directory) ??
+        asString(obj.relative_workspace_path);
+      const files =
+        result !== undefined && !result.isError
+          ? countTreeFiles(toResultText(result.output))
+          : null;
+      const filesHint =
+        files !== null
+          ? files === 0
+            ? "empty"
+            : `${files} file${files === 1 ? "" : "s"}`
+          : null;
+      return {
+        icon: Folder01Icon,
+        label: "List",
+        trailing: (
+          <>
+            {path !== null ? <InlineCodeChip value={path} /> : null}
+            {filesHint !== null ? (
+              <InlineTextHint value={`· ${filesHint}`} />
+            ) : null}
+          </>
+        ),
+        resultPanel: (result) => {
+          const text = toResultText(result.output);
+          if (result.isError) return <PreBlock text={text} isError />;
+          return <DirTreeBlock text={text} />;
         },
       };
     }
@@ -665,10 +853,7 @@ const buildToolView = (
             );
           }
           return (
-            <PreBlock
-              text={truncate(text, 4000)}
-              isError={result.isError}
-            />
+            <PreBlock text={truncate(text, 4000)} isError={result.isError} />
           );
         },
       };
@@ -690,7 +875,8 @@ const buildToolView = (
                 if (t === null || typeof t !== "object")
                   return <li key={i}>{stringifyJson(t)}</li>;
                 const r = t as Record<string, unknown>;
-                const content = asString(r.content) ?? asString(r.activeForm) ?? "";
+                const content =
+                  asString(r.content) ?? asString(r.activeForm) ?? "";
                 const status = asString(r.status) ?? "";
                 return (
                   <li key={i} className="font-mono">
@@ -703,6 +889,252 @@ const buildToolView = (
           ) : (
             <PreBlock text={stringifyJson(input)} />
           ),
+      };
+    }
+
+    case "SpawnAgent":
+    case "CollabSpawnAgent": {
+      const receivers = Array.isArray(obj.receiverThreadIds)
+        ? (obj.receiverThreadIds as string[])
+        : [];
+      const promptText = asString(obj.prompt) ?? "";
+      const model = asString(obj.model);
+      const states = (obj.agentsStates ?? {}) as Record<string, unknown>;
+      const n = receivers.length || Object.keys(states).length || 1;
+
+      return {
+        icon: Robot01Icon,
+        label: `Spawn ${n} agent${n === 1 ? "" : "s"}`,
+        trailing: model ? <InlineTextHint value={model} /> : undefined,
+        fallbackBody: (
+          <div className="space-y-1.5 text-[12px]">
+            {model && (
+              <div className="text-muted-foreground">
+                Model: <span className="font-mono">{model}</span>
+              </div>
+            )}
+            {promptText && (
+              <div className="rounded border bg-muted p-1.5 font-mono text-[11px] leading-snug">
+                {promptText.length > 280
+                  ? promptText.slice(0, 277) + "…"
+                  : promptText}
+              </div>
+            )}
+            {receivers.length > 0 && (
+              <div className="text-[10px] text-muted-foreground">
+                Threads: {receivers.slice(0, 4).join(", ")}
+                {receivers.length > 4 ? ` +${receivers.length - 4}` : ""}
+              </div>
+            )}
+            {Object.keys(states).length > 0 && (
+              <div className="text-[10px] text-muted-foreground">
+                Live states: {Object.keys(states).length} tracked
+              </div>
+            )}
+          </div>
+        ),
+        resultPanel: (result) => (
+          <PreBlock
+            text={
+              toResultText(result.output) || stringifyJson(obj.agentsStates)
+            }
+            isError={result.isError}
+          />
+        ),
+      };
+    }
+
+    case "mcp__memoize__browser_navigate": {
+      const targetUrl = asString(obj.url);
+      return {
+        icon: BrowserIcon,
+        label: "Browse",
+        trailing:
+          targetUrl !== null ? (
+            <InlineTextHint value={truncate(targetUrl, 64)} />
+          ) : undefined,
+        resultPanel: (result) => (
+          <PreBlock
+            text={toResultText(result.output) || "(loaded)"}
+            isError={result.isError}
+          />
+        ),
+      };
+    }
+
+    case "mcp__memoize__browser_screenshot": {
+      return {
+        icon: Camera01Icon,
+        label: "Screenshot",
+        trailing: <InlineTextHint value="in-app browser" />,
+        resultPanel: (result) =>
+          result.isError ? (
+            <PreBlock text={toResultText(result.output)} isError />
+          ) : (
+            <span className="text-[11px] text-muted-foreground">
+              Captured the visible page.
+            </span>
+          ),
+      };
+    }
+
+    case "mcp__memoize__browser_snapshot": {
+      return {
+        icon: BrowserIcon,
+        label: "Read page",
+        trailing: <InlineTextHint value="elements" />,
+        resultPanel: (result) => (
+          <PreBlock
+            text={toResultText(result.output)}
+            isError={result.isError}
+          />
+        ),
+      };
+    }
+
+    case "mcp__memoize__browser_click": {
+      const ref = asString(obj.ref);
+      return {
+        icon: BrowserIcon,
+        label: "Click",
+        trailing: ref !== null ? <InlineTextHint value={ref} /> : undefined,
+        resultPanel: (result) => (
+          <PreBlock
+            text={toResultText(result.output)}
+            isError={result.isError}
+          />
+        ),
+      };
+    }
+
+    case "mcp__memoize__browser_type": {
+      const typed = asString(obj.text);
+      return {
+        icon: BrowserIcon,
+        label: "Type",
+        trailing:
+          typed !== null ? (
+            <InlineTextHint value={truncate(typed, 48)} />
+          ) : undefined,
+        resultPanel: (result) => (
+          <PreBlock
+            text={toResultText(result.output)}
+            isError={result.isError}
+          />
+        ),
+      };
+    }
+
+    case "mcp__memoize__browser_wait": {
+      const sel = asString(obj.selector);
+      const ms = typeof obj.ms === "number" ? `${obj.ms}ms` : null;
+      return {
+        icon: BrowserIcon,
+        label: "Wait",
+        trailing: <InlineTextHint value={sel ?? ms ?? "settle"} />,
+      };
+    }
+
+    case "mcp__memoize__browser_scroll": {
+      const dir = asString(obj.direction);
+      const ref = asString(obj.ref);
+      return {
+        icon: BrowserIcon,
+        label: "Scroll",
+        trailing: <InlineTextHint value={ref ?? dir ?? "down"} />,
+      };
+    }
+
+    case "mcp__memoize__browser_hover": {
+      const ref = asString(obj.ref);
+      return {
+        icon: BrowserIcon,
+        label: "Hover",
+        trailing: ref !== null ? <InlineTextHint value={ref} /> : undefined,
+      };
+    }
+
+    case "mcp__memoize__browser_select": {
+      const value = asString(obj.value);
+      return {
+        icon: BrowserIcon,
+        label: "Select",
+        trailing:
+          value !== null ? (
+            <InlineTextHint value={truncate(value, 40)} />
+          ) : undefined,
+        resultPanel: (result) => (
+          <PreBlock
+            text={toResultText(result.output)}
+            isError={result.isError}
+          />
+        ),
+      };
+    }
+
+    case "mcp__memoize__browser_press": {
+      const key = asString(obj.key);
+      return {
+        icon: BrowserIcon,
+        label: "Press",
+        trailing: key !== null ? <InlineTextHint value={key} /> : undefined,
+      };
+    }
+
+    case "mcp__memoize__browser_read": {
+      return {
+        icon: File01Icon,
+        label: "Read page",
+        resultPanel: (result) => (
+          <PreBlock
+            text={toResultText(result.output)}
+            isError={result.isError}
+          />
+        ),
+      };
+    }
+
+    case "mcp__memoize__browser_history": {
+      const action = asString(obj.action);
+      return {
+        icon: BrowserIcon,
+        label:
+          action === "back"
+            ? "Back"
+            : action === "forward"
+              ? "Forward"
+              : "Reload",
+      };
+    }
+
+    case "mcp__memoize__browser_console": {
+      return {
+        icon: TerminalIcon,
+        label: "Console",
+        resultPanel: (result) => (
+          <PreBlock
+            text={toResultText(result.output)}
+            isError={result.isError}
+          />
+        ),
+      };
+    }
+
+    case "mcp__memoize__browser_login": {
+      const origin = asString(obj.origin);
+      return {
+        icon: BrowserIcon,
+        label: "Log in",
+        trailing:
+          origin !== null ? (
+            <InlineTextHint value={truncate(origin, 48)} />
+          ) : undefined,
+        resultPanel: (result) => (
+          <PreBlock
+            text={toResultText(result.output)}
+            isError={result.isError}
+          />
+        ),
       };
     }
 
@@ -805,9 +1237,7 @@ export function ExitPlanModeRow({
           <div className="mt-4 flex items-center justify-end gap-2">
             <button
               type="button"
-              onClick={() =>
-                void decide(pendingRequest.id, { _tag: "Deny" })
-              }
+              onClick={() => void decide(pendingRequest.id, { _tag: "Deny" })}
               className="rounded-md px-3 py-1 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground"
             >
               Cancel
@@ -831,9 +1261,7 @@ export function ExitPlanModeRow({
   const body = (
     <>
       {plan === null ? (
-        <p className="text-sm italic text-muted-foreground">
-          (No plan body.)
-        </p>
+        <p className="text-sm italic text-muted-foreground">(No plan body.)</p>
       ) : (
         <MarkdownBody>{plan}</MarkdownBody>
       )}
@@ -1087,10 +1515,10 @@ export function ThinkingRow({
     </p>
   ) : isEmpty ? (
     <p className="whitespace-pre-wrap text-[11px] italic leading-relaxed text-muted-foreground/70">
-      The model produced a thinking block (the SDK forwarded its signed
-      receipt) but the underlying text was filtered out by Anthropic's
-      agent SDK before it reached us. We can&apos;t expose the actual
-      thoughts without bypassing the official SDK.
+      The model produced a thinking block (the SDK forwarded its signed receipt)
+      but the underlying text was filtered out by Anthropic's agent SDK before
+      it reached us. We can&apos;t expose the actual thoughts without bypassing
+      the official SDK.
     </p>
   ) : (
     <MarkdownBlock text={text} />

@@ -15,6 +15,33 @@ export const SubagentPresetState = Schema.Struct({
 });
 export type SubagentPresetState = typeof SubagentPresetState.Type;
 
+export const CompletionSoundPreset = Schema.Literal(
+  "chime",
+  "soft",
+  "pop",
+  "bell",
+  "rise",
+  "bloom",
+);
+export type CompletionSoundPreset = typeof CompletionSoundPreset.Type;
+
+/**
+ * How the auto-namer (PR: "auto-name chat + branch after first message")
+ * shapes a worktree's git branch once it has an LLM-derived title slug.
+ *   - `username-slug` → `<git-user>/<slug>` (e.g. `swarajbachu/dark-mode`)
+ *   - `slug`          → `<slug>`            (e.g. `dark-mode`)
+ *   - `feat-slug`     → `feat/<slug>`       (e.g. `feat/dark-mode`)
+ *   - `custom`        → `<branchNamingPrefix>/<slug>` (user-defined prefix)
+ * Default is `username-slug`, mirroring the convention most teams use.
+ */
+export const BranchNamingStyle = Schema.Literal(
+  "username-slug",
+  "slug",
+  "feat-slug",
+  "custom",
+);
+export type BranchNamingStyle = typeof BranchNamingStyle.Type;
+
 /**
  * Wire-shape of `settings.json`. Owned by the main process; rendered to and
  * mutated from the renderer over RPC. The renderer keeps a hot cache in a
@@ -34,6 +61,8 @@ export class SettingsFile extends Schema.Class<SettingsFile>("SettingsFile")({
   defaultRuntimeMode: RuntimeMode,
   defaultAutoCreateWorktree: Schema.Boolean,
   onboardingCompleted: Schema.Boolean,
+  completionSoundEnabled: Schema.Boolean,
+  completionSoundPreset: CompletionSoundPreset,
   /**
    * Per-provider on/off toggle from the Providers settings card. Defaults
    * to `true` for every provider; flipping it to `false` filters the
@@ -50,6 +79,17 @@ export class SettingsFile extends Schema.Class<SettingsFile>("SettingsFile")({
       value: SubagentPresetState,
     }),
   }),
+  /**
+   * Branch-name shape the auto-namer uses when it renames a new chat's
+   * worktree branch from the first message. See {@link BranchNamingStyle}.
+   */
+  branchNamingStyle: BranchNamingStyle,
+  /**
+   * User-defined prefix used only when `branchNamingStyle === "custom"`,
+   * slash-joined before the slug (e.g. prefix `wip` → `wip/dark-mode`).
+   * Empty falls back to a bare slug.
+   */
+  branchNamingPrefix: Schema.String,
 }) {}
 
 /**
@@ -66,6 +106,8 @@ export const SettingsPatch = Schema.Struct({
   defaultRuntimeMode: Schema.optional(RuntimeMode),
   defaultAutoCreateWorktree: Schema.optional(Schema.Boolean),
   onboardingCompleted: Schema.optional(Schema.Boolean),
+  completionSoundEnabled: Schema.optional(Schema.Boolean),
+  completionSoundPreset: Schema.optional(CompletionSoundPreset),
   providerEnabled: Schema.optional(
     Schema.Record({ key: ProviderId, value: Schema.Boolean }),
   ),
@@ -78,6 +120,8 @@ export const SettingsPatch = Schema.Struct({
       }),
     }),
   ),
+  branchNamingStyle: Schema.optional(BranchNamingStyle),
+  branchNamingPrefix: Schema.optional(Schema.String),
 });
 export type SettingsPatch = typeof SettingsPatch.Type;
 

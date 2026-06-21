@@ -12,6 +12,12 @@ import { Migration0009PermissionModeAndToolSearch } from "./migrations/0009_perm
 import { Migration0010NestedSessions } from "./migrations/0010_nested_sessions.ts";
 import { Migration0011ChatsTable } from "./migrations/0011_chats_table.ts";
 import { Migration0012ChatIdNotNull } from "./migrations/0012_chat_id_not_null.ts";
+import { Migration0013ArchiveCleanup } from "./migrations/0013_archive_cleanup.ts";
+import { Migration0014ScriptsAndSetup } from "./migrations/0014_scripts_and_setup.ts";
+import { Migration0015QueuedMessages } from "./migrations/0015_queued_messages.ts";
+import { Migration0016QueuedMessagesQueueOrderRepair } from "./migrations/0016_queued_messages_queue_order_repair.ts";
+import { Migration0017ChatReadState } from "./migrations/0017_chat_read_state.ts";
+import { Migration0018PokemonWorktrees } from "./migrations/0018_pokemon_worktrees.ts";
 
 /**
  * Runs every numbered migration on boot. `fromRecord` keys must match
@@ -36,5 +42,12 @@ export const MigrationsLive = SqliteMigrator.layer({
     "0010_nested_sessions": Migration0010NestedSessions,
     "0011_chats_table": Migration0011ChatsTable,
     "0012_chat_id_not_null": Migration0012ChatIdNotNull,
+    "0013_archive_cleanup": Migration0013ArchiveCleanup,
+    "0014_scripts_and_setup": Migration0014ScriptsAndSetup,
+    "0015_queued_messages": Migration0015QueuedMessages,
+    "0016_queued_messages_queue_order_repair":
+      Migration0016QueuedMessagesQueueOrderRepair,
+    "0017_chat_read_state": Migration0017ChatReadState,
+    "0018_pokemon_worktrees": Migration0018PokemonWorktrees,
   }),
 });

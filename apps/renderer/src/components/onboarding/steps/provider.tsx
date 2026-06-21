@@ -1,4 +1,10 @@
-import { Check, ExternalLink, Eye, EyeOff } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  LinkSquare01Icon,
+  Tick01Icon,
+  ViewIcon,
+  ViewOffIcon,
+} from "@hugeicons-pro/core-bulk-rounded";
 import { useState } from "react";
 
 import type { AgentAvailability, ProviderId } from "@memoize/wire";
@@ -20,15 +26,17 @@ import { StepHeader } from "./shared.tsx";
 const SUBSCRIPTION_INFO: Partial<
   Record<ProviderId, { readonly plan: string; readonly url: string }>
 > = {
-  grok: { plan: "SuperGrok Heavy", url: "https://grok.com/#subscribe" },
+  grok: { plan: "SuperGrok or X Premium+", url: "https://x.ai/cli" },
   cursor: { plan: "Cursor Pro", url: "https://cursor.com/pricing" },
 };
 
 const openExternal = (url: string): void => {
   if (typeof window === "undefined") return;
-  const bridge = (window as unknown as {
-    memoize?: { app?: { openExternal?: (u: string) => void } };
-  }).memoize?.app?.openExternal;
+  const bridge = (
+    window as unknown as {
+      memoize?: { app?: { openExternal?: (u: string) => void } };
+    }
+  ).memoize?.app?.openExternal;
   if (typeof bridge === "function") {
     bridge(url);
     return;
@@ -57,9 +65,14 @@ const INSTALL_HINT: Record<ProviderId, string> = {
 type ProviderState =
   | { readonly kind: "loading" }
   | { readonly kind: "missing" } // CLI not installed
-  | { readonly kind: "outdated"; readonly current: string; readonly required: string; readonly command: string | null } // installed but below SDK floor
+  | {
+      readonly kind: "outdated";
+      readonly current: string;
+      readonly required: string;
+      readonly command: string | null;
+    } // installed but below SDK floor
   | { readonly kind: "signed-out" } // CLI installed, not logged in, no API key
-  | { readonly kind: "subscription"; readonly plan: string } // logged in but missing required paid plan (e.g. SuperGrok Heavy)
+  | { readonly kind: "subscription"; readonly plan: string } // logged in but missing required paid plan (e.g. SuperGrok or X Premium+)
   | { readonly kind: "ready"; readonly via: "cli" | "key" };
 
 function deriveState(
@@ -85,7 +98,7 @@ function deriveState(
   }
 
   // For subscription-gated providers (grok, cursor), the server-side probe
-  // (parseGrokAuthJson etc.) sets authLabel to "Requires SuperGrok Heavy"
+  // (parseGrokAuthJson etc.) sets authLabel to "Requires SuperGrok or X Premium+"
   // (or equivalent) when the JWT tier is insufficient, even if cliLoggedIn
   // is true. We surface this as a distinct state so onboarding no longer
   // lies to paying users who already have the plan.
@@ -143,10 +156,7 @@ export function ProviderStep() {
         ))}
       </div>
 
-      <ProviderStatus
-        providerId={defaultProviderId}
-        state={selectedState}
-      />
+      <ProviderStatus providerId={defaultProviderId} state={selectedState} />
     </div>
   );
 }
@@ -198,7 +208,11 @@ function ProviderCard({
       </span>
       {active ? (
         <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-foreground text-background">
-          <Check className="size-2.5" strokeWidth={3.5} />
+          <HugeiconsIcon
+            icon={Tick01Icon}
+            className="size-2.5"
+            strokeWidth={3.5}
+          />
         </span>
       ) : (
         <StateDot state={state} />
@@ -218,10 +232,7 @@ function StateDot({ state }: { state: ProviderState }) {
   };
   return (
     <span
-      className={cn(
-        "size-1.5 shrink-0 rounded-full",
-        styles[state.kind],
-      )}
+      className={cn("size-1.5 shrink-0 rounded-full", styles[state.kind])}
       aria-hidden
     />
   );
@@ -275,11 +286,11 @@ function ProviderStatus({
   if (state.kind === "ready") {
     const label =
       state.via === "cli"
-        ? `${PROVIDER_LABEL[providerId]} CLI is logged in — you're all set.`
-        : `${PROVIDER_LABEL[providerId]} API key saved — you're all set.`;
+        ? `${PROVIDER_LABEL[providerId]} CLI is logged in. You're all set.`
+        : `${PROVIDER_LABEL[providerId]} API key saved. You're all set.`;
     return (
       <div className="flex items-center gap-2 rounded-full bg-emerald-400/[0.08] px-3 py-2 text-[12px] text-emerald-200/90">
-        <Check className="size-3.5" strokeWidth={3} />
+        <HugeiconsIcon icon={Tick01Icon} className="size-3.5" strokeWidth={3} />
         <span className="leading-none">{label}</span>
       </div>
     );
@@ -307,7 +318,7 @@ function ProviderStatus({
 
   const subline =
     state.kind === "signed-out"
-      ? "Already installed — just run the login command below."
+      ? "Already installed. Just run the login command below."
       : state.kind === "subscription"
         ? "Your CLI login was detected, but the required paid plan was not confirmed."
         : state.kind === "outdated"
@@ -318,13 +329,13 @@ function ProviderStatus({
     state.kind === "signed-out"
       ? LOGIN_HINT[providerId]
       : state.kind === "outdated"
-        ? state.command ?? INSTALL_HINT[providerId]
+        ? (state.command ?? INSTALL_HINT[providerId])
         : state.kind === "missing"
           ? INSTALL_HINT[providerId]
           : null;
 
   return (
-    <div className="flex flex-col gap-3 rounded-2xl bg-white/[0.025] p-4">
+    <div className="flex flex-col gap-3 rounded-lg bg-card p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-0.5">
           <span className="text-[13px] font-medium text-foreground">
@@ -377,7 +388,8 @@ function SubscriptionNotice({
       </span>
       <p className="text-[11px] leading-snug text-muted-foreground">
         Sessions will fail if your plan doesn&apos;t include {plan}. Subscribe
-        (or confirm your existing plan) before using {PROVIDER_LABEL[providerId]}.
+        (or confirm your existing plan) before using{" "}
+        {PROVIDER_LABEL[providerId]}.
       </p>
       <div>
         <Button
@@ -386,7 +398,7 @@ function SubscriptionNotice({
           onClick={() => openExternal(url)}
           className="gap-1.5 rounded-full bg-violet-500/15 px-2.5 text-[11px] text-violet-200 hover:bg-violet-500/25 hover:text-violet-100"
         >
-          <ExternalLink className="size-3" />
+          <HugeiconsIcon icon={LinkSquare01Icon} className="size-3" />
           Subscribe to {plan}
         </Button>
       </div>
@@ -515,9 +527,9 @@ function ApiKeyRow({ providerId }: { providerId: ProviderId }) {
             tabIndex={-1}
           >
             {reveal ? (
-              <EyeOff className="size-3.5" />
+              <HugeiconsIcon icon={ViewOffIcon} className="size-3.5" />
             ) : (
-              <Eye className="size-3.5" />
+              <HugeiconsIcon icon={ViewIcon} className="size-3.5" />
             )}
           </button>
         </div>

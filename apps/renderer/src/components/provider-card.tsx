@@ -1,5 +1,14 @@
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  AlertCircleIcon,
+  ArrowDown01Icon,
+  CircleArrowUp01Icon,
+  Copy01Icon,
+  LinkSquare01Icon,
+  Loading02Icon,
+  Tick01Icon,
+} from "@hugeicons-pro/core-bulk-rounded";
 import { Effect, Fiber, Stream } from "effect";
-import { ChevronDown, Copy, ExternalLink, Loader2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -7,11 +16,13 @@ import {
   type AgentAvailability,
   type LoginEvent,
   type ProviderId,
+  type ProviderUpdateEvent,
 } from "@memoize/wire";
 
 import { ApiKeyRow } from "~/components/api-key-row";
 import { ProviderIcon } from "~/components/provider-icons";
 import { Button } from "~/components/ui/button";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { getRpcClient } from "~/lib/rpc-client";
 import { useProvidersStore } from "~/store/providers";
 import {
@@ -60,14 +71,14 @@ const LOGIN_HINT: Record<ProviderId, string> = {
 /**
  * Providers that have a known paid-plan requirement for full agent usage.
  * For Grok we now decode the `tier` claim from `~/.grok/auth.json` JWT:
- *   - tier >= 5 → authLabel = "SuperGrok Heavy" (positive, shows plan, toggle works)
- *   - lower / unknown → authLabel = "Requires SuperGrok Heavy" → violet nag + disabled
+ *   - tier >= 4 → authLabel = "Grok subscription" (positive, shows plan, toggle works)
+ *   - lower / unknown → authLabel = "Requires SuperGrok or X Premium+" → violet nag + disabled
  * The frontend only forces the subscription alarm/disable when the label contains "Requires".
  */
 const SUBSCRIPTION_INFO: Partial<
   Record<ProviderId, { readonly plan: string; readonly url: string }>
 > = {
-  grok: { plan: "SuperGrok Heavy", url: "https://grok.com/#subscribe" },
+  grok: { plan: "SuperGrok or X Premium+", url: "https://x.ai/cli" },
   cursor: { plan: "Cursor Pro", url: "https://cursor.com/pricing" },
   claude: {
     plan: "Claude Pro",
@@ -121,8 +132,21 @@ export function ProviderCard({
     : baseSummary;
   const styles = PROVIDER_STATUS_STYLES[summary.statusKey];
   const versionLabel = formatVersionLabel(availability?.cliVersion);
-  const showUpgrade =
-    enabled && availability?.cliVersionStatus === "outdated";
+  const showUpgrade = enabled && availability?.cliVersionStatus === "outdated";
+  // Hover-revealed one-click update affordance — independent of the blocking
+  // SDK floor (`showUpgrade`). Shown for any installed provider that has an
+  // update command, EXCEPT when we know it's already on the latest published
+  // version (`"current"`). That means:
+  //   - npm providers behind latest → shown (warning-styled "vX available")
+  //   - npm providers on latest      → hidden
+  //   - curl-installed CLIs (Grok/Cursor, version "unknown") → shown so they
+  //     are updatable even though we can't read a registry version
+  const showUpdate =
+    enabled &&
+    !showUpgrade &&
+    availability?.cliInstalled === true &&
+    availability.updateCommand !== undefined &&
+    availability.latestVersionStatus !== "current";
 
   return (
     <div
@@ -152,6 +176,14 @@ export function ProviderCard({
               <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
                 {versionLabel}
               </span>
+            )}
+            {showUpdate && (
+              <UpdateAvailableButton
+                providerId={providerId}
+                displayName={PROVIDER_LABEL[providerId]}
+                latestVersion={availability?.latestVersion}
+                behind={availability?.latestVersionStatus === "behind"}
+              />
             )}
           </div>
           <div className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
@@ -183,7 +215,8 @@ export function ProviderCard({
               : undefined
           }
         />
-        <ChevronDown
+        <HugeiconsIcon
+          icon={ArrowDown01Icon}
           className={cn(
             "size-4 shrink-0 text-muted-foreground transition-transform",
             expanded && "rotate-180",
@@ -289,7 +322,7 @@ const openExternal = (url: string) => {
 
 /**
  * Subscription / plan notice for providers that gate behind a paid tier
- * (Grok → SuperGrok Heavy, Cursor → Cursor Pro).
+ * (Grok → SuperGrok or X Premium+, Cursor → Cursor Pro).
  *
  * - If the server probe reports an unmet requirement (authLabel contains
  *   "Requires"), we show the strong violet alarm box + Subscribe CTA.
@@ -319,7 +352,8 @@ function SubscriptionRow({
       </span>
       <p className="text-[11px] leading-snug text-muted-foreground">
         Sessions will fail if your plan doesn&apos;t include {info.plan}.
-        Subscribe (or confirm your existing plan) before using {PROVIDER_LABEL[providerId]}.
+        Subscribe (or confirm your existing plan) before using{" "}
+        {PROVIDER_LABEL[providerId]}.
       </p>
       <div>
         <button
@@ -331,7 +365,11 @@ function SubscriptionRow({
           className="inline-flex items-center gap-1 rounded border border-violet-400/40 bg-violet-500/10 px-2 py-1 text-[11px] font-medium text-violet-100 transition-colors hover:bg-violet-500/20"
         >
           Subscribe
-          <ExternalLink className="size-3" aria-hidden />
+          <HugeiconsIcon
+            icon={LinkSquare01Icon}
+            className="size-3"
+            aria-hidden
+          />
         </button>
       </div>
     </div>
@@ -341,14 +379,12 @@ function SubscriptionRow({
 /**
  * Privacy-aware email pill. Blurs the address by default (so screen-records
  * and screenshots don't leak it) and reveals on click; clicking again
- * re-blurs. Stops propagation so clicking it doesn't also collapse/expand
- * the parent card.
+ * re-blurs. Rendered as a span because the provider row itself is a button.
  */
 function BlurredEmail({ email }: { email: string }) {
   const [revealed, setRevealed] = useState(false);
   return (
-    <button
-      type="button"
+    <span
       onClick={(e) => {
         e.stopPropagation();
         setRevealed((r) => !r);
@@ -356,14 +392,14 @@ function BlurredEmail({ email }: { email: string }) {
       title={revealed ? "Click to hide" : "Click to reveal"}
       aria-label={revealed ? "Hide email" : "Reveal email"}
       className={cn(
-        "max-w-[16rem] truncate rounded px-1 py-0.5 text-left font-mono text-[11px] transition-[filter,background-color] duration-150",
+        "max-w-[16rem] cursor-pointer truncate rounded px-1 py-0.5 text-left font-mono text-[11px] transition-[filter,background-color] duration-150",
         revealed
           ? "bg-muted/40 text-foreground"
           : "bg-muted/40 text-foreground blur-[5px] select-none hover:blur-[3px]",
       )}
     >
       {email}
-    </button>
+    </span>
   );
 }
 
@@ -452,9 +488,13 @@ function CursorSignInRow() {
 
   if (state.kind === "waiting") {
     return (
-      <div className="flex flex-col gap-2 rounded-md border border-border/50 bg-muted/30 px-3 py-2.5 text-[11px]">
+      <div className="flex flex-col gap-2 rounded-md border border-border/50 bg-muted px-3 py-2.5 text-[11px]">
         <div className="flex items-center gap-2 text-muted-foreground">
-          <Loader2 className="size-3.5 animate-spin" aria-hidden />
+          <HugeiconsIcon
+            icon={Loading02Icon}
+            className="size-3.5 animate-spin"
+            aria-hidden
+          />
           <span>
             {state.url === null
               ? "Starting cursor-agent login…"
@@ -473,7 +513,11 @@ function CursorSignInRow() {
               }}
               className="h-6 px-2 text-[11px]"
             >
-              <ExternalLink className="mr-1 size-3" aria-hidden />
+              <HugeiconsIcon
+                icon={LinkSquare01Icon}
+                className="mr-1 size-3"
+                aria-hidden
+              />
               Open browser again
             </Button>
           )}
@@ -545,6 +589,216 @@ function CursorSignInRow() {
   );
 }
 
+type UpdateState =
+  | { readonly kind: "idle" }
+  | { readonly kind: "running"; readonly line: string | null }
+  | { readonly kind: "success" }
+  | { readonly kind: "failed"; readonly reason: string };
+
+/**
+ * Subscribe to `agent.updateProvider`, which spawns the provider's update
+ * command server-side and streams its output. On the terminal `done` event we
+ * re-probe availability so the card reflects the new version. Interrupting the
+ * fiber (unmount / cancel) closes the stream scope, which SIGTERMs the child.
+ */
+function useProviderUpdate(providerId: ProviderId) {
+  const refresh = useProvidersStore((s) => s.refresh);
+  const [state, setState] = useState<UpdateState>({ kind: "idle" });
+  const fiberRef = useRef<Fiber.RuntimeFiber<unknown, unknown> | null>(null);
+  const resetTimerRef = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      const fiber = fiberRef.current;
+      if (fiber !== null) void Effect.runPromise(Fiber.interrupt(fiber));
+      if (resetTimerRef.current !== null)
+        window.clearTimeout(resetTimerRef.current);
+    },
+    [],
+  );
+
+  const run = async () => {
+    if (state.kind === "running") return;
+    if (resetTimerRef.current !== null) {
+      window.clearTimeout(resetTimerRef.current);
+      resetTimerRef.current = null;
+    }
+    setState({ kind: "running", line: null });
+    const client = await getRpcClient();
+    const fiber = Effect.runFork(
+      Stream.runForEach(
+        client.agent.updateProvider({ providerId }),
+        (event: ProviderUpdateEvent) =>
+          Effect.sync(() => {
+            if (event._tag === "log") {
+              setState({ kind: "running", line: event.text });
+            } else if (event._tag === "done") {
+              fiberRef.current = null;
+              if (event.ok) {
+                // Re-probe FIRST so the version label is fresh before we flip
+                // the badge to "Updated" — otherwise the badge and the old
+                // version show together for a beat. Stay on the spinner until
+                // the probe lands.
+                void refresh().finally(() => {
+                  setState({ kind: "success" });
+                  // Re-probe hides the icon if now on latest; for
+                  // version-unknown CLIs (Grok) drop the "Updated" badge after
+                  // a moment so the control returns to idle.
+                  resetTimerRef.current = window.setTimeout(() => {
+                    setState({ kind: "idle" });
+                    resetTimerRef.current = null;
+                  }, 4_000);
+                });
+              } else {
+                setState({
+                  kind: "failed",
+                  reason: event.reason ?? "Update failed.",
+                });
+              }
+            }
+          }),
+      ).pipe(
+        Effect.catchAll((err) =>
+          Effect.sync(() => {
+            fiberRef.current = null;
+            setState({
+              kind: "failed",
+              reason: err instanceof Error ? err.message : String(err),
+            });
+          }),
+        ),
+      ),
+    );
+    fiberRef.current = fiber;
+  };
+
+  return { state, run };
+}
+
+/**
+ * Hover-revealed one-click update control shown next to the version label.
+ * Clicking the icon **runs the update immediately in-app** (spawns the install
+ * command server-side, streams progress) — for npm providers and curl-based
+ * CLIs like Grok alike. No dialog: the icon itself is the status badge
+ * (spinner → check / alert), with a tooltip carrying the detail / error.
+ * `stopPropagation` keeps the click from toggling the card's expand.
+ */
+function UpdateAvailableButton({
+  providerId,
+  displayName,
+  latestVersion,
+  behind,
+}: {
+  readonly providerId: ProviderId;
+  readonly displayName: string;
+  readonly latestVersion: string | undefined;
+  readonly behind: boolean;
+}) {
+  const { state, run } = useProviderUpdate(providerId);
+
+  const idleLabel =
+    behind && latestVersion !== undefined
+      ? `Update ${displayName} to v${latestVersion}`
+      : `Update ${displayName} to the latest version`;
+  const tooltip =
+    state.kind === "running"
+      ? (state.line ?? "Updating…")
+      : state.kind === "success"
+        ? "Updated"
+        : state.kind === "failed"
+          ? state.reason
+          : idleLabel;
+
+  // The icon doubles as the status badge.
+  const { icon, tone } =
+    state.kind === "running"
+      ? {
+          icon: (
+            <HugeiconsIcon
+              icon={Loading02Icon}
+              className="size-3.5 animate-spin"
+              aria-hidden
+            />
+          ),
+          tone: "text-muted-foreground",
+        }
+      : state.kind === "success"
+        ? {
+            icon: (
+              <HugeiconsIcon
+                icon={Tick01Icon}
+                className="size-3.5"
+                aria-hidden
+              />
+            ),
+            tone: "text-emerald-400",
+          }
+        : state.kind === "failed"
+          ? {
+              icon: (
+                <HugeiconsIcon
+                  icon={AlertCircleIcon}
+                  className="size-3.5"
+                  aria-hidden
+                />
+              ),
+              tone: "text-rose-400",
+            }
+          : {
+              icon: (
+                <HugeiconsIcon
+                  icon={CircleArrowUp01Icon}
+                  className="size-3.5"
+                  aria-hidden
+                />
+              ),
+              tone: behind ? "text-warning" : "text-muted-foreground",
+            };
+
+  // While active (running/success/failed) the control stays visible; idle is
+  // hover-revealed so it doesn't clutter up-to-date rows.
+  const active = state.kind !== "idle";
+  const badge =
+    state.kind === "running"
+      ? "Updating…"
+      : state.kind === "failed"
+        ? "Failed"
+        : state.kind === "success"
+          ? "Updated"
+          : null;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            disabled={state.kind === "running"}
+            onClick={(e) => {
+              e.stopPropagation();
+              void run();
+            }}
+            aria-label={idleLabel}
+            className={cn(
+              "flex shrink-0 items-center gap-1 rounded px-1 transition-opacity hover:bg-muted/60 focus-visible:opacity-100 group-hover:opacity-100 disabled:cursor-default",
+              tone,
+              active ? "opacity-100" : "opacity-0",
+            )}
+          >
+            {icon}
+            {badge !== null && (
+              <span className="text-[10px] font-medium">{badge}</span>
+            )}
+          </button>
+        }
+      />
+      <TooltipPopup side="bottom" className="max-w-72">
+        {tooltip}
+      </TooltipPopup>
+    </Tooltip>
+  );
+}
+
 function CodeRow({ label, command }: { label: string; command: string }) {
   const [copied, setCopied] = useState(false);
   const onCopy = () => {
@@ -567,7 +821,11 @@ function CodeRow({ label, command }: { label: string; command: string }) {
           onClick={onCopy}
           className="h-6 shrink-0 px-2 text-[10px]"
         >
-          <Copy className="mr-1 size-3" aria-hidden />
+          <HugeiconsIcon
+            icon={Copy01Icon}
+            className="mr-1 size-3"
+            aria-hidden
+          />
           {copied ? "Copied" : "Copy"}
         </Button>
       </div>

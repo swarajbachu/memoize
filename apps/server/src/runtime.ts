@@ -15,15 +15,19 @@ import { importWorkspacesJson } from "./persistence/import-workspaces.ts";
 import { MigrationsLive } from "./persistence/migrations.ts";
 import { NdjsonLoggerLive } from "./persistence/ndjson-logger.ts";
 import { SqliteLive } from "./persistence/sqlite.ts";
+import { PokemonServiceLive } from "./pokemon/layers/pokemon-service.ts";
+import { BrowserBridgeServiceLive } from "./provider/layers/browser-bridge-service.ts";
 import { CredentialsServiceLive } from "./provider/layers/credentials-service.ts";
 import { MessageStoreLive } from "./provider/layers/message-store.ts";
 import { PermissionServiceLive } from "./provider/layers/permission-service.ts";
 import { ProviderServiceLive } from "./provider/layers/provider-service.ts";
+import { TitleGeneratorLive } from "./provider/title-generator.ts";
 import { PtyServiceLive } from "./pty/layers/pty-service.ts";
 import { SkillBridgeLive } from "./skill/layers/skill-bridge.ts";
 import { SkillDiscoveryServiceLive } from "./skill/layers/skill-discovery.ts";
 import { RepositorySettingsServiceLive } from "./repository-settings/layers/repository-settings-service.ts";
 import { FileSearchServiceLive } from "./workspace/layers/file-search.ts";
+import { ProjectScaffoldLive } from "./workspace/layers/project-scaffold-live.ts";
 import { WorkspaceServiceLive } from "./workspace/layers/workspace-service.ts";
 import { FolderPicker } from "./workspace/services/folder-picker.ts";
 import { WorktreeServiceLive } from "./worktree/layers/worktree-service.ts";
@@ -64,7 +68,10 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
   const SqliteLayer = SqliteLive.pipe(Layer.provide(AppPathsLayer));
   const MigratedSqlite = SqliteLayer.pipe(
     Layer.provideMerge(
-      MigrationsLive.pipe(Layer.provide(SqliteLayer), Layer.provide(NodeContext.layer)),
+      MigrationsLive.pipe(
+        Layer.provide(SqliteLayer),
+        Layer.provide(NodeContext.layer),
+      ),
     ),
   );
 
@@ -90,10 +97,23 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(NodeContext.layer),
   );
 
+  // Per-repo settings overrides on top of the global defaults.
+  const RepositorySettingsLayer = RepositorySettingsServiceLive.pipe(
+    Layer.provide(MigratedSqlite),
+  );
+
+  const PokemonLayer = PokemonServiceLive.pipe(
+    Layer.provide(MigratedSqlite),
+    Layer.provide(AppPathsLayer),
+    Layer.provide(NodeContext.layer),
+  );
+
   // WorktreeService manages memoize-owned `git worktree` checkouts. Same
   // shape as GitLayer + the SqlClient for persisting the rows.
   const WorktreeLayer = WorktreeServiceLive.pipe(
     Layer.provide(WorkspaceLayer),
+    Layer.provide(RepositorySettingsLayer),
+    Layer.provide(PokemonLayer),
     Layer.provide(MigratedSqlite),
     Layer.provide(NodeContext.layer),
   );
@@ -107,10 +127,7 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(NodeContext.layer),
   );
 
-  // Per-repo settings overrides on top of the global defaults.
-  const RepositorySettingsLayer = RepositorySettingsServiceLive.pipe(
-    Layer.provide(MigratedSqlite),
-  );
+  const PtyLayer = PtyServiceLive;
 
   // Global settings + user keybindings live in JSON files under userData
   // (Electron's `app.getPath("userData")`). Watched for external hand-edits.
@@ -138,13 +155,29 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(NodeContext.layer),
   );
 
+  // ProjectScaffold shells out to `git`, `bunx`, and `gh` for the Clone
+  // and Quick-start flows. Pure CommandExecutor + FileSystem consumer —
+  // no SqlClient, since persistence happens via WorkspaceService.add
+  // *after* the scaffold produces a path.
+  const ProjectScaffoldLayer = ProjectScaffoldLive.pipe(
+    Layer.provide(NodeContext.layer),
+  );
+
   // PermissionService brokers between the SDK permission callback (driver
   // side) and the renderer toast (RPC side). It writes decisions to
   // SQLite so an `AllowForSession` row survives a process crash and the
   // user isn't re-prompted on resume.
   const PermissionLayer = PermissionServiceLive.pipe(
     Layer.provide(MigratedSqlite),
+    Layer.provide(AppPathsLayer),
   );
+
+  // BrowserBridge brokers between the in-process browser MCP tools (driver
+  // side) and the renderer's `<webview>` (RPC side). Ephemeral — no SQLite.
+  // Same instance is provided to both ProviderLayer (the driver publishes
+  // commands) and Handlers (the renderer subscribes + responds); Effect
+  // memoizes the layer by reference so they share one PubSub + pending map.
+  const BrowserBridgeLayer = BrowserBridgeServiceLive;
 
   // AttachmentService writes uploaded image bytes under userData and runs
   // the GC sweep that reaps orphaned blobs. Disk I/O comes from
@@ -166,6 +199,7 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(WorkspaceLayer),
     Layer.provide(PermissionLayer),
     Layer.provide(AttachmentLayer),
+    Layer.provide(BrowserBridgeLayer),
     Layer.provide(IndexLayer),
     Layer.provide(NodeContext.layer),
   );
@@ -173,17 +207,30 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
   // NdjsonLogger writes a best-effort transcript audit file alongside the
   // SQLite store. Provided to MessageStore so the same daemon that persists
   // a row also tail-writes the NDJSON line.
-  const NdjsonLoggerLayer = NdjsonLoggerLive.pipe(
-    Layer.provide(AppPathsLayer),
-  );
+  const NdjsonLoggerLayer = NdjsonLoggerLive.pipe(Layer.provide(AppPathsLayer));
 
   // MessageStore composes ProviderService with the SQLite-backed sessions /
   // messages tables. The chat-MVP RPC surface (session.* / messages.*) talks
   // through this; legacy agent.* handlers stay bound to ProviderService for
   // low-level testing.
+  // TitleGenerator names a chat from its first message by running one
+  // throwaway turn through the chat's OWN provider (via ProviderService), so
+  // it reuses whatever auth that provider has — a Grok-only user is never
+  // forced onto Claude.
+  const TitleGeneratorLayer = TitleGeneratorLive.pipe(
+    Layer.provide(ProviderLayer),
+  );
+
   const MessageStoreLayer = MessageStoreLive.pipe(
     Layer.provide(ProviderLayer),
     Layer.provide(WorktreeLayer),
+    Layer.provide(RepositorySettingsLayer),
+    Layer.provide(PtyLayer),
+    // GitService + ConfigStore + TitleGenerator back the first-message
+    // auto-namer (rename chat + branch); see message-store `autoNameChat`.
+    Layer.provide(GitLayer),
+    Layer.provide(ConfigStoreLayer),
+    Layer.provide(TitleGeneratorLayer),
     Layer.provide(MigratedSqlite),
     Layer.provide(NdjsonLoggerLayer),
   );
@@ -200,20 +247,30 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(MessageStoreLayer),
     Layer.provide(WorkspaceLayer),
   );
+  const HandlerSupportLayer = Layer.mergeAll(
+    AppPathsLayer,
+    MigratedSqlite,
+    NodeContext.layer,
+  );
 
   const Handlers = HandlersLayer.pipe(
     Layer.provide(WorkspaceLayer),
-    Layer.provide(PtyServiceLive),
+    Layer.provide(PtyLayer),
     Layer.provide(GitLayer),
     Layer.provide(WorktreeLayer),
     Layer.provide(RepositorySettingsLayer),
+    Layer.provide(PokemonLayer),
     Layer.provide(ConfigStoreLayer),
     Layer.provide(FsLayer),
     Layer.provide(FileSearchLayer),
+    Layer.provide(ProjectScaffoldLayer),
     Layer.provide(ProviderLayer),
     Layer.provide(MessageStoreLayer),
     Layer.provide(PermissionLayer),
     Layer.provide(AttachmentLayer),
+    Layer.provide(BrowserBridgeLayer),
+    // browser.* credential RPCs read/write the keychain directly.
+    Layer.provide(CredentialsServiceLive),
     Layer.provide(SkillBridgeLayer),
     Layer.provide(IndexLayer),
     Layer.provide(FolderPickerLayer),
@@ -221,7 +278,7 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     // (it spins up a short-lived `opencode serve` to read the user's
     // connected providers + agents). That uses `CommandExecutor` from
     // NodeContext, so the handler layer must see it.
-    Layer.provide(NodeContext.layer),
+    Layer.provide(HandlerSupportLayer),
   );
 
   const ServerLayer = RpcServer.layer(MemoizeRpcs).pipe(

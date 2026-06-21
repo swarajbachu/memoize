@@ -1,6 +1,7 @@
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Folder01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import type { EditorView } from "@codemirror/view";
 import { Effect } from "effect";
-import { Folder } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import type { FolderId, WorktreeId } from "@memoize/wire";
@@ -41,6 +42,11 @@ interface SearchHit {
 const basename = (p: string): string => {
   const i = p.lastIndexOf("/");
   return i === -1 ? p : p.slice(i + 1);
+};
+
+const dirname = (p: string): string | null => {
+  const i = p.lastIndexOf("/");
+  return i === -1 ? null : p.slice(0, i);
 };
 
 export function FileTagPopover({
@@ -154,6 +160,7 @@ export function FileTagPopover({
       {visible.map((hit, i) => {
         const active = i === highlight;
         const name = basename(hit.relPath);
+        const parent = dirname(hit.relPath);
         const iconUrl =
           hit.kind === "directory"
             ? getFolderIconUrl(name, false)
@@ -174,12 +181,17 @@ export function FileTagPopover({
             {iconUrl !== null ? (
               <img src={iconUrl} alt="" className="size-3.5 shrink-0" />
             ) : (
-              <Folder className="size-3.5 shrink-0 opacity-80" />
+              <HugeiconsIcon icon={Folder01Icon} className="size-3.5 shrink-0 opacity-80" />
             )}
             <span className="truncate font-medium">{name}</span>
-            <span className="ml-auto truncate text-xs text-muted-foreground">
-              {hit.relPath}
-            </span>
+            {parent !== null && (
+              <span
+                className="ml-auto truncate text-xs text-muted-foreground"
+                title={hit.relPath}
+              >
+                {parent}
+              </span>
+            )}
           </button>
         );
       })}

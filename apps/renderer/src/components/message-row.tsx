@@ -1,20 +1,19 @@
-import { AlertCircleIcon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  Check,
-  ChevronDown,
-  ChevronRight,
-  Copy,
-  RotateCw,
-  Settings,
-} from "lucide-react";
+  AlertCircleIcon,
+  ArrowDown01Icon,
+  ArrowRight01Icon,
+  Copy01Icon,
+  DashboardSpeedIcon,
+  RotateRight01Icon,
+  Settings01Icon,
+  Tick01Icon,
+} from "@hugeicons-pro/core-bulk-rounded";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-
 import type {
   AgentItemId,
   AttachmentRef,
+  CodeAnnotation,
   FileRef,
   Message,
   ProviderId,
@@ -28,7 +27,10 @@ import { cn } from "~/lib/utils";
 import { useMessagesStore, type ChatError } from "~/store/messages";
 import { useUiStore } from "~/store/ui";
 
-import { FileChip } from "./file-chip.tsx";
+import { CopyButton } from "./copy-button.tsx";
+import { useRevealAnnotation } from "./annotation/annotation-navigation.ts";
+import { AnnotationFileChip, FileChip } from "./file-chip.tsx";
+import { MarkdownBody } from "./markdown-body.tsx";
 import {
   ExitPlanModeRow,
   ThinkingRow,
@@ -48,6 +50,20 @@ const stringifyJson = (value: unknown): string => {
   } catch {
     return String(value);
   }
+};
+
+const RECONNECTING_PATTERN =
+  /^\s*Reconnecting\s*\.{3}\s*(\d+)\s*\/\s*(\d+)\s*$/i;
+
+const parseReconnectingStatus = (
+  message: string,
+): { readonly attempt: number; readonly maxAttempts: number } | null => {
+  const match = RECONNECTING_PATTERN.exec(message);
+  if (match === null) return null;
+  const attempt = Number(match[1]);
+  const maxAttempts = Number(match[2]);
+  if (!Number.isFinite(attempt) || !Number.isFinite(maxAttempts)) return null;
+  return { attempt, maxAttempts };
 };
 
 /**
@@ -72,7 +88,9 @@ export function MessageRow({
 }) {
   switch (message.content._tag) {
     case "user":
-      return <UserBubble text={message.content.text} />;
+      return (
+        <UserBubble text={message.content.text} goal={message.content.goal} />
+      );
     case "user_rich":
       return (
         <UserBubble
@@ -80,10 +98,17 @@ export function MessageRow({
           attachments={message.content.attachments}
           fileRefs={message.content.fileRefs}
           skillRefs={message.content.skillRefs}
+          annotations={message.content.annotations}
+          goal={message.content.goal}
         />
       );
     case "assistant":
-      return <AssistantBubble text={message.content.text} />;
+      return (
+        <AssistantBubble
+          text={message.content.text}
+          createdAt={message.createdAt}
+        />
+      );
     case "thinking":
       return (
         <ThinkingRow
@@ -133,10 +158,15 @@ export function MessageRow({
       // The paired `user_question` row above renders the answer inline, so
       // the standalone answer row is suppressed.
       return null;
+    case "usage":
+    case "context_usage":
+    case "usage_limit":
+      return null;
     case "error":
       return (
         <ErrorBubble
           error={{ kind: "generic", message: message.content.message }}
+          sessionId={sessionId}
         />
       );
   }
@@ -172,17 +202,29 @@ const stripChipTokens = (
   return out.replace(/[ \t]{2,}/g, " ").trim();
 };
 
+const formatMessageTime = (date: Date): string =>
+  date.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
 function UserBubble({
   text,
   attachments,
   fileRefs,
   skillRefs,
+  annotations,
+  goal = false,
 }: {
   text: string;
   attachments?: ReadonlyArray<AttachmentRef>;
   fileRefs?: ReadonlyArray<FileRef>;
   skillRefs?: ReadonlyArray<SkillRef>;
+  annotations?: ReadonlyArray<CodeAnnotation>;
+  goal?: boolean;
 }) {
+  const hasAnnotations = annotations !== undefined && annotations.length > 0;
+  const revealAnnotation = useRevealAnnotation();
   const hasChips =
     (attachments !== undefined && attachments.length > 0) ||
     (fileRefs !== undefined && fileRefs.length > 0) ||
@@ -193,25 +235,50 @@ function UserBubble({
   const truncate = (name: string): string =>
     name.length > 28 ? `${name.slice(0, 25)}...` : name;
   return (
-    <div className="flex justify-end px-4 py-2">
-      <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-user-bubble px-3 py-2 text-sm text-user-bubble-foreground">
+    <div className="group/message flex justify-end px-4 py-2">
+      <div className="relative max-w-[80%] rounded-2xl rounded-tr-sm bg-user-bubble px-3 py-2 pr-9 text-sm text-user-bubble-foreground">
+        <CopyButton
+          text={display || text}
+          label="Copy message"
+          className="absolute right-2 top-1.5 size-5 text-user-bubble-foreground/50 opacity-60 hover:bg-background/10 hover:text-user-bubble-foreground hover:opacity-100 focus-visible:opacity-100"
+        />
+        {hasAnnotations ? (
+          <ol className="mb-2 space-y-1">
+            {(annotations ?? []).map((a, i) => (
+              <li key={a.id}>
+                <button
+                  type="button"
+                  onClick={() => revealAnnotation(a)}
+                  className="flex w-full min-w-0 items-start gap-2 rounded-lg border border-user-bubble-foreground/12 bg-background/10 px-2 py-1.5 text-left text-xs hover:bg-background/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-user-bubble-foreground/30"
+                  title="Open annotation"
+                >
+                  <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-background/20 text-[10px] font-semibold tabular-nums">
+                    {i + 1}
+                  </span>
+                  <span className="grid min-w-0 flex-1 gap-1">
+                    <AnnotationFileChip annotation={a} />
+                    <span className="min-w-0 break-words leading-snug">
+                      {a.comment}
+                    </span>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ol>
+        ) : null}
         {hasChips ? (
           <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
             {(attachments ?? []).map((a) => {
               const isImage = a.mimeType.startsWith("image/");
               const iconUrl = isImage ? null : getFileIconUrl(a.originalName);
-              return (
-                <a
-                  key={a.id}
-                  href={`memoize://attachments/${a.id}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  title={a.originalName}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted/60"
-                >
+              const src = `memoize://attachments/${a.id}`;
+              const className =
+                "inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted/60";
+              const inner = (
+                <>
                   {isImage ? (
                     <img
-                      src={`memoize://attachments/${a.id}`}
+                      src={src}
                       alt=""
                       className="size-4 rounded object-cover"
                     />
@@ -219,6 +286,37 @@ function UserBubble({
                     <img src={iconUrl} alt="" className="size-4" />
                   ) : null}
                   <span className="truncate">{truncate(a.originalName)}</span>
+                </>
+              );
+              if (isImage) {
+                return (
+                  <button
+                    key={a.id}
+                    type="button"
+                    title={a.originalName}
+                    className={className}
+                    onClick={() =>
+                      useUiStore.getState().openFileInTab({
+                        kind: "image",
+                        src,
+                        name: a.originalName,
+                      })
+                    }
+                  >
+                    {inner}
+                  </button>
+                );
+              }
+              return (
+                <a
+                  key={a.id}
+                  href={src}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={a.originalName}
+                  className={className}
+                >
+                  {inner}
                 </a>
               );
             })}
@@ -243,16 +341,38 @@ function UserBubble({
         {display.length > 0 ? (
           <div className="whitespace-pre-wrap break-words">{display}</div>
         ) : null}
+        {goal ? (
+          <div className="mt-2 flex items-center gap-1.5 text-xs text-user-bubble-foreground/65">
+            <HugeiconsIcon icon={DashboardSpeedIcon} className="size-3.5" />
+            <span>Sent as goal</span>
+          </div>
+        ) : null}
       </div>
     </div>
   );
 }
 
-function AssistantBubble({ text }: { text: string }) {
+function AssistantBubble({
+  text,
+  createdAt,
+}: {
+  text: string;
+  createdAt?: Date;
+}) {
   return (
     <div className="px-4 py-2">
-      <div className="fz-prose max-w-[88%]">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+      <div className="max-w-[88%]">
+        <MarkdownBody>{text}</MarkdownBody>
+        <div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          {createdAt !== undefined ? (
+            <span className="tabular-nums">{formatMessageTime(createdAt)}</span>
+          ) : null}
+          <CopyButton
+            text={text}
+            label="Copy message"
+            className="size-5 rounded opacity-70 hover:opacity-100"
+          />
+        </div>
       </div>
     </div>
   );
@@ -260,7 +380,7 @@ function AssistantBubble({ text }: { text: string }) {
 
 function ToolErrorRow({ output }: { output: unknown }) {
   const [expanded, setExpanded] = useState(false);
-  const Chevron = expanded ? ChevronDown : ChevronRight;
+  const chevron = expanded ? ArrowDown01Icon : ArrowRight01Icon;
   const text = typeof output === "string" ? output : stringifyJson(output);
   const firstLine = text.split("\n", 1)[0] ?? "";
   return (
@@ -280,7 +400,8 @@ function ToolErrorRow({ output }: { output: unknown }) {
               "group-hover:opacity-0 motion-reduce:transition-none",
             )}
           />
-          <Chevron
+          <HugeiconsIcon
+            icon={chevron}
             aria-hidden="true"
             className={cn(
               "col-start-1 row-start-1 size-3.5 text-muted-foreground opacity-0 transition-opacity duration-150 ease-out",
@@ -313,7 +434,7 @@ type RateLimitInfo = {
 // pattern matching against the human-readable text.
 const parseRateLimit = (text: string): RateLimitInfo | null => {
   const isRateLimit =
-    /usage limit|rate[-\s]?limit|quota|429|too many requests|overloaded|hit your limit/i.test(
+    /usage limit|rate[-\s]?limit|quota|429|too many requests|overloaded|hit your limit|reached (?:your |the )?limit|agent reached limit/i.test(
       text,
     );
   if (!isRateLimit) return null;
@@ -323,7 +444,7 @@ const parseRateLimit = (text: string): RateLimitInfo | null => {
       /reset(?:s|ing)?(?:\s+at)?\s+(\d{1,2}(?::\d{2})?\s*[ap]m(?:\s*\([^)]+\))?)/i,
     ) ??
     text.match(
-      /try again at\s+(\d{1,2}(?::\d{2})?\s*[ap]m(?:\s*\([^)]+\))?)/i,
+      /(?:try|see|check)\s+again\s+at\s+(\d{1,2}(?::\d{2})?\s*[ap]m(?:\s*(?:\([^)]+\)|[A-Z][A-Za-z_/-]*(?:\s+time)?))?)/i,
     ) ??
     text.match(/reset(?:s|ing)?(?:\s+at)?\s+(\d{4}-\d{2}-\d{2}[T0-9:.Z+\-]*)/i);
 
@@ -364,11 +485,7 @@ const isGeminiAcpUpgradeError = (text: string): boolean =>
     text,
   );
 
-function GeminiUpgradeCard({
-  onDismiss,
-}: {
-  onDismiss?: () => void;
-}) {
+function GeminiUpgradeCard({ onDismiss }: { onDismiss?: () => void }) {
   const [copied, setCopied] = useState(false);
   const copyCommand = () => {
     void navigator.clipboard.writeText(GEMINI_UPGRADE_COMMAND).then(() => {
@@ -403,9 +520,9 @@ function GeminiUpgradeCard({
               </code>
               <Button size="xs" variant="outline" onClick={copyCommand}>
                 {copied ? (
-                  <Check className="size-3.5" />
+                  <HugeiconsIcon icon={Tick01Icon} className="size-3.5" />
                 ) : (
-                  <Copy className="size-3.5" />
+                  <HugeiconsIcon icon={Copy01Icon} className="size-3.5" />
                 )}
                 {copied ? "Copied" : "Copy upgrade command"}
               </Button>
@@ -432,11 +549,15 @@ export function ErrorBubble({
   onDismiss?: () => void;
 }) {
   const retry = useMessagesStore((s) => s.retry);
+  const send = useMessagesStore((s) => s.send);
   const setView = useUiStore((s) => s.setView);
   const setSettingsSection = useUiStore((s) => s.setSettingsSection);
 
   const onRetry = () => {
     if (sessionId !== undefined) void retry(sessionId);
+  };
+  const onKeepGoing = () => {
+    if (sessionId !== undefined) void send(sessionId, "keep going");
   };
   const onOpenSettings = () => {
     setView("settings");
@@ -450,35 +571,60 @@ export function ErrorBubble({
   const rateLimit = parseRateLimit(error.message);
   if (rateLimit !== null) {
     return (
-      <div className="px-4 py-2">
-        <div className="max-w-[88%] rounded-xl bg-alert-warning-bg px-3 py-2 text-xs text-foreground">
-          <div className="flex items-center gap-2">
-            <HugeiconsIcon
-              icon={AlertCircleIcon}
-              strokeWidth={2}
-              aria-hidden="true"
-              className="size-3.5 shrink-0 text-warning"
-            />
-            <span className="font-medium text-foreground">
-              Rate limit reached
-            </span>
-            <span className="text-muted-foreground/50">·</span>
-            <span className="text-muted-foreground">
-              {formatResetDetail(rateLimit)}
-            </span>
-            {onDismiss !== undefined && (
+      <div className="px-4 py-1.5">
+        <div className="inline-flex max-w-[88%] items-center gap-2 rounded-md border border-border/45 bg-[color-mix(in_oklch,var(--bg-elevated)_34%,var(--background))] px-2.5 py-1.5 text-xs text-foreground shadow-[inset_0_1px_0_color-mix(in_oklch,white_4%,transparent),0_1px_2px_color-mix(in_oklch,black_22%,transparent)]">
+          <span className="font-medium">Limit reached</span>
+          <span className="text-muted-foreground">
+            {formatResetDetail(rateLimit)}
+          </span>
+          {onDismiss !== undefined && (
+            <button
+              type="button"
+              onClick={onDismiss}
+              className="rounded-[0.1875rem] px-1 py-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              aria-label="Dismiss limit status"
+            >
+              Dismiss
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const reconnecting = parseReconnectingStatus(error.message);
+  if (reconnecting !== null) {
+    const isFinalAttempt = reconnecting.attempt >= reconnecting.maxAttempts;
+    return (
+      <div className="px-4 py-1.5">
+        <div className="inline-flex max-w-[88%] items-center gap-2 rounded-md border border-border/45 bg-[color-mix(in_oklch,var(--bg-elevated)_34%,var(--background))] px-2.5 py-1.5 text-xs text-foreground shadow-[inset_0_1px_0_color-mix(in_oklch,white_4%,transparent),0_1px_2px_color-mix(in_oklch,black_22%,transparent)]">
+          <span className="font-medium">Reconnecting</span>
+          <span className="font-mono text-muted-foreground">
+            {reconnecting.attempt}/{reconnecting.maxAttempts}
+          </span>
+          {isFinalAttempt && (
+            <>
+              <span className="h-3 w-px bg-border/60" aria-hidden="true" />
               <button
                 type="button"
-                onClick={onDismiss}
-                className="ml-auto rounded px-1.5 py-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                onClick={onKeepGoing}
+                disabled={sessionId === undefined}
+                className="rounded-[0.1875rem] bg-secondary px-1.5 py-0.5 font-medium text-secondary-foreground transition-colors hover:bg-secondary/90"
               >
-                Dismiss
+                Retry
               </button>
-            )}
-          </div>
-          <div className="mt-1 break-words text-muted-foreground">
-            {error.message}
-          </div>
+            </>
+          )}
+          {onDismiss !== undefined && (
+            <button
+              type="button"
+              onClick={onDismiss}
+              className="rounded-[0.1875rem] px-1 py-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              aria-label="Dismiss reconnecting status"
+            >
+              Dismiss
+            </button>
+          )}
         </div>
       </div>
     );
@@ -487,7 +633,9 @@ export function ErrorBubble({
   const headline =
     error.kind === "auth"
       ? `Sign in to ${
-          error.providerId ? PROVIDER_LABEL_FOR_ERROR[error.providerId] : "your provider"
+          error.providerId
+            ? PROVIDER_LABEL_FOR_ERROR[error.providerId]
+            : "your provider"
         }`
       : error.kind === "network"
         ? "Connection lost"
@@ -521,7 +669,9 @@ export function ErrorBubble({
             {headline !== null ? (
               <span className="font-medium text-foreground">{headline}</span>
             ) : (
-              <span className="font-medium text-foreground">Provider error</span>
+              <span className="font-medium text-foreground">
+                Provider error
+              </span>
             )}
             <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-muted-foreground">
               {error.message || "(empty)"}
@@ -535,7 +685,11 @@ export function ErrorBubble({
                   onClick={onRetry}
                   className="gap-1"
                 >
-                  <RotateCw className="size-3" aria-hidden />
+                  <HugeiconsIcon
+                    icon={RotateRight01Icon}
+                    className="size-3"
+                    aria-hidden
+                  />
                   Retry
                 </Button>
                 {error.kind === "auth" && (
@@ -546,7 +700,11 @@ export function ErrorBubble({
                     onClick={onOpenSettings}
                     className="gap-1"
                   >
-                    <Settings className="size-3" aria-hidden />
+                    <HugeiconsIcon
+                      icon={Settings01Icon}
+                      className="size-3"
+                      aria-hidden
+                    />
                     Open Provider Settings
                   </Button>
                 )}
