@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0]
+
+### Changed
+- Add tokenmaxer onboarding and usage fixes (#166)
+- Add multi-source token usage dashboard (#164)
+- Drive the agent browser with real input + a rendered cursor (#165)
+- [codex] Show active task in project plan header (#160)
+- Make release skill available to Claude and Codex (#163)
+
 ## [0.5.0]
 
 ### Added
