@@ -85,6 +85,7 @@ import {
   SettingsStreamRpc,
   SettingsUpdateRpc,
 } from "./settings.ts";
+import { UsageReportRpc } from "./usage.ts";
 import {
   PtyCloseRpc,
   PtyOpenRpc,
@@ -292,6 +293,7 @@ export const MemoizeRpcs = RpcGroup.make(
   SettingsUpdateRpc,
   SettingsStreamRpc,
   SettingsMigrateLocalStorageRpc,
+  UsageReportRpc,
   KeybindingsGetRpc,
   KeybindingsReplaceRpc,
   KeybindingsStreamRpc,
