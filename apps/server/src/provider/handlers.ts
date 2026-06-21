@@ -455,6 +455,12 @@ const MessagesQueueFlush = MemoizeRpcs.toLayerHandler(
     Effect.flatMap(MessageStore, (svc) => svc.flushQueuedMessages(sessionId)),
 );
 
+const MessagesQueueResume = MemoizeRpcs.toLayerHandler(
+  "messages.queue.resume",
+  ({ sessionId }) =>
+    Effect.flatMap(MessageStore, (svc) => svc.resumeQueuedMessages(sessionId)),
+);
+
 // ---------------------------------------------------------------------------
 // permission.* — Phase 4 surface. The renderer subscribes to
 // `permission.requests`, shows a toast, and posts back via `permission.decide`.
@@ -597,6 +603,7 @@ export const ProviderHandlersLayer = Layer.mergeAll(
   MessagesQueueSendNow,
   MessagesQueueReorder,
   MessagesQueueFlush,
+  MessagesQueueResume,
   PermissionRequests,
   PermissionDecide,
   PermissionListPending,

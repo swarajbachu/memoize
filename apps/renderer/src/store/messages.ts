@@ -18,6 +18,14 @@ import { usePrDetailsStore } from "./pr-details.ts";
 import { usePrStateStore } from "./pr-state.ts";
 import { useSessionsStore } from "./sessions.ts";
 
+let getMessagesRpcClient: typeof getRpcClient = getRpcClient;
+
+export const setMessagesRpcClientForTest = (
+  fn: typeof getRpcClient,
+): void => {
+  getMessagesRpcClient = fn;
+};
+
 /**
  * Tagged chat error shown in the message bubble at the bottom of a session.
  * The renderer classifies once on ingest so the bubble can show the right
@@ -154,6 +162,7 @@ type MessagesState = {
    */
   readonly runningBySession: Record<string, boolean>;
   readonly queueBySession: Record<string, ReadonlyArray<QueuedMessage>>;
+  readonly queuePausedBySession: Record<string, boolean>;
   readonly goalBySession: Record<string, ThreadGoal | null>;
   readonly hydrate: (sessionId: SessionId) => Promise<void>;
   /**
@@ -185,6 +194,7 @@ type MessagesState = {
     queueIds: ReadonlyArray<string>,
   ) => void;
   readonly flushQueue: (sessionId: SessionId) => void;
+  readonly resumeQueue: (sessionId: SessionId) => Promise<void>;
   /** Interrupt the running turn, then send `queueId` as the next user turn. */
   readonly steerFromQueue: (
     sessionId: SessionId,
@@ -216,7 +226,10 @@ const statusWaiters = new Map<
   SessionId,
   Set<(status: SessionStatus) => void>
 >();
-const handoffReleaseTimers = new Map<SessionId, number>();
+const handoffReleaseTimers = new Map<
+  SessionId,
+  ReturnType<typeof globalThis.setTimeout>
+>();
 
 const stopLiveFiber = async () => {
   const tasks: Array<Promise<unknown>> = [];
@@ -261,8 +274,8 @@ const publishObservedStatus = (sessionId: SessionId, status: SessionStatus) => {
 const holdRunningUntilNextTurn = (sessionId: SessionId) => {
   handoffRunningSessions.add(sessionId);
   const existingTimer = handoffReleaseTimers.get(sessionId);
-  if (existingTimer !== undefined) window.clearTimeout(existingTimer);
-  const timer = window.setTimeout(() => {
+  if (existingTimer !== undefined) globalThis.clearTimeout(existingTimer);
+  const timer = globalThis.setTimeout(() => {
     handoffReleaseTimers.delete(sessionId);
     if (
       handoffRunningSessions.has(sessionId) &&
@@ -291,14 +304,14 @@ const waitUntilIdle = (
     }
     const waiters = statusWaiters.get(sessionId) ?? new Set();
     statusWaiters.set(sessionId, waiters);
-    const timeout = window.setTimeout(() => {
+    const timeout = globalThis.setTimeout(() => {
       waiters.delete(onStatus);
       if (waiters.size === 0) statusWaiters.delete(sessionId);
       resolve();
     }, timeoutMs);
     const onStatus = (status: SessionStatus) => {
       if (status !== "running") {
-        window.clearTimeout(timeout);
+        globalThis.clearTimeout(timeout);
         waiters.delete(onStatus);
         if (waiters.size === 0) statusWaiters.delete(sessionId);
         resolve();
@@ -312,6 +325,7 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
   errorBySession: {},
   runningBySession: {},
   queueBySession: {},
+  queuePausedBySession: {},
   goalBySession: {},
   hydrate: async (sessionId) => {
     if (liveSessionId === sessionId && liveFiber !== null) return;
@@ -330,7 +344,7 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
       errorBySession: { ...s.errorBySession, [sessionId]: null },
     }));
     try {
-      const client = await getRpcClient();
+      const client = await getMessagesRpcClient();
       liveFiber = Effect.runFork(
         Stream.runForEach(client.messages.stream({ sessionId }), (message) =>
           Effect.sync(() => {
@@ -464,10 +478,17 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
       queueFiber = Effect.runFork(
         Stream.runForEach(
           client.messages["queue.stream"]({ sessionId }),
-          (items) =>
+          (state) =>
             Effect.sync(() => {
               set((s) => ({
-                queueBySession: { ...s.queueBySession, [sessionId]: items },
+                queueBySession: {
+                  ...s.queueBySession,
+                  [sessionId]: state.items,
+                },
+                queuePausedBySession: {
+                  ...s.queuePausedBySession,
+                  [sessionId]: state.paused,
+                },
               }));
             }),
         ),
@@ -516,7 +537,7 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
           : { ...s.runningBySession, [sessionId]: true },
     }));
     try {
-      const client = await getRpcClient();
+      const client = await getMessagesRpcClient();
       // Pick up the per-session reasoning selection the composer's
       // ReasoningPicker persists to sessionStorage. Drivers that don't
       // implement reasoning silently ignore it; only models whose
@@ -553,7 +574,7 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
   },
   setGoal: async (sessionId, goal) => {
     try {
-      const client = await getRpcClient();
+      const client = await getMessagesRpcClient();
       const next = await Effect.runPromise(
         (client as unknown as GoalRpcClient).session["goal.set"]({
           sessionId,
@@ -574,7 +595,7 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
   },
   clearGoal: async (sessionId) => {
     try {
-      const client = await getRpcClient();
+      const client = await getMessagesRpcClient();
       await Effect.runPromise(
         (client as unknown as GoalRpcClient).session["goal.clear"]({
           sessionId,
@@ -594,7 +615,7 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
   },
   interrupt: async (sessionId) => {
     try {
-      const client = await getRpcClient();
+      const client = await getMessagesRpcClient();
       await Effect.runPromise(client.messages.interrupt({ sessionId }));
     } catch (err) {
       set((s) => ({
@@ -608,7 +629,7 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
   queue: (sessionId, input) => {
     void (async () => {
       try {
-        const client = await getRpcClient();
+        const client = await getMessagesRpcClient();
         const item = await Effect.runPromise(
           client.messages["queue.add"]({ sessionId, input }),
         );
@@ -645,7 +666,7 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
     }));
     void (async () => {
       try {
-        const client = await getRpcClient();
+        const client = await getMessagesRpcClient();
         await Effect.runPromise(
           client.messages["queue.update"]({ sessionId, queueId, input }),
         );
@@ -678,7 +699,7 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
     });
     void (async () => {
       try {
-        const client = await getRpcClient();
+        const client = await getMessagesRpcClient();
         await Effect.runPromise(
           client.messages["queue.reorder"]({ sessionId, queueIds }),
         );
@@ -695,10 +716,7 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
   flushQueue: (sessionId) => {
     void (async () => {
       try {
-        if ((get().queueBySession[sessionId] ?? []).length > 0) {
-          holdRunningUntilNextTurn(sessionId);
-        }
-        const client = await getRpcClient();
+        const client = await getMessagesRpcClient();
         await Effect.runPromise(client.messages["queue.flush"]({ sessionId }));
       } catch (err) {
         handoffRunningSessions.delete(sessionId);
@@ -712,6 +730,30 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
       }
     })();
   },
+  resumeQueue: async (sessionId) => {
+    try {
+      if ((get().queueBySession[sessionId] ?? []).length > 0) {
+        holdRunningUntilNextTurn(sessionId);
+      }
+      set((s) => ({
+        queuePausedBySession: {
+          ...s.queuePausedBySession,
+          [sessionId]: false,
+        },
+      }));
+      const client = await getMessagesRpcClient();
+      await Effect.runPromise(client.messages["queue.resume"]({ sessionId }));
+    } catch (err) {
+      handoffRunningSessions.delete(sessionId);
+      set((s) => ({
+        errorBySession: {
+          ...s.errorBySession,
+          [sessionId]: classifyError(err, lookupSessionProvider(sessionId)),
+        },
+        runningBySession: { ...s.runningBySession, [sessionId]: false },
+      }));
+    }
+  },
   dropFromQueue: (sessionId, queueId) => {
     set((s) => ({
       queueBySession: {
@@ -723,7 +765,7 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
     }));
     void (async () => {
       try {
-        const client = await getRpcClient();
+        const client = await getMessagesRpcClient();
         await Effect.runPromise(
           client.messages["queue.delete"]({ sessionId, queueId }),
         );
@@ -760,10 +802,10 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
       const wasRunning = get().runningBySession[sessionId] === true;
       if (wasRunning) {
         holdRunningUntilNextTurn(sessionId);
+        await get().interrupt(sessionId);
+        await waitUntilIdle(sessionId, 4_000);
       }
-      await get().interrupt(sessionId);
-      if (wasRunning) await waitUntilIdle(sessionId, 4_000);
-      const client = await getRpcClient();
+      const client = await getMessagesRpcClient();
       await Effect.runPromise(
         client.messages["queue.sendNow"]({ sessionId, queueId }),
       );
@@ -785,7 +827,7 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
       handoffRunningSessions.delete(sessionId);
       const timer = handoffReleaseTimers.get(sessionId);
       if (timer !== undefined) {
-        window.clearTimeout(timer);
+        globalThis.clearTimeout(timer);
         handoffReleaseTimers.delete(sessionId);
       }
     }

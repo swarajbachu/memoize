@@ -29,6 +29,7 @@ import {
   type MessageId as MessageIdType,
   type MessageRole,
   type ProviderId,
+  QueueState,
   QueuedMessage,
   type RuntimeMode,
   Session,
@@ -702,7 +703,7 @@ export const MessageStoreLive = Layer.scoped(
       ReadonlyMap<SessionId, PubSub.PubSub<StatusEvent>>
     >(new Map());
     const queuePubsubs = yield* Ref.make<
-      ReadonlyMap<SessionId, PubSub.PubSub<ReadonlyArray<QueuedMessage>>>
+      ReadonlyMap<SessionId, PubSub.PubSub<QueueState>>
     >(new Map());
     const goalPubsubs = yield* Ref.make<
       ReadonlyMap<
@@ -764,7 +765,7 @@ export const MessageStoreLive = Layer.scoped(
         const map = yield* Ref.get(queuePubsubs);
         const existing = map.get(sessionId);
         if (existing !== undefined) return existing;
-        const pubsub = yield* PubSub.unbounded<ReadonlyArray<QueuedMessage>>();
+        const pubsub = yield* PubSub.unbounded<QueueState>();
         yield* Ref.update(queuePubsubs, (m) => {
           const next = new Map(m);
           next.set(sessionId, pubsub);
@@ -979,11 +980,68 @@ export const MessageStoreLive = Layer.scoped(
         return rows.map(queuedMessageFromRow);
       });
 
+    const ensureQueuePausedColumn: Effect.Effect<void> = Effect.gen(
+      function* () {
+        const columns = yield* sql<{ readonly name: string }>`
+          PRAGMA table_info(sessions)
+        `.pipe(Effect.orDie);
+        if (!columns.some((column) => column.name === "queue_paused")) {
+          yield* sql`
+            ALTER TABLE sessions
+              ADD COLUMN queue_paused INTEGER NOT NULL DEFAULT 0
+          `.pipe(Effect.orDie);
+        }
+      },
+    );
+
+    const isQueuePaused = (sessionId: SessionId): Effect.Effect<boolean> =>
+      Effect.gen(function* () {
+        yield* ensureQueuePausedColumn;
+        const rows = yield* sql<{ readonly queue_paused: number }>`
+          SELECT queue_paused
+          FROM sessions
+          WHERE id = ${sessionId}
+          LIMIT 1
+        `.pipe(Effect.orDie);
+        return (rows[0]?.queue_paused ?? 0) !== 0;
+      });
+
+    const queueState = (sessionId: SessionId): Effect.Effect<QueueState> =>
+      Effect.gen(function* () {
+        const [items, paused] = yield* Effect.all([
+          listQueuedRows(sessionId),
+          isQueuePaused(sessionId),
+        ]);
+        return QueueState.make({ items, paused });
+      });
+
     const broadcastQueue = (sessionId: SessionId): Effect.Effect<void> =>
       Effect.gen(function* () {
-        const items = yield* listQueuedRows(sessionId);
+        const state = yield* queueState(sessionId);
         const pubsub = yield* getOrMakeQueuePubsub(sessionId);
-        yield* PubSub.publish(pubsub, items);
+        yield* PubSub.publish(pubsub, state);
+      });
+
+    const setQueuePaused = (
+      sessionId: SessionId,
+      paused: boolean,
+    ): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        yield* ensureQueuePausedColumn;
+        yield* sql`
+          UPDATE sessions
+          SET queue_paused = ${paused ? 1 : 0},
+              updated_at = ${new Date().toISOString()}
+          WHERE id = ${sessionId}
+        `.pipe(Effect.asVoid, Effect.orDie);
+        yield* broadcastQueue(sessionId);
+      });
+
+    const clearQueuePauseIfEmpty = (sessionId: SessionId): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        const queue = yield* listQueuedRows(sessionId);
+        if (queue.length > 0 || !(yield* isQueuePaused(sessionId))) return;
+        yield* setQueuePaused(sessionId, false);
       });
 
     const normalizeQueuePositions = (
@@ -2816,7 +2874,7 @@ export const MessageStoreLive = Layer.scoped(
     ) =>
       Effect.gen(function* () {
         yield* lookupSession(sessionId);
-        return yield* listQueuedRows(sessionId);
+        return yield* queueState(sessionId);
       });
 
     const streamQueuedMessages: MessageStoreShape["streamQueuedMessages"] = (
@@ -2827,7 +2885,7 @@ export const MessageStoreLive = Layer.scoped(
           yield* lookupSession(sessionId);
           const pubsub = yield* getOrMakeQueuePubsub(sessionId);
           const dequeue = yield* pubsub.subscribe;
-          const initial = yield* listQueuedRows(sessionId);
+          const initial = yield* queueState(sessionId);
           return Stream.concat(
             Stream.succeed(initial),
             Stream.fromQueue(dequeue),
@@ -2908,6 +2966,7 @@ export const MessageStoreLive = Layer.scoped(
           WHERE session_id = ${sessionId} AND id = ${queueId}
         `.pipe(Effect.orDie);
         yield* normalizeQueuePositions(sessionId);
+        yield* clearQueuePauseIfEmpty(sessionId);
         yield* broadcastQueue(sessionId);
       });
 
@@ -3009,6 +3068,7 @@ export const MessageStoreLive = Layer.scoped(
     ) =>
       Effect.gen(function* () {
         yield* lookupSession(sessionId);
+        yield* setQueuePaused(sessionId, false);
         const item = yield* claimQueuedMessage(sessionId, queueId);
         if (item === null) return;
         yield* sendClaimedQueuedMessage(item);
@@ -3031,6 +3091,9 @@ export const MessageStoreLive = Layer.scoped(
           if (session.status === "running" || session.status === "booting") {
             return;
           }
+          if (yield* isQueuePaused(sessionId)) {
+            return;
+          }
           const queue = yield* listQueuedRows(sessionId);
           const head = queue[0];
           if (head === undefined) return;
@@ -3049,6 +3112,15 @@ export const MessageStoreLive = Layer.scoped(
     flushQueueAfterIdle = (sessionId) =>
       flushQueuedMessages(sessionId).pipe(Effect.catchAll(() => Effect.void));
 
+    const resumeQueuedMessages: MessageStoreShape["resumeQueuedMessages"] = (
+      sessionId,
+    ) =>
+      Effect.gen(function* () {
+        yield* lookupSession(sessionId);
+        yield* setQueuePaused(sessionId, false);
+        yield* flushQueuedMessages(sessionId);
+      });
+
     const interruptSession: MessageStoreShape["interruptSession"] = (
       sessionId,
     ) =>
@@ -3057,6 +3129,10 @@ export const MessageStoreLive = Layer.scoped(
         yield* provider
           .interrupt(sessionId)
           .pipe(Effect.mapError(() => new SessionNotFoundError({ sessionId })));
+        const queue = yield* listQueuedRows(sessionId);
+        if (queue.length > 0) {
+          yield* setQueuePaused(sessionId, true);
+        }
         yield* setStatus(sessionId, "idle");
       });
 
@@ -3106,6 +3182,7 @@ export const MessageStoreLive = Layer.scoped(
       sendQueuedMessageNow,
       reorderQueuedMessages,
       flushQueuedMessages,
+      resumeQueuedMessages,
     } as const;
   }),
 );

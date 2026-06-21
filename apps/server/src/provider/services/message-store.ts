@@ -21,6 +21,7 @@ import type {
   Message,
   PermissionMode,
   ProviderId,
+  QueueState,
   QueuedMessage,
   RuntimeMode,
   Session,
@@ -358,11 +359,11 @@ export interface MessageStoreShape {
 
   readonly listQueuedMessages: (
     sessionId: SessionId,
-  ) => Effect.Effect<ReadonlyArray<QueuedMessage>, SessionNotFoundError>;
+  ) => Effect.Effect<QueueState, SessionNotFoundError>;
 
   readonly streamQueuedMessages: (
     sessionId: SessionId,
-  ) => Stream.Stream<ReadonlyArray<QueuedMessage>, SessionNotFoundError>;
+  ) => Stream.Stream<QueueState, SessionNotFoundError>;
 
   readonly addQueuedMessage: (
     sessionId: SessionId,
@@ -391,6 +392,10 @@ export interface MessageStoreShape {
   ) => Effect.Effect<ReadonlyArray<QueuedMessage>, SessionNotFoundError>;
 
   readonly flushQueuedMessages: (
+    sessionId: SessionId,
+  ) => Effect.Effect<void, SessionNotFoundError>;
+
+  readonly resumeQueuedMessages: (
     sessionId: SessionId,
   ) => Effect.Effect<void, SessionNotFoundError>;
 }
