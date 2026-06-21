@@ -138,6 +138,12 @@ type UiState = {
   // this to true and a debounced save kicks in inside FileEditor.
   readonly autosave: boolean;
   readonly leftSidebarOpen: boolean;
+  /**
+   * Transient overlay-reveal of the left sidebar when the docked panel is
+   * collapsed. Triggered by hovering the left edge of the window
+   * (macOS Dock-style auto-reveal). Resets on reload — never persisted.
+   */
+  readonly leftSidebarPeek: boolean;
   readonly rightSidebarOpen: boolean;
   readonly isFullScreen: boolean;
   readonly rightPanels: ReadonlyArray<PanelInstance>;
@@ -160,6 +166,7 @@ type UiState = {
   readonly closeFileTab: () => void;
   readonly setFileDirty: (dirty: boolean) => void;
   readonly setLeftSidebarOpen: (open: boolean) => void;
+  readonly setLeftSidebarPeek: (peek: boolean) => void;
   readonly setRightSidebarOpen: (open: boolean) => void;
   readonly setFullScreen: (full: boolean) => void;
   /** Add a panel to the dock. Singletons that are already open are focused
@@ -209,6 +216,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   fileDirty: false,
   autosave: false,
   leftSidebarOpen: true,
+  leftSidebarPeek: false,
   rightSidebarOpen: false,
   isFullScreen: false,
   rightPanels: [],
@@ -231,7 +239,11 @@ export const useUiStore = create<UiState>((set, get) => ({
   closeFileTab: () =>
     set({ openFile: null, activeMainTab: "chat", fileDirty: false }),
   setFileDirty: (dirty) => set({ fileDirty: dirty }),
-  setLeftSidebarOpen: (open) => set({ leftSidebarOpen: open }),
+  // Opening the docked panel implicitly drops any peek state so the overlay
+  // doesn't sit on top of the docked panel. Closing it also clears peek so a
+  // stale hover doesn't immediately re-reveal the overlay.
+  setLeftSidebarOpen: (open) => set({ leftSidebarOpen: open, leftSidebarPeek: false }),
+  setLeftSidebarPeek: (peek) => set({ leftSidebarPeek: peek }),
   setRightSidebarOpen: (open) => set({ rightSidebarOpen: open }),
   setFullScreen: (full) => set({ isFullScreen: full }),
   addPanel: (kind) =>
