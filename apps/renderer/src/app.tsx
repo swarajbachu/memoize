@@ -316,7 +316,10 @@ function MainShell() {
                   <CostFooter sessionId={selectedSessionId} />
                   <CliUpgradeBanner providerId={selectedSession.providerId} />
                   <NextUnreadButton />
-                  <ChatComposer session={selectedSession} />
+                  <ChatComposer
+                    key={selectedSession.id}
+                    session={selectedSession}
+                  />
                 </>
               ) : (
                 <ChatLanding />

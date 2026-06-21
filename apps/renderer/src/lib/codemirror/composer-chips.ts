@@ -77,6 +77,11 @@ export const updateImageChipEffect = StateEffect.define<{
   readonly meta: ChipMeta;
 }>();
 
+export const isChipEffect = (effect: StateEffect<unknown>): boolean =>
+  effect.is(addChipEffect) ||
+  effect.is(clearChipsEffect) ||
+  effect.is(updateImageChipEffect);
+
 /**
  * Holds the current chip set. Decoration ranges are derived; this field
  * is the source of truth that survives transactions.

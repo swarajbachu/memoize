@@ -33,6 +33,7 @@ import { DRAFT_SESSION_ID, useSessionsStore } from "~/store/sessions";
 import { useSettingsStore } from "~/store/settings";
 import { useWorkspaceStore } from "~/store/workspace";
 import { EMPTY_WORKTREES, useWorktreesStore } from "~/store/worktrees";
+import { composerDraftKeyForLanding } from "~/store/composer-drafts";
 import { ChatComposer } from "./chat-composer.tsx";
 import { PROVIDER_LABEL } from "./settings-page";
 import { SetupCardView } from "./worktree-setup-card.tsx";
@@ -284,6 +285,7 @@ export function ChatLanding() {
           <ChatComposer
             key={selectedFolderId ?? "none"}
             session={draftSession}
+            composerDraftKey={composerDraftKeyForLanding(selectedFolderId)}
             onDraftSubmit={(input, opts) => void handleDraftSubmit(input, opts)}
           />
         ) : (

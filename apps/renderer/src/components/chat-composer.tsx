@@ -56,12 +56,14 @@ import {
   createComposerView,
   reconfigureComposerKeymap,
   replaceWithChip,
+  restoreComposerChips,
   setComposerDoc,
   type ActiveTrigger,
 } from "~/lib/codemirror/composer";
 import { useKeybindingsStore } from "../store/keybindings";
 import {
   addChipEffect,
+  allChips,
   clearChipsEffect,
   updateImageChipEffect,
 } from "~/lib/codemirror/composer-chips";
@@ -72,6 +74,10 @@ import {
 } from "../store/annotations.ts";
 import { useAttachmentsStore } from "../store/attachments.ts";
 import { useComposerBridge } from "../store/composer-bridge.ts";
+import {
+  composerDraftKeyForSession,
+  useComposerDraftsStore,
+} from "../store/composer-drafts.ts";
 import { cn, formatCompactNumber } from "~/lib/utils";
 import {
   matchBuiltin,
@@ -122,8 +128,10 @@ const MAX_ATTACHMENTS_PER_TURN = 20;
 export function ChatComposer({
   session,
   onDraftSubmit,
+  composerDraftKey,
 }: {
   session: Session;
+  composerDraftKey?: string;
   /**
    * When set, the composer runs in "draft" mode for the new-chat landing:
    * `session` is a synthetic draft (see `sessions.beginDraft`) with no real
@@ -137,6 +145,7 @@ export function ChatComposer({
   onDraftSubmit?: (input: ComposerInput, opts: { asGoal: boolean }) => void;
 }) {
   const sessionId: SessionId = session.id;
+  const draftKey = composerDraftKey ?? composerDraftKeyForSession(sessionId);
   const isDraft = onDraftSubmit !== undefined;
   const [reasoningLevel, setReasoningLevel] = useState<string | null>(null);
   const inFlight = useMessagesStore(
@@ -171,6 +180,8 @@ export function ChatComposer({
   const queue = useMessagesStore((s) => s.queue);
   const setGoal = useMessagesStore((s) => s.setGoal);
   const clearGoal = useMessagesStore((s) => s.clearGoal);
+  const saveComposerDraft = useComposerDraftsStore((s) => s.save);
+  const clearComposerDraft = useComposerDraftsStore((s) => s.clear);
 
   // Pending AskUserQuestion takes over the composer slot — that's where
   // the user types anyway, and floating it inline above the chat
@@ -311,16 +322,26 @@ export function ChatComposer({
   // even with an empty text box.
   const canSend = hasText || annotationCount > 0;
 
-  // Mount the CodeMirror view once per ChatComposer instance. Switching
-  // sessions remounts the component (`session.id` is the chat-view key),
-  // so we don't have to swap docs in-place here.
+  // Mount the CodeMirror view once per ChatComposer instance. The parent keys
+  // live chat composers by session id, and the landing keys them by project id,
+  // so the initial snapshot below is the right one for the lifetime of this
+  // editor view.
   useEffect(() => {
     const host = editorHostRef.current;
     if (host === null) return;
+    const initialSnapshot =
+      useComposerDraftsStore.getState().draftsByKey[draftKey] ?? null;
+    const persistSnapshot = (state: EditorView["state"]) => {
+      saveComposerDraft(draftKey, {
+        doc: state.doc.toString(),
+        chips: allChips(state),
+      });
+    };
 
     const callbacks = {
       onSubmit: () => submitRef.current(),
       onChange: (doc: string) => setHasText(doc.trim().length > 0),
+      onSnapshotChange: persistSnapshot,
       onTrigger: (t: ActiveTrigger | null) => setTrigger(t),
       onFilesDropped: (files: ReadonlyArray<File>) =>
         filesDroppedRef.current(files),
@@ -328,10 +349,15 @@ export function ChatComposer({
     };
     const view = createComposerView({
       parent: host,
+      initialDoc: initialSnapshot?.doc ?? "",
       placeholderText:
         "Ask to make changes at the @ mentioned files or run slash commands, shift enter for next line.",
       callbacks,
     });
+    if (initialSnapshot !== null) {
+      restoreComposerChips(view, initialSnapshot.chips);
+      setHasText(view.state.doc.toString().trim().length > 0);
+    }
     editorViewRef.current = view;
     view.focus();
 
@@ -382,7 +408,7 @@ export function ChatComposer({
       view.destroy();
       editorViewRef.current = null;
     };
-  }, []);
+  }, [draftKey, saveComposerDraft]);
 
   // Picker-triggered session changes (model / provider) can shift the
   // composer's surrounding layout — chip icon swap, CliUpgradeBanner
@@ -621,6 +647,7 @@ export function ChatComposer({
     const builtin = matchBuiltin(docText, session.providerId);
     if (builtin !== null) {
       clearComposer(view);
+      clearComposerDraft(draftKey);
       dispatchBuiltin(builtin);
       return true;
     }
@@ -637,6 +664,7 @@ export function ChatComposer({
           })
         : parsed;
     clearComposer(view);
+    clearComposerDraft(draftKey);
     setGoalSendMode(false);
     // Drain the tray: the annotations now live on `input` (carried into the
     // queue too, so a mid-turn submit flushes them intact).
