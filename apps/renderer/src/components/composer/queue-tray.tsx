@@ -1,6 +1,8 @@
 import type { SessionId } from "@memoize/wire";
+import { Play } from "lucide-react";
 import { useState } from "react";
 
+import { Button } from "~/components/ui/button";
 import { useMessagesStore } from "../../store/messages.ts";
 import { QueueChip } from "./queue-chip.tsx";
 
@@ -10,7 +12,14 @@ export function QueueTray({ sessionId }: { sessionId: SessionId }) {
   const items = useMessagesStore(
     (s) => s.queueBySession[sessionId] ?? EMPTY_QUEUE,
   );
+  const paused = useMessagesStore(
+    (s) => s.queuePausedBySession[sessionId] === true,
+  );
+  const running = useMessagesStore(
+    (s) => s.runningBySession[sessionId] === true,
+  );
   const reorder = useMessagesStore((s) => s.reorderQueue);
+  const resume = useMessagesStore((s) => s.resumeQueue);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   if (items.length === 0) return null;
 
@@ -29,8 +38,22 @@ export function QueueTray({ sessionId }: { sessionId: SessionId }) {
   return (
     <div className="border-b border-border/40 bg-muted/15">
       <div className="flex items-center justify-between px-3 py-1.5 text-[11px] text-muted-foreground">
-        <span>Queue</span>
-        <span>{items.length}</span>
+        <div className="flex items-center gap-2">
+          <span>Queue</span>
+          <span>{items.length}</span>
+        </div>
+        {paused && !running ? (
+          <Button
+            variant="outline"
+            size="xs"
+            onClick={() => void resume(sessionId)}
+            aria-label="Resume queued messages"
+            className="h-6 gap-1 px-2 text-[11px]"
+          >
+            <Play className="size-3" strokeWidth={1.9} />
+            Resume
+          </Button>
+        ) : null}
       </div>
       {items.map((item, index) => (
         <QueueChip
