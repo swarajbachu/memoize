@@ -29,19 +29,57 @@ const sessionTokens = (s: {
 const PRICED_CACHE_TTL_MS = 60_000;
 
 let pricedCache: { readonly at: number; readonly value: PricedUsage } | null = null;
+let pricedInFlight: {
+  readonly forceRefresh: boolean;
+  readonly promise: Promise<PricedUsage>;
+} | null = null;
 
-const loadPricedUsageCached = (memoizeDbPath: string, cacheDir: string): Promise<PricedUsage> => {
-  const now = Date.now();
-  if (pricedCache !== null && now - pricedCache.at < PRICED_CACHE_TTL_MS) {
+export const resetUsageReportCacheForTest = (): void => {
+  pricedCache = null;
+  pricedInFlight = null;
+};
+
+export const loadPricedUsageCached = (
+  memoizeDbPath: string,
+  cacheDir: string,
+  opts: {
+    readonly forceRefresh?: boolean;
+    readonly load?: typeof loadPricedUsage;
+    readonly now?: () => number;
+  } = {},
+): Promise<PricedUsage> => {
+  const forceRefresh = opts.forceRefresh === true;
+  const now = (opts.now ?? Date.now)();
+  if (!forceRefresh && pricedCache !== null && now - pricedCache.at < PRICED_CACHE_TTL_MS) {
     return Promise.resolve(pricedCache.value);
   }
-  return loadPricedUsage({
+  if (pricedInFlight !== null && (!forceRefresh || pricedInFlight.forceRefresh)) {
+    return pricedInFlight.promise;
+  }
+  const load = opts.load ?? loadPricedUsage;
+  const promise = load({
     readOptions: { memoizeDbPath },
     pricing: { cacheDir },
   }).then((value) => {
-    pricedCache = { at: now, value };
+    pricedCache = { at: (opts.now ?? Date.now)(), value };
     return value;
+  }).finally(() => {
+    if (pricedInFlight?.promise === promise) {
+      pricedInFlight = null;
+    }
   });
+  pricedInFlight = { forceRefresh, promise };
+  return promise;
+};
+
+export const trimUsageReportForPayload = (report: ReturnType<typeof buildUsageReport>) => {
+  // The renderer never reads per-record rows, and the sessions table is
+  // paginated client-side — trim both so the RPC payload stays small.
+  const bySession = report.bySession
+    .slice()
+    .sort((a, b) => sessionTokens(b) - sessionTokens(a))
+    .slice(0, MAX_SESSIONS_IN_PAYLOAD);
+  return { ...report, records: [], bySession };
 };
 
 /**
@@ -64,7 +102,7 @@ const projectPathsFor = (projectId: FolderId | undefined) =>
 
 const UsageReport = MemoizeRpcs.toLayerHandler(
   "usage.report",
-  ({ bucket, sourceIds, since, until, timezone, projectId, includePossibleDuplicates }) =>
+  ({ bucket, sourceIds, since, until, timezone, projectId, includePossibleDuplicates, forceRefresh }) =>
     Effect.gen(function* () {
       const paths = yield* AppPaths;
       const projectPaths = yield* projectPathsFor(projectId).pipe(
@@ -74,6 +112,7 @@ const UsageReport = MemoizeRpcs.toLayerHandler(
         const { records, sources } = await loadPricedUsageCached(
           join(paths.userData, "memoize.sqlite"),
           join(paths.userData, "tokenmaxer"),
+          { forceRefresh },
         );
         const report = buildUsageReport({
           records,
@@ -89,13 +128,7 @@ const UsageReport = MemoizeRpcs.toLayerHandler(
             includePossibleDuplicates,
           },
         });
-        // The renderer never reads per-record rows, and the sessions table is
-        // paginated client-side — trim both so the RPC payload stays small.
-        const bySession = report.bySession
-          .slice()
-          .sort((a, b) => sessionTokens(b) - sessionTokens(a))
-          .slice(0, MAX_SESSIONS_IN_PAYLOAD);
-        return { ...report, records: [], bySession };
+        return trimUsageReportForPayload(report);
       }).pipe(Effect.orDie);
     }),
 );

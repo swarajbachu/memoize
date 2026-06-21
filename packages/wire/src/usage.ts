@@ -104,6 +104,7 @@ export const UsageReportRpc = Rpc.make("usage.report", {
     timezone: Schema.optional(Schema.String),
     projectId: Schema.optional(FolderId),
     includePossibleDuplicates: Schema.optional(Schema.Boolean),
+    forceRefresh: Schema.optional(Schema.Boolean),
   }),
   success: UsageReport,
 });
