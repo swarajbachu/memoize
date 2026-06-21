@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1]
+
+### Changed
+- [codex] Fix queue resume after stop (#172)
+- Base new worktrees on origin's default branch, not stale local HEAD (#171)
+- Persist composer drafts (#168)
+- Dock-style hover-reveal for the left sidebar (#170)
+
 ## [0.6.0]
 
 ### Changed
