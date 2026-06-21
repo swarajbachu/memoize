@@ -10,6 +10,13 @@ import type {
 } from "@memoize/wire";
 
 import { cn } from "~/lib/utils";
+import {
+  cacheTokens,
+  formatTokens,
+  formatUsd,
+  totalTokens,
+  type TokenRow,
+} from "~/lib/format-usage.ts";
 import { Button } from "./ui/button.tsx";
 import { Frame, FrameFooter, FrameHeader, FramePanel, FrameTitle } from "./ui/frame.tsx";
 import {
@@ -24,27 +31,6 @@ import { useUsageStore } from "../store/usage.ts";
 
 const BUCKETS: ReadonlyArray<UsageBucket> = ["daily", "weekly", "monthly", "session"];
 const PAGE_SIZE = 10;
-
-const formatTokens = (n: number): string => {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return String(n);
-};
-
-const formatUsd = (n: number | null): string => (n === null ? "—" : `$${n.toFixed(2)}`);
-
-interface TokenRow {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheCreationTokens: number;
-  reasoningTokens: number;
-}
-
-const totalTokens = (row: TokenRow): number =>
-  row.inputTokens + row.outputTokens + row.cacheReadTokens + row.cacheCreationTokens + row.reasoningTokens;
-
-const cacheTokens = (row: TokenRow): number => row.cacheReadTokens + row.cacheCreationTokens;
 
 /** Token-type series used for the stacked chart, legend, and tooltip. */
 const SERIES: ReadonlyArray<{
@@ -89,7 +75,7 @@ export function UsageDashboard({
         </div>
         <button
           type="button"
-          onClick={() => void refresh(projectId)}
+          onClick={() => void refresh(projectId, { forceRefresh: true })}
           className="inline-flex size-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:text-foreground"
           title="Refresh usage"
           aria-label="Refresh usage"
@@ -129,24 +115,27 @@ function UsageReportView({
   onBucket: (bucket: UsageBucket) => void;
 }) {
   const summary = report.summary;
-  const metrics = [
-    { label: "Total cost", value: formatUsd(summary.costUsd), hint: costHint(summary.costStatus) },
-    {
-      label: "Total tokens",
-      value: formatTokens(totalTokens(summary)),
-      hint: `${summary.recordCount.toLocaleString()} records`,
-    },
-    {
-      label: "Input / Output",
-      value: `${formatTokens(summary.inputTokens)} / ${formatTokens(summary.outputTokens)}`,
-      hint: undefined,
-    },
-    {
-      label: "Cache",
-      value: formatTokens(cacheTokens(summary)),
-      hint: summary.reasoningTokens > 0 ? `${formatTokens(summary.reasoningTokens)} reasoning` : undefined,
-    },
-  ];
+  const metrics = useMemo(
+    () => [
+      { label: "Total cost", value: formatUsd(summary.costUsd), hint: costHint(summary.costStatus) },
+      {
+        label: "Total tokens",
+        value: formatTokens(totalTokens(summary)),
+        hint: `${summary.recordCount.toLocaleString()} records`,
+      },
+      {
+        label: "Input / Output",
+        value: `${formatTokens(summary.inputTokens)} / ${formatTokens(summary.outputTokens)}`,
+        hint: undefined,
+      },
+      {
+        label: "Cache",
+        value: formatTokens(cacheTokens(summary)),
+        hint: summary.reasoningTokens > 0 ? `${formatTokens(summary.reasoningTokens)} reasoning` : undefined,
+      },
+    ],
+    [summary],
+  );
   return (
     <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
       <Frame>
@@ -429,6 +418,7 @@ function SessionsTable({ rows }: { rows: ReadonlyArray<UsageGroup> }) {
 
   const sorted = useMemo(() => {
     const value = (r: UsageGroup) => (sortKey === "cost" ? (r.costUsd ?? 0) : totalTokens(r));
+    if (sortKey === "tokens") return rows;
     return rows.slice().sort((a, b) => value(b) - value(a));
   }, [rows, sortKey]);
 
