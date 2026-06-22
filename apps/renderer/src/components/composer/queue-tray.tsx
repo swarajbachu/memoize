@@ -1,11 +1,9 @@
 import type { SessionId } from "@memoize/wire";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { PauseIcon, PlayIcon } from "@hugeicons-pro/core-bulk-rounded";
 import { useState } from "react";
 
 import { useMessagesStore } from "../../store/messages.ts";
 import { QueueChip } from "./queue-chip.tsx";
-import { TrayPill, trayPillActionClass } from "./tray-pill.tsx";
+import { TrayPill } from "./tray-pill.tsx";
 
 const EMPTY_QUEUE: ReadonlyArray<never> = [];
 
@@ -40,6 +38,22 @@ export function QueueTray({ sessionId }: { sessionId: SessionId }) {
 
   return (
     <>
+      {showPausedPill ? (
+        <TrayPill
+          flush
+          title="Queue paused because you interrupted"
+          actions={
+            <button
+              type="button"
+              onClick={() => void resume(sessionId)}
+              className="rounded px-1.5 py-0.5 text-[12px] text-muted-foreground hover:text-foreground"
+              aria-label="Resume queued messages"
+            >
+              Resume
+            </button>
+          }
+        />
+      ) : null}
       {items.map((item, index) => (
         <QueueChip
           key={item.id}
@@ -59,26 +73,6 @@ export function QueueTray({ sessionId }: { sessionId: SessionId }) {
           onDrop={() => setDragIndex(null)}
         />
       ))}
-      {showPausedPill ? (
-        <TrayPill
-          flush
-          tone="warning"
-          icon={<HugeiconsIcon icon={PauseIcon} className="size-3.5" />}
-          title="Queue paused"
-          subtitle={`${items.length} waiting`}
-          actions={
-            <button
-              type="button"
-              onClick={() => void resume(sessionId)}
-              className={`${trayPillActionClass} w-auto gap-1 px-1.5 hover:text-foreground`}
-              aria-label="Resume queued messages"
-            >
-              <HugeiconsIcon icon={PlayIcon} className="size-3.5" />
-              <span className="text-[11px]">Resume</span>
-            </button>
-          }
-        />
-      ) : null}
     </>
   );
 }

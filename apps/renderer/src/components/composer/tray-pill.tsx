@@ -61,7 +61,7 @@ export function TrayPill({
       className={cn(
         "text-[13px]",
         flush
-          ? "border-b border-border/40"
+          ? "border-b border-border/40 last:border-b-0"
           : "rounded-md border border-border/50 bg-muted/30",
         className,
       )}

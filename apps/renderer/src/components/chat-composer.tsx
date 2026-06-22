@@ -745,6 +745,32 @@ export function ChatComposer({
             />
           ) : null}
           <Frame>
+            {!isDraft ? (
+              <div className="mb-1 overflow-hidden rounded-md border border-border/50 bg-muted/30 empty:hidden empty:mb-0">
+                {session.providerId === "codex" && goal !== null ? (
+                  <GoalBanner
+                    goal={goal}
+                    inPlanMode={inPlanMode}
+                    onPause={() =>
+                      void setGoal(sessionId, {
+                        status:
+                          goal.status === "active" ? "paused" : "active",
+                      })
+                    }
+                    onSave={(objective, tokenBudget) =>
+                      void setGoal(sessionId, {
+                        objective,
+                        status: "active",
+                        tokenBudget,
+                      })
+                    }
+                    onClear={() => void clearGoal(sessionId)}
+                  />
+                ) : null}
+                <ProjectPlanTray key={sessionId} sessionId={sessionId} />
+                <QueueTray sessionId={sessionId} />
+              </div>
+            ) : null}
             <Card
               className={cn(
                 "min-h-30 rounded-lg transition-colors",
@@ -777,32 +803,6 @@ export function ChatComposer({
                 hidden
                 onChange={onPickFiles}
               />
-              {!isDraft ? (
-                <>
-                  {session.providerId === "codex" && goal !== null ? (
-                    <GoalBanner
-                      goal={goal}
-                      inPlanMode={inPlanMode}
-                      onPause={() =>
-                        void setGoal(sessionId, {
-                          status:
-                            goal.status === "active" ? "paused" : "active",
-                        })
-                      }
-                      onSave={(objective, tokenBudget) =>
-                        void setGoal(sessionId, {
-                          objective,
-                          status: "active",
-                          tokenBudget,
-                        })
-                      }
-                      onClear={() => void clearGoal(sessionId)}
-                    />
-                  ) : null}
-                  <ProjectPlanTray key={sessionId} sessionId={sessionId} />
-                  <QueueTray sessionId={sessionId} />
-                </>
-              ) : null}
               <CardPanel className="relative flex items-stretch gap-2 px-3 py-2">
                 {trigger !== null && editorViewRef.current !== null ? (
                   trigger.kind === "slash" ? (
