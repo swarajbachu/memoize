@@ -13,7 +13,8 @@ import { usePrStateStore } from "./pr-state.ts";
 /**
  * Per-`(folder, worktree)` list of working-tree changes parsed from
  * `git status --porcelain=v2`. Backs the Changes tab's "tracked / untracked"
- * sections. Polled on the same 5s cadence the top bar uses for `git.status`.
+ * sections. Refresh is driven by the server's `git.worktreeChanged` stream
+ * (top-bar opens the subscription) with a 30s poll as a backstop.
  */
 type ChangesMap = Record<string, ReadonlyArray<GitChange>>;
 

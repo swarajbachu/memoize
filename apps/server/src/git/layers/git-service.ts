@@ -9,6 +9,10 @@ import {
   Schedule,
   Stream,
 } from "effect";
+import { type FSWatcher, watch as fsWatch } from "node:fs";
+import { join as pathJoin } from "node:path";
+
+import { startWatcher } from "../../code-index/watcher.ts";
 
 import {
   GitBranchInfo,
@@ -1583,6 +1587,57 @@ export const GitServiceLive = Layer.effect(
         }),
       );
 
+    // Push-based "the working tree (or .git/index) changed" stream.
+    // Drives the renderer's git-status / git-changes stores so the dirty
+    // badge updates within the watcher debounce (~120ms) instead of
+    // waiting for the polling backstop. The recursive watcher handles
+    // file edits from anywhere — the user's editor, an agent's `Edit`
+    // tool, an external CLI. The targeted `.git/index` watcher catches
+    // `git add` / `git rm` from an outside terminal without us needing
+    // to invert the watcher's ignore set.
+    const subscribeWorktreeChanges: GitService["Type"]["subscribeWorktreeChanges"] =
+      (folderId, worktreeId) =>
+        Stream.unwrapScoped(
+          Effect.gen(function* () {
+            const cwd = yield* resolvePathForWorktree(folderId, worktreeId);
+            const mailbox = yield* Mailbox.make<
+              Record<string, never>,
+              GitFailure
+            >();
+
+            const offer = () => {
+              mailbox.unsafeOffer({});
+            };
+
+            const wt = yield* startWatcher(cwd, offer);
+
+            // .git/index may not exist yet (no commits, or `git init`
+            // hasn't run). The watch() will throw ENOENT; swallow it so
+            // we degrade to "working-tree-only" rather than killing the
+            // subscription. If the user later runs `git init`, the
+            // working-tree watcher will fire on the new `.git/` dir
+            // creation and the renderer's refresh picks up the index.
+            let indexHandle: FSWatcher | null = null;
+            try {
+              indexHandle = fsWatch(pathJoin(cwd, ".git", "index"), offer);
+              indexHandle.on("error", () => {
+                /* best-effort; working-tree watcher carries the load */
+              });
+            } catch {
+              indexHandle = null;
+            }
+
+            yield* Effect.addFinalizer(() =>
+              Effect.sync(() => {
+                wt.stop();
+                indexHandle?.close();
+              }),
+            );
+
+            return Mailbox.toStream(mailbox);
+          }),
+        );
+
     return {
       log,
       status,
@@ -1591,6 +1646,7 @@ export const GitServiceLive = Layer.effect(
       renameBranch,
       getUserName,
       subscribeHeadChanges,
+      subscribeWorktreeChanges,
       origin,
       prState,
       prDetails,
