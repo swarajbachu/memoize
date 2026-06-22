@@ -1,10 +1,11 @@
 import type { SessionId } from "@memoize/wire";
-import { Play } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { PauseIcon, PlayIcon } from "@hugeicons-pro/core-bulk-rounded";
 import { useState } from "react";
 
-import { Button } from "~/components/ui/button";
 import { useMessagesStore } from "../../store/messages.ts";
 import { QueueChip } from "./queue-chip.tsx";
+import { TrayPill, trayPillActionClass } from "./tray-pill.tsx";
 
 const EMPTY_QUEUE: ReadonlyArray<never> = [];
 
@@ -35,26 +36,10 @@ export function QueueTray({ sessionId }: { sessionId: SessionId }) {
     );
   };
 
+  const showPausedPill = paused && !running;
+
   return (
-    <div className="border-b border-border/40 bg-muted/15">
-      <div className="flex items-center justify-between px-3 py-1.5 text-[11px] text-muted-foreground">
-        <div className="flex items-center gap-2">
-          <span>Queue</span>
-          <span>{items.length}</span>
-        </div>
-        {paused && !running ? (
-          <Button
-            variant="outline"
-            size="xs"
-            onClick={() => void resume(sessionId)}
-            aria-label="Resume queued messages"
-            className="h-6 gap-1 px-2 text-[11px]"
-          >
-            <Play className="size-3" strokeWidth={1.9} />
-            Resume
-          </Button>
-        ) : null}
-      </div>
+    <>
       {items.map((item, index) => (
         <QueueChip
           key={item.id}
@@ -74,6 +59,26 @@ export function QueueTray({ sessionId }: { sessionId: SessionId }) {
           onDrop={() => setDragIndex(null)}
         />
       ))}
-    </div>
+      {showPausedPill ? (
+        <TrayPill
+          flush
+          tone="warning"
+          icon={<HugeiconsIcon icon={PauseIcon} className="size-3.5" />}
+          title="Queue paused"
+          subtitle={`${items.length} waiting`}
+          actions={
+            <button
+              type="button"
+              onClick={() => void resume(sessionId)}
+              className={`${trayPillActionClass} w-auto gap-1 px-1.5 hover:text-foreground`}
+              aria-label="Resume queued messages"
+            >
+              <HugeiconsIcon icon={PlayIcon} className="size-3.5" />
+              <span className="text-[11px]">Resume</span>
+            </button>
+          }
+        />
+      ) : null}
+    </>
   );
 }

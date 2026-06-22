@@ -12,6 +12,7 @@ import { Spinner } from "~/components/ui/spinner";
 import { cn } from "~/lib/utils";
 
 import { useMessagesStore } from "../../store/messages.ts";
+import { TrayPill, trayPillActionClass } from "./tray-pill.tsx";
 
 const TODO_STATUS = {
   pending: "pending",
@@ -250,73 +251,73 @@ export function ProjectPlanTray({ sessionId }: { sessionId: SessionId }) {
   const total = todos.length;
   const headerTodo = activeHeaderTodo(todos);
 
+  const icon =
+    headerTodo === undefined ? (
+      <HugeiconsIcon
+        icon={CheckListIcon}
+        strokeWidth={2}
+        className="size-3.5"
+        aria-hidden="true"
+      />
+    ) : (
+      <TodoStatusIcon status={headerTodo.status} running={running} />
+    );
+
   return (
-    <div className="mb-1.5 overflow-hidden rounded-lg border border-border/60 bg-card">
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        aria-expanded={expanded}
-        className={cn(
-          "flex w-full items-center gap-2 px-3 py-2 text-left transition-colors",
-          "bg-primary/10 hover:bg-primary/15",
-        )}
-      >
-        <span className="flex size-3.5 shrink-0 items-center justify-center">
-          {headerTodo === undefined ? (
-            <HugeiconsIcon
-              icon={CheckListIcon}
-              strokeWidth={2}
-              className="size-3.5 text-muted-foreground"
-              aria-hidden="true"
-            />
-          ) : (
-            <TodoStatusIcon status={headerTodo.status} running={running} />
-          )}
-        </span>
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">
-          {headerTodo?.text ?? "Project Plan"}
-        </span>
-        <span className="ml-auto text-xs text-muted-foreground tabular-nums">
-          {done} of {total} Done
-        </span>
-        <HugeiconsIcon
-          icon={ArrowDown01Icon}
-          className={cn(
-            "size-4 shrink-0 text-muted-foreground transition-transform",
-            expanded ? "rotate-180" : "",
-          )}
-          aria-hidden="true"
-        />
-      </button>
-      {expanded ? (
-        <ul className="max-h-64 space-y-0.5 overflow-y-auto px-3 py-2">
-          {todos.map((t, i) => (
-            <li key={i} className="relative flex items-start gap-2.5 pb-1.5">
-              {/* Dashed timeline connector running between item icons. */}
-              {i < todos.length - 1 ? (
+    <TrayPill
+      flush
+      icon={icon}
+      title={headerTodo?.text ?? "Project Plan"}
+      subtitle={`${done} of ${total} done`}
+      actions={
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+          aria-label={expanded ? "Collapse plan" : "Expand plan"}
+          className={trayPillActionClass}
+        >
+          <HugeiconsIcon
+            icon={ArrowDown01Icon}
+            className={cn(
+              "size-3.5 transition-transform",
+              expanded ? "rotate-180" : "",
+            )}
+            aria-hidden="true"
+          />
+        </button>
+      }
+      expanded={
+        expanded ? (
+          <ul className="max-h-64 space-y-0.5 overflow-y-auto px-3 py-2">
+            {todos.map((t, i) => (
+              <li key={i} className="relative flex items-start gap-2.5 pb-1.5">
+                {/* Dashed timeline connector running between item icons. */}
+                {i < todos.length - 1 ? (
+                  <span
+                    className="absolute left-[6.5px] top-4 bottom-0 border-l border-dashed border-border/60"
+                    aria-hidden="true"
+                  />
+                ) : null}
+                <span className="relative z-10 mt-0.5 flex size-3.5 shrink-0 items-center justify-center">
+                  <TodoStatusIcon status={t.status} running={running} />
+                </span>
                 <span
-                  className="absolute left-[6.5px] top-4 bottom-0 border-l border-dashed border-border/60"
-                  aria-hidden="true"
-                />
-              ) : null}
-              <span className="relative z-10 mt-0.5 flex size-3.5 shrink-0 items-center justify-center">
-                <TodoStatusIcon status={t.status} running={running} />
-              </span>
-              <span
-                className={cn(
-                  "text-sm leading-snug",
-                  t.status === TODO_STATUS.completed
-                    ? "text-muted-foreground"
-                    : "text-foreground",
-                )}
-              >
-                {t.text}
-              </span>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </div>
+                  className={cn(
+                    "text-[13px] leading-snug",
+                    t.status === TODO_STATUS.completed
+                      ? "text-muted-foreground"
+                      : "text-foreground",
+                  )}
+                >
+                  {t.text}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : undefined
+      }
+    />
   );
 }
 
