@@ -12,7 +12,7 @@ import { Spinner } from "~/components/ui/spinner";
 import { cn } from "~/lib/utils";
 
 import { useMessagesStore } from "../../store/messages.ts";
-import { TrayPill, trayPillActionClass } from "./tray-pill.tsx";
+import { TrayPill } from "./tray-pill.tsx";
 
 const TODO_STATUS = {
   pending: "pending",
@@ -215,9 +215,6 @@ export function ProjectPlanTray({ sessionId }: { sessionId: SessionId }) {
   const messages = useMessagesStore(
     (s) => s.messagesBySession[sessionId] ?? EMPTY_MESSAGES,
   );
-  const running = useMessagesStore(
-    (s) => s.runningBySession[sessionId] === true,
-  );
 
   // Collapsed by default; keyed per session so the expand state doesn't bleed
   // across session switches (see `key` at the call site).
@@ -260,32 +257,28 @@ export function ProjectPlanTray({ sessionId }: { sessionId: SessionId }) {
         aria-hidden="true"
       />
     ) : (
-      <TodoStatusIcon status={headerTodo.status} running={running} />
+      <TodoStatusIcon status={headerTodo.status} />
     );
 
   return (
     <TrayPill
       flush
+      className="bg-primary/10 hover:bg-primary/15"
       icon={icon}
       title={headerTodo?.text ?? "Project Plan"}
-      subtitle={`${done} of ${total} done`}
+      subtitle={`${done} of ${total} Done`}
+      onPillClick={() => setExpanded((v) => !v)}
+      ariaExpanded={expanded}
+      ariaLabel={expanded ? "Collapse plan" : "Expand plan"}
       actions={
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          aria-expanded={expanded}
-          aria-label={expanded ? "Collapse plan" : "Expand plan"}
-          className={trayPillActionClass}
-        >
-          <HugeiconsIcon
-            icon={ArrowDown01Icon}
-            className={cn(
-              "size-3.5 transition-transform",
-              expanded ? "rotate-180" : "",
-            )}
-            aria-hidden="true"
-          />
-        </button>
+        <HugeiconsIcon
+          icon={ArrowDown01Icon}
+          className={cn(
+            "size-4 text-muted-foreground transition-transform",
+            expanded ? "rotate-180" : "",
+          )}
+          aria-hidden="true"
+        />
       }
       expanded={
         expanded ? (
@@ -300,7 +293,7 @@ export function ProjectPlanTray({ sessionId }: { sessionId: SessionId }) {
                   />
                 ) : null}
                 <span className="relative z-10 mt-0.5 flex size-3.5 shrink-0 items-center justify-center">
-                  <TodoStatusIcon status={t.status} running={running} />
+                  <TodoStatusIcon status={t.status} />
                 </span>
                 <span
                   className={cn(
@@ -321,13 +314,7 @@ export function ProjectPlanTray({ sessionId }: { sessionId: SessionId }) {
   );
 }
 
-function TodoStatusIcon({
-  status,
-  running,
-}: {
-  status: TodoStatus;
-  running: boolean;
-}) {
+function TodoStatusIcon({ status }: { status: TodoStatus }) {
   if (status === TODO_STATUS.completed) {
     return (
       <HugeiconsIcon
@@ -339,23 +326,7 @@ function TodoStatusIcon({
     );
   }
   if (status === TODO_STATUS.inProgress) {
-    // Only animate while the turn is actually running. Once the agent stops
-    // (or finishes) the item stays marked current in the data, so a
-    // spinning loader would imply work is still happening when it isn't — and
-    // makes the whole composer read as "busy". Show a static filled ring
-    // instead to mark "current step, not running".
-    if (running)
-      return (
-        <Spinner className="size-3.5 text-primary" />
-      );
-    return (
-      <span
-        className="flex size-3.5 items-center justify-center rounded-full border-2 border-primary"
-        aria-label="In progress (paused)"
-      >
-        <span className="size-1 rounded-full bg-primary" />
-      </span>
-    );
+    return <Spinner className="size-3.5 text-primary" />;
   }
   return (
     <span

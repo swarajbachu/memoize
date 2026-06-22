@@ -32,6 +32,14 @@ interface TrayPillProps
    * trays that live inside the composer Card and want to share its surface.
    */
   readonly flush?: boolean;
+  /**
+   * When provided, the icon/title/subtitle area becomes a button that fires
+   * this handler. Actions stay outside the button so they keep their own
+   * click behavior. Use for the plan-tray "click header to expand" pattern.
+   */
+  readonly onPillClick?: () => void;
+  readonly ariaExpanded?: boolean;
+  readonly ariaLabel?: string;
 }
 
 /**
@@ -52,10 +60,62 @@ export function TrayPill({
   tone = "default",
   expanded,
   flush = false,
+  onPillClick,
+  ariaExpanded,
+  ariaLabel,
   className,
   children,
   ...rest
 }: TrayPillProps) {
+  const iconNode =
+    icon !== undefined ? (
+      <span
+        className={cn(
+          "flex size-4 shrink-0 items-center justify-center",
+          TONE_ICON[tone],
+        )}
+      >
+        {icon}
+      </span>
+    ) : null;
+
+  const titleNode = (
+    <div className="flex min-w-0 flex-1 items-center gap-2">
+      <span
+        className={cn(
+          "min-w-0 truncate font-medium",
+          TONE_TITLE[tone],
+        )}
+      >
+        {title}
+      </span>
+      {subtitle !== undefined ? (
+        <span className="min-w-0 truncate text-muted-foreground">
+          {subtitle}
+        </span>
+      ) : null}
+    </div>
+  );
+
+  const rowBody =
+    onPillClick !== undefined ? (
+      <button
+        type="button"
+        onClick={onPillClick}
+        aria-expanded={ariaExpanded}
+        aria-label={ariaLabel}
+        className="flex min-w-0 flex-1 items-center gap-2 text-left outline-none"
+      >
+        {iconNode}
+        {titleNode}
+      </button>
+    ) : (
+      <>
+        {iconNode}
+        {titleNode}
+      </>
+    );
+
   return (
     <div
       className={cn(
@@ -69,31 +129,7 @@ export function TrayPill({
     >
       <div className="flex min-w-0 items-center gap-2 px-3 py-1.5">
         {leading !== undefined ? leading : null}
-        {icon !== undefined ? (
-          <span
-            className={cn(
-              "flex size-4 shrink-0 items-center justify-center",
-              TONE_ICON[tone],
-            )}
-          >
-            {icon}
-          </span>
-        ) : null}
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <span
-            className={cn(
-              "min-w-0 truncate font-medium",
-              TONE_TITLE[tone],
-            )}
-          >
-            {title}
-          </span>
-          {subtitle !== undefined ? (
-            <span className="min-w-0 truncate text-muted-foreground">
-              {subtitle}
-            </span>
-          ) : null}
-        </div>
+        {rowBody}
         {actions !== undefined ? (
           <div className="flex shrink-0 items-center gap-0.5">{actions}</div>
         ) : null}
