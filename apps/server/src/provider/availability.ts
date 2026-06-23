@@ -1197,11 +1197,16 @@ const probeOne = (
     }
 
     // Version-gated features the installed CLI supports (pre-session UI gate).
-    // Only Codex declares gated features today; others resolve to `[]`.
+    // Codex resolves its set from the CLI version; Grok ships a single
+    // curl-installed channel with no version floor, so we advertise its
+    // `goalMode` (native `/goal`, forwarded as a slash command by the driver)
+    // unconditionally. Other providers resolve to `[]`.
     const capabilities =
       probe.providerId === "codex"
         ? resolveCodexCapabilities(parsedVersion)
-        : [];
+        : probe.providerId === "grok"
+          ? ["goalMode"]
+          : [];
 
     // Informational "update available" layer — independent of the SDK floor.
     // Only providers with a registry package are checked; the rest report

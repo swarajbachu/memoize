@@ -493,7 +493,8 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
             }),
         ),
       );
-      if (lookupSessionProvider(sessionId) === "codex") {
+      const goalProvider = lookupSessionProvider(sessionId);
+      if (goalProvider === "codex" || goalProvider === "grok") {
         goalFiber = Effect.runFork(
           Stream.runForEach(
             (client as unknown as GoalRpcClient).session["goal.stream"]({
@@ -529,12 +530,17 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
     // Optimistic — flip running to true before the server status arrives so
     // the composer's Send→Interrupt swap doesn't flash through "idle" while
     // the RPC round-trip happens.
+    // Codex goal sends don't run a turn immediately (Codex drives its own
+    // status via native goal notifications), so we skip the optimistic flip
+    // there. Grok runs goal mode by forwarding `/goal` as a real prompt turn,
+    // so it should show the running indicator like any normal send.
+    const skipOptimisticRunning =
+      opts?.asGoal === true && lookupSessionProvider(sessionId) === "codex";
     set((s) => ({
       errorBySession: { ...s.errorBySession, [sessionId]: null },
-      runningBySession:
-        opts?.asGoal === true
-          ? s.runningBySession
-          : { ...s.runningBySession, [sessionId]: true },
+      runningBySession: skipOptimisticRunning
+        ? s.runningBySession
+        : { ...s.runningBySession, [sessionId]: true },
     }));
     try {
       const client = await getMessagesRpcClient();

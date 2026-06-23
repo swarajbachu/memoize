@@ -275,11 +275,19 @@ export function ChatComposer({
 
   const [hasText, setHasText] = useState(false);
   const [goalSendMode, setGoalSendMode] = useState(false);
-  // Version-gated Codex features the installed CLI supports (from the
-  // availability probe). Drives whether goal/fast controls render at all.
-  const codexCapabilities = useProvidersStore((s) =>
+  // Provider features the installed CLI supports (from the availability
+  // probe). Drives whether goal/fast controls render at all. Codex resolves
+  // these from its CLI version; Grok advertises `goalMode` unconditionally.
+  const capabilities = useProvidersStore((s) =>
     s.capabilitiesFor(session.providerId),
   );
+  // Goal mode is supported by Codex (native `thread/goal/*`, version-gated via
+  // the `goalMode` capability) and Grok (native `/goal`, forwarded by the
+  // driver). Grok has no version floor, so it's always goal-capable and
+  // doesn't depend on the availability probe.
+  const goalCapable =
+    session.providerId === "grok" ||
+    (session.providerId === "codex" && capabilities.includes("goalMode"));
   const [trigger, setTrigger] = useState<ActiveTrigger | null>(null);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -747,7 +755,7 @@ export function ChatComposer({
           <Frame>
             {!isDraft ? (
               <div className="mb-1 overflow-hidden rounded-md border border-border/50 bg-muted/30 empty:hidden empty:mb-0">
-                {session.providerId === "codex" && goal !== null ? (
+                {goalCapable && goal !== null ? (
                   <GoalBanner
                     goal={goal}
                     inPlanMode={inPlanMode}
@@ -894,11 +902,10 @@ export function ChatComposer({
                   // `fastMode` descriptor and isn't version-gated, so only
                   // filter when the provider gates it.
                   (session.providerId !== "codex" ||
-                    codexCapabilities.includes("fastMode")) && (
+                    capabilities.includes("fastMode")) && (
                     <FastModeToggle sessionId={sessionId} />
                   )}
-                {session.providerId === "codex" &&
-                codexCapabilities.includes("goalMode") ? (
+                {goalCapable ? (
                   <GoalModeToggle
                     active={goalSendMode}
                     hasGoal={goal !== null}

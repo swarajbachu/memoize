@@ -2387,12 +2387,17 @@ export const MessageStoreLive = Layer.scoped(
         }),
       );
 
-    const ensureCodexGoalSession = (
+    // Providers that support goal mode. Codex backs it with `thread/goal/*`
+    // RPCs; Grok forwards to its native `/goal` slash command with
+    // driver-local state. Both go through `setGoalWithLiveProvider` →
+    // `provider.setGoal`, which routes to the right handle.
+    const goalCapableProviders = new Set<ProviderId>(["codex", "grok"]);
+    const ensureGoalSession = (
       sessionId: SessionId,
     ): Effect.Effect<Session, SessionNotFoundError | GoalUnsupportedError> =>
       Effect.gen(function* () {
         const session = yield* lookupSession(sessionId);
-        if (session.providerId !== "codex") {
+        if (!goalCapableProviders.has(session.providerId)) {
           return yield* Effect.fail(
             new GoalUnsupportedError({ providerId: session.providerId }),
           );
@@ -2495,7 +2500,7 @@ export const MessageStoreLive = Layer.scoped(
 
     const getGoal: MessageStoreShape["getGoal"] = (sessionId) =>
       Effect.gen(function* () {
-        yield* ensureCodexGoalSession(sessionId);
+        yield* ensureGoalSession(sessionId);
         const goal = yield* provider
           .getGoal(sessionId)
           .pipe(
@@ -2510,7 +2515,7 @@ export const MessageStoreLive = Layer.scoped(
 
     const setGoal: MessageStoreShape["setGoal"] = (sessionId, goalInput) =>
       Effect.gen(function* () {
-        const session = yield* ensureCodexGoalSession(sessionId);
+        const session = yield* ensureGoalSession(sessionId);
         const goal = yield* setGoalWithLiveProvider(session, goalInput);
         yield* publishGoal(sessionId, goal);
         return goal;
@@ -2518,7 +2523,7 @@ export const MessageStoreLive = Layer.scoped(
 
     const clearGoal: MessageStoreShape["clearGoal"] = (sessionId) =>
       Effect.gen(function* () {
-        yield* ensureCodexGoalSession(sessionId);
+        yield* ensureGoalSession(sessionId);
         yield* provider
           .clearGoal(sessionId)
           .pipe(
@@ -2533,7 +2538,7 @@ export const MessageStoreLive = Layer.scoped(
     const streamGoal: MessageStoreShape["streamGoal"] = (sessionId) =>
       Stream.unwrapScoped(
         Effect.gen(function* () {
-          yield* ensureCodexGoalSession(sessionId);
+          yield* ensureGoalSession(sessionId);
           const pubsub = yield* getOrMakeGoalPubsub(sessionId);
           const dequeue = yield* pubsub.subscribe;
           const cached = goalsBySession.get(sessionId);
@@ -2687,7 +2692,7 @@ export const MessageStoreLive = Layer.scoped(
     ): Effect.Effect<boolean, SessionNotFoundError> =>
       Effect.gen(function* () {
         const session = yield* lookupSession(sessionId);
-        if (asGoal !== true && session.providerId === "codex") {
+        if (asGoal !== true && goalCapableProviders.has(session.providerId)) {
           const goal = goalsBySession.get(sessionId);
           const trimmed = text.trim();
           if (
@@ -2775,11 +2780,11 @@ export const MessageStoreLive = Layer.scoped(
         if (asGoal === true) {
           const objective = text.trim();
           if (objective.length === 0) return false;
-          if (session.providerId !== "codex") {
+          if (!goalCapableProviders.has(session.providerId)) {
             const persistedError = yield* persistMessage(sessionId, {
               _tag: "error",
               message:
-                "Goal mode is currently only supported for Codex sessions.",
+                "Goal mode is currently only supported for Codex and Grok sessions.",
             });
             yield* broadcastMessage(sessionId, persistedError);
             yield* ndjsonAppend(sessionId, persistedError);
@@ -2793,8 +2798,8 @@ export const MessageStoreLive = Layer.scoped(
               Effect.gen(function* () {
                 const message =
                   err._tag === "SessionStartError"
-                    ? `Goal mode could not start Codex: ${err.reason}`
-                    : "Goal mode could not start Codex for this session.";
+                    ? `Goal mode could not start ${session.providerId}: ${err.reason}`
+                    : `Goal mode could not start ${session.providerId} for this session.`;
                 const persistedError = yield* persistMessage(sessionId, {
                   _tag: "error",
                   message,
@@ -2808,6 +2813,13 @@ export const MessageStoreLive = Layer.scoped(
           );
           if (goal === null) return false;
           yield* publishGoal(sessionId, goal);
+          // Grok runs goal mode by forwarding `/goal` as a real prompt turn,
+          // so reflect the running turn the way a normal send does — the
+          // driver emits `Status: idle` when the goal run finishes. Codex
+          // drives its own status via native goal notifications, so leave it.
+          if (session.providerId === "grok") {
+            yield* setStatus(sessionId, "running");
+          }
           return true;
         }
         // First attempt: push into the existing provider session. If that
