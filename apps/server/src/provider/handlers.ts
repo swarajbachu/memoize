@@ -69,11 +69,11 @@ const Events = MemoizeRpcs.toLayerHandler("agent.events", ({ sessionId }) =>
 );
 
 // Renderer subscribes to this when the user clicks the "Sign in" button on a
-// provider card. Today only the cursor handler does real work — it spawns
-// `cursor-agent login`, extracts the OAuth URL, and streams progress back.
-// When the renderer unsubscribes (cancel, navigate away, IPC drop), the
-// stream's scope closes and the child process is SIGTERM'd by the service's
-// finalizer.
+// provider card or in an auth error bubble. `cursor` and `claude` have real
+// handlers — they spawn the provider's `login` subcommand, extract the OAuth
+// URL, and stream progress back. When the renderer unsubscribes (cancel,
+// navigate away, IPC drop), the stream's scope closes and the child process is
+// SIGTERM'd by the service's finalizer.
 const StartLogin = MemoizeRpcs.toLayerHandler(
   "agent.startLogin",
   ({ providerId }) => startProviderLogin(providerId),
