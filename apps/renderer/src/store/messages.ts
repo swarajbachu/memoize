@@ -43,7 +43,7 @@ export type ChatError =
   | { readonly kind: "generic"; readonly message: string };
 
 const AUTH_PATTERN =
-  /\b401\b|\bunauthorized\b|expired token|invalid_grant|signed?\s?out|sign\s?in required|please log in|authorizationrequired|auth\(authorizationrequired\)|authentication failed/i;
+  /\b401\b|\bunauthorized\b|expired token|invalid_grant|signed?\s?out|sign\s?in required|please log in|please run \/login|not logged in|invalid authentication credentials|invalid api key|authorizationrequired|auth\(authorizationrequired\)|authentication failed/i;
 const NETWORK_PATTERN =
   /\b(network|fetch|econn|enotfound|etimedout|timeout|getaddrinfo)\b/i;
 
@@ -90,7 +90,7 @@ const readSessionModelOptions = (
   return Object.keys(out).length === 0 ? null : out;
 };
 
-const classifyMessage = (
+export const classifyMessage = (
   message: string,
   providerId?: ProviderId,
 ): ChatError => {
@@ -106,7 +106,7 @@ const classifyMessage = (
 const classifyError = (err: unknown, providerId?: ProviderId): ChatError =>
   classifyMessage(formatError(err), providerId);
 
-const lookupSessionProvider = (
+export const lookupSessionProvider = (
   sessionId: SessionId,
 ): ProviderId | undefined => {
   const buckets = useSessionsStore.getState().sessionsByProject;

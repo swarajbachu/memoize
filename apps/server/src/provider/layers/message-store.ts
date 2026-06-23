@@ -491,6 +491,17 @@ const formatProviderFailure = (cause: unknown): string => {
   return String(cause);
 };
 
+// Auth failures (expired/missing OAuth, `401 Invalid authentication
+// credentials`, `Please run /login`) are not recoverable by re-spawning the
+// provider — restarting just hits the same 401, which is what left sessions
+// retrying forever and eventually surfacing an unrelated transient (e.g. a
+// Cloudflare 522). When the failure looks like auth we skip the restart and
+// surface the error so the renderer can show the inline "Sign in" button.
+const looksLikeAuthFailure = (reason: string): boolean =>
+  /\b401\b|\bunauthorized\b|invalid authentication credentials|please run \/login|please log ?in|invalid api key|authentication failed|authorizationrequired/i.test(
+    reason,
+  );
+
 export const MessageStoreLive = Layer.scoped(
   MessageStore,
   Effect.gen(function* () {
@@ -1138,6 +1149,16 @@ export const MessageStoreLive = Layer.scoped(
               const persisted = yield* persistMessage(sessionId, content);
               yield* broadcastMessage(sessionId, persisted);
               yield* ndjsonAppend(sessionId, persisted);
+              // A provider `Error` event terminates the turn but, unlike a
+              // `Completed`, carries no lifecycle reason of its own — so
+              // without this the session is left pinned at `running` and the
+              // composer / setup card spin forever (this is the "stuck on the
+              // loading screen" symptom for auth failures, which surface as a
+              // mid-stream Error with no trailing result message). Flip to
+              // `error` so the renderer shows the error bubble + login CTA.
+              if (event._tag === "Error") {
+                yield* setStatus(sessionId, "error");
+              }
             }),
           ).pipe(
             Effect.catchAllCause((cause) =>
@@ -1437,6 +1458,16 @@ export const MessageStoreLive = Layer.scoped(
                     yield* Effect.logWarning(
                       `[MessageStore] provider.start failed for session ${sessionId} (${input.providerId}): ${err.reason}`,
                     );
+                    // Persist the failure as an error message so the renderer
+                    // can render it (and classify auth failures into the inline
+                    // "Sign in" CTA) instead of leaving the session stuck on the
+                    // booting spinner with no explanation.
+                    const persistedError = yield* persistMessage(sessionId, {
+                      _tag: "error",
+                      message: err.reason,
+                    });
+                    yield* broadcastMessage(sessionId, persistedError);
+                    yield* ndjsonAppend(sessionId, persistedError);
                     yield* setStatus(sessionId, "error");
                   }),
                 ),
@@ -2787,6 +2818,21 @@ export const MessageStoreLive = Layer.scoped(
             (attachments ?? []).length
           })`,
         );
+        // If the session previously errored — typically an auth failure the
+        // user has since fixed by signing in — the in-memory provider process
+        // is stale: for Claude it was spawned without valid credentials and
+        // won't re-read the keychain on its own. Drop it (mirrors setModel's
+        // teardown) so the send below lazy-restarts a fresh process that picks
+        // up the new login, instead of silently re-pushing into the dead one.
+        const latestForSend = yield* lookupSession(sessionId).pipe(
+          Effect.orDie,
+        );
+        if (latestForSend.status === "error") {
+          yield* provider
+            .close(sessionId)
+            .pipe(Effect.catchAll(() => Effect.void));
+          yield* interruptProviderFiber(sessionId);
+        }
         const sendResult = yield* provider
           .send(sessionId, sendText, cleanAttachments, fileRefs, skillRefs)
           .pipe(
@@ -2810,6 +2856,23 @@ export const MessageStoreLive = Layer.scoped(
           if (looksLikeGrokAuthWorkerDeath) {
             yield* setStatus(sessionId, "running");
             return true;
+          }
+
+          // Auth failures aren't recoverable by restarting — re-spawning hits
+          // the same 401, which is the infinite-retry / stuck-loading bug.
+          // Persist the error so the renderer shows the "Sign in" CTA and stop.
+          if (looksLikeAuthFailure(sendResult.reason)) {
+            console.log(
+              `[message-store.sendMessage] provider.send failed with auth error for ${sessionId}; skipping restart`,
+            );
+            const persistedError = yield* persistMessage(sessionId, {
+              _tag: "error",
+              message: sendResult.reason,
+            });
+            yield* broadcastMessage(sessionId, persistedError);
+            yield* ndjsonAppend(sessionId, persistedError);
+            yield* setStatus(sessionId, "error");
+            return false;
           }
 
           console.log(
