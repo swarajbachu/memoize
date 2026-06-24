@@ -53,6 +53,16 @@ const HeadChanged = MemoizeRpcs.toLayerHandler(
     ),
 );
 
+const WorktreeChanged = MemoizeRpcs.toLayerHandler(
+  "git.worktreeChanged",
+  ({ folderId, worktreeId }) =>
+    Stream.unwrap(
+      Effect.map(GitService, (svc) =>
+        svc.subscribeWorktreeChanges(folderId, worktreeId ?? null),
+      ),
+    ),
+);
+
 const Origin = MemoizeRpcs.toLayerHandler("git.origin", ({ folderId }) =>
   Effect.flatMap(GitService, (svc) => svc.origin(folderId)),
 );
@@ -163,6 +173,7 @@ export const GitHandlersLayer = Layer.mergeAll(
   RenameBranch,
   UserName,
   HeadChanged,
+  WorktreeChanged,
   Origin,
   PrState,
   PrDetails,

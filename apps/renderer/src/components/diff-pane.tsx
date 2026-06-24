@@ -90,14 +90,15 @@ export function DiffPane({
   // Paths the user has unchecked for the next commit (see `committable` below).
   const [excluded, setExcluded] = useState<Set<string>>(() => new Set());
 
-  // Poll the working tree on the same 5s cadence the top bar uses for
-  // `git status`, so the Changes tab stays in sync with the dirty-count badge.
+  // Live updates come from the `git.worktreeChanged` stream that the
+  // top bar opens (it drives both stores). The 30s tick is just a
+  // backstop in case the watcher misses an event or the stream dropped.
   useEffect(() => {
     if (folderId === null) return;
     void refreshChanges(folderId, worktreeId);
     const id = window.setInterval(
       () => void refreshChanges(folderId, worktreeId),
-      5000,
+      30000,
     );
     return () => window.clearInterval(id);
   }, [folderId, worktreeId, refreshChanges]);

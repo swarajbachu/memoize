@@ -7,9 +7,10 @@ import { getRpcClient } from "../lib/rpc-client.ts";
 
 /**
  * `git status` summary used by the top bar to decide which workflow button
- * to surface (Commit & push / Create PR / View PR). Polled every 5 s while
- * a folder is selected — `git status` is cheap and the latency budget is
- * "user perceives the right button shortly after they touch a file."
+ * to surface (Commit & push / Create PR / View PR). Refresh is driven by
+ * the server's `git.worktreeChanged` stream (sub-second after any FS
+ * change) with a 30s poll as a backstop for filesystems where `fs.watch`
+ * is unreliable. The subscription is opened in `top-bar.tsx`.
  *
  * Keyed by `(folderId, worktreeId)` because a session running in a worktree
  * has its own branch + dirty state that differs from the main checkout.

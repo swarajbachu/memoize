@@ -1,7 +1,7 @@
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Alert01Icon, ArrowDown01Icon, Copy01Icon, GitBranchIcon, GitMergeIcon, LinkSquare01Icon, Loading02Icon, MagicWand01Icon, PanelLeftCloseIcon, PanelLeftOpenIcon, PanelRightCloseIcon, PanelRightOpenIcon, PencilEdit01Icon, PlayIcon, Tick01Icon, Upload01Icon, Wrench01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import { ArchiveArrowDownIcon, GitPullRequestIcon } from "@hugeicons-pro/core-solid-rounded";
-import { Effect } from "effect";
+import { Effect, Fiber, Stream } from "effect";
 import {
   type CSSProperties,
   type FormEvent,
@@ -31,6 +31,7 @@ import {
 import { TooltipShortcut } from "./projects-sidebar.tsx";
 import { useActiveContext } from "../store/active-workspace.ts";
 import { useChatsStore } from "../store/chats.ts";
+import { useGitChangesStore } from "../store/git-changes.ts";
 import { gitStatusKey, useGitStatusStore } from "../store/git-status.ts";
 import { useMergePrefs } from "../store/merge-prefs.ts";
 import { useMessagesStore } from "../store/messages.ts";
@@ -159,18 +160,43 @@ export function TopBarMain() {
   const [branchError, setBranchError] = useState<string | null>(null);
   const [renameOpen, setRenameOpen] = useState(false);
 
-  // Poll both `git status` (branch / dirty / ahead) and the PR state (CI
-  // rollup, mergeable, auto-merge) on the same 5s tick so the top-bar PR
-  // cluster shows live "N checks running" without the PR pane being open.
+  // Working-tree changes drive `git status` + the Changes tab via a
+  // server-pushed `git.worktreeChanged` stream — sub-second updates on
+  // any edit, internal or external. PR state still needs a polling tick
+  // (it's GitHub state, not local FS). We poll on a 30s backstop too,
+  // for filesystems where `fs.watch` is unreliable (network mounts,
+  // FUSE) and to recover if the stream silently drops.
   useEffect(() => {
     if (folderId === null) return;
-    const tick = () => {
+    let cancelled = false;
+    const refreshLocal = () => {
       void refresh(folderId, worktreeId);
+      void useGitChangesStore.getState().refresh(folderId, worktreeId);
+    };
+    const tick = () => {
+      refreshLocal();
       void refreshPr(folderId, worktreeId);
     };
     tick();
-    const id = window.setInterval(tick, 5000);
-    return () => window.clearInterval(id);
+    const id = window.setInterval(tick, 30000);
+    let fiber: Fiber.RuntimeFiber<void, unknown> | null = null;
+    void (async () => {
+      const client = await getRpcClient();
+      if (cancelled) return;
+      fiber = Effect.runFork(
+        Stream.runForEach(
+          client.git.worktreeChanged({ folderId, worktreeId }),
+          () => Effect.sync(refreshLocal),
+        ).pipe(Effect.catchAll(() => Effect.void)),
+      );
+    })();
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+      if (fiber !== null) {
+        void Effect.runPromise(Fiber.interrupt(fiber)).catch(() => {});
+      }
+    };
   }, [folderId, refresh, refreshPr, worktreeId]);
 
   // After a worktree/project switch the status row in `byKey` is keyed by

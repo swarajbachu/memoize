@@ -60,6 +60,17 @@ export interface GitServiceShape {
   readonly subscribeHeadChanges: (
     folderId: FolderId,
   ) => Stream.Stream<{ readonly sha: string }, GitFailure>;
+  /**
+   * Push-based notification that the working tree (or `.git/index`) for the
+   * given `(folder, worktree)` changed. The empty payload is deliberate — the
+   * subscriber re-fetches whatever git query it cares about. Server-side
+   * debounce coalesces bursts (save-on-build, `git checkout` touching many
+   * files) into one event.
+   */
+  readonly subscribeWorktreeChanges: (
+    folderId: FolderId,
+    worktreeId?: WorktreeId | null,
+  ) => Stream.Stream<Record<string, never>, GitFailure>;
   readonly origin: (
     folderId: FolderId,
   ) => Effect.Effect<GitOriginInfo | null, GitFailure>;

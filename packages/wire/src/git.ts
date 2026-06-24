@@ -128,6 +128,23 @@ export const GitHeadChangedRpc = Rpc.make("git.headChanged", {
   stream: true,
 });
 
+/**
+ * Push-based notification that the working tree (or `.git/index`) for a
+ * `(folder, worktree)` likely changed and consumers should re-fetch
+ * `git.status` / `git.changes`. The payload is empty — the subscriber's
+ * job is to re-run whichever query it cares about. Debounced server-side
+ * so a save-on-build that touches many files becomes one event.
+ */
+export const GitWorktreeChangedRpc = Rpc.make("git.worktreeChanged", {
+  payload: Schema.Struct({
+    folderId: FolderId,
+    worktreeId: Schema.optional(Schema.NullOr(WorktreeId)),
+  }),
+  success: Schema.Struct({}),
+  error: GitErrors,
+  stream: true,
+});
+
 export class GitOriginInfo extends Schema.Class<GitOriginInfo>("GitOriginInfo")(
   {
     host: Schema.String,

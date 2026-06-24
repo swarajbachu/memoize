@@ -60,6 +60,7 @@ import {
   GitStatusRpc,
   GitSwitchBranchRpc,
   GitUserNameRpc,
+  GitWorktreeChangedRpc,
 } from "./git.ts";
 import {
   PermissionDecideRpc,
@@ -193,6 +194,7 @@ export const MemoizeRpcs = RpcGroup.make(
   GitRenameBranchRpc,
   GitUserNameRpc,
   GitHeadChangedRpc,
+  GitWorktreeChangedRpc,
   GitOriginRpc,
   GitPrStateRpc,
   GitPrDetailsRpc,
