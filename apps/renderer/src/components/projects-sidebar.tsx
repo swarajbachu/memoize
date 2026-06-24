@@ -8,6 +8,7 @@ import {
   HelpCircleIcon,
   PencilIcon,
   Settings01Icon,
+  SquareLock01Icon,
   TaskDone01Icon,
 } from "@hugeicons-pro/core-bulk-rounded";
 import {
@@ -32,6 +33,7 @@ import { Menu, MenuItem, MenuPopup } from "~/components/ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import {
   deriveChatAttentionState,
+  derivePermissionAttention,
   type ChatAttentionState,
   mergeChatAttentionStates,
 } from "~/lib/chat-attention-state";
@@ -40,6 +42,7 @@ import { noteSessionStatusForCompletionSound } from "../lib/completion-sounds.ts
 import { formatShortcut } from "../lib/shortcuts.ts";
 import { getRpcClient } from "../lib/rpc-client.ts";
 import { isChatUnread, useChatsStore } from "../store/chats.ts";
+import { usePermissionsStore } from "../store/permissions.ts";
 import { gitDiffStatKey, useGitDiffStatStore } from "../store/git-diff-stat.ts";
 import { useMessagesStore } from "../store/messages.ts";
 import { prStateKey, usePrStateStore } from "../store/pr-state.ts";
@@ -364,7 +367,8 @@ function SidebarFooter() {
   const activeMainTab = useUiStore((s) => s.activeMainTab);
   const usageScope = useUiStore((s) => s.usageScope);
   const view = useUiStore((s) => s.view);
-  const usageActive = view === "chat" && activeMainTab === "usage" && usageScope === "global";
+  const usageActive =
+    view === "chat" && activeMainTab === "usage" && usageScope === "global";
   return (
     <div className="flex flex-col gap-0.5 border-t border-sidebar-border/40 px-2 py-1.5">
       <Tooltip>
@@ -375,7 +379,8 @@ function SidebarFooter() {
               onClick={() => openUsage("global")}
               className={cn(
                 "flex w-full items-center gap-2 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
-                usageActive && "bg-sidebar-accent/60 text-sidebar-accent-foreground",
+                usageActive &&
+                  "bg-sidebar-accent/60 text-sidebar-accent-foreground",
               )}
             >
               <HugeiconsIcon icon={Analytics01Icon} className="size-3.5" />
@@ -519,9 +524,19 @@ function ProjectGroup({
       ),
     ),
   );
+  const liveSessionIdSet = useMemo(
+    () => new Set(liveSessionIds),
+    [liveSessionIds],
+  );
+  // Pending permission prompts never become messages, so they bypass
+  // `headerMessageAttention`. Pull them straight from the permissions store.
+  const headerPermissionAttention = usePermissionsStore((s) =>
+    derivePermissionAttention(Object.values(s.requestsById), liveSessionIdSet),
+  );
   const headerAttention = mergeChatAttentionStates([
     headerRunning,
     headerMessageAttention,
+    headerPermissionAttention,
   ]);
   const showHeaderAttention = headerAttention !== "idle" && !isExpanded;
 
@@ -746,7 +761,10 @@ function NewChatButton({ projectId }: { projectId: FolderId }) {
         }
       />
       <TooltipPopup>
-        <TooltipShortcut label="New chat" shortcut={formatShortcut("new-chat")} />
+        <TooltipShortcut
+          label="New chat"
+          shortcut={formatShortcut("new-chat")}
+        />
       </TooltipPopup>
     </Tooltip>
   );
@@ -829,9 +847,16 @@ function ChatRow({ chat }: { chat: Chat }) {
       ),
     ),
   );
+  const sessionIdSet = useMemo(() => new Set(sessionIds), [sessionIds]);
+  // Supervised-mode permission prompts live only in the permissions store —
+  // they never arrive as messages, so they'd otherwise leave the row dark.
+  const permissionAttention = usePermissionsStore((s) =>
+    derivePermissionAttention(Object.values(s.requestsById), sessionIdSet),
+  );
   const attentionState = mergeChatAttentionStates([
     runningAttention,
     messageAttention,
+    permissionAttention,
   ]);
 
   // Highlight this row when its own chat is selected, OR when the active
@@ -843,8 +868,13 @@ function ChatRow({ chat }: { chat: Chat }) {
   }, [selectedSessionId, sessionIds]);
   const isSelected = selectedChatId === chat.id || sessionBelongsToChat;
   const isArchived = chat.archivedAt !== null;
-  // Unread = new activity the user hasn't seen. Never on the selected row.
-  const isUnread = !isSelected && isChatUnread(chat, selectedChatId);
+  // Unread = new activity the user hasn't seen. A pending permission prompt
+  // also counts: the agent is blocked on the user even though no new message
+  // landed to advance `lastMessageAt`. Never on the selected row.
+  const isUnread =
+    !isSelected &&
+    (isChatUnread(chat, selectedChatId) ||
+      permissionAttention === "permission");
 
   const branchState: BranchState = isArchived
     ? "archived"
@@ -899,7 +929,9 @@ function ChatRow({ chat }: { chat: Chat }) {
     setMenuOpen(true);
   };
 
-  const primaryActionIcon = isArchived ? ArchiveArrowUpIcon : ArchiveArrowDownIcon;
+  const primaryActionIcon = isArchived
+    ? ArchiveArrowUpIcon
+    : ArchiveArrowDownIcon;
   const primaryActionLabel = isArchived ? "Unarchive" : "Archive";
 
   return (
@@ -1035,7 +1067,7 @@ function ChatAttentionIcon({
 
   const color = selected
     ? "text-sidebar-accent-foreground"
-    : state === "question"
+    : state === "question" || state === "permission"
       ? "text-amber-300"
       : state === "planReady"
         ? "text-emerald-300"
@@ -1045,13 +1077,17 @@ function ChatAttentionIcon({
       ? context === "project"
         ? "A chat is waiting for your answer"
         : "Waiting for your answer"
-      : state === "planReady"
+      : state === "permission"
         ? context === "project"
-          ? "A chat has a plan ready to approve"
-          : "Plan ready to approve"
-        : context === "project"
-          ? "Agent is working in a session"
-          : "Agent is working";
+          ? "A chat is waiting for permission"
+          : "Waiting for permission"
+        : state === "planReady"
+          ? context === "project"
+            ? "A chat has a plan ready to approve"
+            : "Plan ready to approve"
+          : context === "project"
+            ? "Agent is working in a session"
+            : "Agent is working";
 
   return (
     <span
@@ -1067,6 +1103,8 @@ function ChatAttentionIcon({
         <Spinner className="size-4" />
       ) : state === "question" ? (
         <HugeiconsIcon icon={HelpCircleIcon} className="size-3.5" />
+      ) : state === "permission" ? (
+        <HugeiconsIcon icon={SquareLock01Icon} className="size-3.5" />
       ) : (
         <HugeiconsIcon icon={TaskDone01Icon} className="size-3.5" />
       )}
