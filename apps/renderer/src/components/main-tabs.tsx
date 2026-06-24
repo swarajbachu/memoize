@@ -1,3 +1,5 @@
+import { HugeiconsIcon } from "@hugeicons/react";
+import { SquareLock01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import { Plus, X } from "lucide-react";
 import { useMemo } from "react";
 
@@ -12,6 +14,7 @@ import {
 
 import { useChatsStore } from "../store/chats.ts";
 import { useMessagesStore } from "../store/messages.ts";
+import { usePermissionsStore } from "../store/permissions.ts";
 import { useProvidersStore } from "../store/providers.ts";
 import { useSessionsStore } from "../store/sessions.ts";
 import { useSettingsStore } from "../store/settings.ts";
@@ -74,6 +77,19 @@ export function MainTabs({ projectId, emptyLabel }: Props) {
   // Per-session running flag — drives the provider-icon → Spinner swap on
   // each tab so the user sees which session is streaming at a glance.
   const runningBySession = useMessagesStore((s) => s.runningBySession);
+  // Sessions with a pending permission prompt. Surfaced on the tab as a lock
+  // so a supervised-mode request is visible without opening the session.
+  // ExitPlanMode is excluded — plan mode owns its own inline approval card.
+  const requestsById = usePermissionsStore((s) => s.requestsById);
+  const awaitingPermission = useMemo(() => {
+    const ids = new Set<SessionId>();
+    for (const req of Object.values(requestsById)) {
+      if (req.kind._tag === "Other" && req.kind.tool === "ExitPlanMode")
+        continue;
+      ids.add(req.sessionId);
+    }
+    return ids;
+  }, [requestsById]);
 
   // The active chat = the chat owning the active session (if any), else
   // the sidebar's selected chat. We prefer the session-derived value
@@ -130,6 +146,7 @@ export function MainTabs({ projectId, emptyLabel }: Props) {
               title={tooltip}
               providerId={session.providerId}
               running={runningBySession[session.id] === true}
+              awaitingPermission={awaitingPermission.has(session.id)}
               onClick={() => {
                 if (selectedSessionId !== session.id) {
                   selectSession(session.id);
@@ -288,6 +305,7 @@ function ChatTabButton({
   title,
   providerId,
   running,
+  awaitingPermission,
   onClick,
   onClose,
 }: {
@@ -296,6 +314,7 @@ function ChatTabButton({
   title?: string;
   providerId: ProviderId;
   running: boolean;
+  awaitingPermission: boolean;
   onClick: () => void;
   onClose: () => void;
 }) {
@@ -313,7 +332,15 @@ function ChatTabButton({
         title={title ?? label}
         className="flex min-w-0 flex-1 items-center gap-1.5 py-0"
       >
-        {running ? (
+        {awaitingPermission ? (
+          <span
+            className="inline-flex size-3.5 shrink-0 items-center justify-center text-amber-300"
+            aria-label="Waiting for permission"
+            title="Waiting for permission"
+          >
+            <HugeiconsIcon icon={SquareLock01Icon} className="size-3.5" />
+          </span>
+        ) : running ? (
           <span className="inline-flex size-3.5 shrink-0 items-center justify-center text-foreground">
             <Spinner className="size-3.5" />
           </span>
