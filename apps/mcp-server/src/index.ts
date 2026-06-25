@@ -11,4 +11,4 @@ export {
 } from "./handle.ts";
 export { buildTools, type McpToolDef } from "./tools.ts";
 
-// dummy change
+// dummy change (via write tool)
