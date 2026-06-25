@@ -596,7 +596,10 @@ function createMainWindow() {
                   : "left";
             const clickCount = Math.max(
               0,
-              Math.min(3, Number(action.clickCount ?? (type === "mouseMove" ? 0 : 1))),
+              Math.min(
+                3,
+                Number(action.clickCount ?? (type === "mouseMove" ? 0 : 1)),
+              ),
             );
             await wc.debugger.sendCommand("Input.dispatchMouseEvent", {
               type,
@@ -630,8 +633,10 @@ function createMainWindow() {
           case "keyUp":
           case "char": {
             const key = typeof action.key === "string" ? action.key : "";
-            const text = typeof action.text === "string" ? action.text : undefined;
-            const code = typeof action.code === "string" ? action.code : undefined;
+            const text =
+              typeof action.text === "string" ? action.text : undefined;
+            const code =
+              typeof action.code === "string" ? action.code : undefined;
             const windowsVirtualKeyCode =
               typeof action.windowsVirtualKeyCode === "number"
                 ? action.windowsVirtualKeyCode
@@ -818,19 +823,60 @@ const MIME_BY_EXT: Record<string, string> = {
   avif: "image/avif",
 };
 
+type AssetFilenameCache = {
+  readonly byStem: Map<string, string>;
+  loaded: boolean;
+};
+
+const refreshAssetFilenameCache = async (
+  assetDir: string,
+  cache: AssetFilenameCache,
+): Promise<void> => {
+  const entries = await fs.readdir(assetDir);
+  cache.byStem.clear();
+  for (const name of entries) {
+    const dot = name.lastIndexOf(".");
+    if (dot > 0) cache.byStem.set(name.slice(0, dot), name);
+  }
+  cache.loaded = true;
+};
+
+const findAssetFilename = async (
+  assetDir: string,
+  cache: AssetFilenameCache,
+  id: string,
+): Promise<string | null> => {
+  if (!cache.loaded) {
+    await refreshAssetFilenameCache(assetDir, cache);
+  }
+  const cached = cache.byStem.get(id);
+  if (cached !== undefined) return cached;
+
+  await refreshAssetFilenameCache(assetDir, cache);
+  return cache.byStem.get(id) ?? null;
+};
+
 const registerMemoizeProtocol = (): void => {
   const attachmentsDir = Path.join(app.getPath("userData"), "attachments");
   const pokemonDir = Path.join(app.getPath("userData"), "pokemon-sprites");
+  const attachmentFilenames: AssetFilenameCache = {
+    byStem: new Map(),
+    loaded: false,
+  };
+  const pokemonFilenames: AssetFilenameCache = {
+    byStem: new Map(),
+    loaded: false,
+  };
 
   protocol.handle("memoize", async (request) => {
     const url = new URL(request.url);
-    const assetDir =
+    const asset =
       url.host === ATTACHMENTS_HOST
-        ? attachmentsDir
+        ? { cache: attachmentFilenames, dir: attachmentsDir }
         : url.host === POKEMON_HOST
-          ? pokemonDir
+          ? { cache: pokemonFilenames, dir: pokemonDir }
           : null;
-    if (assetDir === null) {
+    if (asset === null) {
       return new Response(null, { status: 404 });
     }
 
@@ -841,19 +887,15 @@ const registerMemoizeProtocol = (): void => {
       return new Response(null, { status: 400 });
     }
 
-    let entries: string[];
+    let filename: string | null;
     try {
-      entries = await fs.readdir(assetDir);
+      filename = await findAssetFilename(asset.dir, asset.cache, id);
     } catch {
       return new Response(null, { status: 404 });
     }
-    const filename = entries.find((name) => {
-      const dot = name.lastIndexOf(".");
-      return dot > 0 && name.slice(0, dot) === id;
-    });
     if (!filename) return new Response(null, { status: 404 });
 
-    const absPath = Path.join(assetDir, filename);
+    const absPath = Path.join(asset.dir, filename);
     const ext = filename.slice(filename.lastIndexOf(".") + 1).toLowerCase();
     const mime = MIME_BY_EXT[ext] ?? "application/octet-stream";
 
