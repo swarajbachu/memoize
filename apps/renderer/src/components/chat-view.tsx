@@ -18,6 +18,7 @@ import type {
 
 import { groupMessages } from "../lib/group-messages.ts";
 import { useMessagesStore } from "../store/messages.ts";
+import { usePermissionsStore } from "../store/permissions.ts";
 import { useSessionsStore } from "../store/sessions.ts";
 import { useSkillsStore } from "../store/skills.ts";
 import { EMPTY_WORKTREES, useWorktreesStore } from "../store/worktrees.ts";
@@ -48,6 +49,18 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
   const inFlight = useMessagesStore(
     (s) => s.runningBySession[sessionId] === true,
   );
+  // While a plan sits awaiting approval the turn is technically still "running",
+  // but the agent is blocked on the user — show no spinner, since we're the ones
+  // waiting. The Approve/Cancel decision lives in the pinned PlanApprovalTray.
+  const awaitingPlanApproval = usePermissionsStore((s) => {
+    for (const req of Object.values(s.requestsById)) {
+      if (req.sessionId !== sessionId) continue;
+      if (req.kind._tag !== "Other") continue;
+      if (req.kind.tool !== "ExitPlanMode") continue;
+      return true;
+    }
+    return false;
+  });
   const error = useMessagesStore((s) => s.errorBySession[sessionId] ?? null);
   const clearError = useMessagesStore((s) => s.clearError);
   const hydrate = useMessagesStore((s) => s.hydrate);
@@ -321,7 +334,9 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
               </Fragment>
             );
           })}
-          {inFlight && <WorkingRow messages={messages} />}
+          {inFlight && !awaitingPlanApproval && (
+            <WorkingRow messages={messages} />
+          )}
         </div>
       )}
       {error !== null && (
