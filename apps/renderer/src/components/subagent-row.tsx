@@ -7,6 +7,7 @@ import type { AgentItemId, Message, UserQuestionAnswer } from "@memoize/wire";
 import { cn } from "~/lib/utils";
 
 import { CopyButton } from "./copy-button.tsx";
+import { MarkdownBody } from "./markdown-body.tsx";
 import { MessageRow, type ToolResultRecord } from "./message-row.tsx";
 import { Spinner } from "./ui/spinner";
 
@@ -150,8 +151,8 @@ export function SubagentRow({
             ))}
           </div>
           {summary !== null && summary.text.length > 0 ? (
-            <div className="px-4 py-1 text-xs text-foreground/80">
-              {summary.text}
+            <div className="px-4 py-1">
+              <MarkdownBody className="text-xs">{summary.text}</MarkdownBody>
             </div>
           ) : null}
         </div>

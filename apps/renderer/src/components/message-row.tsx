@@ -134,7 +134,6 @@ export function MessageRow({
           <ExitPlanModeRow
             input={message.content.input}
             result={resultsByItemId.get(message.content.itemId)}
-            sessionId={sessionId}
           />
         );
       }
