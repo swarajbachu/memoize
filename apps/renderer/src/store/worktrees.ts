@@ -11,6 +11,7 @@ import {
 import { toastManager } from "../components/ui/toast.tsx";
 import { getRpcClient } from "../lib/rpc-client.ts";
 import { openTerminalCommand } from "../lib/run-terminal.ts";
+import { useChatsStore } from "./chats.ts";
 import { useMessagesStore } from "./messages.ts";
 import { useRepositorySettingsStore } from "./repository-settings.ts";
 import { useSessionsStore } from "./sessions.ts";
@@ -80,11 +81,16 @@ const maybeAutoRun = async (projectId: FolderId, wt: Worktree) => {
     (await useRepositorySettingsStore.getState().refresh(projectId));
   if (settings?.autoRunAfterSetup !== true) return;
   if (wt.setupStatus !== "succeeded" && wt.setupStatus !== "skipped") return;
+  // Terminals are per chat — surface the auto-run in the chat that owns this
+  // worktree. Without one (none bound it), there's no dock to land it in.
+  const chat = (useChatsStore.getState().chatsByProject[projectId] ?? []).find(
+    (c) => c.worktreeId === wt.id,
+  );
+  if (chat === undefined) return;
   const run = await useWorktreesStore.getState().startRun(wt.id);
   if (run === null) return;
   openTerminalCommand({
-    folderId: projectId,
-    worktreeId: wt.id,
+    chatId: chat.id,
     cwd: run.cwd,
     title: "Run",
     command: { cmd: "/bin/zsh", args: ["-lc", run.script], env: run.env },
