@@ -151,6 +151,8 @@ type UiState = {
    */
   readonly leftSidebarPeek: boolean;
   readonly rightSidebarOpen: boolean;
+  /** Whether the cross-project chat quick-switcher (Cmd+K) overlay is open. */
+  readonly chatSwitcherOpen: boolean;
   readonly isFullScreen: boolean;
   /** Right-dock tab layout, scoped per sidebar-chat. */
   readonly rightPanelsByChat: Record<string, ReadonlyArray<PanelInstance>>;
@@ -175,6 +177,8 @@ type UiState = {
   readonly setLeftSidebarOpen: (open: boolean) => void;
   readonly setLeftSidebarPeek: (peek: boolean) => void;
   readonly setRightSidebarOpen: (open: boolean) => void;
+  readonly setChatSwitcherOpen: (open: boolean) => void;
+  readonly toggleChatSwitcher: () => void;
   readonly setFullScreen: (full: boolean) => void;
   /** Add a panel to the dock. Singletons that are already open are focused
    * instead of duplicated; terminals always append a new slot. */
@@ -252,6 +256,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   leftSidebarOpen: true,
   leftSidebarPeek: false,
   rightSidebarOpen: false,
+  chatSwitcherOpen: false,
   isFullScreen: false,
   rightPanelsByChat: {},
   activeRightPanelByChat: {},
@@ -281,6 +286,9 @@ export const useUiStore = create<UiState>((set, get) => ({
     set({ leftSidebarOpen: open, leftSidebarPeek: false }),
   setLeftSidebarPeek: (peek) => set({ leftSidebarPeek: peek }),
   setRightSidebarOpen: (open) => set({ rightSidebarOpen: open }),
+  setChatSwitcherOpen: (open) => set({ chatSwitcherOpen: open }),
+  toggleChatSwitcher: () =>
+    set((s) => ({ chatSwitcherOpen: !s.chatSwitcherOpen })),
   setFullScreen: (full) => set({ isFullScreen: full }),
   addPanel: (kind) =>
     set((s) => {

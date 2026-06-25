@@ -70,6 +70,7 @@ import {
 } from "../store/annotations.ts";
 import { useAttachmentsStore } from "../store/attachments.ts";
 import { useComposerBridge } from "../store/composer-bridge.ts";
+import { usePaneFocus } from "../store/pane-focus.ts";
 import {
   composerDraftKeyForSession,
   useComposerDraftsStore,
@@ -402,6 +403,10 @@ export function ChatComposer({
     bridge.setFocus(() => {
       editorViewRef.current?.focus();
     });
+    // Join the pane Tab-walk (F6 / Ctrl+`) so focus can hop into the composer.
+    usePaneFocus.getState().register("composer", () => {
+      editorViewRef.current?.focus();
+    });
 
     return () => {
       unsubKeybindings();
@@ -409,6 +414,7 @@ export function ChatComposer({
       b.setAttachFile(null);
       b.setInsertText(null);
       b.setFocus(null);
+      usePaneFocus.getState().unregister("composer");
       view.destroy();
       editorViewRef.current = null;
     };
@@ -741,6 +747,7 @@ export function ChatComposer({
         </div>
       ) : null}
       <div
+        data-pane="composer"
         className="shrink-0 px-3 pb-3 pt-2"
         style={showCard ? { display: "none" } : undefined}
         aria-hidden={showCard || undefined}
@@ -763,8 +770,7 @@ export function ChatComposer({
                     inPlanMode={inPlanMode}
                     onPause={() =>
                       void setGoal(sessionId, {
-                        status:
-                          goal.status === "active" ? "paused" : "active",
+                        status: goal.status === "active" ? "paused" : "active",
                       })
                     }
                     onSave={(objective, tokenBudget) =>
@@ -1160,9 +1166,7 @@ function GoalBanner({
     <>
       <TrayPill
         flush
-        icon={
-          <HugeiconsIcon icon={DashboardSpeedIcon} className="size-3.5" />
-        }
+        icon={<HugeiconsIcon icon={DashboardSpeedIcon} className="size-3.5" />}
         title={GOAL_LABEL[goal.status]}
         subtitle={objective}
         actions={

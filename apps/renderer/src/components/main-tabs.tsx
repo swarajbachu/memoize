@@ -19,6 +19,10 @@ import { useProvidersStore } from "../store/providers.ts";
 import { useSessionsStore } from "../store/sessions.ts";
 import { useSettingsStore } from "../store/settings.ts";
 import { useUiStore } from "../store/ui.ts";
+import {
+  activeChatId as deriveActiveChatId,
+  orderedChatTabs,
+} from "../lib/tab-order.ts";
 import { FileIcon } from "./file-icon.tsx";
 import { ProviderIcon } from "./provider-icons.tsx";
 import { Spinner } from "./ui/spinner";
@@ -96,27 +100,19 @@ export function MainTabs({ projectId, emptyLabel }: Props) {
   // because it reflects the actual surface the user is looking at; the
   // chats store's `selectedChatId` may lag during transitions.
   const selectedChatId = useChatsStore((s) => s.selectedChatId);
-  const activeChatId = useMemo(() => {
-    if (selectedSessionId !== null) {
-      const row = projectSessions.find((s) => s.id === selectedSessionId);
-      if (row !== undefined) return row.chatId;
-    }
-    return selectedChatId;
-  }, [selectedSessionId, projectSessions, selectedChatId]);
+  const activeChatId = useMemo(
+    () =>
+      deriveActiveChatId(projectSessions, selectedSessionId, selectedChatId),
+    [selectedSessionId, projectSessions, selectedChatId],
+  );
 
   // Tabs = all non-archived sessions in the active chat, ordered by
-  // creation time so the user's mental order stays stable.
-  const tabs = useMemo(() => {
-    if (activeChatId === null) return EMPTY_SESSIONS;
-    return projectSessions
-      .filter((row) => row.chatId === activeChatId && row.archivedAt === null)
-      .slice()
-      .sort((a, b) => {
-        const aTs = new Date(a.createdAt).getTime();
-        const bTs = new Date(b.createdAt).getTime();
-        return aTs - bTs;
-      });
-  }, [projectSessions, activeChatId]);
+  // creation time so the user's mental order stays stable. Shared with the
+  // keyboard navigation handlers via `lib/tab-order.ts`.
+  const tabs = useMemo(
+    () => orderedChatTabs(projectSessions, activeChatId),
+    [projectSessions, activeChatId],
+  );
 
   return (
     <header className="flex h-10 shrink-0 items-stretch border-b border-border">

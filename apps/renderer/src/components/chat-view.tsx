@@ -17,6 +17,7 @@ import type {
 } from "@memoize/wire";
 
 import { groupMessages } from "../lib/group-messages.ts";
+import { useRegisterPane } from "../store/pane-focus.ts";
 import { useMessagesStore } from "../store/messages.ts";
 import { usePermissionsStore } from "../store/permissions.ts";
 import { useSessionsStore } from "../store/sessions.ts";
@@ -95,6 +96,7 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
   const setupActive = worktreeSetupActive || session?.status === "booting";
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  useRegisterPane("chat", scrollRef);
   const stickToBottomRef = useRef(true);
 
   useEffect(() => {
@@ -206,7 +208,9 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
     <div
       ref={scrollRef}
       onScroll={onScroll}
-      className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto"
+      data-pane="chat"
+      tabIndex={-1}
+      className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto outline-none"
     >
       <WorktreeSetupCard />
       {messages.length === 0 ? (

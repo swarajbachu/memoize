@@ -10,6 +10,7 @@ import {
 
 import { ChatComposer } from "./components/chat-composer";
 import { ChatLanding } from "./components/chat-landing.tsx";
+import { ChatSwitcher } from "./components/chat-switcher.tsx";
 import { ArchivedChatsPage } from "./components/archived-chats-page.tsx";
 import { CliUpgradeBanner } from "./components/cli-upgrade-banner.tsx";
 import { NextUnreadButton } from "./components/next-unread-button.tsx";
@@ -303,7 +304,10 @@ function MainShell() {
             <ProviderUpdatesToast />
             <IndexProgressBanner />
             {showMainChrome ? (
-              <MainTabs projectId={selectedFolderId} emptyLabel={emptyTabLabel} />
+              <MainTabs
+                projectId={selectedFolderId}
+                emptyLabel={emptyTabLabel}
+              />
             ) : null}
             <div
               hidden={activeMainTab !== "chat"}
@@ -394,6 +398,7 @@ function MainShell() {
       </Group>
       <SidebarPeekTrigger />
       <SidebarPeekOverlay />
+      <ChatSwitcher />
     </div>
   );
 }

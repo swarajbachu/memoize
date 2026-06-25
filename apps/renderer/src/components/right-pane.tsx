@@ -8,10 +8,12 @@ import {
 import { GitPullRequestIcon } from "@hugeicons-pro/core-solid-rounded";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Plus, X } from "lucide-react";
+import { useRef } from "react";
 
 import type { FolderId, WorktreeId } from "@memoize/wire";
 
 import { formatShortcut } from "../lib/shortcuts.ts";
+import { useRegisterPane } from "../store/pane-focus.ts";
 import { useActiveContext } from "../store/active-workspace.ts";
 import { useChatsStore } from "../store/chats.ts";
 import { gitStatusKey, useGitStatusStore } from "../store/git-status.ts";
@@ -99,6 +101,8 @@ function addableKinds(
  * file-tree expansion, the browser webview, and any in-flight PR fetch.
  */
 export function RightPane() {
+  const paneRef = useRef<HTMLElement>(null);
+  useRegisterPane("rightPane", paneRef);
   const ctx = useActiveContext();
   const folders = useWorkspaceStore((s) => s.folders);
   const selectedFolderId = ctx.status === "ready" ? ctx.folderId : null;
@@ -193,7 +197,12 @@ export function RightPane() {
   const browserActive = activePanel?.kind === "browser";
 
   return (
-    <aside className="flex h-full min-h-0 w-full flex-col">
+    <aside
+      ref={paneRef}
+      data-pane="rightPane"
+      tabIndex={-1}
+      className="flex h-full min-h-0 w-full flex-col outline-none"
+    >
       {panels.length > 0 ? (
         <div className="flex h-9 shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border px-1 text-xs">
           {panels.map((panel) => (

@@ -46,6 +46,7 @@ import { usePermissionsStore } from "../store/permissions.ts";
 import { gitDiffStatKey, useGitDiffStatStore } from "../store/git-diff-stat.ts";
 import { useMessagesStore } from "../store/messages.ts";
 import { prStateKey, usePrStateStore } from "../store/pr-state.ts";
+import { useRegisterPane } from "../store/pane-focus.ts";
 import { useSessionsStore } from "../store/sessions.ts";
 import {
   useSidebarMessageStatusStore,
@@ -206,6 +207,8 @@ function useSessionRunningSubscriptions(sessionIds: ReadonlyArray<SessionId>) {
 }
 
 export function ProjectsSidebar() {
+  const paneRef = useRef<HTMLElement>(null);
+  useRegisterPane("sidebar", paneRef);
   const folders = useWorkspaceStore((s) => s.folders);
   const selectedFolderId = useWorkspaceStore((s) => s.selectedFolderId);
   const error = useWorkspaceStore((s) => s.error);
@@ -321,7 +324,12 @@ export function ProjectsSidebar() {
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
 
   return (
-    <aside className="flex h-full min-h-0 w-full flex-col backdrop-blur-3xl text-sidebar-foreground">
+    <aside
+      ref={paneRef}
+      data-pane="sidebar"
+      tabIndex={-1}
+      className="flex h-full min-h-0 w-full flex-col text-sidebar-foreground outline-none backdrop-blur-3xl"
+    >
       <div className="flex items-center justify-between px-3 py-2 text-xs text-muted-foreground">
         <span>Projects</span>
         <ProjectAddMenu />
