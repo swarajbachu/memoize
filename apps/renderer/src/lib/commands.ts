@@ -73,11 +73,9 @@ async function newTabInActiveChat(): Promise<void> {
   const fresh = useSettingsStore.getState();
   const model =
     fresh.defaultModelByProvider[providerId] ?? defaultModelFor(providerId);
-  await useSessionsStore
-    .getState()
-    .create(chatId, providerId, model, {
-      runtimeMode: fresh.defaultRuntimeMode,
-    });
+  await useSessionsStore.getState().create(chatId, providerId, model, {
+    runtimeMode: fresh.defaultRuntimeMode,
+  });
 }
 
 /** Move the selected chat by `delta` within the project, wrapping around. */
@@ -178,6 +176,7 @@ const HANDLERS: Record<Command, () => void> = {
   "prev-panel": () => stepPanel(-1),
   "focus-next-pane": () => usePaneFocus.getState().focusAdjacent(1),
   "focus-prev-pane": () => usePaneFocus.getState().focusAdjacent(-1),
+  "open-chat-switcher": () => useUiStore.getState().toggleChatSwitcher(),
   "composer.submit": () => {},
   "composer.newline": () => {},
   "composer.forceSubmit": () => {},
@@ -229,5 +228,6 @@ export const APPLICATION_COMMANDS: ReadonlySet<Command> = new Set<Command>([
   "prev-panel",
   "focus-next-pane",
   "focus-prev-pane",
+  "open-chat-switcher",
   // `close-tab` deliberately omitted — see app.tsx's onCloseTab handler.
 ]);

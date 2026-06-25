@@ -42,6 +42,7 @@ export const Command = Schema.Literal(
   "prev-panel",
   "focus-next-pane",
   "focus-prev-pane",
+  "open-chat-switcher",
   // composer (chat input)
   "composer.submit",
   "composer.newline",

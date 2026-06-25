@@ -144,6 +144,11 @@ export const COMMAND_META: Record<Command, CommandMeta> = {
     description: "Move keyboard focus to the previous region",
     group: "Navigation",
   },
+  "open-chat-switcher": {
+    label: "Switch chat…",
+    description: "Open the quick-switcher to jump to any chat in any project",
+    group: "Navigation",
+  },
   "composer.submit": {
     label: "Submit message",
     description: "Send the current composer contents",
@@ -227,6 +232,7 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+alt+[", command: "prev-panel" },
   { key: "ctrl+`", command: "focus-next-pane" },
   { key: "ctrl+shift+`", command: "focus-prev-pane" },
+  { key: "mod+k", command: "open-chat-switcher" },
   { key: "enter", command: "composer.submit" },
   { key: "shift+enter", command: "composer.newline" },
   { key: "mod+enter", command: "composer.forceSubmit" },

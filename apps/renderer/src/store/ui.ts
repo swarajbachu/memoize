@@ -145,6 +145,8 @@ type UiState = {
    */
   readonly leftSidebarPeek: boolean;
   readonly rightSidebarOpen: boolean;
+  /** Whether the cross-project chat quick-switcher (Cmd+K) overlay is open. */
+  readonly chatSwitcherOpen: boolean;
   readonly isFullScreen: boolean;
   readonly rightPanels: ReadonlyArray<PanelInstance>;
   readonly activeRightPanelId: string | null;
@@ -168,6 +170,8 @@ type UiState = {
   readonly setLeftSidebarOpen: (open: boolean) => void;
   readonly setLeftSidebarPeek: (peek: boolean) => void;
   readonly setRightSidebarOpen: (open: boolean) => void;
+  readonly setChatSwitcherOpen: (open: boolean) => void;
+  readonly toggleChatSwitcher: () => void;
   readonly setFullScreen: (full: boolean) => void;
   /** Add a panel to the dock. Singletons that are already open are focused
    * instead of duplicated; terminals always append a new slot. */
@@ -218,12 +222,14 @@ export const useUiStore = create<UiState>((set, get) => ({
   leftSidebarOpen: true,
   leftSidebarPeek: false,
   rightSidebarOpen: false,
+  chatSwitcherOpen: false,
   isFullScreen: false,
   rightPanels: [],
   activeRightPanelId: null,
   revealedAnnotation: null,
   setActiveMainTab: (tab) => set({ activeMainTab: tab }),
-  openUsage: (scope) => set({ view: "chat", activeMainTab: "usage", usageScope: scope }),
+  openUsage: (scope) =>
+    set({ view: "chat", activeMainTab: "usage", usageScope: scope }),
   openFileInTab: (file) =>
     set({
       openFile:
@@ -242,9 +248,13 @@ export const useUiStore = create<UiState>((set, get) => ({
   // Opening the docked panel implicitly drops any peek state so the overlay
   // doesn't sit on top of the docked panel. Closing it also clears peek so a
   // stale hover doesn't immediately re-reveal the overlay.
-  setLeftSidebarOpen: (open) => set({ leftSidebarOpen: open, leftSidebarPeek: false }),
+  setLeftSidebarOpen: (open) =>
+    set({ leftSidebarOpen: open, leftSidebarPeek: false }),
   setLeftSidebarPeek: (peek) => set({ leftSidebarPeek: peek }),
   setRightSidebarOpen: (open) => set({ rightSidebarOpen: open }),
+  setChatSwitcherOpen: (open) => set({ chatSwitcherOpen: open }),
+  toggleChatSwitcher: () =>
+    set((s) => ({ chatSwitcherOpen: !s.chatSwitcherOpen })),
   setFullScreen: (full) => set({ isFullScreen: full }),
   addPanel: (kind) =>
     set((s) => {
