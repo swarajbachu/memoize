@@ -1,6 +1,27 @@
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Alert01Icon, ArrowDown01Icon, Copy01Icon, GitBranchIcon, GitMergeIcon, LinkSquare01Icon, Loading02Icon, MagicWand01Icon, PanelLeftCloseIcon, PanelLeftOpenIcon, PanelRightCloseIcon, PanelRightOpenIcon, PencilEdit01Icon, PlayIcon, Tick01Icon, Upload01Icon, Wrench01Icon } from "@hugeicons-pro/core-bulk-rounded";
-import { ArchiveArrowDownIcon, GitPullRequestIcon } from "@hugeicons-pro/core-solid-rounded";
+import {
+  Alert01Icon,
+  ArrowDown01Icon,
+  Copy01Icon,
+  GitBranchIcon,
+  GitMergeIcon,
+  LinkSquare01Icon,
+  Loading02Icon,
+  MagicWand01Icon,
+  PanelLeftCloseIcon,
+  PanelLeftOpenIcon,
+  PanelRightCloseIcon,
+  PanelRightOpenIcon,
+  PencilEdit01Icon,
+  PlayIcon,
+  Tick01Icon,
+  Upload01Icon,
+  Wrench01Icon,
+} from "@hugeicons-pro/core-bulk-rounded";
+import {
+  ArchiveArrowDownIcon,
+  GitPullRequestIcon,
+} from "@hugeicons-pro/core-solid-rounded";
 import { Effect } from "effect";
 import {
   type CSSProperties,
@@ -345,7 +366,10 @@ export function TopBarMain() {
               }
             >
               {rightSidebarOpen ? (
-                <HugeiconsIcon icon={PanelRightCloseIcon} className="size-3.5" />
+                <HugeiconsIcon
+                  icon={PanelRightCloseIcon}
+                  className="size-3.5"
+                />
               ) : (
                 <HugeiconsIcon icon={PanelRightOpenIcon} className="size-3.5" />
               )}
@@ -392,7 +416,10 @@ function BranchMenuButton({
         className="flex max-w-64 items-center gap-1 rounded-sm px-1.5 py-0.5 font-medium text-foreground outline-none hover:bg-foreground/5 data-[popup-open]:bg-foreground/5"
         aria-label="Switch branch"
       >
-        <HugeiconsIcon icon={GitBranchIcon} className="size-3.5 shrink-0 text-muted-foreground" />
+        <HugeiconsIcon
+          icon={GitBranchIcon}
+          className="size-3.5 shrink-0 text-muted-foreground"
+        />
         <span className="truncate" title={branchLabel}>
           {branchLabel}
         </span>
@@ -400,9 +427,15 @@ function BranchMenuButton({
           <span className="shrink-0 text-muted-foreground">· {dirtyFiles}</span>
         ) : null}
         {loading ? (
-          <HugeiconsIcon icon={Loading02Icon} className="size-3 animate-spin text-muted-foreground" />
+          <HugeiconsIcon
+            icon={Loading02Icon}
+            className="size-3 animate-spin text-muted-foreground"
+          />
         ) : (
-          <HugeiconsIcon icon={ArrowDown01Icon} className="size-3 text-muted-foreground" />
+          <HugeiconsIcon
+            icon={ArrowDown01Icon}
+            className="size-3 text-muted-foreground"
+          />
         )}
       </MenuTrigger>
       <MenuPopup align="center" className="min-w-64">
@@ -428,7 +461,10 @@ function BranchMenuButton({
               onClick={() => onSwitch(branch)}
               className="flex w-full items-center gap-2.5 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
             >
-              <HugeiconsIcon icon={Tick01Icon} className={`size-3.5 ${branch.current ? "opacity-100" : "opacity-0"}`} />
+              <HugeiconsIcon
+                icon={Tick01Icon}
+                className={`size-3.5 ${branch.current ? "opacity-100" : "opacity-0"}`}
+              />
               <span className="min-w-0 flex-1 truncate">{branch.name}</span>
               {branch.upstream !== null ? (
                 <span className="max-w-28 truncate text-[10px] text-muted-foreground">
@@ -620,7 +656,10 @@ function OpenInMenu({ rootPath }: { rootPath: string | null }) {
             >
               <span className="flex size-7 items-center justify-center border-r border-border/80">
                 {loading ? (
-                  <HugeiconsIcon icon={Loading02Icon} className="size-3.5 animate-spin" />
+                  <HugeiconsIcon
+                    icon={Loading02Icon}
+                    className="size-3.5 animate-spin"
+                  />
                 ) : primary !== undefined ? (
                   <OpenTargetIcon target={primary} />
                 ) : (
@@ -812,13 +851,15 @@ function RunButton() {
   if ((settings?.runScript?.trim().length ?? 0) === 0) return null;
 
   const worktreeId = ctx.worktreeId;
-  const projectId = ctx.folderId;
   const onRun = async () => {
+    // The Run button only renders for the active worktree, which belongs to
+    // the selected chat — so the run terminal lands in that chat's dock.
+    const chatId = useChatsStore.getState().selectedChatId;
+    if (chatId === null) return;
     const run = await startRun(worktreeId);
     if (run === null) return;
     openTerminalCommand({
-      folderId: projectId,
-      worktreeId,
+      chatId,
       cwd: run.cwd,
       title: "Run",
       command: { cmd: "/bin/zsh", args: ["-lc", run.script], env: run.env },
@@ -1129,7 +1170,13 @@ function DirectActionButton({
       ) : null}
       <GlassActionButton
         tone={tone}
-        icon={loading ? <HugeiconsIcon icon={Loading02Icon} className="animate-spin" /> : icon}
+        icon={
+          loading ? (
+            <HugeiconsIcon icon={Loading02Icon} className="animate-spin" />
+          ) : (
+            icon
+          )
+        }
         label={loading ? loadingLabel : label}
         disabled={disabled || loading}
         onClick={onClick}
@@ -1203,7 +1250,10 @@ function MergeButton({
               onClick={() => setMethod(m)}
               className="flex w-full items-center gap-2.5 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
             >
-              <HugeiconsIcon icon={Tick01Icon} className={`size-3.5 ${method === m ? "opacity-100" : "opacity-0"}`} />
+              <HugeiconsIcon
+                icon={Tick01Icon}
+                className={`size-3.5 ${method === m ? "opacity-100" : "opacity-0"}`}
+              />
               {MERGE_METHOD_LABEL[m]}
             </MenuItem>
           ))}
@@ -1295,7 +1345,11 @@ function AutoMergeToggle({
               }`}
               aria-pressed={enabled}
             >
-              {loading ? <HugeiconsIcon icon={Loading02Icon} className="animate-spin" /> : <HugeiconsIcon icon={MagicWand01Icon} />}
+              {loading ? (
+                <HugeiconsIcon icon={Loading02Icon} className="animate-spin" />
+              ) : (
+                <HugeiconsIcon icon={MagicWand01Icon} />
+              )}
               {enabled ? "Auto-merge on" : "Auto-merge"}
             </button>
           }
@@ -1371,7 +1425,13 @@ function FixActionsButton({
   return (
     <GlassActionButton
       tone="red"
-      icon={loading ? <HugeiconsIcon icon={Loading02Icon} className="animate-spin" /> : <HugeiconsIcon icon={Wrench01Icon} />}
+      icon={
+        loading ? (
+          <HugeiconsIcon icon={Loading02Icon} className="animate-spin" />
+        ) : (
+          <HugeiconsIcon icon={Wrench01Icon} />
+        )
+      }
       label={loading ? "Capturing…" : "Fix CI errors"}
       disabled={disabled || loading}
       onClick={onClick}

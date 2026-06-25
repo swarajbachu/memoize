@@ -18,6 +18,7 @@ import { getRpcClient } from "../lib/rpc-client.ts";
 import { formatError } from "../lib/format-error.ts";
 import { useMessagesStore } from "./messages.ts";
 import { useSessionsStore } from "./sessions.ts";
+import { useTerminalsStore } from "./terminals.ts";
 import { useUiStore } from "./ui.ts";
 import { useWorkspaceStore } from "./workspace.ts";
 import { useWorktreesStore } from "./worktrees.ts";
@@ -58,13 +59,10 @@ type ChatsState = {
       readonly permissionMode?: PermissionMode;
       readonly toolSearch?: boolean;
     },
-  ) => Promise<
-    | {
-        readonly chatId: ChatId;
-        readonly initialSessionId: SessionId;
-      }
-    | null
-  >;
+  ) => Promise<{
+    readonly chatId: ChatId;
+    readonly initialSessionId: SessionId;
+  } | null>;
   readonly rename: (chatId: ChatId, title: string) => Promise<void>;
   readonly setWorktree: (
     chatId: ChatId,
@@ -135,24 +133,22 @@ const ensureChangeStream = (projectId: FolderId): void => {
       Effect.flatMap(
         Effect.promise(() => getRpcClient()),
         (client) =>
-          Stream.runForEach(
-            client.chat.streamChanges({ projectId }),
-            (chat) =>
-              Effect.sync(() => {
-                useChatsStore.setState((s) => {
-                  const chats = s.chatsByProject[projectId];
-                  if (chats === undefined) return s;
-                  if (!chats.some((c) => c.id === chat.id)) return s;
-                  return {
-                    chatsByProject: {
-                      ...s.chatsByProject,
-                      [projectId]: chats.map((c) =>
-                        c.id === chat.id ? chat : c,
-                      ),
-                    },
-                  };
-                });
-              }),
+          Stream.runForEach(client.chat.streamChanges({ projectId }), (chat) =>
+            Effect.sync(() => {
+              useChatsStore.setState((s) => {
+                const chats = s.chatsByProject[projectId];
+                if (chats === undefined) return s;
+                if (!chats.some((c) => c.id === chat.id)) return s;
+                return {
+                  chatsByProject: {
+                    ...s.chatsByProject,
+                    [projectId]: chats.map((c) =>
+                      c.id === chat.id ? chat : c,
+                    ),
+                  },
+                };
+              });
+            }),
           ),
       ),
     ),
@@ -426,6 +422,10 @@ export const useChatsStore = create<ChatsState>((set, get) => ({
               : s.selectedSessionId,
         };
       });
+      // Tear down the chat's terminals (closing their PTYs) and drop its dock
+      // layout so an archived chat leaks no shells or tab state.
+      useTerminalsStore.getState().disposeChat(chatId);
+      useUiStore.getState().clearChatPanels(chatId);
     } catch (err) {
       set({ error: formatError(err) });
     }
@@ -526,6 +526,10 @@ export const useChatsStore = create<ChatsState>((set, get) => ({
               : s.selectedSessionId,
         };
       });
+      // Dispose the deleted chat's terminals (closing their PTYs) and drop its
+      // dock layout so nothing lingers after the chat is gone.
+      useTerminalsStore.getState().disposeChat(chatId);
+      useUiStore.getState().clearChatPanels(chatId);
     } catch (err) {
       set({ error: formatError(err) });
     }

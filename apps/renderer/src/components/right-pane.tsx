@@ -13,6 +13,7 @@ import type { FolderId, WorktreeId } from "@memoize/wire";
 
 import { formatShortcut } from "../lib/shortcuts.ts";
 import { useActiveContext } from "../store/active-workspace.ts";
+import { useChatsStore } from "../store/chats.ts";
 import { gitStatusKey, useGitStatusStore } from "../store/git-status.ts";
 import { prDetailsKey, usePrDetailsStore } from "../store/pr-details.ts";
 import { prStateKey, usePrStateStore } from "../store/pr-state.ts";
@@ -22,6 +23,7 @@ import {
   useTerminalsStore,
 } from "../store/terminals.ts";
 import {
+  EMPTY_PANELS,
   type PanelInstance,
   type PanelKind,
   SINGLETON_PANEL_KINDS,
@@ -119,16 +121,23 @@ export function RightPane() {
       ? (s.byKey[prDetailsKey(selectedFolderId, worktreeId)] ?? null)
       : null,
   );
-  // Terminal tab titles are sourced from the active workspace's terminal
-  // list (slot → instance) so multiple terminal tabs read "zsh", "zsh 2".
+  // Dock layout + terminals are scoped to the selected sidebar chat, so each
+  // chat keeps its own open tabs and running shells.
+  const chatId = useChatsStore((s) => s.selectedChatId);
+  // Terminal tab titles are sourced from the chat's terminal list (slot →
+  // instance) so multiple terminal tabs read "zsh", "zsh 2".
   const termList = useTerminalsStore((s) =>
-    selectedFolderId
-      ? (s.byKey[terminalsKey(selectedFolderId, worktreeId)] ?? EMPTY_TERMINALS)
+    chatId
+      ? (s.byKey[terminalsKey(chatId)] ?? EMPTY_TERMINALS)
       : EMPTY_TERMINALS,
   );
 
-  const panels = useUiStore((s) => s.rightPanels);
-  const activeId = useUiStore((s) => s.activeRightPanelId);
+  const panels = useUiStore((s) =>
+    chatId ? (s.rightPanelsByChat[chatId] ?? EMPTY_PANELS) : EMPTY_PANELS,
+  );
+  const activeId = useUiStore((s) =>
+    chatId ? (s.activeRightPanelByChat[chatId] ?? null) : null,
+  );
   const addPanel = useUiStore((s) => s.addPanel);
   const closePanel = useUiStore((s) => s.closePanel);
   const setActive = useUiStore((s) => s.setActiveRightPanel);
@@ -140,13 +149,13 @@ export function RightPane() {
       ? activeId
       : (panels[0]?.id ?? null);
 
-  // Closing a terminal tab also drops its backing PTY instance for the
-  // active workspace (the store action is layout-only — it can't know the
-  // active key). `closePanel` then re-indexes remaining terminal slots, so
-  // panels and instances stay aligned.
+  // Closing a terminal tab also drops (and kills) its backing PTY instance
+  // for the chat (the store action is layout-only — it can't know the chat
+  // key). `closePanel` then re-indexes remaining terminal slots, so panels
+  // and instances stay aligned.
   const handleClose = (panel: PanelInstance) => {
-    if (panel.kind === "terminal" && selectedFolderId !== null) {
-      const key = terminalsKey(selectedFolderId, worktreeId);
+    if (panel.kind === "terminal" && chatId !== null) {
+      const key = terminalsKey(chatId);
       const inst = (useTerminalsStore.getState().byKey[key] ?? EMPTY_TERMINALS)[
         panel.slot
       ];
