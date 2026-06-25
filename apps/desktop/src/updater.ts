@@ -238,3 +238,5 @@ export function registerUpdaterDemo(window: BrowserWindow): void {
     },
   );
 }
+
+// dummy change

@@ -338,3 +338,5 @@ export function installAppMenu(
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
+
+// dummy change

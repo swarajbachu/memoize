@@ -29,3 +29,5 @@ export function FileIcon({ name, kind, expanded = false, className }: Props) {
     </span>
   );
 }
+
+// dummy change

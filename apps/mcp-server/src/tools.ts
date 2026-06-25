@@ -178,3 +178,5 @@ export const buildTools = (handle: ServerHandle): ReadonlyArray<McpToolDef> => [
     handler: async () => asTool(await handle.reindex()),
   },
 ];
+
+// dummy change
