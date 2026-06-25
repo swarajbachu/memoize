@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0]
+
+### Changed
+- Surface supervised-mode permission prompts in sidebar and tabs (#184)
+- Render inline chat Edit diffs with @pierre/diffs library (#183)
+- Auto-scroll on send and cap tool box height (#182)
+- Fix false "Requires Claude Pro" gate for paid Claude logins (#179)
+- Add goal mode support for the Grok provider (#181)
+- Surface Claude auth failures as an in-app "Sign in to Claude" card (#180)
+- Compact composer trays into a unified pill stack (#178)
+- Cap collapsed tool row width (#176)
+- Unify composer + bubble pill styling (#175)
+- Auto-publish releases instead of drafts (#174)
+
 ## [0.6.1]
 
 ### Changed
