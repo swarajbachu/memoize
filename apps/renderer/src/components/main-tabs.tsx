@@ -3,6 +3,8 @@ import { SquareLock01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import { Plus, X } from "lucide-react";
 import { useMemo } from "react";
 
+import { useAutoAnimate } from "../lib/use-auto-animate.ts";
+
 import {
   defaultModelFor,
   type FolderId,
@@ -114,9 +116,12 @@ export function MainTabs({ projectId, emptyLabel }: Props) {
     [projectSessions, activeChatId],
   );
 
+  // Glide tabs into place when one is opened, closed, or the file tab appears.
+  const tabStripRef = useAutoAnimate<HTMLDivElement>();
+
   return (
     <header className="flex h-10 shrink-0 items-stretch border-b border-border">
-      <div className="flex items-stretch gap-1 px-2">
+      <div ref={tabStripRef} className="flex items-stretch gap-1 px-2">
         {tabs.length === 0 && (
           <TabButton
             active={activeMainTab === "chat"}

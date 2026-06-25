@@ -12,6 +12,8 @@ import { useRef } from "react";
 
 import type { FolderId, WorktreeId } from "@memoize/wire";
 
+import { useAutoAnimate } from "../lib/use-auto-animate.ts";
+
 import { formatShortcut } from "../lib/shortcuts.ts";
 import { useRegisterPane } from "../store/pane-focus.ts";
 import { useActiveContext } from "../store/active-workspace.ts";
@@ -146,6 +148,10 @@ export function RightPane() {
   const closePanel = useUiStore((s) => s.closePanel);
   const setActive = useUiStore((s) => s.setActiveRightPanel);
 
+  // Glide dock tabs when panels are opened or closed. Declared with the other
+  // hooks (above the `selected === null` early return) to satisfy hook rules.
+  const dockTabsRef = useAutoAnimate<HTMLDivElement>();
+
   // Defensive: if the stored active id ever points at a closed panel, fall
   // back to the first one so exactly one panel body is visible.
   const effectiveActiveId =
@@ -204,7 +210,10 @@ export function RightPane() {
       className="flex h-full min-h-0 w-full flex-col outline-none"
     >
       {panels.length > 0 ? (
-        <div className="flex h-9 shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border px-1 text-xs">
+        <div
+          ref={dockTabsRef}
+          className="flex h-9 shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border px-1 text-xs"
+        >
           {panels.map((panel) => (
             <PanelTab
               key={panel.id}
