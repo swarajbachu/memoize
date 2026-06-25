@@ -8,11 +8,11 @@ import {
 import { GitPullRequestIcon } from "@hugeicons-pro/core-solid-rounded";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Plus, X } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
 
 import type { FolderId, WorktreeId } from "@memoize/wire";
 
-import { springSnappy, tabPop } from "../lib/motion.ts";
+import { useAutoAnimate } from "../lib/use-auto-animate.ts";
+
 import { formatShortcut } from "../lib/shortcuts.ts";
 import { useActiveContext } from "../store/active-workspace.ts";
 import { gitStatusKey, useGitStatusStore } from "../store/git-status.ts";
@@ -135,6 +135,10 @@ export function RightPane() {
   const closePanel = useUiStore((s) => s.closePanel);
   const setActive = useUiStore((s) => s.setActiveRightPanel);
 
+  // Glide dock tabs when panels are opened or closed. Declared with the other
+  // hooks (above the `selected === null` early return) to satisfy hook rules.
+  const dockTabsRef = useAutoAnimate<HTMLDivElement>();
+
   // Defensive: if the stored active id ever points at a closed panel, fall
   // back to the first one so exactly one panel body is visible.
   const effectiveActiveId =
@@ -188,29 +192,21 @@ export function RightPane() {
   return (
     <aside className="flex h-full min-h-0 w-full flex-col">
       {panels.length > 0 ? (
-        <div className="flex h-9 shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border px-1 text-xs">
-          <AnimatePresence initial={false} mode="popLayout">
-            {panels.map((panel) => (
-              <motion.div
-                key={panel.id}
-                layout
-                variants={tabPop}
-                initial="initial"
-                animate="animate"
-                exit="exit"
-                className="flex items-stretch"
-              >
-                <PanelTab
-                  active={panel.id === effectiveActiveId}
-                  icon={PANEL_META[panel.kind].icon}
-                  label={tabLabel(panel)}
-                  badge={tabBadge(panel)}
-                  onSelect={() => setActive(panel.id)}
-                  onClose={() => handleClose(panel)}
-                />
-              </motion.div>
-            ))}
-          </AnimatePresence>
+        <div
+          ref={dockTabsRef}
+          className="flex h-9 shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border px-1 text-xs"
+        >
+          {panels.map((panel) => (
+            <PanelTab
+              key={panel.id}
+              active={panel.id === effectiveActiveId}
+              icon={PANEL_META[panel.kind].icon}
+              label={tabLabel(panel)}
+              badge={tabBadge(panel)}
+              onSelect={() => setActive(panel.id)}
+              onClose={() => handleClose(panel)}
+            />
+          ))}
           <AddPanelMenu addable={addableKinds(panels)} onAdd={addPanel} />
         </div>
       ) : null}
@@ -384,24 +380,16 @@ function PanelTab({
 }) {
   return (
     <div
-      className={`group relative flex shrink-0 items-center gap-1 rounded px-1.5 py-1 text-[11px] transition-colors ${
+      className={`group flex shrink-0 items-center gap-1 rounded px-1.5 py-1 text-[11px] transition-colors ${
         active
-          ? "text-foreground"
+          ? "bg-muted text-foreground"
           : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
       }`}
     >
-      {active ? (
-        <motion.span
-          aria-hidden
-          layoutId="dockPanelTabHighlight"
-          transition={springSnappy}
-          className="absolute inset-0 rounded bg-muted"
-        />
-      ) : null}
       <button
         type="button"
         onClick={onSelect}
-        className="relative z-10 flex max-w-36 items-center gap-1.5"
+        className="flex max-w-36 items-center gap-1.5"
       >
         <HugeiconsIcon icon={icon} className="size-3.5 shrink-0 opacity-80" />
         <span className="truncate">{label}</span>
@@ -422,7 +410,7 @@ function PanelTab({
             onClose();
           }
         }}
-        className="relative z-10 flex size-4 shrink-0 items-center justify-center rounded text-muted-foreground/60 opacity-0 transition-opacity hover:bg-background hover:text-foreground group-hover:opacity-100"
+        className="flex size-4 shrink-0 items-center justify-center rounded text-muted-foreground/60 opacity-0 transition-opacity hover:bg-background hover:text-foreground group-hover:opacity-100"
       >
         <X className="size-3" strokeWidth={1.8} />
       </span>

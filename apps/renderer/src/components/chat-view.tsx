@@ -1,7 +1,7 @@
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Message01Icon } from "@hugeicons-pro/core-bulk-rounded";
-import { AnimatePresence, motion } from "motion/react";
 import {
+  Fragment,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -16,7 +16,6 @@ import type {
   UserQuestionAnswer,
 } from "@memoize/wire";
 
-import { fadeSlideUp } from "../lib/motion.ts";
 import { groupMessages } from "../lib/group-messages.ts";
 import { useMessagesStore } from "../store/messages.ts";
 import { usePermissionsStore } from "../store/permissions.ts";
@@ -226,12 +225,7 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
           </div>
         )
       ) : (
-        // Keyed by sessionId so switching chats remounts the list and the
-        // AnimatePresence below re-suppresses its initial animation — loading
-        // an existing session's history must NOT replay every turn. Only turns
-        // appended while staying on this session animate in.
-        <div className="flex flex-col py-2" key={sessionId}>
-          <AnimatePresence initial={false}>
+        <div className="flex flex-col py-2">
           {turns.map((turn, idx) => {
             const isLastTurn = idx === turns.length - 1;
             const isLive = inFlight && isLastTurn;
@@ -286,14 +280,7 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
                     return true;
                   });
             return (
-              <motion.div
-                key={turnKey}
-                className="flex flex-col"
-                variants={fadeSlideUp}
-                initial="initial"
-                animate="animate"
-                exit="exit"
-              >
+              <Fragment key={turnKey}>
                 {turn.user !== null ? (
                   <MessageRow
                     message={turn.user}
@@ -344,10 +331,9 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
                     ),
                   )
                 )}
-              </motion.div>
+              </Fragment>
             );
           })}
-          </AnimatePresence>
           {inFlight && !awaitingPlanApproval && (
             <WorkingRow messages={messages} />
           )}

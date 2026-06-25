@@ -1,11 +1,9 @@
 import { HugeiconsIcon } from "@hugeicons/react";
 import { CircleArrowUp01Icon } from "@hugeicons-pro/core-bulk-rounded";
-import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
-import { springSoft } from "~/lib/motion";
 import { Button } from "~/components/ui/button";
 import { useProvidersStore } from "~/store/providers";
 import { useUiStore } from "~/store/ui";
@@ -66,8 +64,9 @@ export function ProviderUpdatesToast() {
           .sort()
           .join(",");
 
-  const visible =
-    notificationKey !== "" && !dismissed.has(notificationKey);
+  if (notificationKey === "" || dismissed.has(notificationKey)) {
+    return null;
+  }
 
   const recordDismissed = () => {
     const next = new Set(dismissed);
@@ -105,18 +104,11 @@ export function ProviderUpdatesToast() {
   // Portal to body so the toast escapes any ancestor with a backdrop-filter /
   // transform that would trap `position: fixed` (same reason as UpdateBanner).
   return createPortal(
-    <AnimatePresence>
-      {visible ? (
-        <motion.div
-          key="provider-updates-toast"
-          role="status"
-          initial={{ opacity: 0, y: 16, scale: 0.98 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 16, scale: 0.98 }}
-          transition={springSoft}
-          className="fixed right-4 bottom-24 z-50 flex w-[320px] flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-lg"
-        >
-          <div className="flex items-start gap-3">
+    <div
+      role="status"
+      className="fixed right-4 bottom-24 z-50 flex w-[320px] flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-lg"
+    >
+      <div className="flex items-start gap-3">
         <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
           <HugeiconsIcon icon={CircleArrowUp01Icon} className="size-4" />
         </span>
@@ -155,9 +147,7 @@ export function ProviderUpdatesToast() {
           Review in settings
         </Button>
       </div>
-        </motion.div>
-      ) : null}
-    </AnimatePresence>,
+    </div>,
     document.body,
   );
 }

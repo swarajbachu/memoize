@@ -83,8 +83,8 @@ export function SidebarPeekOverlay() {
     <div
       onMouseEnter={cancelClose}
       onMouseLeave={scheduleClose}
-      className={`fixed inset-y-0 left-0 z-50 flex flex-col bg-background/95 shadow-2xl shadow-black/40 backdrop-blur-xl transition-[transform,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-        peek ? "translate-x-0 opacity-100" : "-translate-x-full opacity-0"
+      className={`fixed inset-y-0 left-0 z-50 flex flex-col bg-background/95 shadow-2xl shadow-black/40 backdrop-blur-xl transition-transform duration-200 ease-out ${
+        peek ? "translate-x-0" : "-translate-x-full"
       }`}
       style={{ width: OVERLAY_WIDTH_PX }}
     >

@@ -1,7 +1,5 @@
-import type React from "react";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Effect } from "effect";
-import { MotionConfig } from "motion/react";
 import {
   Group,
   Panel,
@@ -9,8 +7,6 @@ import {
   useDefaultLayout,
   usePanelRef,
 } from "react-resizable-panels";
-
-import { springSoft } from "./lib/motion.ts";
 
 import { ChatComposer } from "./components/chat-composer";
 import { ChatLanding } from "./components/chat-landing.tsx";
@@ -51,6 +47,94 @@ import { useWorktreesStore } from "./store/worktrees.ts";
 
 const PANEL_GROUP_ID = "memoize.shell.v3";
 const PANEL_IDS = ["projects", "main", "files"];
+
+const SIDEBAR_ANIM_MS = 200;
+const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+
+/**
+ * Animate a collapsible side panel open/closed by driving the library's own
+ * imperative `resize()` in a rAF tween, instead of a CSS transition.
+ *
+ * react-resizable-panels controls panel widths via inline flex styles and a
+ * ResizeObserver; a CSS transition on those fights that observer (the panel
+ * snaps back / won't collapse). Calling `resize()` each frame keeps the
+ * library's model authoritative the whole way, so it stays smooth and always
+ * lands in the exact end state (`collapse()` when closed, the remembered width
+ * when open). The first run after mount snaps without animating so a restored
+ * layout doesn't slide in.
+ */
+function useAnimatedPanelCollapse(
+  panelRef: ReturnType<typeof usePanelRef>,
+  open: boolean,
+  defaultPct: number,
+  animatingRef: { current: boolean },
+) {
+  const rafRef = useRef<number | null>(null);
+  const lastOpenPct = useRef(defaultPct);
+  const didInit = useRef(false);
+
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (panel === null) return;
+
+    const cancel = () => {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      animatingRef.current = false;
+    };
+
+    // First run: snap to the correct state (no animation) so a persisted
+    // layout doesn't animate in on launch.
+    if (!didInit.current) {
+      didInit.current = true;
+      const collapsed = panel.isCollapsed();
+      if (!collapsed) {
+        lastOpenPct.current = panel.getSize().asPercentage || defaultPct;
+      }
+      if (open && collapsed) panel.expand();
+      if (!open && !collapsed) panel.collapse();
+      return;
+    }
+
+    cancel();
+
+    const startPct = panel.getSize().asPercentage;
+    // Remember the width we're collapsing from so reopening restores it.
+    if (!open && startPct > 0) lastOpenPct.current = startPct;
+    const targetPct = open ? lastOpenPct.current || defaultPct : 0;
+
+    if (Math.abs(startPct - targetPct) < 0.05) {
+      if (!open && !panel.isCollapsed()) panel.collapse();
+      return;
+    }
+
+    // Suppress the panel's onResize→store sync while we drive resize()
+    // ourselves, otherwise an intermediate (size > 0) frame would flip the
+    // store back open mid-collapse and fight this tween.
+    animatingRef.current = true;
+    const t0 = performance.now();
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - t0) / SIDEBAR_ANIM_MS);
+      const v = startPct + (targetPct - startPct) * easeOutCubic(t);
+      panel.resize(`${v}%`);
+      if (t < 1) {
+        rafRef.current = requestAnimationFrame(tick);
+        return;
+      }
+      rafRef.current = null;
+      // Settle into the exact end state so the collapsed flag / peek logic
+      // stay correct.
+      if (open) panel.resize(`${targetPct}%`);
+      else panel.collapse();
+      animatingRef.current = false;
+    };
+    rafRef.current = requestAnimationFrame(tick);
+
+    return cancel;
+  }, [panelRef, open, defaultPct, animatingRef]);
+}
 
 /**
  * Root component. Owns only the cross-cutting concerns that need to run in
@@ -126,32 +210,30 @@ export function App() {
   const onboardingCompleted = useSettingsStore((s) => s.onboardingCompleted);
   const view = useUiStore((s) => s.view);
 
-  let content: React.ReactNode;
   if (!onboardingCompleted) {
-    content = (
-      <div className="dark relative flex h-dvh max-h-dvh min-h-0 w-screen overflow-hidden bg-background text-foreground">
-        <OnboardingWizard />
-      </div>
+    return (
+      <TooltipProvider>
+        <div className="dark relative flex h-dvh max-h-dvh min-h-0 w-screen overflow-hidden bg-background text-foreground">
+          <OnboardingWizard />
+        </div>
+      </TooltipProvider>
     );
-  } else if (view === "settings") {
-    content = (
-      <div className="dark flex h-dvh max-h-dvh min-h-0 w-screen overflow-hidden bg-background text-foreground">
-        <SettingsPage />
-      </div>
-    );
-  } else {
-    content = <MainShell />;
   }
 
-  // `reducedMotion="user"` makes every motion component in the tree honor the
-  // OS "Reduce Motion" setting (transforms/opacity snap to their end state),
-  // so individual animated surfaces don't each need their own guard. The
-  // shared spring becomes the default transition for any component that
-  // doesn't specify its own.
+  if (view === "settings") {
+    return (
+      <TooltipProvider>
+        <div className="dark flex h-dvh max-h-dvh min-h-0 w-screen overflow-hidden bg-background text-foreground">
+          <SettingsPage />
+        </div>
+      </TooltipProvider>
+    );
+  }
+
   return (
-    <MotionConfig reducedMotion="user" transition={springSoft}>
-      <TooltipProvider>{content}</TooltipProvider>
-    </MotionConfig>
+    <TooltipProvider>
+      <MainShell />
+    </TooltipProvider>
   );
 }
 
@@ -252,25 +334,15 @@ function MainShell() {
     storage: typeof window === "undefined" ? undefined : window.localStorage,
   });
 
-  // Drive the side panels' collapsed state from `useUiStore`. v4 has no
-  // `onCollapse` prop — we peek the imperative handle through `panelRef` and
-  // sync against the store on every render.
+  // Drive the side panels' collapsed state from `useUiStore`, animating the
+  // open/close via the library's imperative resize() (see the hook). v4 has no
+  // `onCollapse` prop — we peek the imperative handle through `panelRef`.
   const leftPanelRef = usePanelRef();
   const rightPanelRef = usePanelRef();
-  useEffect(() => {
-    const panel = leftPanelRef.current;
-    if (panel === null) return;
-    const collapsed = panel.isCollapsed();
-    if (leftSidebarOpen && collapsed) panel.expand();
-    if (!leftSidebarOpen && !collapsed) panel.collapse();
-  }, [leftPanelRef, leftSidebarOpen]);
-  useEffect(() => {
-    const panel = rightPanelRef.current;
-    if (panel === null) return;
-    const collapsed = panel.isCollapsed();
-    if (rightSidebarOpen && collapsed) panel.expand();
-    if (!rightSidebarOpen && !collapsed) panel.collapse();
-  }, [rightPanelRef, rightSidebarOpen]);
+  const leftAnimating = useRef(false);
+  const rightAnimating = useRef(false);
+  useAnimatedPanelCollapse(leftPanelRef, leftSidebarOpen, 18, leftAnimating);
+  useAnimatedPanelCollapse(rightPanelRef, rightSidebarOpen, 22, rightAnimating);
 
   return (
     <div className="dark flex h-dvh max-h-dvh min-h-0 w-screen overflow-hidden text-foreground">
@@ -284,12 +356,16 @@ function MainShell() {
         <Panel
           id="projects"
           defaultSize="18%"
-          minSize="180px"
+          // minSize 0 so the open/close tween can rest at any width down to 0
+          // — the library otherwise snaps sub-minSize widths to minSize/0,
+          // which turns the last stretch of the animation into a hard jump.
+          minSize="0px"
           maxSize="40%"
           collapsible
           collapsedSize="0%"
           panelRef={leftPanelRef}
           onResize={(size) => {
+            if (leftAnimating.current) return;
             const open = size.asPercentage > 0;
             if (open !== leftSidebarOpen) setLeftSidebarOpen(open);
           }}
@@ -375,12 +451,15 @@ function MainShell() {
         <Panel
           id="files"
           defaultSize="22%"
-          minSize="220px"
+          // minSize 0 so the open/close tween stays smooth all the way to 0
+          // (see the left panel note).
+          minSize="0px"
           maxSize="45%"
           collapsible
           collapsedSize="0%"
           panelRef={rightPanelRef}
           onResize={(size, _id, prev) => {
+            if (rightAnimating.current) return;
             // Ignore the initial mount call (prev === undefined). The right
             // dock defaults to closed (`rightSidebarOpen: false`); the
             // persisted/default panel width would otherwise fire here and
