@@ -1,6 +1,7 @@
 import { HugeiconsIcon } from "@hugeicons/react";
 import { SquareLock01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import { Plus, X } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import { useMemo } from "react";
 
 import {
@@ -12,6 +13,7 @@ import {
   type SessionId,
 } from "@memoize/wire";
 
+import { springSnappy, tabPop } from "../lib/motion.ts";
 import { useChatsStore } from "../store/chats.ts";
 import { useMessagesStore } from "../store/messages.ts";
 import { usePermissionsStore } from "../store/permissions.ts";
@@ -128,37 +130,51 @@ export function MainTabs({ projectId, emptyLabel }: Props) {
             label={emptyLabel}
           />
         )}
-        {tabs.map((session) => {
-          const isActive =
-            activeMainTab === "chat" && selectedSessionId === session.id;
-          const modelLabel = lookupModelLabel(
-            session.providerId,
-            session.model,
-          );
-          const tooltip = modelLabel
-            ? `${session.title} — ${PROVIDER_LABEL[session.providerId]} · ${modelLabel}`
-            : session.title;
-          return (
-            <ChatTabButton
-              key={session.id}
-              active={isActive}
-              label={session.title}
-              title={tooltip}
-              providerId={session.providerId}
-              running={runningBySession[session.id] === true}
-              awaitingPermission={awaitingPermission.has(session.id)}
-              onClick={() => {
-                if (selectedSessionId !== session.id) {
-                  selectSession(session.id);
-                }
-                setActiveMainTab("chat");
-              }}
-              onClose={() => {
-                void closeChatTab(session.id);
-              }}
-            />
-          );
-        })}
+        {/* Keyed by chat so switching chats remounts the strip and tabs don't
+            replay their pop-in; `mode="popLayout"` lets neighbors slide closed
+            when a tab is removed. */}
+        <AnimatePresence key={activeChatId ?? "none"} initial={false} mode="popLayout">
+          {tabs.map((session) => {
+            const isActive =
+              activeMainTab === "chat" && selectedSessionId === session.id;
+            const modelLabel = lookupModelLabel(
+              session.providerId,
+              session.model,
+            );
+            const tooltip = modelLabel
+              ? `${session.title} — ${PROVIDER_LABEL[session.providerId]} · ${modelLabel}`
+              : session.title;
+            return (
+              <motion.div
+                key={session.id}
+                layout
+                variants={tabPop}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                className="flex items-stretch"
+              >
+                <ChatTabButton
+                  active={isActive}
+                  label={session.title}
+                  title={tooltip}
+                  providerId={session.providerId}
+                  running={runningBySession[session.id] === true}
+                  awaitingPermission={awaitingPermission.has(session.id)}
+                  onClick={() => {
+                    if (selectedSessionId !== session.id) {
+                      selectSession(session.id);
+                    }
+                    setActiveMainTab("chat");
+                  }}
+                  onClose={() => {
+                    void closeChatTab(session.id);
+                  }}
+                />
+              </motion.div>
+            );
+          })}
+        </AnimatePresence>
         {projectId !== null && activeChatId !== null && (
           <NewChatTabButton chatId={activeChatId} />
         )}
@@ -272,6 +288,24 @@ const closeChatTab = async (sessionId: SessionId): Promise<void> => {
   });
 };
 
+/**
+ * Shared sliding active-tab underline. Every active tab renders one of these
+ * with the same `layoutId`, so when focus moves to another tab motion matches
+ * the two and animates the bar sliding across rather than cross-fading in
+ * place. Replaces the old per-tab `::after` color toggle.
+ */
+const TAB_UNDERLINE_ID = "mainTabUnderline";
+function TabUnderline() {
+  return (
+    <motion.span
+      aria-hidden
+      layoutId={TAB_UNDERLINE_ID}
+      transition={springSnappy}
+      className="pointer-events-none absolute inset-x-2 -bottom-px h-[2px] rounded-full bg-foreground"
+    />
+  );
+}
+
 function TabButton({
   active,
   onClick,
@@ -288,13 +322,12 @@ function TabButton({
       type="button"
       onClick={onClick}
       title={title ?? label}
-      className={`relative flex max-w-[280px] items-center gap-2 px-3 text-[12px] transition-colors after:pointer-events-none after:absolute after:inset-x-2 after:-bottom-px after:h-[2px] after:rounded-full after:transition-colors ${
-        active
-          ? "text-foreground after:bg-foreground"
-          : "text-muted-foreground hover:text-foreground after:bg-transparent"
+      className={`relative flex max-w-[280px] items-center gap-2 px-3 text-[12px] transition-colors ${
+        active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
       }`}
     >
       <span className="truncate">{label}</span>
+      {active ? <TabUnderline /> : null}
     </button>
   );
 }
@@ -320,12 +353,13 @@ function ChatTabButton({
 }) {
   return (
     <div
-      className={`group relative flex max-w-[280px] items-center gap-1.5 px-3 text-[12px] transition-colors after:pointer-events-none after:absolute after:inset-x-2 after:-bottom-px after:h-[2px] after:rounded-full after:transition-colors ${
+      className={`group relative flex max-w-[280px] items-center gap-1.5 px-3 text-[12px] transition-colors ${
         active
-          ? "text-foreground after:bg-foreground"
-          : "text-muted-foreground hover:text-foreground after:bg-transparent"
+          ? "text-foreground"
+          : "text-muted-foreground hover:text-foreground"
       }`}
     >
+      {active ? <TabUnderline /> : null}
       <button
         type="button"
         onClick={onClick}
@@ -435,12 +469,13 @@ function FileTabButton({
 }) {
   return (
     <div
-      className={`group relative flex max-w-[280px] items-center gap-1.5 px-3 text-[12px] transition-colors after:pointer-events-none after:absolute after:inset-x-2 after:-bottom-px after:h-[2px] after:rounded-full after:transition-colors ${
+      className={`group relative flex max-w-[280px] items-center gap-1.5 px-3 text-[12px] transition-colors ${
         active
-          ? "text-foreground after:bg-foreground"
-          : "text-muted-foreground hover:text-foreground after:bg-transparent"
+          ? "text-foreground"
+          : "text-muted-foreground hover:text-foreground"
       }`}
     >
+      {active ? <TabUnderline /> : null}
       <button
         type="button"
         onClick={onClick}

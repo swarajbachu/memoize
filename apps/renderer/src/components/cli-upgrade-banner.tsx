@@ -1,9 +1,11 @@
 import { HugeiconsIcon } from "@hugeicons/react";
 import { CircleArrowUp01Icon, Copy01Icon, LinkSquare01Icon, RotateRight01Icon, Tick01Icon } from "@hugeicons-pro/core-bulk-rounded";
+import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 
 import type { ProviderId } from "@memoize/wire";
 
+import { collapseY } from "../lib/motion.ts";
 import { Button } from "~/components/ui/button";
 import { useProvidersStore } from "../store/providers.ts";
 
@@ -36,15 +38,10 @@ export function CliUpgradeBanner({ providerId }: { providerId: ProviderId }) {
   const [dismissed, setDismissed] = useState(false);
 
   const row = availability.find((a) => a.providerId === providerId);
-  if (
-    row === undefined ||
-    row.cliVersionStatus !== "outdated" ||
-    dismissed
-  ) {
-    return null;
-  }
+  const visible =
+    row !== undefined && row.cliVersionStatus === "outdated" && !dismissed;
 
-  const command = row.cliUpgradeCommand ?? null;
+  const command = row?.cliUpgradeCommand ?? null;
   const docsUrl = UPGRADE_DOCS_URL[providerId];
 
   const onCopy = async () => {
@@ -65,7 +62,17 @@ export function CliUpgradeBanner({ providerId }: { providerId: ProviderId }) {
   };
 
   return (
-    <div className="mx-3 mb-2 mt-1 flex flex-col gap-2 rounded-2xl bg-alert-warning-bg p-3">
+    <AnimatePresence initial={false}>
+      {visible && row !== undefined ? (
+        <motion.div
+          key="cli-upgrade"
+          variants={collapseY}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          className="overflow-hidden"
+        >
+          <div className="mx-3 mb-2 mt-1 flex flex-col gap-2 rounded-2xl bg-alert-warning-bg p-3">
       <div className="flex items-start gap-2.5">
         <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg text-warning">
           <HugeiconsIcon icon={CircleArrowUp01Icon} className="size-3.5" />
@@ -134,6 +141,9 @@ export function CliUpgradeBanner({ providerId }: { providerId: ProviderId }) {
           Recheck
         </Button>
       </div>
-    </div>
+          </div>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
   );
 }

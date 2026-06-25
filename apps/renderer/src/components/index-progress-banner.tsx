@@ -1,11 +1,13 @@
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Alert01Icon, Loading02Icon } from "@hugeicons-pro/core-bulk-rounded";
+import { AnimatePresence, motion } from "motion/react";
 import {
   Progress,
   ProgressIndicator,
   ProgressTrack,
 } from "~/components/ui/progress";
 
+import { collapseY } from "../lib/motion.ts";
 import { useIndexStore } from "../store/code-index.ts";
 import { useWorkspaceStore } from "../store/workspace.ts";
 
@@ -23,42 +25,59 @@ export function IndexProgressBanner() {
     selectedFolderId !== null ? s.statusByFolder[selectedFolderId] : undefined,
   );
 
-  if (status === undefined) return null;
-  if (status.state === "idle" || status.state === "ready") return null;
-
-  const isError = status.state === "error";
-  const processed = status.progress?.processed ?? 0;
-  const total = status.progress?.total ?? 0;
+  const visible =
+    status !== undefined &&
+    status.state !== "idle" &&
+    status.state !== "ready";
+  const isError = status?.state === "error";
+  const processed = status?.progress?.processed ?? 0;
+  const total = status?.progress?.total ?? 0;
   const percent = total > 0 ? Math.round((processed / total) * 100) : 0;
 
   return (
-    <div
-      role="status"
-      className="mx-3 mt-2 flex items-center gap-3 rounded-lg border border-border bg-card/70 px-3 py-2 text-[12px] text-muted-foreground shadow-sm backdrop-blur"
-    >
-      <span className="flex size-5 shrink-0 items-center justify-center text-foreground">
-        {isError ? (
-          <HugeiconsIcon icon={Alert01Icon} className="size-3.5" />
-        ) : (
-          <HugeiconsIcon icon={Loading02Icon} className="size-3.5 animate-spin" />
-        )}
-      </span>
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="text-foreground">
-          {isError
-            ? "Code index failed — agents will fall back to grep."
-            : total > 0
-              ? `Indexing ${processed}/${total}…`
-              : "Indexing…"}
-        </span>
-        {!isError && total > 0 && (
-          <Progress value={percent}>
-            <ProgressTrack>
-              <ProgressIndicator />
-            </ProgressTrack>
-          </Progress>
-        )}
-      </div>
-    </div>
+    <AnimatePresence initial={false}>
+      {visible ? (
+        <motion.div
+          key="index-banner"
+          variants={collapseY}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          className="overflow-hidden"
+        >
+          <div
+            role="status"
+            className="mx-3 mt-2 flex items-center gap-3 rounded-lg border border-border bg-card/70 px-3 py-2 text-[12px] text-muted-foreground shadow-sm backdrop-blur"
+          >
+            <span className="flex size-5 shrink-0 items-center justify-center text-foreground">
+              {isError ? (
+                <HugeiconsIcon icon={Alert01Icon} className="size-3.5" />
+              ) : (
+                <HugeiconsIcon
+                  icon={Loading02Icon}
+                  className="size-3.5 animate-spin"
+                />
+              )}
+            </span>
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <span className="text-foreground">
+                {isError
+                  ? "Code index failed — agents will fall back to grep."
+                  : total > 0
+                    ? `Indexing ${processed}/${total}…`
+                    : "Indexing…"}
+              </span>
+              {!isError && total > 0 && (
+                <Progress value={percent}>
+                  <ProgressTrack>
+                    <ProgressIndicator />
+                  </ProgressTrack>
+                </Progress>
+              )}
+            </div>
+          </div>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
   );
 }

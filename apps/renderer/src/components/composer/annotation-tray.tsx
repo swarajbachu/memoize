@@ -6,6 +6,7 @@ import {
 } from "@hugeicons-pro/core-bulk-rounded";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { X } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 
 import type {
@@ -17,6 +18,7 @@ import type {
 
 import { cn } from "~/lib/utils";
 
+import { collapseY } from "../../lib/motion.ts";
 import { useAnnotationsStore } from "../../store/annotations.ts";
 import { useRevealAnnotation } from "../annotation/annotation-navigation.ts";
 import { AnnotationFileChip } from "../file-chip.tsx";
@@ -48,10 +50,18 @@ export function AnnotationTray({
   const [editText, setEditText] = useState("");
   const revealAnnotation = useRevealAnnotation({ folderId, worktreeId });
 
-  if (annotations.length === 0) return null;
-
   return (
-    <div className="mb-2 overflow-hidden rounded-lg border border-border/50 bg-card/80 shadow-sm">
+    <AnimatePresence initial={false}>
+      {annotations.length > 0 ? (
+        <motion.div
+          key="annotation-tray"
+          variants={collapseY}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          className="overflow-hidden"
+        >
+          <div className="mb-2 overflow-hidden rounded-lg border border-border/50 bg-card/80 shadow-sm">
       <div className="flex w-full items-center gap-2 border-b border-border/40 bg-muted/20 px-2.5 py-1.5">
         <button
           type="button"
@@ -174,6 +184,9 @@ export function AnnotationTray({
           ))}
         </ul>
       ) : null}
-    </div>
+          </div>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
   );
 }

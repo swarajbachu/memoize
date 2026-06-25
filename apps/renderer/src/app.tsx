@@ -1,5 +1,7 @@
-import { useEffect } from "react";
+import type React from "react";
+import { useEffect, useState } from "react";
 import { Effect } from "effect";
+import { MotionConfig } from "motion/react";
 import {
   Group,
   Panel,
@@ -7,6 +9,9 @@ import {
   useDefaultLayout,
   usePanelRef,
 } from "react-resizable-panels";
+
+import { cn } from "./lib/utils.ts";
+import { springSoft } from "./lib/motion.ts";
 
 import { ChatComposer } from "./components/chat-composer";
 import { ChatLanding } from "./components/chat-landing.tsx";
@@ -122,30 +127,32 @@ export function App() {
   const onboardingCompleted = useSettingsStore((s) => s.onboardingCompleted);
   const view = useUiStore((s) => s.view);
 
+  let content: React.ReactNode;
   if (!onboardingCompleted) {
-    return (
-      <TooltipProvider>
-        <div className="dark relative flex h-dvh max-h-dvh min-h-0 w-screen overflow-hidden bg-background text-foreground">
-          <OnboardingWizard />
-        </div>
-      </TooltipProvider>
+    content = (
+      <div className="dark relative flex h-dvh max-h-dvh min-h-0 w-screen overflow-hidden bg-background text-foreground">
+        <OnboardingWizard />
+      </div>
     );
+  } else if (view === "settings") {
+    content = (
+      <div className="dark flex h-dvh max-h-dvh min-h-0 w-screen overflow-hidden bg-background text-foreground">
+        <SettingsPage />
+      </div>
+    );
+  } else {
+    content = <MainShell />;
   }
 
-  if (view === "settings") {
-    return (
-      <TooltipProvider>
-        <div className="dark flex h-dvh max-h-dvh min-h-0 w-screen overflow-hidden bg-background text-foreground">
-          <SettingsPage />
-        </div>
-      </TooltipProvider>
-    );
-  }
-
+  // `reducedMotion="user"` makes every motion component in the tree honor the
+  // OS "Reduce Motion" setting (transforms/opacity snap to their end state),
+  // so individual animated surfaces don't each need their own guard. The
+  // shared spring becomes the default transition for any component that
+  // doesn't specify its own.
   return (
-    <TooltipProvider>
-      <MainShell />
-    </TooltipProvider>
+    <MotionConfig reducedMotion="user" transition={springSoft}>
+      <TooltipProvider>{content}</TooltipProvider>
+    </MotionConfig>
   );
 }
 
@@ -266,8 +273,40 @@ function MainShell() {
     if (!rightSidebarOpen && !collapsed) panel.collapse();
   }, [rightPanelRef, rightSidebarOpen]);
 
+  // Animate the side panels' width when they collapse/expand via toggle, but
+  // NOT while the user is dragging a separator (a transition there would lag a
+  // frame behind the cursor). `react-resizable-panels` sets `flex-grow` /
+  // `flex-basis` inline on its `[data-panel]` elements and applies our
+  // `className` to a *nested* div, so we can't transition the flex element
+  // directly — instead we gate a descendant-targeted transition on the shell
+  // wrapper we own, switching it off for the duration of a drag. `mounted`
+  // suppresses the transition on first paint so the layout doesn't animate in
+  // from zero width.
+  const [isResizing, setIsResizing] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+    const stop = () => setIsResizing(false);
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
+    return () => {
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+    };
+  }, []);
+  const animatePanels = mounted && !isResizing;
+  const beginResize = () => setIsResizing(true);
+
   return (
-    <div className="dark flex h-dvh max-h-dvh min-h-0 w-screen overflow-hidden text-foreground">
+    <div
+      className={cn(
+        "dark flex h-dvh max-h-dvh min-h-0 w-screen overflow-hidden text-foreground",
+        // Width transition on collapse/expand — disabled mid-drag so manual
+        // resizing tracks the cursor 1:1.
+        animatePanels &&
+          "[&_[data-panel]]:transition-[flex-grow,flex-basis] [&_[data-panel]]:duration-200 [&_[data-panel]]:ease-out",
+      )}
+    >
       <Group
         id={PANEL_GROUP_ID}
         orientation="horizontal"
@@ -288,14 +327,22 @@ function MainShell() {
             if (open !== leftSidebarOpen) setLeftSidebarOpen(open);
           }}
         >
-          <div className="flex h-full min-h-0 flex-col bg-background">
+          <div
+            className={cn(
+              "flex h-full min-h-0 flex-col bg-background transition-opacity duration-200 ease-out",
+              !leftSidebarOpen && "opacity-0",
+            )}
+          >
             <TopBarLeft />
             <div className="flex min-h-0 flex-1 flex-col">
               <ProjectsSidebar />
             </div>
           </div>
         </Panel>
-        <Separator className="w-px bg-border transition-colors hover:bg-foreground/20 active:bg-foreground/30" />
+        <Separator
+          onPointerDown={beginResize}
+          className="w-px bg-border transition-colors hover:bg-foreground/20 active:bg-foreground/30"
+        />
         <Panel id="main" minSize="30%">
           <main className="flex h-full min-h-0 min-w-0 flex-col bg-background">
             {showMainChrome ? <TopBarMain /> : null}
@@ -365,7 +412,10 @@ function MainShell() {
             )}
           </main>
         </Panel>
-        <Separator className="w-px bg-border transition-colors hover:bg-foreground/20 active:bg-foreground/30" />
+        <Separator
+          onPointerDown={beginResize}
+          className="w-px bg-border transition-colors hover:bg-foreground/20 active:bg-foreground/30"
+        />
         <Panel
           id="files"
           defaultSize="22%"
@@ -384,7 +434,12 @@ function MainShell() {
             if (open !== rightSidebarOpen) setRightSidebarOpen(open);
           }}
         >
-          <div className="flex h-full min-h-0 flex-col bg-sidebar">
+          <div
+            className={cn(
+              "flex h-full min-h-0 flex-col bg-sidebar transition-opacity duration-200 ease-out",
+              !rightSidebarOpen && "opacity-0",
+            )}
+          >
             <TopBarRight />
             <div className="flex min-h-0 flex-1 flex-col">
               <RightPane />

@@ -1,11 +1,13 @@
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Alert01Icon, CheckmarkCircle02Icon, CircleArrowUp01Icon } from "@hugeicons-pro/core-bulk-rounded";
+import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
 import type { UpdateStatus } from "@memoize/wire";
 
+import { springSoft } from "../lib/motion.ts";
 import { Button } from "~/components/ui/button";
 import {
   Progress,
@@ -59,20 +61,15 @@ export function UpdateBanner() {
     }
   }, [status.kind]);
 
-  if (
+  const hidden =
     dismissed ||
     status.kind === "idle" ||
     status.kind === "checking" ||
-    status.kind === "not-available"
-  ) {
-    return null;
-  }
-
-  // "Install on quit" mode disappears entirely once download finishes —
-  // electron-updater's autoInstallOnAppQuit handles the rest silently.
-  if (status.kind === "ready" && installModeRef.current === "quit") {
-    return null;
-  }
+    status.kind === "not-available" ||
+    // "Install on quit" mode disappears entirely once download finishes —
+    // electron-updater's autoInstallOnAppQuit handles the rest silently.
+    (status.kind === "ready" && installModeRef.current === "quit");
+  const visible = !hidden;
 
   const onUpdateNow = () => {
     installModeRef.current = "now";
@@ -99,11 +96,18 @@ export function UpdateBanner() {
   // to that ancestor instead of the viewport. Without the portal the toast
   // sticks to the bottom-right of the chat pane, not the window.
   return createPortal(
-    <div
-      role="status"
-      className="fixed right-4 bottom-4 z-50 flex w-[320px] flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-lg"
-    >
-      <div className="flex items-start gap-3">
+    <AnimatePresence>
+      {visible ? (
+        <motion.div
+          key="update-toast"
+          role="status"
+          initial={{ opacity: 0, y: 16, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 16, scale: 0.98 }}
+          transition={springSoft}
+          className="fixed right-4 bottom-4 z-50 flex w-[320px] flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-lg"
+        >
+          <div className="flex items-start gap-3">
         <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
           {status.kind === "ready" ? (
             <HugeiconsIcon icon={CheckmarkCircle02Icon} className="size-4" />
@@ -221,7 +225,9 @@ export function UpdateBanner() {
           )}
         </div>
       )}
-    </div>,
+        </motion.div>
+      ) : null}
+    </AnimatePresence>,
     document.body,
   );
 }
