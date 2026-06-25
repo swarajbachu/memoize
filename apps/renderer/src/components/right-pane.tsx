@@ -219,7 +219,7 @@ export function RightPane() {
           <AddPanelMenu addable={addableKinds(panels)} onAdd={addPanel} />
         </div>
       ) : null}
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {panels.length === 0 ? (
           <PanelLauncher addable={addableKinds(panels)} onAdd={addPanel} />
         ) : null}
@@ -230,7 +230,7 @@ export function RightPane() {
             <div
               key={panel.id}
               hidden={panel.id !== effectiveActiveId}
-              className="flex min-h-0 flex-1 flex-col"
+              className="flex min-h-0 min-w-0 flex-1 flex-col"
             >
               <PanelBody
                 panel={panel}
@@ -244,7 +244,10 @@ export function RightPane() {
             browser tab open or the sidebar collapsed — a command then calls
             revealPanel("browser") to surface it. Mounting it only on add
             would drop commands issued while it's closed. */}
-        <div hidden={!browserActive} className="flex min-h-0 flex-1 flex-col">
+        <div
+          hidden={!browserActive}
+          className="flex min-h-0 min-w-0 flex-1 flex-col"
+        >
           <BrowserPane />
         </div>
       </div>

@@ -1,6 +1,7 @@
 import { Effect, Fiber, Stream } from "effect";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { WebglAddon } from "@xterm/addon-webgl";
 
 import type { PtyId } from "@memoize/wire";
 
@@ -70,13 +71,16 @@ function makeLive(
     fontFamily:
       '"SF Mono", "JetBrains Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace',
     fontSize: 13,
-    lineHeight: 1.3,
+    lineHeight: 1.2,
     cursorBlink: true,
+    // Thin bar cursor (not the chunky block) so it reads as a clean accent.
+    cursorStyle: "bar",
+    cursorInactiveStyle: "bar",
     convertEol: false,
-    // Transparent canvas so the parent pane's `bg-background` shows through.
-    allowTransparency: true,
     theme: {
-      background: "rgba(0, 0, 0, 0)",
+      // Solid background matching the pane: lets the WebGL renderer draw
+      // cleanly and skips the per-frame cost of a transparent canvas.
+      background: readToken(host, "--background", "#0b0b0c"),
       foreground: readToken(host, "--foreground", "#e6e6e6"),
       cursor: readToken(host, "--primary", "#e6e6e6"),
       cursorAccent: readToken(host, "--background", "#0b0b0c"),
@@ -87,6 +91,17 @@ function makeLive(
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.open(host);
+
+  // GPU renderer — keeps up with fast PTY output where the default DOM
+  // renderer stalls and visibly drops/garbles characters. Falls back to the
+  // DOM renderer automatically if the GL context is lost or unavailable.
+  try {
+    const webgl = new WebglAddon();
+    webgl.onContextLoss(() => webgl.dispose());
+    term.loadAddon(webgl);
+  } catch {
+    // No WebGL context (rare) — DOM renderer stays active.
+  }
 
   const live: LiveTerminal = {
     term,

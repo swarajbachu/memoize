@@ -110,5 +110,10 @@ export function PtyTerminal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [instanceId]);
 
-  return <div ref={containerRef} className="h-full w-full bg-background p-2" />;
+  return (
+    <div
+      ref={containerRef}
+      className="h-full w-full min-w-0 overflow-hidden bg-background p-2"
+    />
+  );
 }
