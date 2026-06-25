@@ -149,6 +149,7 @@ if (!changelog.includes(`## [${nextVersion}]`)) {
   );
 }
 
+run("node", ["scripts/generate-website-changelog.mjs"]);
 run("bun", ["run", "check-types"]);
 run("git", ["add", "CHANGELOG.md", "apps/desktop/package.json", "bun.lock", "apps/web", "scripts/release-new-version.mjs", ".codex/skills/release-new-version"]);
 run("git", ["commit", "-m", `Release v${nextVersion}`]);
