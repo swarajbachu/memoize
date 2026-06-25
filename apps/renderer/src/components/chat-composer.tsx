@@ -83,6 +83,7 @@ import { parseComposerInput } from "../composer/segment-parser.ts";
 import { AnnotationTray } from "./composer/annotation-tray.tsx";
 import { ComposerChipOverlay } from "./composer/composer-chip-overlay.tsx";
 import { FileTagPopover } from "./composer/file-tag-popover.tsx";
+import { PlanApprovalTray } from "./composer/plan-approval-tray.tsx";
 import { ProjectPlanTray } from "./composer/project-plan-tray.tsx";
 import { QueueTray } from "./composer/queue-tray.tsx";
 import { TrayPill, trayPillActionClass } from "./composer/tray-pill.tsx";
@@ -755,6 +756,7 @@ export function ChatComposer({
           <Frame>
             {!isDraft ? (
               <div className="mb-1 overflow-hidden rounded-md border border-border/50 bg-muted/30 empty:hidden empty:mb-0">
+                <PlanApprovalTray sessionId={sessionId} />
                 {goalCapable && goal !== null ? (
                   <GoalBanner
                     goal={goal}

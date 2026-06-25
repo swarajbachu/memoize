@@ -20,15 +20,10 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useState } from "react";
 
-import type {
-  SessionId,
-  UserQuestion,
-  UserQuestionAnswer,
-} from "@memoize/wire";
+import type { UserQuestion, UserQuestionAnswer } from "@memoize/wire";
 
 import { cn } from "~/lib/utils";
 
-import { usePermissionsStore } from "../store/permissions.ts";
 import { CodeBlock } from "./code-block.tsx";
 import { FileBadge } from "./file-badge.tsx";
 import { MarkdownBody } from "./markdown-body.tsx";
@@ -1180,11 +1175,9 @@ const buildToolView = (
 export function ExitPlanModeRow({
   input,
   result,
-  sessionId,
 }: {
   input: unknown;
   result?: ToolResult;
-  sessionId?: SessionId;
 }) {
   const plan =
     typeof input === "object" && input !== null && "plan" in input
@@ -1200,25 +1193,12 @@ export function ExitPlanModeRow({
         ? "cancelled"
         : "approved";
 
-  // Find the open permission request for this session's ExitPlanMode.
-  // There should be at most one in-flight at a time.
-  const pendingRequest = usePermissionsStore((s) => {
-    if (sessionId === undefined) return null;
-    for (const req of Object.values(s.requestsById)) {
-      if (req.sessionId !== sessionId) continue;
-      if (req.kind._tag !== "Other") continue;
-      if (req.kind.tool !== "ExitPlanMode") continue;
-      return req;
-    }
-    return null;
-  });
-  const decide = usePermissionsStore((s) => s.decide);
-
-  // Pending plans need the Approve / Reject buttons visible inline so the
-  // user can act without an extra click — keep the full card layout.
-  // Resolved plans (approved / rejected) collapse into the same icon-row
-  // accordion the rest of the timeline uses, with the plan body behind the
-  // chevron and the status pill pinned to the body footer.
+  // Pending plans render the full body inline; the Approve / Cancel decision
+  // lives in the pinned `PlanApprovalTray` above the composer, where the user's
+  // cursor already sits — see composer/plan-approval-tray.tsx. Resolved plans
+  // (approved / rejected) collapse into the same icon-row accordion the rest of
+  // the timeline uses, with the plan body behind the chevron and the status pill
+  // pinned to the body footer.
   if (status === "pending") {
     return (
       <div className="px-4 py-2">
@@ -1233,26 +1213,6 @@ export function ExitPlanModeRow({
         ) : (
           <MarkdownBody>{plan}</MarkdownBody>
         )}
-        {pendingRequest !== null ? (
-          <div className="mt-4 flex items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => void decide(pendingRequest.id, { _tag: "Deny" })}
-              className="rounded-md px-3 py-1 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                void decide(pendingRequest.id, { _tag: "AllowOnce" })
-              }
-              className="rounded-md bg-foreground px-3 py-1 text-xs font-medium text-background hover:opacity-90"
-            >
-              Approve
-            </button>
-          </div>
-        ) : null}
       </div>
     );
   }
