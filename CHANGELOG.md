@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1]
+
+### Changed
+- [codex] Fix Claude result error classification (#195)
+- [codex] Fix website changelog publishing (#194)
+- [codex] Optimize Pokédex page (#193)
+- Terminal: fix pane overflow, GPU rendering, thin cursor (#192)
+- Add app-wide motion system to the renderer (#188)
+- Keyboard navigation: tabs, chats, panels, panes + Cmd+K chat switcher (#191)
+- Isolate terminals & dock tabs per chat, keep shells running across switches (#190)
+- Cap turn-summary file chips with collapsible +N more toggle (#189)
+- Render sub-agent summary as markdown (#187)
+- Move plan Approve/Cancel into a pinned bar above the composer (#186)
+
 ## [0.7.0]
 
 ### Changed
