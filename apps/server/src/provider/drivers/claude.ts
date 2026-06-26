@@ -443,9 +443,10 @@ export const looksLikeClaudeAuthFailure = (text: string): boolean =>
   CLAUDE_AUTH_FAILURE_PATTERN.test(text);
 
 /**
- * Pull the human-readable error text out of a `result` message. The SDK splits
- * results into a success shape (`result: string`, may still carry
- * `is_error`/`api_error_status`) and an error shape (`errors: string[]`).
+ * Pull the human-readable error text out of a `result` message. Treat only
+ * explicit failure signals as provider errors. Claude can return assistant
+ * prose in `result` even when `subtype` is not exactly `"success"`; rendering
+ * that prose as an Error creates a bogus "Provider error" bubble.
  */
 export const claudeResultErrorText = (msg: SDKMessage): string | null => {
   const m = msg as {
@@ -457,14 +458,22 @@ export const claudeResultErrorText = (msg: SDKMessage): string | null => {
   };
   const status =
     typeof m.api_error_status === "number" ? m.api_error_status : null;
-  const isError =
-    m.is_error === true ||
-    (typeof m.subtype === "string" && m.subtype !== "success") ||
-    (status !== null && status >= 400);
-  if (!isError) return null;
   const errors = Array.isArray(m.errors)
     ? m.errors.filter((e): e is string => typeof e === "string")
     : [];
+  const isError =
+    m.is_error === true ||
+    errors.length > 0 ||
+    (status !== null && status >= 400);
+  if (!isError) {
+    const subtype = typeof m.subtype === "string" ? m.subtype : "";
+    const hasResult =
+      typeof m.result === "string" && m.result.trim().length > 0;
+    if (subtype.startsWith("error") && !hasResult) {
+      return "The agent run ended with an error.";
+    }
+    return null;
+  }
   const parts: string[] = [];
   if (typeof m.result === "string" && m.result.trim().length > 0) {
     parts.push(m.result.trim());
@@ -904,7 +913,7 @@ const translate = (
         out.push({ _tag: "Error", message: resultError });
       }
       out.push(
-        msg.subtype === "success" && resultError === null
+        resultError === null
           ? { _tag: "Completed", reason: "ended" }
           : { _tag: "Completed", reason: "error" },
       );
