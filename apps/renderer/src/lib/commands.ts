@@ -97,10 +97,13 @@ function stepChat(delta: 1 | -1): void {
  *  right sidebar first if it's collapsed. */
 function stepPanel(delta: 1 | -1): void {
   const ui = useUiStore.getState();
-  const panels = ui.rightPanels;
+  const chatId = currentChatId();
+  if (chatId === null) return;
+  const panels = ui.rightPanelsByChat[chatId] ?? [];
   if (panels.length === 0) return;
   if (!ui.rightSidebarOpen) ui.setRightSidebarOpen(true);
-  const idx = panels.findIndex((p) => p.id === ui.activeRightPanelId);
+  const activeId = ui.activeRightPanelByChat[chatId] ?? null;
+  const idx = panels.findIndex((p) => p.id === activeId);
   const base = idx === -1 ? 0 : idx;
   const next = (base + delta + panels.length) % panels.length;
   ui.setActiveRightPanel(panels[next]!.id);
