@@ -13,7 +13,7 @@ Agents inside memoize spend most of their token budget on navigation —
 
 Existing tools (Cursor, Sourcegraph Cody, Greptile, Continue, Augment) all
 build codebase indexes. None handle the **N parallel agent workspaces on
-the same repo** shape that Conductor + memoize already produces. That's
+the same repo** shape that memoize produces. That's
 the wedge: not "vector DB for code," but "the only index built for the
 parallel-workspace agent workflow."
 
@@ -22,7 +22,7 @@ parallel-workspace agent workflow."
 1. **Tokens-per-task ↓ 3–10×** vs. baseline grep agent on real memoize tasks.
 2. **Wall-clock-per-task ↓ 2–3×** (driven by fewer LLM round-trips, not
    faster retrieval).
-3. **Branch switches in < 200 ms**, not minutes — Conductor workspace
+3. **Branch switches in < 200 ms**, not minutes — parallel workspace
    ergonomics demand this.
 4. **Local-first**, zero network calls in the default config.
 5. **Reusable**: memoize is one consumer, not the only consumer.
@@ -152,7 +152,7 @@ manifests (
 CREATE INDEX manifests_blob ON manifests(blob_id);
 ```
 
-**Why content-addressed.** Five Conductor workspaces on the same repo
+**Why content-addressed.** Five parallel workspaces on the same repo
 means five branches checked out concurrently. With a content-addressed
 store, the common 95% of files dedupe across branches; only the changed
 files cost re-parsing. Switching branches is a manifest swap, not a

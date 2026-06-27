@@ -1176,7 +1176,7 @@ export type RequestPermission = (
 
 /**
  * Resolve the SDK `effort` field and the per-session `settings` slice from
- * the FE picker's `modelOptions`. Mirrors the t3code reference:
+ * the FE picker's `modelOptions`:
  *   - `ultracode`  → `effort: "xhigh"` + `settings.ultracode: true`
  *   - `ultrathink` → prompt-injected (driver-side prefix added at send()
  *                    time); SDK `effort` stays unset so the model still
@@ -1234,9 +1234,8 @@ const effortAndSettings = (
 
 /**
  * If the user's effort selection is `ultrathink`, prepend the literal word
- * to the prompt and unset the SDK effort knob. Mirrors t3code's
- * `promptInjectedValues` contract. Driver hooks call this before forwarding
- * the user's text to the SDK.
+ * to the prompt and unset the SDK effort knob. Driver hooks call this before
+ * forwarding the user's text to the SDK.
  */
 export const applyUltrathinkPrefix = (
   modelOptions: Readonly<Record<string, string>> | undefined,

@@ -133,3 +133,12 @@ bun run dist:mac:unsigned
 ```
 
 Requires: Bun 1.3.10+, Node.js ≥ 18, macOS.
+
+---
+
+## Acknowledgements
+
+memoize is inspired by T3 code's work and built in our own opinionated way.
+Special thanks to [Julius Marminge](https://github.com/juliusmarminge), a main
+contributor to T3 code, whose work was a primary inspiration for our use of the
+Effect library.

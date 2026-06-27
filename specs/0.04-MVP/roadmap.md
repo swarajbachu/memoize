@@ -92,10 +92,10 @@ Incremental updates and fast branch switches.
 - File watcher via `@parcel/watcher` (fast, native, no chokidar polling)
 - Branch detection: hook `git checkout` via `apps/server/src/git/`
 - ADR 0017 — branch-aware manifest
-- Manifest swap path proven against Conductor workspaces (5 branches)
+- Manifest swap path proven against parallel workspaces (5 branches)
 
 **Acceptance:** Branch switch < 200ms on a repo with > 10k files; file edit
-re-indexes only the changed file in < 50ms; running 5 Conductor workspaces
+re-indexes only the changed file in < 50ms; running 5 parallel workspaces
 on the same repo uses one shared blob store (deduped).
 
 ## Phase F — `apps/mcp-server` packaging (~1 week) ◐ stdio only; HTTP + compile pending

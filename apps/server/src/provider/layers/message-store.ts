@@ -1973,7 +1973,7 @@ export const MessageStoreLive = Layer.scoped(
       );
 
     /**
-     * Conductor-style auto-name: on a chat's first user message, summarize it
+     * Worktree-backed auto-name: on a chat's first user message, summarize it
      * into a short title (LLM, with truncation fallback) and use that to
      * rename both the chat and — when the chat has its own worktree — the
      * worktree's git branch per the user's `branchNamingStyle`. Runs on a
@@ -2764,7 +2764,7 @@ export const MessageStoreLive = Layer.scoped(
         }
         // Path 2: an empty chat (no initialPrompt) receiving its first user
         // message via messages.send. When this is the chat's first user
-        // message, kick off the Conductor-style auto-name in the background
+        // message, kick off the worktree-backed auto-name in the background
         // (no-ops unless the chat has its own worktree).
         const firstUserCount = yield* sql<{ readonly c: number }>`
           SELECT COUNT(*) AS c FROM messages m
