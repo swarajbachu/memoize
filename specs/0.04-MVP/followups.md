@@ -220,7 +220,7 @@ new RPCs in `packages/wire/src/keytar.ts`.
 ### 12. Path-glob default-scoping on monorepos
 
 Today `pathGlob` is opt-in. On the memoize repo (a workspace with
-Conductor worktrees), unfiltered queries still return more noise than
+parallel worktrees), unfiltered queries still return more noise than
 needed. Could auto-detect a monorepo (`pnpm-workspace.yaml`,
 `bun-workspace`, `lerna.json`, `turbo.json`) and default-scope to the
 current focused project. Tradeoff: cross-package queries get worse

@@ -119,8 +119,8 @@ if (OPENCODE_DEBUG) {
 
 const OPENCODE_EMPTY_CONFIG = "{}";
 
-// stdout marker the opencode server prints once it's bound to the port —
-// mirrors t3code's `parseServerUrlFromOutput`. We grep for either the
+// stdout marker the opencode server prints once it's bound to the port. We
+// grep for either the
 // human-readable line or any naked URL on a line by itself so future
 // server message tweaks don't break the handshake.
 const SERVER_READY_REGEX = /(https?:\/\/[^\s]+)/;
@@ -129,8 +129,8 @@ const SERVER_READY_REGEX = /(https?:\/\/[^\s]+)/;
  * Grab a free TCP port. We bind to port 0, read the kernel-assigned port,
  * close the socket, and hand the number to `opencode serve`. A tiny race
  * window remains (another process could grab the port between our close
- * and opencode's bind) but it's the same approach t3code uses and the
- * worst case is a clean spawn error we surface as `AgentSessionStartError`.
+ * and opencode's bind); the worst case is a clean spawn error we surface as
+ * `AgentSessionStartError`.
  */
 const findFreePort = (): Promise<number> =>
   new Promise((resolve, reject) => {

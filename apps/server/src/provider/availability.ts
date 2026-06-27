@@ -81,10 +81,6 @@ const PROBES: ReadonlyArray<ProviderProbe> = [
     upgradeCommand: "npm i -g @openai/codex@latest",
     npmPackage: "@openai/codex",
     homebrewFormula: "codex",
-    // Conductor can place a standalone Codex binary on PATH under
-    // `Application Support/.../agent-binaries/codex/<version>/codex`; npm
-    // cannot update that install. `buildUpdateCommand` special-cases this
-    // path so the updater runs the exact binary the app probed.
     nativeUpdate: null,
   },
   {
@@ -184,15 +180,14 @@ export const selectCliPathCandidate = (
   if (candidates.length === 0) return null;
   if (cliBinary !== "codex") return candidates[0]!;
 
-  // Conductor can prepend its own standalone Codex binary to PATH for app
-  // internals. Provider settings should report the user's real Codex install
-  // when one exists later on PATH, matching what t3code does by resolving the
-  // provider binary before deriving version/update capabilities.
+  // Conductor can prepend its managed Codex shim to PATH for app internals.
+  // Provider settings should report the user's real Codex install, not that
+  // managed binary.
   return (
     candidates.find(
       (candidate) =>
         !isConductorManagedCodexPath(normalizeCommandPath(candidate)),
-    ) ?? candidates[0]!
+    ) ?? null
   );
 };
 
@@ -414,7 +409,7 @@ export const deriveLatestAdvisory = (
 // on-PATH binary was installed — a native install (`~/.local/bin/claude`)
 // can't be updated by npm, a brew install needs `brew upgrade`, etc. We
 // inspect the resolved binary path (and its realpath, since global bins are
-// symlinks into `…/lib/node_modules/…`) the same way the t3 reference does.
+// symlinks into `…/lib/node_modules/…`).
 // ---------------------------------------------------------------------------
 
 const normalizeCommandPath = (p: string): string =>
@@ -456,10 +451,10 @@ const npmGlobalUpdate = (pkg: string): string =>
 
 /**
  * Pure resolver: pick the update command for a provider given the candidate
- * binary paths (the `which` result plus its realpath). Detection order mirrors
- * the t3 reference: native self-update → bun → pnpm → npm → homebrew. Falls
- * back to the provider's install one-liner (curl installers reinstall latest),
- * else `null`.
+ * binary paths (the `which` result plus its realpath). Detection order:
+ * native self-update → bun → pnpm → npm → homebrew. Falls back to the
+ * provider's install one-liner (curl installers reinstall latest), else
+ * `null`.
  */
 export const buildUpdateCommand = (
   providerId: ProviderId,
@@ -471,13 +466,6 @@ export const buildUpdateCommand = (
   const norms = candidatePaths
     .filter((p) => p.length > 0)
     .map(normalizeCommandPath);
-
-  const conductorManagedCodexPath = candidatePaths.find((p) =>
-    isConductorManagedCodexPath(normalizeCommandPath(p)),
-  );
-  if (providerId === "codex" && conductorManagedCodexPath !== undefined) {
-    return `${shellQuote(conductorManagedCodexPath)} update`;
-  }
 
   if (
     probe.nativeUpdate !== null &&
@@ -1134,9 +1122,8 @@ const probeAccount = (
 
 /**
  * Roll the per-field signals (`cliInstalled`, `cliVersionStatus`, `authStatus`)
- * up into the single dot color the renderer paints. Mirrors t3code's
- * `getProviderSummary` precedence so server-derived status agrees with the
- * client-side fallback when both run.
+ * up into the single dot color the renderer paints. The precedence keeps the
+ * server-derived status aligned with the client-side fallback when both run.
  */
 const computeHealthStatus = (input: {
   cliInstalled: boolean;

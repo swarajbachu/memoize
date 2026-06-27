@@ -180,8 +180,8 @@ export function FileChip({
   });
 
   // Resolve the chip's effective root + workspace-relative path. Tool rows
-  // sometimes carry an absolute path from another workspace (Conductor
-  // side-checkouts, sibling repos); opening those would trigger
+  // sometimes carry an absolute path from another checkout or sibling repo;
+  // opening those would trigger
   // `FsPathOutsideError` on the server. Detect early, surface as a
   // non-clickable chip with an explanatory tooltip.
   const name = basename(relPath);
