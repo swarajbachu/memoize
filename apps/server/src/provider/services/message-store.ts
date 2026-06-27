@@ -273,6 +273,7 @@ export interface MessageStoreShape {
 
   readonly archiveChat: (
     chatId: ChatId,
+    force: boolean,
   ) => Effect.Effect<
     ChatArchiveResult,
     | ChatNotFoundError

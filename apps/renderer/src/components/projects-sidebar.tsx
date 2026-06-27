@@ -41,7 +41,11 @@ import { cn, formatCompactNumber } from "~/lib/utils";
 import { noteSessionStatusForCompletionSound } from "../lib/completion-sounds.ts";
 import { formatShortcut } from "../lib/shortcuts.ts";
 import { getRpcClient } from "../lib/rpc-client.ts";
-import { isChatUnread, useChatsStore } from "../store/chats.ts";
+import {
+  archiveChatWithConfirm,
+  isChatUnread,
+  useChatsStore,
+} from "../store/chats.ts";
 import { usePermissionsStore } from "../store/permissions.ts";
 import { gitDiffStatKey, useGitDiffStatStore } from "../store/git-diff-stat.ts";
 import { useMessagesStore } from "../store/messages.ts";
@@ -806,7 +810,6 @@ function ChatRow({ chat }: { chat: Chat }) {
 
   const selectChat = useChatsStore((s) => s.select);
   const renameChat = useChatsStore((s) => s.rename);
-  const archiveChat = useChatsStore((s) => s.archive);
   const unarchiveChat = useChatsStore((s) => s.unarchive);
   const removeChat = useChatsStore((s) => s.remove);
 
@@ -1006,7 +1009,9 @@ function ChatRow({ chat }: { chat: Chat }) {
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              void (isArchived ? unarchiveChat(chat.id) : archiveChat(chat.id));
+              void (isArchived
+                ? unarchiveChat(chat.id)
+                : archiveChatWithConfirm(chat.id));
             }}
             className="hidden items-center rounded p-0.5 text-muted-foreground transition-opacity duration-150 ease-out hover:text-sidebar-accent-foreground group-hover:flex motion-reduce:transition-none"
             aria-label={`${primaryActionLabel} ${chat.title}`}
@@ -1040,7 +1045,7 @@ function ChatRow({ chat }: { chat: Chat }) {
             </MenuItem>
           ) : (
             <MenuItem
-              onClick={() => void archiveChat(chat.id)}
+              onClick={() => void archiveChatWithConfirm(chat.id)}
               className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
             >
               <HugeiconsIcon icon={ArchiveArrowDownIcon} className="size-3.5" />

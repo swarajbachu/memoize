@@ -2122,7 +2122,7 @@ export const MessageStoreLive = Layer.scoped(
         `.pipe(Effect.asVoid, Effect.orDie);
       });
 
-    const archiveChat: MessageStoreShape["archiveChat"] = (chatId) =>
+    const archiveChat: MessageStoreShape["archiveChat"] = (chatId, force) =>
       Effect.gen(function* () {
         const chat = yield* lookupChat(chatId);
         if (chat.archivedAt !== null) {
@@ -2188,7 +2188,7 @@ export const MessageStoreLive = Layer.scoped(
         }
 
         if (worktree !== null && settings.archiveRemoveWorktree) {
-          yield* worktrees.remove(worktree.id, false).pipe(
+          yield* worktrees.remove(worktree.id, force).pipe(
             Effect.mapError(
               (err) =>
                 new ChatArchiveWorktreeError({

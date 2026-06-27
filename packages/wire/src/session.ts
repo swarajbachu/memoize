@@ -715,7 +715,15 @@ export const ChatSetActiveSessionRpc = Rpc.make("chat.setActiveSession", {
 });
 
 export const ChatArchiveRpc = Rpc.make("chat.archive", {
-  payload: Schema.Struct({ chatId: ChatId }),
+  payload: Schema.Struct({
+    chatId: ChatId,
+    /**
+     * Force-remove the chat's worktree even when it has uncommitted or
+     * untracked changes. Callers pass `true` after confirming the discard
+     * with the user (mirrors `worktree.remove`'s `force`).
+     */
+    force: Schema.optional(Schema.Boolean),
+  }),
   success: ChatArchiveResult,
   error: ChatArchiveErrors,
 });
