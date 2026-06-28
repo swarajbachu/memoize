@@ -37,6 +37,7 @@ import {
   WorktreeService,
   type WorktreeRestoreSnapshot,
 } from "../services/worktree-service.ts";
+import { linkEnvFiles } from "./env-files.ts";
 
 interface WorktreeRow {
   readonly id: string;
@@ -218,16 +219,7 @@ const prepareLocalFiles = async (
     }
   }
 
-  for (const entry of await fs.readdir(repoPath)) {
-    if (!entry.startsWith(".env")) continue;
-    const source = Path.join(repoPath, entry);
-    const target = Path.join(worktreePath, entry);
-    if (fsSync.existsSync(target)) continue;
-    const stat = await fs.lstat(source);
-    if (!stat.isFile() && !stat.isSymbolicLink()) continue;
-    await fs.copyFile(source, target);
-    output += `copied ${entry}\n`;
-  }
+  output += await linkEnvFiles(repoPath, worktreePath);
 
   return output;
 };
