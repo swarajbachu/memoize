@@ -38,6 +38,7 @@ import {
   FsWriteExternalFileRpc,
   FsWriteFileRpc,
 } from "./fs.ts";
+import { DiagnosticsExportRpc } from "./diagnostics.ts";
 import {
   GitBranchesRpc,
   GitChangesRpc,
@@ -296,6 +297,7 @@ export const MemoizeRpcs = RpcGroup.make(
   SettingsStreamRpc,
   SettingsMigrateLocalStorageRpc,
   UsageReportRpc,
+  DiagnosticsExportRpc,
   KeybindingsGetRpc,
   KeybindingsReplaceRpc,
   KeybindingsStreamRpc,

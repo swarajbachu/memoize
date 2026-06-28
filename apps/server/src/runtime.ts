@@ -8,6 +8,7 @@ import { AppPaths } from "./app-paths.ts";
 import { AttachmentServiceLive } from "./attachment/layers/attachment-service.ts";
 import { IndexRegistryLive } from "./code-index/layers/index-registry.ts";
 import { ConfigStoreServiceLive } from "./config-store/layers/config-store-service.ts";
+import { DiagnosticsServiceLive } from "./diagnostics/layers/diagnostics-service.ts";
 import { FsServiceLive } from "./fs/layers/fs-service.ts";
 import { GitServiceLive } from "./git/layers/git-service.ts";
 import { HandlersLayer } from "./handlers.ts";
@@ -235,6 +236,12 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(NdjsonLoggerLayer),
   );
 
+  const DiagnosticsLayer = DiagnosticsServiceLive.pipe(
+    Layer.provide(MigratedSqlite),
+    Layer.provide(AppPathsLayer),
+    Layer.provide(ProviderLayer),
+  );
+
   // SkillBridge surfaces the user's per-provider skill library to the
   // composer's slash popover. Discovery walks disk; the bridge caches per
   // (provider, projectCwd) and re-emits on watcher fire so editing a
@@ -253,27 +260,32 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     NodeContext.layer,
   );
 
-  const Handlers = HandlersLayer.pipe(
-    Layer.provide(WorkspaceLayer),
-    Layer.provide(PtyLayer),
-    Layer.provide(GitLayer),
-    Layer.provide(WorktreeLayer),
-    Layer.provide(RepositorySettingsLayer),
-    Layer.provide(PokemonLayer),
-    Layer.provide(ConfigStoreLayer),
-    Layer.provide(FsLayer),
-    Layer.provide(FileSearchLayer),
-    Layer.provide(ProjectScaffoldLayer),
-    Layer.provide(ProviderLayer),
-    Layer.provide(MessageStoreLayer),
-    Layer.provide(PermissionLayer),
-    Layer.provide(AttachmentLayer),
-    Layer.provide(BrowserBridgeLayer),
+  const HandlerDomainLayer = Layer.mergeAll(
+    WorkspaceLayer,
+    PtyLayer,
+    GitLayer,
+    WorktreeLayer,
+    RepositorySettingsLayer,
+    PokemonLayer,
+    ConfigStoreLayer,
+    FsLayer,
+    FileSearchLayer,
+    ProjectScaffoldLayer,
+    ProviderLayer,
+    MessageStoreLayer,
+    PermissionLayer,
+    AttachmentLayer,
+    BrowserBridgeLayer,
     // browser.* credential RPCs read/write the keychain directly.
-    Layer.provide(CredentialsServiceLive),
-    Layer.provide(SkillBridgeLayer),
-    Layer.provide(IndexLayer),
-    Layer.provide(FolderPickerLayer),
+    CredentialsServiceLive,
+    SkillBridgeLayer,
+    IndexLayer,
+    DiagnosticsLayer,
+    FolderPickerLayer,
+  );
+
+  const Handlers = HandlersLayer.pipe(
+    Layer.provide(HandlerDomainLayer),
     // `agent.opencodeInventory` calls `resolveCliPath("opencode")` directly
     // (it spins up a short-lived `opencode serve` to read the user's
     // connected providers + agents). That uses `CommandExecutor` from

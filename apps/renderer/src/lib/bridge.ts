@@ -53,6 +53,7 @@ export type MenuAction =
   | "new-chat"
   | "open-project"
   | "settings"
+  | "export-diagnostics"
   | "toggle-left-sidebar"
   | "toggle-right-sidebar"
   | "toggle-terminal"
