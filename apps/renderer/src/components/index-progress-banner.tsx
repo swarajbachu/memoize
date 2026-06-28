@@ -5,6 +5,7 @@ import {
   ProgressIndicator,
   ProgressTrack,
 } from "~/components/ui/progress";
+import { ShimmerText } from "~/components/ui/shimmer-text";
 
 import { useIndexStore } from "../store/code-index.ts";
 import { useWorkspaceStore } from "../store/workspace.ts";
@@ -40,16 +41,21 @@ export function IndexProgressBanner() {
         {isError ? (
           <HugeiconsIcon icon={Alert01Icon} className="size-3.5" />
         ) : (
-          <HugeiconsIcon icon={Loading02Icon} className="size-3.5 animate-spin" />
+          <HugeiconsIcon
+            icon={Loading02Icon}
+            className="size-3.5 animate-spin"
+          />
         )}
       </span>
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <span className="text-foreground">
-          {isError
-            ? "Code index failed — agents will fall back to grep."
-            : total > 0
-              ? `Indexing ${processed}/${total}…`
-              : "Indexing…"}
+          {isError ? (
+            "Code index failed — agents will fall back to grep."
+          ) : (
+            <ShimmerText>
+              {total > 0 ? `Indexing ${processed}/${total}…` : "Indexing…"}
+            </ShimmerText>
+          )}
         </span>
         {!isError && total > 0 && (
           <Progress value={percent}>

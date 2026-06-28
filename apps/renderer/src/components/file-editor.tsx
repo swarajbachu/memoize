@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { CodeAnnotation, GitDiffResult } from "@memoize/wire";
 
 import { cn } from "~/lib/utils";
+import { ShimmerText } from "~/components/ui/shimmer-text";
 import { classifyGit } from "../lib/git-rpc.ts";
 import { getRpcClient } from "../lib/rpc-client.ts";
 import { GitInitCta } from "./git-init-cta.tsx";
@@ -475,7 +476,11 @@ function CodeMirrorBody({
           }}
         />
       ) : null}
-      {state.status === "loading" && <Placeholder>Loading…</Placeholder>}
+      {state.status === "loading" && (
+        <Placeholder>
+          <ShimmerText>Loading…</ShimmerText>
+        </Placeholder>
+      )}
       {state.status === "binary" && (
         <Placeholder>
           Binary file ({state.size.toLocaleString()} bytes) — preview not
@@ -658,7 +663,11 @@ function DiffViewBody({
   }, [openFile.folderId, openFile.worktreeId, openFile.path, reload]);
 
   if (state.status === "loading") {
-    return <Placeholder>Loading diff…</Placeholder>;
+    return (
+      <Placeholder>
+        <ShimmerText>Loading diff…</ShimmerText>
+      </Placeholder>
+    );
   }
   if (state.status === "error") {
     if (state.noRepo) {

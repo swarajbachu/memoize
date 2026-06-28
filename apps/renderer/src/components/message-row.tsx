@@ -25,10 +25,7 @@ import type {
 } from "@memoize/wire";
 
 import { getFileIconUrl } from "~/lib/icons/material-icons";
-import {
-  openExternal,
-  useProviderLogin,
-} from "~/lib/use-provider-login";
+import { openExternal, useProviderLogin } from "~/lib/use-provider-login";
 import { cn } from "~/lib/utils";
 import {
   classifyMessage,
@@ -50,6 +47,7 @@ import {
   UserInputRow,
 } from "./tool-row.tsx";
 import { Button } from "./ui/button.tsx";
+import { ShimmerText } from "./ui/shimmer-text.tsx";
 
 export interface ToolResultRecord {
   readonly output: unknown;
@@ -586,7 +584,7 @@ function ProviderAuthCard({
               className="size-3.5 animate-spin"
               aria-hidden
             />
-            <span>Waiting for browser sign-in…</span>
+            <ShimmerText as="span">Waiting for browser sign-in…</ShimmerText>
             <button
               type="button"
               onClick={cancel}
@@ -602,7 +600,7 @@ function ProviderAuthCard({
               className="size-3.5 animate-spin"
               aria-hidden
             />
-            <span>Signed in. Finishing…</span>
+            <ShimmerText as="span">Signed in. Finishing…</ShimmerText>
           </div>
         ) : (
           <>
@@ -611,7 +609,9 @@ function ProviderAuthCard({
               automatically.
             </p>
             {state.kind === "failed" && (
-              <p className="mt-1 text-[11px] text-destructive">{state.reason}</p>
+              <p className="mt-1 text-[11px] text-destructive">
+                {state.reason}
+              </p>
             )}
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
               <Button

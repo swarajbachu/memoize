@@ -25,9 +25,14 @@ import { useSkillsStore } from "../store/skills.ts";
 import { EMPTY_WORKTREES, useWorktreesStore } from "../store/worktrees.ts";
 import { FileChipProvider } from "./file-chip.tsx";
 import { WorktreeSetupCard } from "./worktree-setup-card.tsx";
-import { ErrorBubble, MessageRow, type ToolResultRecord } from "./message-row.tsx";
+import {
+  ErrorBubble,
+  MessageRow,
+  type ToolResultRecord,
+} from "./message-row.tsx";
 import { SubagentRow } from "./subagent-row.tsx";
 import { TurnSummary } from "./turn-summary.tsx";
+import { ShimmerText } from "./ui/shimmer-text.tsx";
 import { Spinner } from "./ui/spinner";
 
 const NEAR_BOTTOM_PX = 80;
@@ -118,10 +123,7 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
     // A message the user just sent always re-engages auto-scroll, even if
     // they had scrolled up to read older context.
     const last = messages[messages.length - 1];
-    if (
-      last?.content._tag === "user" ||
-      last?.content._tag === "user_rich"
-    ) {
+    if (last?.content._tag === "user" || last?.content._tag === "user_rich") {
       stickToBottomRef.current = true;
     }
     if (!stickToBottomRef.current) return;
@@ -199,158 +201,157 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
     return map;
   }, [messages]);
 
-
   return (
     <FileChipProvider
       folderId={session?.projectId ?? null}
       worktreeId={session?.worktreeId ?? null}
     >
-    <div
-      ref={scrollRef}
-      onScroll={onScroll}
-      data-pane="chat"
-      tabIndex={-1}
-      className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto outline-none"
-    >
-      <WorktreeSetupCard />
-      {messages.length === 0 ? (
-        setupActive ? null : (
-          <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-muted-foreground">
-            <HugeiconsIcon
-              icon={Message01Icon}
-              className="size-10 opacity-40"
-            />
-            <div>
-              <p className="text-sm">{session?.title ?? "New chat"}</p>
-              <p className="mt-1 text-xs">
-                Type a message below to get started.
-              </p>
+      <div
+        ref={scrollRef}
+        onScroll={onScroll}
+        data-pane="chat"
+        tabIndex={-1}
+        className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto outline-none"
+      >
+        <WorktreeSetupCard />
+        {messages.length === 0 ? (
+          setupActive ? null : (
+            <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-muted-foreground">
+              <HugeiconsIcon
+                icon={Message01Icon}
+                className="size-10 opacity-40"
+              />
+              <div>
+                <p className="text-sm">{session?.title ?? "New chat"}</p>
+                <p className="mt-1 text-xs">
+                  Type a message below to get started.
+                </p>
+              </div>
             </div>
-          </div>
-        )
-      ) : (
-        <div className="flex flex-col py-2">
-          {turns.map((turn, idx) => {
-            const isLastTurn = idx === turns.length - 1;
-            const isLive = inFlight && isLastTurn;
-            const hasToolCalls = turn.body.some(
-              (m) => m.content._tag === "tool_use",
-            );
-            // Only collapse into a summary when there's a final assistant
-            // message worth showing as the body — otherwise a turn with
-            // just tool calls would lose its content behind the accordion.
-            const hasFinalText = turn.body.some(
-              (m) =>
-                m.content._tag === "assistant" &&
-                m.content.text.trim().length > 0,
-            );
-            const showSummary = !isLive && hasToolCalls && hasFinalText;
-            const turnKey = turn.user?.id ?? `turn-${idx}`;
-            // Within an open (non-collapsed) turn, group sub-agent rows
-            // under a SubagentRow wrapper. TurnSummary handles its own
-            // rendering for collapsed turns; sub-agents inside a collapsed
-            // turn render via TurnSummary's existing path.
-            const bodyGroups = groupMessages(turn.body);
-            // Hoist ExitPlanMode rows out of TurnSummary so the Plan card
-            // (and its resolved accordion) stays a top-level row in
-            // scrollback — it's a user-facing decision, not just another
-            // tool call to bury in the "N tool calls" rollup.
-            const planMessages = turn.body.filter(
-              (m) =>
-                m.content._tag === "tool_use" &&
-                m.content.tool === "ExitPlanMode",
-            );
-            const planItemIds = new Set(
-              planMessages.flatMap((m) =>
-                m.content._tag === "tool_use" ? [m.content.itemId] : [],
-              ),
-            );
-            const summaryBody =
-              planMessages.length === 0
-                ? turn.body
-                : turn.body.filter((m) => {
-                    if (
-                      m.content._tag === "tool_use" &&
-                      m.content.tool === "ExitPlanMode"
-                    ) {
-                      return false;
-                    }
-                    if (
-                      m.content._tag === "tool_result" &&
-                      planItemIds.has(m.content.itemId)
-                    ) {
-                      return false;
-                    }
-                    return true;
-                  });
-            return (
-              <Fragment key={turnKey}>
-                {turn.user !== null ? (
-                  <MessageRow
-                    message={turn.user}
-                    resultsByItemId={resultsByItemId}
-                    answersByItemId={answersByItemId}
-                    sessionId={sessionId}
-                  />
-                ) : null}
-                {showSummary ? (
-                  <>
-                    {planMessages.map((m) => (
-                      <MessageRow
-                        key={m.id}
-                        message={m}
-                        resultsByItemId={resultsByItemId}
-                        answersByItemId={answersByItemId}
-                        sessionId={sessionId}
-                      />
-                    ))}
-                    <TurnSummary
-                      body={summaryBody}
+          )
+        ) : (
+          <div className="flex flex-col py-2">
+            {turns.map((turn, idx) => {
+              const isLastTurn = idx === turns.length - 1;
+              const isLive = inFlight && isLastTurn;
+              const hasToolCalls = turn.body.some(
+                (m) => m.content._tag === "tool_use",
+              );
+              // Only collapse into a summary when there's a final assistant
+              // message worth showing as the body — otherwise a turn with
+              // just tool calls would lose its content behind the accordion.
+              const hasFinalText = turn.body.some(
+                (m) =>
+                  m.content._tag === "assistant" &&
+                  m.content.text.trim().length > 0,
+              );
+              const showSummary = !isLive && hasToolCalls && hasFinalText;
+              const turnKey = turn.user?.id ?? `turn-${idx}`;
+              // Within an open (non-collapsed) turn, group sub-agent rows
+              // under a SubagentRow wrapper. TurnSummary handles its own
+              // rendering for collapsed turns; sub-agents inside a collapsed
+              // turn render via TurnSummary's existing path.
+              const bodyGroups = groupMessages(turn.body);
+              // Hoist ExitPlanMode rows out of TurnSummary so the Plan card
+              // (and its resolved accordion) stays a top-level row in
+              // scrollback — it's a user-facing decision, not just another
+              // tool call to bury in the "N tool calls" rollup.
+              const planMessages = turn.body.filter(
+                (m) =>
+                  m.content._tag === "tool_use" &&
+                  m.content.tool === "ExitPlanMode",
+              );
+              const planItemIds = new Set(
+                planMessages.flatMap((m) =>
+                  m.content._tag === "tool_use" ? [m.content.itemId] : [],
+                ),
+              );
+              const summaryBody =
+                planMessages.length === 0
+                  ? turn.body
+                  : turn.body.filter((m) => {
+                      if (
+                        m.content._tag === "tool_use" &&
+                        m.content.tool === "ExitPlanMode"
+                      ) {
+                        return false;
+                      }
+                      if (
+                        m.content._tag === "tool_result" &&
+                        planItemIds.has(m.content.itemId)
+                      ) {
+                        return false;
+                      }
+                      return true;
+                    });
+              return (
+                <Fragment key={turnKey}>
+                  {turn.user !== null ? (
+                    <MessageRow
+                      message={turn.user}
                       resultsByItemId={resultsByItemId}
                       answersByItemId={answersByItemId}
+                      sessionId={sessionId}
                     />
-                  </>
-                ) : (
-                  bodyGroups.map((group) =>
-                    group.kind === "single" ? (
-                      <MessageRow
-                        key={group.message.id}
-                        message={group.message}
-                        resultsByItemId={resultsByItemId}
-                        answersByItemId={answersByItemId}
-                        sessionId={sessionId}
-                      />
-                    ) : (
-                      <SubagentRow
-                        key={group.parent.id}
-                        agentToolUseId={group.parentItemId}
-                        agentName={group.agentName}
-                        prompt={group.prompt}
-                        modelRequested={group.modelRequested}
-                        children={group.children}
-                        summary={group.summary}
+                  ) : null}
+                  {showSummary ? (
+                    <>
+                      {planMessages.map((m) => (
+                        <MessageRow
+                          key={m.id}
+                          message={m}
+                          resultsByItemId={resultsByItemId}
+                          answersByItemId={answersByItemId}
+                          sessionId={sessionId}
+                        />
+                      ))}
+                      <TurnSummary
+                        body={summaryBody}
                         resultsByItemId={resultsByItemId}
                         answersByItemId={answersByItemId}
                       />
-                    ),
-                  )
-                )}
-              </Fragment>
-            );
-          })}
-          {inFlight && !awaitingPlanApproval && (
-            <WorkingRow messages={messages} />
-          )}
-        </div>
-      )}
-      {error !== null && (
-        <ErrorBubble
-          error={error}
-          sessionId={sessionId}
-          onDismiss={() => clearError(sessionId)}
-        />
-      )}
-    </div>
+                    </>
+                  ) : (
+                    bodyGroups.map((group) =>
+                      group.kind === "single" ? (
+                        <MessageRow
+                          key={group.message.id}
+                          message={group.message}
+                          resultsByItemId={resultsByItemId}
+                          answersByItemId={answersByItemId}
+                          sessionId={sessionId}
+                        />
+                      ) : (
+                        <SubagentRow
+                          key={group.parent.id}
+                          agentToolUseId={group.parentItemId}
+                          agentName={group.agentName}
+                          prompt={group.prompt}
+                          modelRequested={group.modelRequested}
+                          children={group.children}
+                          summary={group.summary}
+                          resultsByItemId={resultsByItemId}
+                          answersByItemId={answersByItemId}
+                        />
+                      ),
+                    )
+                  )}
+                </Fragment>
+              );
+            })}
+            {inFlight && !awaitingPlanApproval && (
+              <WorkingRow messages={messages} />
+            )}
+          </div>
+        )}
+        {error !== null && (
+          <ErrorBubble
+            error={error}
+            sessionId={sessionId}
+            onDismiss={() => clearError(sessionId)}
+          />
+        )}
+      </div>
     </FileChipProvider>
   );
 }
@@ -388,7 +389,9 @@ function WorkingRow({ messages }: { messages: ReadonlyArray<Message> }) {
   return (
     <div className="flex items-center gap-2 px-4 py-2 text-[11px] text-muted-foreground">
       <Spinner className="size-3" />
-      <span className="tabular-nums">{formatElapsed(elapsed)}</span>
+      <ShimmerText tone="lime" className="tabular-nums">
+        {formatElapsed(elapsed)}
+      </ShimmerText>
     </div>
   );
 }
