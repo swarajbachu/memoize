@@ -20,9 +20,10 @@ import {
   type AgentDefinition,
   type AgentEvent,
   AgentSessionNotFoundError,
+  type Annotation,
   type AttachmentRef,
-  type CodeAnnotation,
   type FileRef,
+  isElementAnnotation,
   type FolderId,
   GoalUnsupportedError,
   type MessageContent,
@@ -442,22 +443,30 @@ const titleFromInitial = (prompt: string | undefined): string => {
 };
 
 /**
- * Render stacked code annotations into the numbered list the model receives.
- * Each entry is `path:lineRange — comment`; the agent's cwd is the workspace
- * root, so the relative path resolves when it reads the file. Pure string fn —
- * no I/O.
+ * Render stacked annotations into the numbered list the model receives. Code
+ * entries are `path:lineRange — comment` (the agent's cwd is the workspace
+ * root, so the relative path resolves when it reads the file). Element entries
+ * point at a node in the HTML artifact the agent itself produced, by selector +
+ * human label, so it can map the comment back. Pure string fn — no I/O.
  */
 const serializeAnnotations = (
-  annotations: ReadonlyArray<CodeAnnotation>,
+  annotations: ReadonlyArray<Annotation>,
 ): string => {
   const lines = annotations.map((a, i) => {
+    if (isElementAnnotation(a)) {
+      const where =
+        a.text !== undefined && a.text.length > 0
+          ? `text "${a.text}"`
+          : a.label;
+      return `${i + 1}. [rendered UI] ${where} (selector: ${a.selector}) — ${a.comment}`;
+    }
     const range =
       a.startLine === a.endLine
         ? `${a.startLine}`
         : `${a.startLine}-${a.endLine}`;
     return `${i + 1}. ${a.relPath}:${range} — ${a.comment}`;
   });
-  return ["Code annotations:", ...lines].join("\n");
+  return ["Annotations:", ...lines].join("\n");
 };
 
 const formatProviderFailure = (cause: unknown): string => {
@@ -2687,7 +2696,7 @@ export const MessageStoreLive = Layer.scoped(
       attachments?: ReadonlyArray<AttachmentRef>,
       fileRefs?: ReadonlyArray<FileRef>,
       skillRefs?: ReadonlyArray<SkillRef>,
-      annotations?: ReadonlyArray<CodeAnnotation>,
+      annotations?: ReadonlyArray<Annotation>,
       asGoal?: boolean,
     ): Effect.Effect<boolean, SessionNotFoundError> =>
       Effect.gen(function* () {

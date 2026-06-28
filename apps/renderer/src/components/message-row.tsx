@@ -14,8 +14,8 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { useState } from "react";
 import type {
   AgentItemId,
+  Annotation,
   AttachmentRef,
-  CodeAnnotation,
   FileRef,
   Message,
   ProviderId,
@@ -119,6 +119,7 @@ export function MessageRow({
         <AssistantBubble
           text={message.content.text}
           createdAt={message.createdAt}
+          sourceRef={message.id}
         />
       );
     case "thinking":
@@ -133,6 +134,7 @@ export function MessageRow({
         return (
           <ExitPlanModeRow
             input={message.content.input}
+            itemId={message.content.itemId}
             result={resultsByItemId.get(message.content.itemId)}
           />
         );
@@ -239,7 +241,7 @@ function UserBubble({
   attachments?: ReadonlyArray<AttachmentRef>;
   fileRefs?: ReadonlyArray<FileRef>;
   skillRefs?: ReadonlyArray<SkillRef>;
-  annotations?: ReadonlyArray<CodeAnnotation>;
+  annotations?: ReadonlyArray<Annotation>;
   goal?: boolean;
 }) {
   const hasAnnotations = annotations !== undefined && annotations.length > 0;
@@ -374,14 +376,16 @@ function UserBubble({
 function AssistantBubble({
   text,
   createdAt,
+  sourceRef,
 }: {
   text: string;
   createdAt?: Date;
+  sourceRef?: string;
 }) {
   return (
     <div className="px-4 py-2">
       <div className="max-w-[88%]">
-        <MarkdownBody>{text}</MarkdownBody>
+        <MarkdownBody htmlArtifactRef={sourceRef}>{text}</MarkdownBody>
         <div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
           {createdAt !== undefined ? (
             <span className="tabular-nums">{formatMessageTime(createdAt)}</span>

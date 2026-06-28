@@ -2,7 +2,11 @@ import { PatchDiff } from "@pierre/diffs/react";
 import { Effect } from "effect";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { CodeAnnotation, GitDiffResult } from "@memoize/wire";
+import {
+  isCodeAnnotation,
+  type Annotation,
+  type GitDiffResult,
+} from "@memoize/wire";
 
 import { cn } from "~/lib/utils";
 import { classifyGit } from "../lib/git-rpc.ts";
@@ -136,7 +140,7 @@ type EditableFile = Extract<OpenFile, { kind: "text" | "external" }>;
 // `[]` literal from a zustand/`useSyncExternalStore` selector fails React's
 // snapshot identity check every render → "getSnapshot should be cached" and
 // an infinite update loop. One shared constant keeps the reference stable.
-const EMPTY_ANNOTATIONS: ReadonlyArray<CodeAnnotation> = [];
+const EMPTY_ANNOTATIONS: ReadonlyArray<Annotation> = [];
 
 function CodeMirrorBody({
   openFile,
@@ -188,6 +192,7 @@ function CodeMirrorBody({
   const visibleAnnotations = useMemo(
     () =>
       draftAnnotations
+        .filter(isCodeAnnotation)
         .filter(
           (a) =>
             a.relPath === annotationPath || a.absPath === annotationAbsPath,
@@ -460,7 +465,7 @@ function CodeMirrorBody({
           onCardOpenChange={setCardOpen}
           onConfirm={(draft) => {
             const created = addAnnotation(draft);
-            if (created !== null) {
+            if (created !== null && isCodeAnnotation(created)) {
               useUiStore.getState().revealAnnotation(created);
             }
             // Collapse the selection so the affordance dismisses itself.

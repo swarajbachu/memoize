@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import type { CodeAnnotation, SessionId } from "@memoize/wire";
+import type { Annotation, NewAnnotation, SessionId } from "@memoize/wire";
 
 /**
  * Draft code annotations, keyed by chat session. The user selects code in the
@@ -14,7 +14,7 @@ import type { CodeAnnotation, SessionId } from "@memoize/wire";
  */
 const STORAGE_KEY = "memoize.annotations.v1";
 
-type Persisted = Record<string, ReadonlyArray<CodeAnnotation>>;
+type Persisted = Record<string, ReadonlyArray<Annotation>>;
 
 const load = (): Persisted => {
   try {
@@ -50,7 +50,7 @@ type AnnotationsState = {
   /** Append an annotation; `id` is generated here. Returns the new id. */
   readonly add: (
     sessionId: SessionId,
-    annotation: Omit<CodeAnnotation, "id">,
+    annotation: NewAnnotation,
   ) => string;
   readonly remove: (sessionId: SessionId, id: string) => void;
   readonly updateComment: (
@@ -65,7 +65,7 @@ export const useAnnotationsStore = create<AnnotationsState>((set, get) => ({
   bySession: load(),
   add: (sessionId, annotation) => {
     const id = newId();
-    const entry: CodeAnnotation = { ...annotation, id };
+    const entry = { ...annotation, id } as Annotation;
     const current = get().bySession[sessionId] ?? [];
     const bySession = { ...get().bySession, [sessionId]: [...current, entry] };
     set({ bySession });
@@ -106,5 +106,5 @@ export const useAnnotationsStore = create<AnnotationsState>((set, get) => ({
 /** Snapshot read for non-reactive callers (e.g. the submit handler). */
 export const annotationsForSession = (
   sessionId: SessionId,
-): ReadonlyArray<CodeAnnotation> =>
+): ReadonlyArray<Annotation> =>
   useAnnotationsStore.getState().bySession[sessionId] ?? [];

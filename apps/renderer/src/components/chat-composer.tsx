@@ -753,16 +753,14 @@ export function ChatComposer({
         aria-hidden={showCard || undefined}
       >
         <div className="mx-auto">
-          {!isDraft ? (
-            <AnnotationTray
-              sessionId={sessionId}
-              folderId={session.projectId}
-              worktreeId={session.worktreeId}
-            />
-          ) : null}
           <Frame>
             {!isDraft ? (
               <div className="mb-1 overflow-hidden rounded-md border border-border/50 bg-muted/30 empty:hidden empty:mb-0">
+                <AnnotationTray
+                  sessionId={sessionId}
+                  folderId={session.projectId}
+                  worktreeId={session.worktreeId}
+                />
                 <PlanApprovalTray sessionId={sessionId} />
                 {goalCapable && goal !== null ? (
                   <GoalBanner

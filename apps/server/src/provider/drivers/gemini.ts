@@ -638,7 +638,11 @@ export const startGeminiSession = (
       if (sid === null) return;
       // Plan-mode emulation: gemini ACP has no native read-only switch, so
       // prepend a developer-instructions block while plan mode is active.
-      const promptText = applyPlanModePrefix(currentMode, text);
+      const promptText = applyPlanModePrefix(
+        currentMode,
+        text,
+        input.planHtml ?? false,
+      );
       inflight = inflight
         .then(async () => {
           if (closed) return;

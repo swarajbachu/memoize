@@ -74,6 +74,7 @@ const freshSettings = (): SettingsFile =>
     subagents: { enableForNewSessions: true, presets: {} },
     branchNamingStyle: "username-slug",
     branchNamingPrefix: "",
+    planArtifactsEnabled: false,
   });
 
 const freshKeybindings = (): KeybindingsFile =>
@@ -212,6 +213,11 @@ const coerceSettings = (raw: unknown): SettingsFile => {
       ? obj.branchNamingPrefix
       : base.branchNamingPrefix;
 
+  const planArtifactsEnabled =
+    typeof obj.planArtifactsEnabled === "boolean"
+      ? obj.planArtifactsEnabled
+      : base.planArtifactsEnabled;
+
   return SettingsFile.make({
     schemaVersion: 1,
     defaultProviderId: provider,
@@ -225,6 +231,7 @@ const coerceSettings = (raw: unknown): SettingsFile => {
     subagents,
     branchNamingStyle,
     branchNamingPrefix,
+    planArtifactsEnabled,
   });
 };
 
@@ -477,6 +484,8 @@ export const ConfigStoreServiceLive = Layer.scoped(
             patch.branchNamingStyle ?? cur.branchNamingStyle,
           branchNamingPrefix:
             patch.branchNamingPrefix ?? cur.branchNamingPrefix,
+          planArtifactsEnabled:
+            patch.planArtifactsEnabled ?? cur.planArtifactsEnabled,
         });
         const serialized = serialize(next);
         yield* writeAtomically(settingsPath, serialized);
@@ -586,6 +595,7 @@ export const ConfigStoreServiceLive = Layer.scoped(
             subagents,
             branchNamingStyle: cur.branchNamingStyle,
             branchNamingPrefix: cur.branchNamingPrefix,
+            planArtifactsEnabled: cur.planArtifactsEnabled,
           });
 
           const serialized = serialize(merged);

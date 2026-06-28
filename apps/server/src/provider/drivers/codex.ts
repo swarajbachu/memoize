@@ -885,7 +885,11 @@ export const startCodexSession = (
       // Plan-mode emulation: Codex has no native "plan" runtime mode, so
       // prepend a developer-instructions block while plan mode is active.
       // The sandbox policy still gates writes, so this is belt-and-braces.
-      const promptText = applyPlanModePrefix(currentMode, text);
+      const promptText = applyPlanModePrefix(
+        currentMode,
+        text,
+        input.planHtml ?? false,
+      );
       // Reasoning effort: forwarded from FE picker via
       // `input.modelOptions.reasoning`. Pass through low/medium/high
       // directly — Codex accepts the same literal set we use in wire's

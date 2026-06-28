@@ -23,9 +23,12 @@ import { useState } from "react";
 import type { UserQuestion, UserQuestionAnswer } from "@memoize/wire";
 
 import { cn } from "~/lib/utils";
+import { useSettingsStore } from "../store/settings.ts";
 
 import { CodeBlock } from "./code-block.tsx";
 import { FileBadge } from "./file-badge.tsx";
+import { AnnotatableArtifact } from "./artifact/annotatable.tsx";
+import { HtmlArtifact, extractHtmlDoc } from "./artifact/html-artifact.tsx";
 import { MarkdownBody } from "./markdown-body.tsx";
 import {
   diffStats,
@@ -1174,17 +1177,43 @@ const buildToolView = (
  */
 export function ExitPlanModeRow({
   input,
+  itemId,
   result,
 }: {
   input: unknown;
+  itemId?: string;
   result?: ToolResult;
 }) {
+  const planArtifactsEnabled = useSettingsStore(
+    (s) => s.planArtifactsEnabled,
+  );
   const plan =
     typeof input === "object" && input !== null && "plan" in input
       ? typeof (input as { plan?: unknown }).plan === "string"
         ? ((input as { plan: string }).plan as string)
         : null
       : null;
+
+  // Plan artifacts are opt-in (Settings → General). When off, plans render as
+  // plain markdown — memoize's original behaviour, no artifact, no annotate.
+  // When on: a genuine HTML-document plan goes in the isolated iframe; a
+  // markdown plan renders with the app's own MarkdownBody wrapped so any
+  // heading/step/element is clickable to leave inline feedback before approving.
+  // (`itemId` is the annotation source ref; absent only in odd replays.)
+  const renderPlan = (body: string): React.ReactNode => {
+    if (!planArtifactsEnabled || itemId === undefined) {
+      return <MarkdownBody>{body}</MarkdownBody>;
+    }
+    const html = extractHtmlDoc(body);
+    if (html !== null) {
+      return <HtmlArtifact source={html} sourceRef={itemId} />;
+    }
+    return (
+      <AnnotatableArtifact sourceRef={itemId}>
+        <MarkdownBody>{body}</MarkdownBody>
+      </AnnotatableArtifact>
+    );
+  };
 
   const status: "pending" | "approved" | "cancelled" =
     result === undefined
@@ -1211,7 +1240,7 @@ export function ExitPlanModeRow({
             (No plan body.)
           </p>
         ) : (
-          <MarkdownBody>{plan}</MarkdownBody>
+          renderPlan(plan)
         )}
       </div>
     );
@@ -1223,7 +1252,7 @@ export function ExitPlanModeRow({
       {plan === null ? (
         <p className="text-sm italic text-muted-foreground">(No plan body.)</p>
       ) : (
-        <MarkdownBody>{plan}</MarkdownBody>
+        renderPlan(plan)
       )}
       <div className="mt-3 flex items-center justify-end text-[11px] text-muted-foreground">
         <span

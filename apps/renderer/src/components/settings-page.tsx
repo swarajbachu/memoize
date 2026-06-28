@@ -576,6 +576,12 @@ function GeneralPane() {
   const setOnboardingCompleted = useSettingsStore(
     (s) => s.setOnboardingCompleted,
   );
+  const planArtifactsEnabled = useSettingsStore(
+    (s) => s.planArtifactsEnabled,
+  );
+  const setPlanArtifactsEnabled = useSettingsStore(
+    (s) => s.setPlanArtifactsEnabled,
+  );
   const setView = useUiStore((s) => s.setView);
 
   // Local mirror so typing is smooth; persist on blur to avoid an atomic
@@ -683,6 +689,22 @@ function GeneralPane() {
             </Button>
           </div>
         </SettingsRow>
+      </SettingsGroup>
+
+      <SettingsGroup
+        title="Experimental"
+        description="Newer features still being polished. Toggle on to try them."
+      >
+        <SettingsRow
+          title="Plan artifacts"
+          description="Render plans as embedded, annotatable HTML artifacts. Plan mode asks the agent for a visual HTML plan you can click element-by-element to leave inline feedback before approving. When off, plans render as plain markdown. Applies to new chats."
+          action={
+            <Switch
+              checked={planArtifactsEnabled}
+              onCheckedChange={setPlanArtifactsEnabled}
+            />
+          }
+        />
       </SettingsGroup>
 
       <SettingsGroup

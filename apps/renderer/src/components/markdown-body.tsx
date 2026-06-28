@@ -19,10 +19,12 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { cn } from "~/lib/utils";
+import { useSettingsStore } from "~/store/settings";
 import { useUiStore } from "~/store/ui";
 import { useWorkspaceStore } from "~/store/workspace";
 import { useWorktreesStore } from "~/store/worktrees";
 
+import { HtmlArtifact } from "./artifact/html-artifact.tsx";
 import { CodeBlock } from "./code-block.tsx";
 import { resolveFileOpenTarget, useFileChipContext } from "./file-chip.tsx";
 import {
@@ -393,11 +395,22 @@ function MermaidDiagram({ source }: { source: string }) {
 export function MarkdownBody({
   children,
   className,
+  htmlArtifactRef,
 }: {
   children: string;
   className?: string;
+  /**
+   * When set, fenced ```html blocks render as interactive, annotatable
+   * `HtmlArtifact`s (rather than static code blocks) and tag their annotations
+   * with this id (the source message / plan). Only chat surfaces pass it; PR
+   * descriptions / comments keep rendering html as plain code.
+   */
+  htmlArtifactRef?: string;
 }) {
   const { folderId, worktreeId } = useFileChipContext();
+  const planArtifactsEnabled = useSettingsStore(
+    (s) => s.planArtifactsEnabled,
+  );
   const openFileInTab = useUiStore((s) => s.openFileInTab);
   const folderPath = useWorkspaceStore((s) => {
     if (folderId === null) return null;
@@ -465,6 +478,16 @@ export function MarkdownBody({
             );
             if (language?.toLowerCase() === "mermaid") {
               return <MermaidDiagram source={text} />;
+            }
+
+            if (
+              planArtifactsEnabled &&
+              htmlArtifactRef !== undefined &&
+              language?.toLowerCase() === "html"
+            ) {
+              return (
+                <HtmlArtifact source={text} sourceRef={htmlArtifactRef} />
+              );
             }
 
             const filename =
