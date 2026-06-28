@@ -331,6 +331,7 @@ const roleForContent = (content: MessageContent): MessageRole => {
     case "tool_result":
       return "tool";
     case "error":
+    case "interrupted":
     case "usage":
     case "context_usage":
     case "usage_limit":
@@ -417,6 +418,8 @@ const eventToContent = (event: AgentEvent): MessageContent | null => {
       };
     case "Error":
       return { _tag: "error", message: event.message };
+    case "Interrupted":
+      return { _tag: "interrupted" };
     case "UserQuestion":
       return {
         _tag: "user_question",

@@ -216,6 +216,14 @@ const ErrorContent = Schema.TaggedStruct("error", {
 });
 
 /**
+ * Persisted marker for a turn the user explicitly interrupted. Rendered as a
+ * small muted "Interrupted by user" badge — distinct from `error`, which is a
+ * real failure. Carries no fields; its presence in the message list is the
+ * whole signal.
+ */
+const InterruptedContent = Schema.TaggedStruct("interrupted", {});
+
+/**
  * Closing summary persisted for a sub-agent run. Mirrors the streaming
  * `SubagentSummaryEvent` so resume parity holds: the wrapper-row footer
  * reads `summary` / `turns` / `durationMs` from this row when collapsed.
@@ -305,6 +313,7 @@ export const MessageContent = Schema.Union(
   ToolUseContent,
   ToolResultContent,
   ErrorContent,
+  InterruptedContent,
   SubagentSummaryContent,
   UsageContent,
   ContextUsageContent,

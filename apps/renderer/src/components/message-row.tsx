@@ -186,6 +186,16 @@ export function MessageRow({
           sessionId={sessionId}
         />
       );
+    case "interrupted":
+      // The user stopped the turn — a normal action, so render a small muted
+      // badge rather than an error bubble.
+      return (
+        <div className="flex justify-center py-1">
+          <span className="rounded-full bg-muted/50 px-2.5 py-0.5 text-[11px] text-muted-foreground">
+            Interrupted by user
+          </span>
+        </div>
+      );
   }
 }
 
