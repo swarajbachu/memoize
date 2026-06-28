@@ -283,6 +283,14 @@ interface TranslateState {
    * same failure a second time.
    */
   emittedAuthError: boolean;
+  /**
+   * Set when the user interrupts the running turn (`handle.interrupt`). The SDK
+   * ends an interrupted turn with an `error_during_execution` result, which
+   * would otherwise surface as a bogus error bubble; while this flag is set the
+   * translator emits an `Interrupted` event + `Completed reason:"interrupted"`
+   * instead. Reset per turn once consumed.
+   */
+  interrupted: boolean;
 }
 
 const newTranslateState = (): TranslateState => ({
@@ -294,6 +302,7 @@ const newTranslateState = (): TranslateState => ({
   exitPlanModeIds: new Set(),
   lastContextUsedTokens: null,
   emittedAuthError: false,
+  interrupted: false,
 });
 
 const isAgentToolUse = (block: { type?: string; name?: string }): boolean =>
@@ -903,6 +912,17 @@ const translate = (
           precision: "exact",
           source: "Claude usage",
         });
+      }
+      // The user interrupted this turn. The SDK ends it with an
+      // `error_during_execution` result, but that's a normal user action — emit
+      // a muted `Interrupted` badge + non-error completion instead of an Error
+      // bubble, and skip the failed-result handling below.
+      if (state.interrupted) {
+        out.push({ _tag: "Interrupted" });
+        out.push({ _tag: "Completed", reason: "interrupted" });
+        state.interrupted = false;
+        state.emittedAuthError = false;
+        return out;
       }
       // Surface a failed result's text as an Error so it persists + renders
       // (auth failures the SDK reports via the result rather than an assistant
@@ -1684,6 +1704,16 @@ export const startClaudeSession = (
     }).pipe(
       Effect.catchAll((cause) =>
         Effect.sync(() => {
+          // If the SDK threw out of the `for await` because the user
+          // interrupted (rather than yielding an `error_during_execution`
+          // result), surface the muted interrupted badge, not an error. Emit a
+          // non-error completion too so the turn isn't left pinned at running.
+          if (translateState.interrupted) {
+            translateState.interrupted = false;
+            events.unsafeOffer({ _tag: "Interrupted" });
+            events.unsafeOffer({ _tag: "Completed", reason: "interrupted" });
+            return;
+          }
           events.unsafeOffer({
             _tag: "Error",
             message: cause instanceof Error ? cause.message : String(cause),
@@ -1732,10 +1762,20 @@ export const startClaudeSession = (
           );
         }),
       interrupt: () =>
-        Effect.tryPromise({
-          try: () => q.interrupt(),
-          catch: (cause) => cause,
-        }).pipe(Effect.catchAll(() => Effect.void)),
+        Effect.sync(() => {
+          // Mark the turn as interrupted so the terminal `result`
+          // (`error_during_execution`) is translated into an `Interrupted`
+          // badge instead of an error bubble.
+          translateState.interrupted = true;
+        }).pipe(
+          Effect.zipRight(
+            Effect.tryPromise({
+              try: () => q.interrupt(),
+              catch: (cause) => cause,
+            }),
+          ),
+          Effect.catchAll(() => Effect.void),
+        ),
       close: () =>
         Effect.sync(() => {
           // Unblock any in-flight AskUserQuestion calls so the SDK turn

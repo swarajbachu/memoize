@@ -490,6 +490,16 @@ const CompletedEvent = Schema.TaggedStruct("Completed", {
   reason: Schema.Literal("ended", "interrupted", "error"),
 });
 
+/**
+ * Emitted when the user interrupts a running turn. Unlike `Error`, this is a
+ * normal user action — the renderer shows a muted "Interrupted by user" badge
+ * (no red error bubble) and the session stays out of the error state. Drivers
+ * emit this in place of `Error` when they know the turn ended because of an
+ * explicit interrupt (see the Claude driver, which otherwise surfaces the
+ * SDK's `error_during_execution` result as a bogus error).
+ */
+const InterruptedEvent = Schema.TaggedStruct("Interrupted", {});
+
 const ErrorEvent = Schema.TaggedStruct("Error", {
   message: Schema.String,
   /**
@@ -604,6 +614,7 @@ export const AgentEvent = Schema.Union(
   GoalUpdatedEvent,
   GoalClearedEvent,
   CompletedEvent,
+  InterruptedEvent,
   ErrorEvent,
 );
 export type AgentEvent = typeof AgentEvent.Type;
