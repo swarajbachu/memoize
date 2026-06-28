@@ -1,5 +1,9 @@
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Alert01Icon, CheckmarkCircle02Icon, CircleArrowUp01Icon } from "@hugeicons-pro/core-bulk-rounded";
+import {
+  Alert01Icon,
+  CheckmarkCircle02Icon,
+  CircleArrowUp01Icon,
+} from "@hugeicons-pro/core-bulk-rounded";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
@@ -7,6 +11,7 @@ import { X } from "lucide-react";
 import type { UpdateStatus } from "@memoize/wire";
 
 import { Button } from "~/components/ui/button";
+import { ShimmerText } from "~/components/ui/shimmer-text";
 import {
   Progress,
   ProgressIndicator,
@@ -116,7 +121,9 @@ export function UpdateBanner() {
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="text-[13px] font-medium text-foreground">
             {status.kind === "available" && "Update available"}
-            {status.kind === "downloading" && "Downloading update…"}
+            {status.kind === "downloading" && (
+              <ShimmerText>Downloading update…</ShimmerText>
+            )}
             {status.kind === "ready" && "Update ready"}
             {status.kind === "error" && "Update failed"}
           </span>
