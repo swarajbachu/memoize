@@ -121,6 +121,19 @@ export type OpenFile =
       readonly absPath: string;
       readonly name: string;
       readonly view: FileView;
+    }
+  | {
+      /**
+       * An agent artifact (a plan or an `html` block) opened full-size in the
+       * main pane via the Expand control on its inline card. Body is rendered
+       * in place (no fs read) — `sourceRef` keeps annotations attached to the
+       * same session tray as the inline copy.
+       */
+      readonly kind: "artifact";
+      readonly format: "html" | "markdown";
+      readonly source: string;
+      readonly title: string;
+      readonly sourceRef: string;
     };
 
 export type RevealedAnnotation = CodeAnnotation & {
@@ -169,7 +182,8 @@ type UiState = {
       | (Omit<Extract<OpenFile, { kind: "external" }>, "view"> & {
           view?: FileView;
         })
-      | Extract<OpenFile, { kind: "image" }>,
+      | Extract<OpenFile, { kind: "image" }>
+      | Extract<OpenFile, { kind: "artifact" }>,
   ) => void;
   readonly setOpenFileView: (view: FileView) => void;
   readonly closeFileTab: () => void;
@@ -267,7 +281,9 @@ export const useUiStore = create<UiState>((set, get) => ({
   openFileInTab: (file) =>
     set({
       openFile:
-        file.kind === "image" ? file : { ...file, view: file.view ?? "edit" },
+        file.kind === "image" || file.kind === "artifact"
+          ? file
+          : { ...file, view: file.view ?? "edit" },
       activeMainTab: "file",
       fileDirty: false,
     }),

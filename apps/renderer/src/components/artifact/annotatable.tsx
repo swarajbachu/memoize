@@ -1,6 +1,7 @@
 import {
   BubbleChatIcon,
   CheckListIcon,
+  Maximize02Icon,
   Tick01Icon,
 } from "@hugeicons-pro/core-bulk-rounded";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -8,6 +9,7 @@ import { X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { cn } from "~/lib/utils";
+import { useUiStore } from "~/store/ui";
 
 import { useAddAnnotation } from "../annotation/use-add-annotation.ts";
 
@@ -68,12 +70,16 @@ const labelFor = (el: HTMLElement): string => {
 export function AnnotatableArtifact({
   sourceRef,
   title = "Plan",
+  rawSource,
   children,
 }: {
   readonly sourceRef: string;
   readonly title?: string;
+  /** Raw markdown body — enables the Expand-to-full-pane control when set. */
+  readonly rawSource?: string;
   readonly children: ReactNode;
 }) {
+  const openFileInTab = useUiStore((s) => s.openFileInTab);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [annotate, setAnnotate] = useState(false);
@@ -172,20 +178,40 @@ export function AnnotatableArtifact({
         <span className="text-xs font-medium text-muted-foreground">
           {title}
         </span>
-        <button
-          type="button"
-          onClick={() => setAnnotate((v) => !v)}
-          aria-pressed={annotate}
-          className={cn(
-            "ml-auto flex h-6 items-center gap-1 rounded-md px-2 text-xs font-medium",
-            annotate
-              ? "bg-primary text-primary-foreground hover:bg-primary/90"
-              : "text-muted-foreground hover:bg-background hover:text-foreground",
-          )}
-        >
-          <HugeiconsIcon icon={BubbleChatIcon} className="size-3.5" />
-          Annotate
-        </button>
+        <div className="ml-auto flex items-center gap-1">
+          {rawSource !== undefined ? (
+            <button
+              type="button"
+              onClick={() =>
+                openFileInTab({
+                  kind: "artifact",
+                  format: "markdown",
+                  source: rawSource,
+                  title,
+                  sourceRef,
+                })
+              }
+              className="flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground"
+              aria-label="Open full size"
+            >
+              <HugeiconsIcon icon={Maximize02Icon} className="size-3.5" />
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => setAnnotate((v) => !v)}
+            aria-pressed={annotate}
+            className={cn(
+              "flex h-6 items-center gap-1 rounded-md px-2 text-xs font-medium",
+              annotate
+                ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                : "text-muted-foreground hover:bg-background hover:text-foreground",
+            )}
+          >
+            <HugeiconsIcon icon={BubbleChatIcon} className="size-3.5" />
+            Annotate
+          </button>
+        </div>
       </div>
 
       <div

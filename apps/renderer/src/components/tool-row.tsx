@@ -1206,10 +1206,10 @@ export function ExitPlanModeRow({
     }
     const html = extractHtmlDoc(body);
     if (html !== null) {
-      return <HtmlArtifact source={html} sourceRef={itemId} />;
+      return <HtmlArtifact source={html} sourceRef={itemId} title="Plan" />;
     }
     return (
-      <AnnotatableArtifact sourceRef={itemId}>
+      <AnnotatableArtifact sourceRef={itemId} title="Plan" rawSource={body}>
         <MarkdownBody>{body}</MarkdownBody>
       </AnnotatableArtifact>
     );

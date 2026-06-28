@@ -2,6 +2,7 @@ import {
   BubbleChatIcon,
   Copy01Icon,
   CursorMagicSelection02Icon,
+  Maximize02Icon,
   Tick01Icon,
 } from "@hugeicons-pro/core-bulk-rounded";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -9,6 +10,7 @@ import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { cn } from "~/lib/utils";
+import { useUiStore } from "~/store/ui";
 
 import { useAddAnnotation } from "../annotation/use-add-annotation.ts";
 
@@ -95,10 +97,17 @@ const INJECT = [
 export function HtmlArtifact({
   source,
   sourceRef,
+  title = "Artifact",
+  fill = false,
 }: {
   readonly source: string;
   readonly sourceRef: string;
+  /** Label used for the expanded full-pane tab. */
+  readonly title?: string;
+  /** Fill the parent (full-pane tab) instead of auto-sizing to content. */
+  readonly fill?: boolean;
 }) {
+  const openFileInTab = useUiStore((s) => s.openFileInTab);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [height, setHeight] = useState(120);
   const [annotateMode, setAnnotateMode] = useState(false);
@@ -184,7 +193,7 @@ export function HtmlArtifact({
     const frame = iframeRef.current?.getBoundingClientRect();
     if (frame === undefined) return undefined;
     const top = Math.min(
-      frame.top + Math.min(pending.rect.bottom, MAX_HEIGHT) + 6,
+      frame.top + Math.min(pending.rect.bottom, frame.height) + 6,
       window.innerHeight - 180,
     );
     const left = Math.min(
@@ -195,7 +204,14 @@ export function HtmlArtifact({
   })();
 
   return (
-    <div className="markdown-html-artifact my-2 overflow-hidden rounded-lg border border-border/60 bg-card/60">
+    <div
+      className={cn(
+        "markdown-html-artifact overflow-hidden border-border/60 bg-card/60",
+        fill
+          ? "flex min-h-0 flex-1 flex-col"
+          : "my-2 rounded-lg border",
+      )}
+    >
       <div className="flex items-center gap-2 border-b border-border/40 bg-muted/20 px-2.5 py-1.5">
         <HugeiconsIcon
           icon={CursorMagicSelection02Icon}
@@ -203,7 +219,7 @@ export function HtmlArtifact({
           aria-hidden="true"
         />
         <span className="text-xs font-medium text-muted-foreground">
-          Preview
+          {fill ? title : "Preview"}
         </span>
         <div className="ml-auto flex items-center gap-1">
           <button
@@ -220,6 +236,24 @@ export function HtmlArtifact({
             <HugeiconsIcon icon={BubbleChatIcon} className="size-3.5" />
             Annotate
           </button>
+          {!fill ? (
+            <button
+              type="button"
+              onClick={() =>
+                openFileInTab({
+                  kind: "artifact",
+                  format: "html",
+                  source,
+                  title,
+                  sourceRef,
+                })
+              }
+              className="flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground"
+              aria-label="Open full size"
+            >
+              <HugeiconsIcon icon={Maximize02Icon} className="size-3.5" />
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={copyHtml}
@@ -239,8 +273,8 @@ export function HtmlArtifact({
         sandbox="allow-scripts"
         srcDoc={srcDoc}
         onLoad={() => postMode(annotateMode)}
-        style={{ height }}
-        className="w-full bg-[#0d0d12]"
+        style={fill ? undefined : { height }}
+        className={cn("w-full bg-[#0d0d12]", fill && "min-h-0 flex-1")}
       />
       {annotateMode ? (
         <div className="border-t border-border/40 bg-muted/10 px-2.5 py-1 text-[11px] text-muted-foreground">

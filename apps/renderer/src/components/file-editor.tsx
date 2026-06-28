@@ -38,6 +38,9 @@ import {
 } from "../lib/codemirror/annotation-selection.ts";
 import { AnnotateOverlay } from "./annotation/annotate-overlay.tsx";
 import { useAddAnnotation } from "./annotation/use-add-annotation.ts";
+import { AnnotatableArtifact } from "./artifact/annotatable.tsx";
+import { HtmlArtifact } from "./artifact/html-artifact.tsx";
+import { MarkdownBody } from "./markdown-body.tsx";
 
 import type { EditorView } from "@codemirror/view";
 
@@ -88,6 +91,23 @@ export function FileEditor() {
 
   if (openFile.kind === "image") {
     return <ImageBody src={openFile.src} name={openFile.name} />;
+  }
+
+  if (openFile.kind === "artifact") {
+    return openFile.format === "html" ? (
+      <HtmlArtifact
+        source={openFile.source}
+        sourceRef={openFile.sourceRef}
+        title={openFile.title}
+        fill
+      />
+    ) : (
+      <div className="min-h-0 flex-1 overflow-auto p-4">
+        <AnnotatableArtifact sourceRef={openFile.sourceRef} title={openFile.title}>
+          <MarkdownBody>{openFile.source}</MarkdownBody>
+        </AnnotatableArtifact>
+      </div>
+    );
   }
 
   const view = openFile.view;

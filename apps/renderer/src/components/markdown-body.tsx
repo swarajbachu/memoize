@@ -486,7 +486,11 @@ export function MarkdownBody({
               language?.toLowerCase() === "html"
             ) {
               return (
-                <HtmlArtifact source={text} sourceRef={htmlArtifactRef} />
+                <HtmlArtifact
+                  source={text}
+                  sourceRef={htmlArtifactRef}
+                  title="Artifact"
+                />
               );
             }
 
