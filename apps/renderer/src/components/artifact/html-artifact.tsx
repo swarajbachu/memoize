@@ -343,13 +343,28 @@ export function HtmlArtifact({
 }
 
 /**
+ * Strip leading whitespace + any run of leading HTML comments, so a document
+ * the model prefixed with `<!-- note -->` still resolves to its `<!DOCTYPE>` /
+ * `<html>` root (and renders in standards mode, not quirks).
+ */
+const stripLeadingComments = (s: string): string => {
+  let t = s.trimStart();
+  while (t.startsWith("<!--")) {
+    const end = t.indexOf("-->");
+    if (end === -1) break;
+    t = t.slice(end + 3).trimStart();
+  }
+  return t;
+};
+
+/**
  * Heuristic: does this string look like a full HTML document we should render
  * as an artifact (vs markdown)? Conservative — only fires on an explicit
- * doctype / `<html>` / `<body>` root so ordinary prose with stray angle
- * brackets keeps rendering as markdown.
+ * doctype / `<html>` / `<body>` root (after leading comments) so ordinary prose
+ * with stray angle brackets keeps rendering as markdown.
  */
 export const looksLikeHtmlDocument = (s: string): boolean => {
-  const head = s.trimStart().slice(0, 200).toLowerCase();
+  const head = stripLeadingComments(s).slice(0, 200).toLowerCase();
   return (
     head.startsWith("<!doctype html") ||
     head.startsWith("<html") ||
@@ -359,15 +374,16 @@ export const looksLikeHtmlDocument = (s: string): boolean => {
 
 /**
  * Pull a renderable HTML document out of a plan/message body, or `null` if it
- * isn't HTML. Handles both a raw document and a single ```html fenced block
- * (the model may emit either), so a fenced plan renders as an artifact rather
- * than an ugly raw-HTML code block.
+ * isn't HTML. Handles a raw document, a document prefixed with HTML comments,
+ * and a single ```html fenced block — returning the doc normalised to start at
+ * its root so the iframe renders it in standards mode.
  */
 export const extractHtmlDoc = (s: string): string | null => {
-  const t = s.trim();
-  if (looksLikeHtmlDocument(t)) return t;
-  const fence = t.match(/```html\s*\n([\s\S]*?)```/i);
+  if (looksLikeHtmlDocument(s)) return stripLeadingComments(s);
+  const fence = s.match(/```html\s*\n([\s\S]*?)```/i);
   const inner = fence?.[1];
-  if (inner !== undefined && looksLikeHtmlDocument(inner)) return inner.trim();
+  if (inner !== undefined && looksLikeHtmlDocument(inner)) {
+    return stripLeadingComments(inner);
+  }
   return null;
 };
