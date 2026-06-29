@@ -51,7 +51,7 @@ import {
 } from "./glass-action.tsx";
 import { TooltipShortcut } from "./projects-sidebar.tsx";
 import { useActiveContext } from "../store/active-workspace.ts";
-import { useChatsStore } from "../store/chats.ts";
+import { archiveChatWithConfirm, useChatsStore } from "../store/chats.ts";
 import { gitStatusKey, useGitStatusStore } from "../store/git-status.ts";
 import { useMergePrefs } from "../store/merge-prefs.ts";
 import { useMessagesStore } from "../store/messages.ts";
@@ -888,7 +888,6 @@ export function TopBarRight() {
   );
   const selectedSessionId = useSessionsStore((s) => s.selectedSessionId);
   const selectedChatId = useChatsStore((s) => s.selectedChatId);
-  const archiveChat = useChatsStore((s) => s.archive);
   const setActiveMainTab = useUiStore((s) => s.setActiveMainTab);
 
   // Auto-submit a new chat message to the active session (no manual Send).
@@ -968,7 +967,7 @@ export function TopBarRight() {
             icon={<HugeiconsIcon icon={ArchiveArrowDownIcon} />}
             label="Archive chat"
             loadingLabel="Archiving…"
-            run={() => archiveChat(selectedChatId)}
+            run={() => archiveChatWithConfirm(selectedChatId)}
           />
         ) : null}
         {workflow.kind === "open-pr" && workflow.mergeable === "conflicting" ? (
