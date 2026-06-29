@@ -22,7 +22,7 @@ import type {
   SessionId,
   SkillRef,
   UserQuestionAnswer,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { getFileIconUrl } from "~/lib/icons/material-icons";
 import { openExternal, useProviderLogin } from "~/lib/use-provider-login";
@@ -298,7 +298,7 @@ function UserBubble({
             {(attachments ?? []).map((a) => {
               const isImage = a.mimeType.startsWith("image/");
               const iconUrl = isImage ? null : getFileIconUrl(a.originalName);
-              const src = `memoize://attachments/${a.id}`;
+              const src = `zuse://attachments/${a.id}`;
               const className =
                 "inline-flex items-center gap-1.5 rounded-md border border-border/45 bg-[var(--chip-bg)] px-1.5 py-0.5 text-[11px] text-foreground/90 shadow-[inset_0_1px_0_color-mix(in_oklch,white_4%,transparent),0_1px_2px_color-mix(in_oklch,black_22%,transparent)] hover:bg-[color-mix(in_oklch,var(--chip-bg)_80%,var(--foreground)_4%)] hover:text-foreground";
               const inner = (
@@ -692,7 +692,7 @@ function GeminiUpgradeCard({ onDismiss }: { onDismiss?: () => void }) {
             </div>
             <p className="mt-1 leading-relaxed text-muted-foreground">
               Your installed Gemini CLI does not support ACP mode yet, so
-              memoize cannot start Gemini sessions until the CLI is updated.
+              Zuse Alpha cannot start Gemini sessions until the CLI is updated.
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <code className="rounded-md border border-border/60 bg-background/60 px-2 py-1 font-mono text-[11px] text-foreground">

@@ -7,7 +7,7 @@ import {
   UPDATE_INSTALL_CHANNEL,
   UPDATE_STATUS_CHANNEL,
   type UpdateStatus,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 // electron-updater talks to the GitHub Releases feed configured in
 // apps/desktop/electron-builder.yml (`publish.provider: github`). It reads
@@ -196,7 +196,7 @@ export function startAutoUpdater(window: BrowserWindow): void {
 
 /**
  * Imperative entrypoints for the native menu. These bypass the renderer-bound
- * IPC bridge (`window.memoize.updates.*`) because menu clicks run in main —
+ * IPC bridge (`window.zuse.updates.*`) because menu clicks run in main —
  * routing through IPC would just bounce back to the same `autoUpdater` calls.
  */
 export function triggerUpdateCheck(): void {
@@ -219,8 +219,8 @@ export function triggerUpdateInstall(): void {
 
 /**
  * Dev-only IPC bridge for previewing the update banner without cutting a real
- * release. `window.__memoizeUpdateDemo.set(status)` in the renderer round-trips
- * through `memoize:update-demo-set`, which re-broadcasts on the same channel
+ * release. `window.__zuseUpdateDemo.set(status)` in the renderer round-trips
+ * through `zuse:update-demo-set`, which re-broadcasts on the same channel
  * the real updater uses — so the banner sees indistinguishable payloads.
  *
  * Call from `main.ts` only when `isDevelopment`. No-op in packaged builds.
@@ -229,7 +229,7 @@ export function registerUpdaterDemo(window: BrowserWindow): void {
   // Plumb the renderer so demo-pushed statuses reach the banner.
   attachRenderer(window);
   ipcMain.handle(
-    "memoize:update-demo-set",
+    "zuse:update-demo-set",
     (_event, status: UpdateStatus) => {
       if (window.isDestroyed()) return;
       // Push through `emit` so the menu listener and any other subscribers

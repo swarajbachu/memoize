@@ -17,7 +17,7 @@ import {
   FsTooLargeError,
   type FolderId,
   type WorktreeId,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { WorkspaceService } from "../../workspace/services/workspace-service.ts";
 import { WorktreeService } from "../../worktree/services/worktree-service.ts";
@@ -26,11 +26,11 @@ import { FsService } from "../services/fs-service.ts";
 // Skip directories that are large, irrelevant, or just noise in a code-tree
 // view. Match by basename. Hidden dotfiles other than `.git` still show up —
 // users often want to see `.env`, `.github/`, `.vscode/`, etc.
-const SKIP_DIRS = new Set([".git", "node_modules", ".memoize", ".DS_Store"]);
+const SKIP_DIRS = new Set([".git", "node_modules", ".zuse", ".DS_Store"]);
 const WATCH_SKIP_DIRS = new Set([
   ".git",
   "node_modules",
-  ".memoize",
+  ".zuse",
   ".DS_Store",
   "dist",
   "build",

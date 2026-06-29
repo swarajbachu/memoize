@@ -184,7 +184,7 @@ export function App() {
   // can drop the macOS traffic-light gutter.
   const setFullScreen = useUiStore((s) => s.setFullScreen);
   useEffect(() => {
-    const win = window.memoize?.window;
+    const win = window.zuse?.window;
     if (win === undefined) return;
     return win.onFullScreenChange((value) => setFullScreen(value));
   }, [setFullScreen]);
@@ -305,7 +305,7 @@ function MainShell() {
   // the file tab is foregrounded we close that; otherwise we fall through
   // to the chat-tab archive path.
   useEffect(() => {
-    const menu = window.memoize?.menu;
+    const menu = window.zuse?.menu;
     if (menu === undefined) return;
     return menu.onCloseTab(() => {
       const { activeMainTab, closeFileTab, openFile } = useUiStore.getState();

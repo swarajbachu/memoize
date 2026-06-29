@@ -3,7 +3,7 @@ import {
   CredentialStoreError,
   MemoizeRpcs,
   type ProviderId,
-} from "@memoize/wire";
+} from "@zuse/wire";
 import { CommandExecutor } from "@effect/platform";
 import { Effect, Layer, Stream } from "effect";
 
@@ -19,7 +19,7 @@ import { ProviderService } from "./services/provider-service.ts";
 
 /**
  * Provider-domain RPC handlers. Each subsequent PR adds a `toLayerHandler`
- * here as it registers its RPC into `MemoizeRpcs` (in `@memoize/wire`):
+ * here as it registers its RPC into `MemoizeRpcs` (in `@zuse/wire`):
  *
  *   PR 3 — `agent.availability`         ← here
  *   PR 4 — `agent.setCredential`        ← here
@@ -300,7 +300,7 @@ const SessionAnswerQuestion = MemoizeRpcs.toLayerHandler(
     Effect.flatMap(MessageStore, (svc) =>
       svc.answerQuestion(
         sessionId,
-        itemId as import("@memoize/wire").AgentItemId,
+        itemId as import("@zuse/wire").AgentItemId,
         answers,
       ),
     ),

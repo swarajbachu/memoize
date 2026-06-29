@@ -14,7 +14,7 @@ import {
   type FolderId,
   type ProviderId,
   type WorktreeId,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { cn } from "~/lib/utils";
 import {

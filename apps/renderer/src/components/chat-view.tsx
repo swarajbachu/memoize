@@ -14,7 +14,7 @@ import type {
   Message,
   SessionId,
   UserQuestionAnswer,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { groupMessages } from "../lib/group-messages.ts";
 import { useRegisterPane } from "../store/pane-focus.ts";

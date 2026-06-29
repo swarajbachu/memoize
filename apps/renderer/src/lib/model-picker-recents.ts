@@ -1,4 +1,4 @@
-import type { ProviderId } from "@memoize/wire";
+import type { ProviderId } from "@zuse/wire";
 
 export interface ModelPickerEvent {
   providerId: ProviderId;

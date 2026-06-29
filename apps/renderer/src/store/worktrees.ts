@@ -6,7 +6,7 @@ import {
   Worktree,
   type WorktreeId,
   type WorktreeSetupEvent,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { toastManager } from "../components/ui/toast.tsx";
 import { getRpcClient } from "../lib/rpc-client.ts";

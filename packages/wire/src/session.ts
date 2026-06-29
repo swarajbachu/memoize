@@ -87,7 +87,7 @@ export type ResumeStrategy = typeof ResumeStrategy.Type;
 // `RuntimeMode` and `DEFAULT_RUNTIME_MODE` are defined in `agent.ts` so the
 // new `AgentDefinition.permissionMode` can reuse the same literal set
 // without an import cycle. Re-exported above for back-compat with the
-// existing `import { RuntimeMode } from "@memoize/wire"` callers.
+// existing `import { RuntimeMode } from "@zuse/wire"` callers.
 
 export class Session extends Schema.Class<Session>("Session")({
   id: SessionId,

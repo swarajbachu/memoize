@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { execFileSync } from "node:child_process";
 
-import type { AgentEvent } from "@memoize/wire";
+import type { AgentEvent } from "@zuse/wire";
 
 import type { ThreadItem } from "../src/provider/codex-app-protocol/v2/ThreadItem.ts";
 import {
@@ -138,7 +138,7 @@ describe("translateCodexItem", () => {
     };
 
     const ev = only(translateCodexItem(item, "started"), "ToolUse");
-    expect(ev.tool).toBe("mcp__memoize__browser_screenshot");
+    expect(ev.tool).toBe("mcp__zuse__browser_screenshot");
   });
 
   it("renders context compaction as a compacted message", () => {

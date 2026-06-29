@@ -19,7 +19,7 @@ import {
   type RuntimeMode,
   type StartSessionInput,
   type UserQuestionAnswer,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
 import { handleFsRequest } from "./acp/fs.ts";

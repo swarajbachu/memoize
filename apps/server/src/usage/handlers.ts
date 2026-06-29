@@ -1,5 +1,5 @@
 import { SqlClient } from "@effect/sql";
-import { MemoizeRpcs, type FolderId } from "@memoize/wire";
+import { MemoizeRpcs, type FolderId } from "@zuse/wire";
 import {
   buildUsageReport,
   loadPricedUsage,
@@ -11,6 +11,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { AppPaths } from "../app-paths.ts";
+import { ensureSqliteRenameCompatibility, sqliteDbPath } from "../persistence/db-path.ts";
 
 /** Sessions table is paginated client-side; cap the payload to the heaviest N. */
 const MAX_SESSIONS_IN_PAYLOAD = 250;
@@ -40,7 +41,7 @@ export const resetUsageReportCacheForTest = (): void => {
 };
 
 export const loadPricedUsageCached = (
-  memoizeDbPath: string,
+  zuseDbPath: string,
   cacheDir: string,
   opts: {
     readonly forceRefresh?: boolean;
@@ -58,7 +59,7 @@ export const loadPricedUsageCached = (
   }
   const load = opts.load ?? loadPricedUsage;
   const promise = load({
-    readOptions: { memoizeDbPath },
+    readOptions: { zuseDbPath },
     pricing: { cacheDir },
   }).then((value) => {
     pricedCache = { at: (opts.now ?? Date.now)(), value };
@@ -84,7 +85,7 @@ export const trimUsageReportForPayload = (report: ReturnType<typeof buildUsageRe
 
 /**
  * Path roots that scope a report to a single codebase. Agents run in Memoize
- * worktrees at `~/.memoize/<name>-<id-prefix>/<worktree>` (not the project's
+ * worktrees at `~/.zuse/<name>-<id-prefix>/<worktree>` (not the project's
  * own repo path), so we match both the repo path and that worktree root.
  */
 const projectPathsFor = (projectId: FolderId | undefined) =>
@@ -96,7 +97,7 @@ const projectPathsFor = (projectId: FolderId | undefined) =>
     `;
     const project = rows[0];
     if (project === undefined) return undefined;
-    const worktreeRoot = join(homedir(), ".memoize", `${project.name}-${projectId.slice(0, 8)}`);
+    const worktreeRoot = join(homedir(), ".zuse", `${project.name}-${projectId.slice(0, 8)}`);
     return [project.path, worktreeRoot];
   });
 
@@ -109,8 +110,9 @@ const UsageReport = MemoizeRpcs.toLayerHandler(
         Effect.catchAll(() => Effect.succeed(undefined)),
       );
       return yield* Effect.tryPromise(async () => {
+        await ensureSqliteRenameCompatibility(paths.userData);
         const { records, sources } = await loadPricedUsageCached(
-          join(paths.userData, "memoize.sqlite"),
+          sqliteDbPath(paths.userData),
           join(paths.userData, "tokenmaxer"),
           { forceRefresh },
         );

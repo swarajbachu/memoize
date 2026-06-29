@@ -17,7 +17,7 @@ import {
   type PermissionMode,
   type StartSessionInput,
   type UserQuestionAnswer,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import {
   createOpencodeClient,

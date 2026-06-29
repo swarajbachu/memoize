@@ -16,7 +16,7 @@ import {
   type AgentAvailability,
   type ProviderId,
   type ProviderUpdateEvent,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { ApiKeyRow } from "~/components/api-key-row";
 import { openExternal, useProviderLogin } from "~/lib/use-provider-login";

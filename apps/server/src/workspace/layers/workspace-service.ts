@@ -9,7 +9,7 @@ import {
   WorkspaceDuplicatePathError,
   WorkspaceInvalidPathError,
   WorkspaceNotFoundError,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { IndexRegistry } from "../../code-index/services/index-registry.ts";
 import { WorkspaceService } from "../services/workspace-service.ts";

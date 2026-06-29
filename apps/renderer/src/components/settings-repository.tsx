@@ -7,7 +7,7 @@ import {
   MODELS_BY_PROVIDER,
   type FolderId,
   type ProviderId,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { useRepositorySettingsStore } from "../store/repository-settings.ts";
 import { useSettingsStore } from "../store/settings.ts";
@@ -446,7 +446,7 @@ function WorktreeSection({
       <div className="flex flex-col">
         {sorted.length === 0 ? (
           <p className="px-4 py-8 text-center text-xs text-muted-foreground">
-            No worktrees yet. Memoize creates one for you when you start a new
+            No worktrees yet. Zuse Alpha creates one for you when you start a new
             chat.
           </p>
         ) : (
@@ -517,7 +517,7 @@ function WorktreeSection({
         ) : (
           <p className="text-xs leading-relaxed text-muted-foreground">
             Git worktrees for this repo. Each lives under
-            ~/.memoize/&lt;repo&gt;/&lt;name&gt;/ on disk.
+            ~/.zuse/&lt;repo&gt;/&lt;name&gt;/ on disk.
           </p>
         )}
       </div>
@@ -614,14 +614,14 @@ function ScriptsSection({
           value={envDraft}
           onChange={(event) => setEnvDraft(event.currentTarget.value)}
           onBlur={persistEnv}
-          placeholder="MEMOIZE_PORT=5733"
+          placeholder="ZUSE_PORT=5733"
           minHeightClassName="min-h-24"
         />
       </div>
       <div className="px-4 py-3">
         <p className="text-xs leading-relaxed text-muted-foreground">
           Want to share scripts with your team? Create a{" "}
-          <span className="font-mono">.memoize/settings.toml</span> file.
+          <span className="font-mono">.zuse/settings.toml</span> file.
         </p>
       </div>
     </SettingsGroup>

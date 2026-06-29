@@ -41,7 +41,7 @@ import {
   type ThreadGoalSetInput,
   type Worktree,
   WorktreeId,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { WorktreeService } from "../../worktree/services/worktree-service.ts";
 
@@ -2179,10 +2179,10 @@ export const MessageStoreLive = Layer.scoped(
             script: settings.archiveCleanupScript ?? "",
             cwd: worktree.path,
             env: {
-              MEMOIZE_ROOT_PATH: rootPath ?? "",
-              MEMOIZE_WORKSPACE_PATH: worktree.path,
-              MEMOIZE_CHAT_ID: chatId,
-              MEMOIZE_WORKTREE_ID: worktree.id,
+              ZUSE_ROOT_PATH: rootPath ?? "",
+              ZUSE_WORKSPACE_PATH: worktree.path,
+              ZUSE_CHAT_ID: chatId,
+              ZUSE_WORKTREE_ID: worktree.id,
             },
           });
           cleanup = { ran: true, output: result.output };

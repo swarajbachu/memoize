@@ -26,7 +26,7 @@ import {
   type GitOriginInfo,
   type ProviderId,
   type SessionId,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
 import { Menu, MenuItem, MenuPopup } from "~/components/ui/menu";

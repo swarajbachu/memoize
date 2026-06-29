@@ -17,7 +17,7 @@ const PRUNED_DIRS = new Set<string>([
   "coverage",
   "vendor",
   "target",
-  ".memoize",
+  ".zuse",
 ]);
 
 /**

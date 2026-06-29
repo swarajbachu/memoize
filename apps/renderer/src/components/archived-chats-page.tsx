@@ -7,7 +7,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { Effect } from "effect";
 
-import type { Chat, FolderId } from "@memoize/wire";
+import type { Chat, FolderId } from "@zuse/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
 import { useChatsStore } from "../store/chats.ts";

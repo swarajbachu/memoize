@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useRef } from "react";
 
-import type { ChatId } from "@memoize/wire";
+import type { ChatId } from "@zuse/wire";
 
 import { useActiveContext } from "../store/active-workspace.ts";
 import { useChatsStore } from "../store/chats.ts";
