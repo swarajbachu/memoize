@@ -21,7 +21,7 @@ import * as Path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
-import { makeMainLayer } from "@memoize/server";
+import { makeMainLayer } from "@zuse/server";
 
 // macOS GUI apps launched from Finder inherit a minimal PATH
 // (`/usr/bin:/bin:/usr/sbin:/sbin`), not the user's shell PATH. The Claude
@@ -51,13 +51,23 @@ import {
 /**
  * Privileged scheme registration. Must run before `app.whenReady()` —
  * Electron freezes the scheme registry once the app is ready, so a late
- * call silently fails and `<img src="memoize://...">` errors out with no
+ * call silently fails and `<img src="zuse://...">` errors out with no
  * obvious cause. `secure: true` puts the scheme in the same trust class as
  * `https`; `supportFetchAPI` lets the renderer use `fetch()` against it;
  * `stream: true` lets us hand back a body that the renderer can stream.
  */
 protocol.registerSchemesAsPrivileged([
   {
+    scheme: "zuse",
+    privileges: {
+      secure: true,
+      standard: true,
+      supportFetchAPI: true,
+      stream: true,
+    },
+  },
+  {
+    // Legacy persisted attachment and sprite URLs from pre-Zuse builds.
     scheme: "memoize",
     privileges: {
       secure: true,
@@ -71,14 +81,16 @@ protocol.registerSchemesAsPrivileged([
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL?.trim() || "";
 const isDevelopment = Boolean(DEV_SERVER_URL);
 
-const APP_NAME = isDevelopment ? "memoize Alpha (Dev)" : "memoize Alpha";
+const APP_NAME = isDevelopment ? "Zuse Alpha (Dev)" : "Zuse Alpha";
 
 app.setName(APP_NAME);
 
-const MEMOIZE_USER_DATA_DIR = process.env.MEMOIZE_USER_DATA_DIR?.trim();
-if (MEMOIZE_USER_DATA_DIR) {
-  fsSync.mkdirSync(MEMOIZE_USER_DATA_DIR, { recursive: true });
-  app.setPath("userData", MEMOIZE_USER_DATA_DIR);
+const ZUSE_USER_DATA_DIR =
+  process.env.ZUSE_USER_DATA_DIR?.trim() ||
+  process.env.MEMOIZE_USER_DATA_DIR?.trim();
+if (ZUSE_USER_DATA_DIR) {
+  fsSync.mkdirSync(ZUSE_USER_DATA_DIR, { recursive: true });
+  app.setPath("userData", ZUSE_USER_DATA_DIR);
 }
 
 // Lock the app to macOS's dark appearance so the sidebar vibrancy material
@@ -674,7 +686,7 @@ function createMainWindow() {
   // from "the app froze." Intercept those and route to the OS browser.
   mainWindow.webContents.on("will-navigate", (event, url) => {
     // Allow same-document navigations (dev-server HMR, our own renderer's
-    // file:// load, the privileged `memoize://` scheme). Everything else is
+    // file:// load, the privileged `zuse://` scheme). Everything else is
     // an external link the user clicked.
     let parsed: URL;
     try {
@@ -806,8 +818,8 @@ function createMainWindow() {
 
 /**
  * Resolve internal asset URLs to files under userData:
- *   - `memoize://attachments/<id>`
- *   - `memoize://pokemon/<dex-number>` or `memoize://pokemon/<dex-number>-<variant>`
+ *   - `zuse://attachments/<id>`
+ *   - `zuse://pokemon/<dex-number>` or `zuse://pokemon/<dex-number>-<variant>`
  * The id has no extension on the wire so we scan the directory for a file
  * with the matching stem. Anything outside known hosts is rejected.
  */
@@ -856,7 +868,7 @@ const findAssetFilename = async (
   return cache.byStem.get(id) ?? null;
 };
 
-const registerMemoizeProtocol = (): void => {
+const registerZuseProtocol = (): void => {
   const attachmentsDir = Path.join(app.getPath("userData"), "attachments");
   const pokemonDir = Path.join(app.getPath("userData"), "pokemon-sprites");
   const attachmentFilenames: AssetFilenameCache = {
@@ -868,7 +880,7 @@ const registerMemoizeProtocol = (): void => {
     loaded: false,
   };
 
-  protocol.handle("memoize", async (request) => {
+  const handleAssetRequest = async (request: Request) => {
     const url = new URL(request.url);
     const asset =
       url.host === ATTACHMENTS_HOST
@@ -881,7 +893,7 @@ const registerMemoizeProtocol = (): void => {
     }
 
     // The path is `/<id>`; sanitise to a single segment so a crafted url
-    // like `memoize://attachments/../foo` cannot escape `attachmentsDir`.
+    // like `zuse://attachments/../foo` cannot escape `attachmentsDir`.
     const id = decodeURIComponent(url.pathname.replace(/^\//, ""));
     if (!id || id.includes("/") || id.includes("\\") || id.includes("..")) {
       return new Response(null, { status: 400 });
@@ -907,7 +919,10 @@ const registerMemoizeProtocol = (): void => {
       status: response.status,
       headers,
     });
-  });
+  };
+
+  protocol.handle("zuse", handleAssetRequest);
+  protocol.handle("memoize", handleAssetRequest);
 };
 
 /**
@@ -951,18 +966,18 @@ ipcMain.on("menu:setAccelerators", (_event, payload: unknown) => {
 });
 
 void app.whenReady().then(() => {
-  registerMemoizeProtocol();
+  registerZuseProtocol();
 
-  // Populate the native About panel so "About memoize" shows the current
+  // Populate the native About panel so "About Zuse" shows the current
   // version + copyright. Without this, Electron's default panel only shows
   // the app name. macOS reads these once at panel-open time, so it's safe
   // to call once on startup.
   app.setAboutPanelOptions({
-    applicationName: "memoize Alpha",
+    applicationName: "Zuse Alpha",
     applicationVersion: app.getVersion(),
     version: app.getVersion(),
     copyright: "© Swaraj Bachu",
-    website: "https://github.com/swarajbachu/memoize",
+    website: "https://github.com/swarajbachu/zuse",
   });
 
   // Rebuild the menu whenever the updater status changes so the
@@ -978,7 +993,7 @@ void app.whenReady().then(() => {
   createMainWindow();
   if (mainWindow !== null) {
     if (isDevelopment) {
-      // Wire the dev console helper (window.__memoizeUpdateDemo) to a real
+      // Wire the dev console helper (window.__zuseUpdateDemo) to a real
       // IPC round-trip so the banner can be exercised without a release.
       registerUpdaterDemo(mainWindow);
     } else {

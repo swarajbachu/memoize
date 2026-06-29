@@ -435,7 +435,7 @@ export function MarkdownBody({
                 if (typeof href !== "string") return;
                 if (/^https?:\/\//i.test(href)) {
                   e.preventDefault();
-                  window.memoize?.app?.openExternal(href);
+                  window.zuse?.app?.openExternal(href);
                   return;
                 }
                 const localPath = localFilePathFromHref(href);

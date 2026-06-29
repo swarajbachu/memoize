@@ -2,7 +2,7 @@ import { ArrowRight01Icon } from "@hugeicons-pro/core-bulk-rounded";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useMemo } from "react";
 
-import type { Chat } from "@memoize/wire";
+import type { Chat } from "@zuse/wire";
 
 import { isChatUnread, useChatsStore } from "../store/chats.ts";
 import { Button } from "./ui/button";

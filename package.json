@@ -1,5 +1,5 @@
 {
-  "name": "memoize",
+  "name": "zuse",
   "private": true,
   "scripts": {
     "build": "turbo run build",

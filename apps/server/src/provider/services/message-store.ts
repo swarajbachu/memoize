@@ -35,7 +35,7 @@ import type {
   ThreadGoalSetInput,
   UserQuestionAnswer,
   WorktreeId,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 /**
  * Persistence-backed orchestration of chat sessions and their message log.
@@ -273,6 +273,7 @@ export interface MessageStoreShape {
 
   readonly archiveChat: (
     chatId: ChatId,
+    force: boolean,
   ) => Effect.Effect<
     ChatArchiveResult,
     | ChatNotFoundError

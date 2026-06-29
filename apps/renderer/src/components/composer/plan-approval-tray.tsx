@@ -1,7 +1,7 @@
 import { CheckListIcon } from "@hugeicons-pro/core-bulk-rounded";
 import { HugeiconsIcon } from "@hugeicons/react";
 
-import { ComposerInput, type SessionId } from "@memoize/wire";
+import { ComposerInput, type SessionId } from "@zuse/wire";
 
 import {
   annotationsForSession,

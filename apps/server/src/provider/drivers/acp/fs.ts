@@ -8,7 +8,7 @@ import type {
   PermissionKind,
   PermissionMode,
   RuntimeMode,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import {
   getFsPolicy,

@@ -5,7 +5,7 @@ import type {
   CodeAnnotation,
   FolderId,
   WorktreeId,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { useChatsStore } from "./chats.ts";
 
@@ -88,7 +88,7 @@ export type FileView = "edit" | "diff";
 /**
  * Discriminated by `kind`. `text` is the project-root-relative path the file
  * editor reads via `fs.readFile`; `image` is a raw URL the renderer renders
- * inline (currently used for `memoize://attachments/<id>` so screenshots
+ * inline (currently used for `zuse://attachments/<id>` so screenshots
  * stay inside the app instead of bouncing to the OS handler).
  */
 export type OpenFile =

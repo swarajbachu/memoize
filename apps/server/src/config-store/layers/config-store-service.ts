@@ -16,7 +16,7 @@ import {
   type CompletionSoundPreset,
   type SettingsPatch,
   type SubagentPresetState,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { AppPaths } from "../../app-paths.ts";
 import {

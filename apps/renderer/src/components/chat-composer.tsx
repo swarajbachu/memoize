@@ -30,7 +30,7 @@ import {
   type Session,
   type SessionId,
   type ThreadGoal,
-} from "@memoize/wire";
+} from "@zuse/wire";
 import { ModelPicker } from "./model-picker.tsx";
 
 import { Card, CardPanel } from "~/components/ui/card";
@@ -76,6 +76,11 @@ import {
   useComposerDraftsStore,
 } from "../store/composer-drafts.ts";
 import { cn, formatCompactNumber } from "~/lib/utils";
+import {
+  chooseComposerSubmitRoute,
+  findPendingPlanApprovalRequest,
+  shouldSendPlanFeedbackNow,
+} from "~/lib/plan-feedback-routing";
 import {
   matchBuiltin,
   type BuiltinCommand,
@@ -223,6 +228,7 @@ export function ChatComposer({
   // because the agent is already mid-tool-call.
   const requestsById = usePermissionsStore((s) => s.requestsById);
   const hydratePermissions = usePermissionsStore((s) => s.hydrate);
+  const decidePermission = usePermissionsStore((s) => s.decide);
   const pendingPermissions = useMemo(() => {
     const out: PermissionRequest[] = [];
     for (const req of Object.values(requestsById)) {
@@ -236,6 +242,20 @@ export function ChatComposer({
     out.sort((a, b) => a.requestedAt.getTime() - b.requestedAt.getTime());
     return out;
   }, [requestsById, sessionId]);
+  const pendingPlanApprovalRequest = useMemo(
+    () =>
+      findPendingPlanApprovalRequest(Object.values(requestsById), sessionId),
+    [requestsById, sessionId],
+  );
+  const sendPlanFeedbackNow = useMemo(
+    () =>
+      shouldSendPlanFeedbackNow({
+        permissionMode: session.permissionMode,
+        messages: sessionMessages ?? [],
+        pendingPlanApprovalRequest,
+      }),
+    [pendingPlanApprovalRequest, session.permissionMode, sessionMessages],
+  );
   useEffect(() => {
     if (isDraft) return;
     void hydratePermissions(sessionId);
@@ -511,7 +531,7 @@ export function ChatComposer({
   /**
    * Insert chips for `files`. Image files render with a thumbnail; other types
    * (PDFs, docs, archives) get a generic file-icon chip. The chip's underlying
-   * token swaps from a temp id to a `memoize://attachments/<id>` URL once the
+   * token swaps from a temp id to a `zuse://attachments/<id>` URL once the
    * upload resolves. Files beyond the per-turn cap are dropped with a warning.
    */
   const attachFiles = (files: readonly File[]): void => {
@@ -555,7 +575,7 @@ export function ChatComposer({
 
       void uploadOne(sessionId, file)
         .then((ref) => {
-          const finalUrl = isImage ? `memoize://attachments/${ref.id}` : "";
+          const finalUrl = isImage ? `zuse://attachments/${ref.id}` : "";
           editorViewRef.current?.dispatch({
             effects: updateImageChipEffect.of({
               previousId: tempId,
@@ -685,15 +705,35 @@ export function ChatComposer({
       onDraftSubmit(input, { asGoal: goalSendMode });
       return true;
     }
-    if (goalSendMode) {
-      void send(sessionId, input, { asGoal: true });
-    } else if (inFlight || holdForSetup) {
-      // Mid-turn submit — or a submit while the worktree/provider is still
-      // coming up — becomes a queue chip; auto-flushed when the turn ends,
-      // setup completes, or steered manually.
-      queue(sessionId, input);
-    } else {
-      void send(sessionId, input);
+    switch (
+      chooseComposerSubmitRoute({
+        sendPlanFeedbackNow,
+        goalSendMode,
+        shouldQueue: inFlight || holdForSetup,
+      })
+    ) {
+      case "planFeedback":
+        void (async () => {
+          if (pendingPlanApprovalRequest !== null) {
+            await decidePermission(pendingPlanApprovalRequest.id, {
+              _tag: "Deny",
+            });
+          }
+          await send(sessionId, input);
+        })();
+        break;
+      case "goal":
+        void send(sessionId, input, { asGoal: true });
+        break;
+      case "queue":
+        // Mid-turn submit — or a submit while the worktree/provider is still
+        // coming up — becomes a queue chip; auto-flushed when the turn ends,
+        // setup completes, or steered manually.
+        queue(sessionId, input);
+        break;
+      case "send":
+        void send(sessionId, input);
+        break;
     }
     return true;
   };

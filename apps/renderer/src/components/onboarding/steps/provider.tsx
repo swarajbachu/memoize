@@ -7,7 +7,7 @@ import {
 } from "@hugeicons-pro/core-bulk-rounded";
 import { useState } from "react";
 
-import type { AgentAvailability, ProviderId } from "@memoize/wire";
+import type { AgentAvailability, ProviderId } from "@zuse/wire";
 
 import { ProviderIcon } from "~/components/provider-icons";
 import { PROVIDER_LABEL } from "~/components/settings-page";
@@ -34,11 +34,13 @@ const openExternal = (url: string): void => {
   if (typeof window === "undefined") return;
   const bridge = (
     window as unknown as {
+      zuse?: { app?: { openExternal?: (u: string) => void } };
       memoize?: { app?: { openExternal?: (u: string) => void } };
     }
-  ).memoize?.app?.openExternal;
-  if (typeof bridge === "function") {
-    bridge(url);
+  );
+  const open = bridge.zuse?.app?.openExternal ?? bridge.memoize?.app?.openExternal;
+  if (typeof open === "function") {
+    open(url);
     return;
   }
   window.open(url, "_blank", "noopener");
@@ -322,7 +324,7 @@ function ProviderStatus({
       : state.kind === "subscription"
         ? "Your CLI login was detected, but the required paid plan was not confirmed."
         : state.kind === "outdated"
-          ? `${PROVIDER_LABEL[providerId]} ${state.current} is too old; memoize needs ${state.required}.`
+          ? `${PROVIDER_LABEL[providerId]} ${state.current} is too old; Zuse Alpha needs ${state.required}.`
           : `${PROVIDER_LABEL[providerId]}'s CLI isn't on your PATH yet.`;
 
   const command =

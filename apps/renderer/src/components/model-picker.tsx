@@ -22,13 +22,13 @@ import type {
   ProviderId,
   RuntimeMode,
   SessionId,
-} from "@memoize/wire";
+} from "@zuse/wire";
 import {
   MODELS_BY_PROVIDER,
   findModelDescriptor,
   type Message,
   type SelectOptionDescriptor,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { cn } from "~/lib/utils";
 import { useMessagesStore } from "~/store/messages";

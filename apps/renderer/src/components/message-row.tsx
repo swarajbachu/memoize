@@ -22,13 +22,10 @@ import type {
   SessionId,
   SkillRef,
   UserQuestionAnswer,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { getFileIconUrl } from "~/lib/icons/material-icons";
-import {
-  openExternal,
-  useProviderLogin,
-} from "~/lib/use-provider-login";
+import { openExternal, useProviderLogin } from "~/lib/use-provider-login";
 import { cn } from "~/lib/utils";
 import {
   classifyMessage,
@@ -50,6 +47,7 @@ import {
   UserInputRow,
 } from "./tool-row.tsx";
 import { Button } from "./ui/button.tsx";
+import { ShimmerText } from "./ui/shimmer-text.tsx";
 
 export interface ToolResultRecord {
   readonly output: unknown;
@@ -190,6 +188,16 @@ export function MessageRow({
           sessionId={sessionId}
         />
       );
+    case "interrupted":
+      // The user stopped the turn — a normal action, so render a small muted
+      // badge rather than an error bubble.
+      return (
+        <div className="flex justify-center py-1">
+          <span className="rounded-full bg-muted/50 px-2.5 py-0.5 text-[11px] text-muted-foreground">
+            Interrupted by user
+          </span>
+        </div>
+      );
   }
 }
 
@@ -292,7 +300,7 @@ function UserBubble({
             {(attachments ?? []).map((a) => {
               const isImage = a.mimeType.startsWith("image/");
               const iconUrl = isImage ? null : getFileIconUrl(a.originalName);
-              const src = `memoize://attachments/${a.id}`;
+              const src = `zuse://attachments/${a.id}`;
               const className =
                 "inline-flex items-center gap-1.5 rounded-md border border-border/45 bg-[var(--chip-bg)] px-1.5 py-0.5 text-[11px] text-foreground/90 shadow-[inset_0_1px_0_color-mix(in_oklch,white_4%,transparent),0_1px_2px_color-mix(in_oklch,black_22%,transparent)] hover:bg-[color-mix(in_oklch,var(--chip-bg)_80%,var(--foreground)_4%)] hover:text-foreground";
               const inner = (
@@ -590,7 +598,7 @@ function ProviderAuthCard({
               className="size-3.5 animate-spin"
               aria-hidden
             />
-            <span>Waiting for browser sign-in…</span>
+            <ShimmerText as="span">Waiting for browser sign-in…</ShimmerText>
             <button
               type="button"
               onClick={cancel}
@@ -606,7 +614,7 @@ function ProviderAuthCard({
               className="size-3.5 animate-spin"
               aria-hidden
             />
-            <span>Signed in. Finishing…</span>
+            <ShimmerText as="span">Signed in. Finishing…</ShimmerText>
           </div>
         ) : (
           <>
@@ -615,7 +623,9 @@ function ProviderAuthCard({
               automatically.
             </p>
             {state.kind === "failed" && (
-              <p className="mt-1 text-[11px] text-destructive">{state.reason}</p>
+              <p className="mt-1 text-[11px] text-destructive">
+                {state.reason}
+              </p>
             )}
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
               <Button
@@ -686,7 +696,7 @@ function GeminiUpgradeCard({ onDismiss }: { onDismiss?: () => void }) {
             </div>
             <p className="mt-1 leading-relaxed text-muted-foreground">
               Your installed Gemini CLI does not support ACP mode yet, so
-              memoize cannot start Gemini sessions until the CLI is updated.
+              Zuse Alpha cannot start Gemini sessions until the CLI is updated.
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <code className="rounded-md border border-border/60 bg-background/60 px-2 py-1 font-mono text-[11px] text-foreground">

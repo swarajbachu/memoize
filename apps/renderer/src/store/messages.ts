@@ -10,7 +10,7 @@ import {
   type SessionId,
   type ThreadGoal,
   type ThreadGoalSetInput,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { formatError } from "../lib/format-error.ts";
 import { getRpcClient } from "../lib/rpc-client.ts";

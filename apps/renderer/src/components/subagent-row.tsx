@@ -2,7 +2,7 @@ import { ArrowDown01Icon, ArrowRight01Icon, ClipboardIcon, Robot01Icon } from "@
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useMemo, useState } from "react";
 
-import type { AgentItemId, Message, UserQuestionAnswer } from "@memoize/wire";
+import type { AgentItemId, Message, UserQuestionAnswer } from "@zuse/wire";
 
 import { cn } from "~/lib/utils";
 

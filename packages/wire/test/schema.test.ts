@@ -263,14 +263,14 @@ describe("Pokemon and Worktree round-trips", () => {
       unlocked: true,
       unlockedAt: "2026-06-18T00:00:00.000Z",
       worktreeId: "wt1",
-      spriteUrl: "memoize://pokemon/25",
+      spriteUrl: "zuse://pokemon/25",
       silhouetteUrl:
         "https://img.pokemondb.net/sprites/scarlet-violet/icon/pikachu.png",
       variants: [
         {
           id: "home",
           label: "Home",
-          spriteUrl: "memoize://pokemon/25-home",
+          spriteUrl: "zuse://pokemon/25-home",
         },
       ],
       evolutionLine: [
@@ -280,7 +280,7 @@ describe("Pokemon and Worktree round-trips", () => {
           name: "Pikachu",
           rarity: "rare" as const,
           unlocked: true,
-          spriteUrl: "memoize://pokemon/25",
+          spriteUrl: "zuse://pokemon/25",
           silhouetteUrl:
             "https://img.pokemondb.net/sprites/scarlet-violet/icon/pikachu.png",
         },
@@ -308,7 +308,7 @@ describe("Pokemon and Worktree round-trips", () => {
         generation: 1,
         rarity: "rare" as const,
         points: 75,
-        spriteUrl: "memoize://pokemon/25",
+        spriteUrl: "zuse://pokemon/25",
       },
     });
   });

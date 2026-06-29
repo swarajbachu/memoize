@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 
-import type { Annotation, NewAnnotation } from "@memoize/wire";
+import type { Annotation, NewAnnotation } from "@zuse/wire";
 
 import { useAnnotationsStore } from "../../store/annotations.ts";
 import { useSessionsStore } from "../../store/sessions.ts";

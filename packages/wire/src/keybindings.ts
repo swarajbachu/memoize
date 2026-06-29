@@ -62,7 +62,7 @@ export type Command = typeof Command.Type;
  * context (e.g. `"composerFocus && !settingsOpen"`).
  *
  * Rules are stored in order; later rules win over earlier ones on the same
- * key+context — matching the precedence VS Code & t3code use.
+ * key+context — matching common editor precedence.
  *
  * Declared as a `Schema.Struct` (not `Schema.Class`) on purpose: rules are
  * pure data with no methods, and the renderer constructs plain objects when
@@ -88,7 +88,7 @@ export class KeybindingsFile extends Schema.Class<KeybindingsFile>(
   rules: Schema.Array(KeybindingRule),
 }) {}
 
-/** Safety cap, matching t3code. Truncates oldest if exceeded. */
+/** Safety cap. Truncates oldest if exceeded. */
 export const MAX_KEYBINDING_RULES = 256;
 
 export const KeybindingsGetRpc = Rpc.make("keybindings.get", {

@@ -490,6 +490,16 @@ const CompletedEvent = Schema.TaggedStruct("Completed", {
   reason: Schema.Literal("ended", "interrupted", "error"),
 });
 
+/**
+ * Emitted when the user interrupts a running turn. Unlike `Error`, this is a
+ * normal user action — the renderer shows a muted "Interrupted by user" badge
+ * (no red error bubble) and the session stays out of the error state. Drivers
+ * emit this in place of `Error` when they know the turn ended because of an
+ * explicit interrupt (see the Claude driver, which otherwise surfaces the
+ * SDK's `error_during_execution` result as a bogus error).
+ */
+const InterruptedEvent = Schema.TaggedStruct("Interrupted", {});
+
 const ErrorEvent = Schema.TaggedStruct("Error", {
   message: Schema.String,
   /**
@@ -525,10 +535,9 @@ const SessionCursorEvent = Schema.TaggedStruct("SessionCursor", {
 
 /**
  * Structured question shape used by both `UserQuestionEvent` and the
- * persisted `userQuestion` message row. Mirrors Conductor's
- * AskUserQuestion: a question with N preset options and optional
- * multi-select. The renderer always offers an additional "Other" free-text
- * field — there is no need to include it in `options`.
+ * persisted `userQuestion` message row: a question with N preset options and
+ * optional multi-select. The renderer always offers an additional "Other"
+ * free-text field — there is no need to include it in `options`.
  */
 export const UserQuestion = Schema.Struct({
   question: Schema.String,
@@ -605,6 +614,7 @@ export const AgentEvent = Schema.Union(
   GoalUpdatedEvent,
   GoalClearedEvent,
   CompletedEvent,
+  InterruptedEvent,
   ErrorEvent,
 );
 export type AgentEvent = typeof AgentEvent.Type;
@@ -747,9 +757,8 @@ const reasoningSelectDescriptor = (
 /**
  * Per-model effort descriptor for the Claude provider. Each model declares
  * its own supported tiers (see `MODELS_BY_PROVIDER.claude` below); `ultracode`
- * is special — see `ReasoningLevel` docs. The knob id is
- * `effort` (matching the Claude SDK + t3code reference) rather than
- * `reasoning` to make driver-side mapping explicit.
+ * is special — see `ReasoningLevel` docs. The knob id is `effort` rather
+ * than `reasoning` to make driver-side mapping explicit.
  */
 const claudeEffortDescriptor = (args: {
   options: ReadonlyArray<{ id: string; label: string }>;
@@ -815,10 +824,8 @@ export const MODELS_BY_PROVIDER: Record<
   ReadonlyArray<ModelOption>
 > = {
   // Claude 4.x catalog (May 2026). Effort tiers and per-model knobs match
-  // the published Claude Agent SDK contract — see also the t3code reference
-  // (`/Users/whizzy/Developer/temp/t3code/.../ClaudeProvider.ts`) which
-  // ships the same lineup. Ordering = newest first so the picker accordion
-  // expands Opus 4.8 by default.
+  // the published Claude Agent SDK contract. Ordering = newest first so the
+  // picker accordion expands Opus 4.8 by default.
   claude: [
     {
       id: "claude-opus-4-8",
@@ -1116,9 +1123,8 @@ export const MODEL_ALIASES_BY_PROVIDER: Record<
   Record<string, string>
 > = {
   // Short / vendor-formatted slugs and pre-pricing-reset names route to the
-  // canonical 4.x slugs above. Mirror of t3code's
-  // `MODEL_SLUG_ALIASES_BY_PROVIDER[CLAUDE_DRIVER_KIND]` so a user typing
-  // `opus` or `sonnet-4.6` resolves the same in both apps.
+  // canonical 4.x slugs above, so a user typing `opus` or `sonnet-4.6`
+  // resolves to the current model id.
   claude: {
     opus: "claude-opus-4-8",
     "opus-4.8": "claude-opus-4-8",

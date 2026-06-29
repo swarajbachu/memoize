@@ -24,7 +24,7 @@ import {
   type StartSessionInput,
   type UserQuestion,
   type UserQuestionAnswer,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
 import {
@@ -77,13 +77,13 @@ const toSdkPermissionMode = (mode: PermissionMode): SdkPermissionMode =>
 /**
  * Name we register the in-process AskUserQuestion tool under. The SDK
  * exposes MCP tools to the model as `mcp__<server>__<tool>`, so the
- * model sees `mcp__memoize__ask_user_question` and the translator
+ * model sees `mcp__zuse__ask_user_question` and the translator
  * matches on that exact prefix to emit `UserQuestion` instead of a
  * generic `ToolUse`.
  */
-const MEMOIZE_MCP_NAME = "memoize";
+const ZUSE_MCP_NAME = "zuse";
 const ASK_USER_QUESTION_TOOL = "ask_user_question";
-const ASK_USER_QUESTION_FQN = `mcp__${MEMOIZE_MCP_NAME}__${ASK_USER_QUESTION_TOOL}`;
+const ASK_USER_QUESTION_FQN = `mcp__${ZUSE_MCP_NAME}__${ASK_USER_QUESTION_TOOL}`;
 
 /**
  * Anthropic accepts these media types as image content blocks. Anything else
@@ -284,6 +284,14 @@ interface TranslateState {
    * same failure a second time.
    */
   emittedAuthError: boolean;
+  /**
+   * Set when the user interrupts the running turn (`handle.interrupt`). The SDK
+   * ends an interrupted turn with an `error_during_execution` result, which
+   * would otherwise surface as a bogus error bubble; while this flag is set the
+   * translator emits an `Interrupted` event + `Completed reason:"interrupted"`
+   * instead. Reset per turn once consumed.
+   */
+  interrupted: boolean;
 }
 
 const newTranslateState = (): TranslateState => ({
@@ -295,6 +303,7 @@ const newTranslateState = (): TranslateState => ({
   exitPlanModeIds: new Set(),
   lastContextUsedTokens: null,
   emittedAuthError: false,
+  interrupted: false,
 });
 
 const isAgentToolUse = (block: { type?: string; name?: string }): boolean =>
@@ -905,6 +914,17 @@ const translate = (
           source: "Claude usage",
         });
       }
+      // The user interrupted this turn. The SDK ends it with an
+      // `error_during_execution` result, but that's a normal user action — emit
+      // a muted `Interrupted` badge + non-error completion instead of an Error
+      // bubble, and skip the failed-result handling below.
+      if (state.interrupted) {
+        out.push({ _tag: "Interrupted" });
+        out.push({ _tag: "Completed", reason: "interrupted" });
+        state.interrupted = false;
+        state.emittedAuthError = false;
+        return out;
+      }
       // Surface a failed result's text as an Error so it persists + renders
       // (auth failures the SDK reports via the result rather than an assistant
       // block land here). `state.emittedAuthError` dedupes against the
@@ -956,28 +976,28 @@ const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
   // worktree-local SQLite — they can't mutate anything, so prompting on
   // every call (and failing to dedupe because the per-input JSON ends up
   // in the kindKey) is pure noise. Auto-allow them like Grep/Glob.
-  `mcp__${MEMOIZE_MCP_NAME}__code_search`,
-  `mcp__${MEMOIZE_MCP_NAME}__symbol_lookup`,
-  `mcp__${MEMOIZE_MCP_NAME}__find_references`,
-  `mcp__${MEMOIZE_MCP_NAME}__read_chunk`,
-  `mcp__${MEMOIZE_MCP_NAME}__list_module`,
+  `mcp__${ZUSE_MCP_NAME}__code_search`,
+  `mcp__${ZUSE_MCP_NAME}__symbol_lookup`,
+  `mcp__${ZUSE_MCP_NAME}__find_references`,
+  `mcp__${ZUSE_MCP_NAME}__read_chunk`,
+  `mcp__${ZUSE_MCP_NAME}__list_module`,
   // Agent browser — navigate / screenshot / snapshot / wait are read-only and
   // fully visible to the user (the page loads in the on-screen webview,
   // screenshots flash a shutter). Auto-allow like the index reads.
   // `browser_click` and `browser_type` are deliberately absent: they mutate
   // page state, so they fall through to the regular permission prompt.
-  `mcp__${MEMOIZE_MCP_NAME}__browser_navigate`,
-  `mcp__${MEMOIZE_MCP_NAME}__browser_screenshot`,
-  `mcp__${MEMOIZE_MCP_NAME}__browser_snapshot`,
-  `mcp__${MEMOIZE_MCP_NAME}__browser_wait`,
+  `mcp__${ZUSE_MCP_NAME}__browser_navigate`,
+  `mcp__${ZUSE_MCP_NAME}__browser_screenshot`,
+  `mcp__${ZUSE_MCP_NAME}__browser_snapshot`,
+  `mcp__${ZUSE_MCP_NAME}__browser_wait`,
   // Read-only / non-mutating browsing: scroll, hover, read text, console,
   // and history (back/forward/reload — like navigate, which also auto-allows).
   // `browser_select` and `browser_press` change page state, so they prompt.
-  `mcp__${MEMOIZE_MCP_NAME}__browser_scroll`,
-  `mcp__${MEMOIZE_MCP_NAME}__browser_hover`,
-  `mcp__${MEMOIZE_MCP_NAME}__browser_read`,
-  `mcp__${MEMOIZE_MCP_NAME}__browser_console`,
-  `mcp__${MEMOIZE_MCP_NAME}__browser_history`,
+  `mcp__${ZUSE_MCP_NAME}__browser_scroll`,
+  `mcp__${ZUSE_MCP_NAME}__browser_hover`,
+  `mcp__${ZUSE_MCP_NAME}__browser_read`,
+  `mcp__${ZUSE_MCP_NAME}__browser_console`,
+  `mcp__${ZUSE_MCP_NAME}__browser_history`,
 ]);
 
 /**
@@ -1032,7 +1052,7 @@ const editPathOf = (toolInput: Record<string, unknown>): string =>
 /**
  * Match every "ask the user a question" surface we know about. The
  * Claude SDK has a built-in `AskUserQuestion` tool (PascalCase) that
- * the model can call; we register our own `mcp__memoize__ask_user_question`
+ * the model can call; we register our own `mcp__zuse__ask_user_question`
  * to drive a renderer card. Either form should bypass the permission
  * toast — asking permission to ask a question is double-prompting.
  *
@@ -1177,7 +1197,7 @@ export type RequestPermission = (
 
 /**
  * Resolve the SDK `effort` field and the per-session `settings` slice from
- * the FE picker's `modelOptions`. Mirrors the t3code reference:
+ * the FE picker's `modelOptions`:
  *   - `ultracode`  → `effort: "xhigh"` + `settings.ultracode: true`
  *   - `ultrathink` → prompt-injected (driver-side prefix added at send()
  *                    time); SDK `effort` stays unset so the model still
@@ -1235,9 +1255,8 @@ const effortAndSettings = (
 
 /**
  * If the user's effort selection is `ultrathink`, prepend the literal word
- * to the prompt and unset the SDK effort knob. Mirrors t3code's
- * `promptInjectedValues` contract. Driver hooks call this before forwarding
- * the user's text to the SDK.
+ * to the prompt and unset the SDK effort knob. Driver hooks call this before
+ * forwarding the user's text to the SDK.
  */
 export const applyUltrathinkPrefix = (
   modelOptions: Readonly<Record<string, string>> | undefined,
@@ -1283,7 +1302,7 @@ export const startClaudeSession = (
   resumeCursor: string | null = null,
   // Extra MCP tools to register inside the in-process memoize MCP server.
   // Phase B uses this to expose `code_search`, `symbol_lookup`,
-  // `find_references`, `read_chunk`, `list_module` from `@memoize/index`.
+  // `find_references`, `read_chunk`, `list_module` from `@zuse/index`.
   // Tools arrive already bound to the session's worktree handle, so the
   // driver itself stays path-agnostic. Typed loosely because the SDK's
   // `SdkMcpToolDefinition` is parameterized by each tool's zod schema and
@@ -1488,7 +1507,7 @@ export const startClaudeSession = (
     );
 
     const memoizeMcpServer = createSdkMcpServer({
-      name: MEMOIZE_MCP_NAME,
+      name: ZUSE_MCP_NAME,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       tools: [askUserQuestionToolDefinition, ...extraTools] as any,
       alwaysLoad: !(input.toolSearch ?? false),
@@ -1547,7 +1566,7 @@ export const startClaudeSession = (
               (t) => !subagentOptions.allowedTools!.includes(t),
             )),
       ],
-      mcpServers: { [MEMOIZE_MCP_NAME]: memoizeMcpServer },
+      mcpServers: { [ZUSE_MCP_NAME]: memoizeMcpServer },
       permissionMode: toSdkPermissionMode(initialPermissionMode),
       // Trim the SDK's stock plan-mode body to nudge the agent toward
       // memoize's two structured-interaction tools. The SDK still wraps
@@ -1688,6 +1707,16 @@ export const startClaudeSession = (
     }).pipe(
       Effect.catchAll((cause) =>
         Effect.sync(() => {
+          // If the SDK threw out of the `for await` because the user
+          // interrupted (rather than yielding an `error_during_execution`
+          // result), surface the muted interrupted badge, not an error. Emit a
+          // non-error completion too so the turn isn't left pinned at running.
+          if (translateState.interrupted) {
+            translateState.interrupted = false;
+            events.unsafeOffer({ _tag: "Interrupted" });
+            events.unsafeOffer({ _tag: "Completed", reason: "interrupted" });
+            return;
+          }
           events.unsafeOffer({
             _tag: "Error",
             message: cause instanceof Error ? cause.message : String(cause),
@@ -1736,10 +1765,20 @@ export const startClaudeSession = (
           );
         }),
       interrupt: () =>
-        Effect.tryPromise({
-          try: () => q.interrupt(),
-          catch: (cause) => cause,
-        }).pipe(Effect.catchAll(() => Effect.void)),
+        Effect.sync(() => {
+          // Mark the turn as interrupted so the terminal `result`
+          // (`error_during_execution`) is translated into an `Interrupted`
+          // badge instead of an error bubble.
+          translateState.interrupted = true;
+        }).pipe(
+          Effect.zipRight(
+            Effect.tryPromise({
+              try: () => q.interrupt(),
+              catch: (cause) => cause,
+            }),
+          ),
+          Effect.catchAll(() => Effect.void),
+        ),
       close: () =>
         Effect.sync(() => {
           // Unblock any in-flight AskUserQuestion calls so the SDK turn

@@ -16,15 +16,13 @@ import {
   type AgentAvailability,
   type ProviderId,
   type ProviderUpdateEvent,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { ApiKeyRow } from "~/components/api-key-row";
-import {
-  openExternal,
-  useProviderLogin,
-} from "~/lib/use-provider-login";
+import { openExternal, useProviderLogin } from "~/lib/use-provider-login";
 import { ProviderIcon } from "~/components/provider-icons";
 import { Button } from "~/components/ui/button";
+import { ShimmerText } from "~/components/ui/shimmer-text";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { getRpcClient } from "~/lib/rpc-client";
 import { useProvidersStore } from "~/store/providers";
@@ -414,7 +412,7 @@ function ProviderSignInRow({ providerId }: { providerId: ProviderId }) {
   if (state.kind === "success") {
     return (
       <div className="flex items-center gap-2 rounded-md border border-emerald-400/30 bg-emerald-500/[0.06] px-3 py-2 text-[11px] text-emerald-200">
-        <span>Signed in. Refreshing…</span>
+        <ShimmerText as="span">Signed in. Refreshing…</ShimmerText>
       </div>
     );
   }
@@ -428,11 +426,11 @@ function ProviderSignInRow({ providerId }: { providerId: ProviderId }) {
             className="size-3.5 animate-spin"
             aria-hidden
           />
-          <span>
+          <ShimmerText as="span">
             {state.url === null
               ? `Starting ${label} sign-in…`
               : "Waiting for browser sign-in…"}
-          </span>
+          </ShimmerText>
         </div>
         <div className="flex items-center gap-2">
           {state.url !== null && (

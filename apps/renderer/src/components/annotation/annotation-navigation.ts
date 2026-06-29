@@ -5,7 +5,7 @@ import {
   type Annotation,
   type FolderId,
   type WorktreeId,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { useUiStore } from "~/store/ui";
 import { useWorkspaceStore } from "~/store/workspace";

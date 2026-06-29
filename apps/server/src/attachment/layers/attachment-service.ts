@@ -6,7 +6,7 @@ import { Duration, Effect, Fiber, Layer, Ref, Schedule } from "effect";
 
 import {
   AttachmentTooLargeError,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { AppPaths } from "../../app-paths.ts";
 import { extForUpload } from "../image-mime.ts";

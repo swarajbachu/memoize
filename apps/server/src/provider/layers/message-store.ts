@@ -42,7 +42,7 @@ import {
   type ThreadGoalSetInput,
   type Worktree,
   WorktreeId,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { WorktreeService } from "../../worktree/services/worktree-service.ts";
 
@@ -332,6 +332,7 @@ const roleForContent = (content: MessageContent): MessageRole => {
     case "tool_result":
       return "tool";
     case "error":
+    case "interrupted":
     case "usage":
     case "context_usage":
     case "usage_limit":
@@ -418,6 +419,8 @@ const eventToContent = (event: AgentEvent): MessageContent | null => {
       };
     case "Error":
       return { _tag: "error", message: event.message };
+    case "Interrupted":
+      return { _tag: "interrupted" };
     case "UserQuestion":
       return {
         _tag: "user_question",
@@ -1982,7 +1985,7 @@ export const MessageStoreLive = Layer.scoped(
       );
 
     /**
-     * Conductor-style auto-name: on a chat's first user message, summarize it
+     * Worktree-backed auto-name: on a chat's first user message, summarize it
      * into a short title (LLM, with truncation fallback) and use that to
      * rename both the chat and — when the chat has its own worktree — the
      * worktree's git branch per the user's `branchNamingStyle`. Runs on a
@@ -2131,7 +2134,7 @@ export const MessageStoreLive = Layer.scoped(
         `.pipe(Effect.asVoid, Effect.orDie);
       });
 
-    const archiveChat: MessageStoreShape["archiveChat"] = (chatId) =>
+    const archiveChat: MessageStoreShape["archiveChat"] = (chatId, force) =>
       Effect.gen(function* () {
         const chat = yield* lookupChat(chatId);
         if (chat.archivedAt !== null) {
@@ -2185,10 +2188,10 @@ export const MessageStoreLive = Layer.scoped(
             script: settings.archiveCleanupScript ?? "",
             cwd: worktree.path,
             env: {
-              MEMOIZE_ROOT_PATH: rootPath ?? "",
-              MEMOIZE_WORKSPACE_PATH: worktree.path,
-              MEMOIZE_CHAT_ID: chatId,
-              MEMOIZE_WORKTREE_ID: worktree.id,
+              ZUSE_ROOT_PATH: rootPath ?? "",
+              ZUSE_WORKSPACE_PATH: worktree.path,
+              ZUSE_CHAT_ID: chatId,
+              ZUSE_WORKTREE_ID: worktree.id,
             },
           });
           cleanup = { ran: true, output: result.output };
@@ -2197,7 +2200,7 @@ export const MessageStoreLive = Layer.scoped(
         }
 
         if (worktree !== null && settings.archiveRemoveWorktree) {
-          yield* worktrees.remove(worktree.id, false).pipe(
+          yield* worktrees.remove(worktree.id, force).pipe(
             Effect.mapError(
               (err) =>
                 new ChatArchiveWorktreeError({
@@ -2773,7 +2776,7 @@ export const MessageStoreLive = Layer.scoped(
         }
         // Path 2: an empty chat (no initialPrompt) receiving its first user
         // message via messages.send. When this is the chat's first user
-        // message, kick off the Conductor-style auto-name in the background
+        // message, kick off the worktree-backed auto-name in the background
         // (no-ops unless the chat has its own worktree).
         const firstUserCount = yield* sql<{ readonly c: number }>`
           SELECT COUNT(*) AS c FROM messages m

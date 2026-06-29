@@ -87,7 +87,7 @@ export type ResumeStrategy = typeof ResumeStrategy.Type;
 // `RuntimeMode` and `DEFAULT_RUNTIME_MODE` are defined in `agent.ts` so the
 // new `AgentDefinition.permissionMode` can reuse the same literal set
 // without an import cycle. Re-exported above for back-compat with the
-// existing `import { RuntimeMode } from "@memoize/wire"` callers.
+// existing `import { RuntimeMode } from "@zuse/wire"` callers.
 
 export class Session extends Schema.Class<Session>("Session")({
   id: SessionId,
@@ -216,6 +216,14 @@ const ErrorContent = Schema.TaggedStruct("error", {
 });
 
 /**
+ * Persisted marker for a turn the user explicitly interrupted. Rendered as a
+ * small muted "Interrupted by user" badge — distinct from `error`, which is a
+ * real failure. Carries no fields; its presence in the message list is the
+ * whole signal.
+ */
+const InterruptedContent = Schema.TaggedStruct("interrupted", {});
+
+/**
  * Closing summary persisted for a sub-agent run. Mirrors the streaming
  * `SubagentSummaryEvent` so resume parity holds: the wrapper-row footer
  * reads `summary` / `turns` / `durationMs` from this row when collapsed.
@@ -305,6 +313,7 @@ export const MessageContent = Schema.Union(
   ToolUseContent,
   ToolResultContent,
   ErrorContent,
+  InterruptedContent,
   SubagentSummaryContent,
   UsageContent,
   ContextUsageContent,
@@ -715,7 +724,15 @@ export const ChatSetActiveSessionRpc = Rpc.make("chat.setActiveSession", {
 });
 
 export const ChatArchiveRpc = Rpc.make("chat.archive", {
-  payload: Schema.Struct({ chatId: ChatId }),
+  payload: Schema.Struct({
+    chatId: ChatId,
+    /**
+     * Force-remove the chat's worktree even when it has uncommitted or
+     * untracked changes. Callers pass `true` after confirming the discard
+     * with the user (mirrors `worktree.remove`'s `force`).
+     */
+    force: Schema.optional(Schema.Boolean),
+  }),
   success: ChatArchiveResult,
   error: ChatArchiveErrors,
 });

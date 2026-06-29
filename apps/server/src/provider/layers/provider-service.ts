@@ -13,7 +13,7 @@ import {
   type PermissionKind,
   type ProviderId,
   type ThreadGoalSetInput,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { probeAllProviders, resolveCliPath } from "../availability.ts";
 import {

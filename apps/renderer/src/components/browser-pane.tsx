@@ -7,7 +7,7 @@ import { ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
 import {
   BrowserCommandResult,
   type BrowserCommandRequest,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import type { BrowserInputAction } from "../lib/bridge.ts";
 import { getRpcClient } from "../lib/rpc-client.ts";
@@ -86,7 +86,7 @@ export function BrowserPane() {
       }
     };
     const registerForCdp = () => {
-      const browserBridge = window.memoize?.browser;
+      const browserBridge = window.zuse?.browser;
       if (browserBridge === undefined) return;
       let id: number;
       try {
@@ -760,7 +760,7 @@ async function dispatchInput(
   webContentsId: number,
   action: BrowserInputAction,
 ): Promise<boolean> {
-  const bridge = window.memoize?.browser;
+  const bridge = window.zuse?.browser;
   if (bridge === undefined) return false;
   try {
     return await bridge.dispatchInput(webContentsId, action);

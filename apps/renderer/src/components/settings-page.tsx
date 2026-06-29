@@ -31,7 +31,7 @@ import {
   type FolderId,
   type ProviderId,
   type RuntimeMode,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import {
   formatRelativeTime,
@@ -709,11 +709,11 @@ function GeneralPane() {
 
       <SettingsGroup
         title="Workspace naming"
-        description="Controls how memoize names new worktree-backed branches."
+        description="Controls how Zuse Alpha names new worktree-backed branches."
       >
         <SettingsRow
           title="Branch naming"
-          description="When a new chat with its own worktree gets its first message, memoize summarizes it and renames the chat plus its git branch in this shape."
+          description="When a new chat with its own worktree gets its first message, Zuse Alpha summarizes it and renames the chat plus its git branch in this shape."
           action={
             <Select
               value={branchNamingStyle}
@@ -891,7 +891,7 @@ function ProvidersPane() {
         </Card>
         <FrameFooter className="px-2 py-1 w-full">
           <p className="text-xs leading-relaxed text-muted-foreground">
-            Memoize uses your existing CLI credentials — Claude Code, Codex,
+            Zuse Alpha uses your existing CLI credentials — Claude Code, Codex,
             Grok, Gemini, Cursor, and OpenCode all sign in through their own
             login flows.
           </p>
@@ -959,7 +959,7 @@ function WorkspacePane() {
           onCheckedChange={setDefaultAutoCreateWorktree}
         />
       }
-      description="When on, each new chat runs in its own git worktree under ~/.memoize/<repo>/<name>/, branched off the project's HEAD. Per-repo settings can override this default."
+      description="When on, each new chat runs in its own git worktree under ~/.zuse/<repo>/<name>/, branched off the project's HEAD. Per-repo settings can override this default."
     />
   );
 }
