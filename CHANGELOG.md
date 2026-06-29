@@ -7,8 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0]
+
+### Added
+- Live file tree updates now track disk changes and support create/delete flows with confirmation dialogs. (#204)
+- New worktrees can auto-symlink nested environment files for monorepos and Cloudflare projects. (#201)
+
 ### Changed
-- memoize Alpha is now Zuse Alpha. The app now uses the Zuse bundle identifier (`app.zuse.desktop`), GitHub release feed, package names, worktree paths, protocol links, keychain service, and SQLite paths. Existing data and legacy `memoize://` links remain readable where possible, but this is a full technical identity move to Zuse rather than an updater-compatible in-place rename.
+- memoize Alpha is now Zuse Alpha. The app now uses the Zuse bundle identifier (`app.zuse.desktop`), GitHub release feed, package names, worktree paths, protocol links, keychain service, and SQLite paths. Existing data and legacy `memoize://` links remain readable where possible, but this is a full technical identity move to Zuse rather than an updater-compatible in-place rename. (#207)
+- Removed remaining legacy source references from user-facing copy and project metadata. (#198)
+- Loading states now use animated gradient shimmer polish. (#200)
+
+### Fixed
+- Force-archiving can remove a chat even when its worktree is dirty. (#197)
+- Plan feedback routing now reaches the correct agent turn. (#205)
+- Claude interruptions now render as an interrupted badge instead of a hard error. (#202)
 
 ## [0.7.1]
 
