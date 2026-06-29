@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 
-import type { Chat, ChatId, FolderId, Session, SessionId } from "@memoize/wire";
+import type { Chat, ChatId, FolderId, Session, SessionId } from "@zuse/wire";
 
 import { useChatsStore } from "../src/store/chats.ts";
 import { useSessionsStore } from "../src/store/sessions.ts";

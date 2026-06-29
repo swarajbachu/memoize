@@ -9,7 +9,7 @@ import {
   resolveModelSlug,
   type RuntimeMode,
   type SettingsFile,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { getRpcClient } from "../lib/rpc-client";
 

@@ -4,7 +4,7 @@ import {
   PermissionRequest,
   type Message,
   type SessionId,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import {
   chooseComposerSubmitRoute,

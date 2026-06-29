@@ -1,6 +1,6 @@
-import { MemoizeRpcs } from "@memoize/wire";
-import type { FolderId, IndexStatusInfo } from "@memoize/wire";
-import type { IndexStatus } from "@memoize/index";
+import { MemoizeRpcs } from "@zuse/wire";
+import type { FolderId, IndexStatusInfo } from "@zuse/wire";
+import type { IndexStatus } from "@zuse/index";
 import { Effect, Layer, Stream } from "effect";
 
 import { WorkspaceService } from "../workspace/services/workspace-service.ts";

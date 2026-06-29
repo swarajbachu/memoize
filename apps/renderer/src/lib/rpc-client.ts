@@ -1,7 +1,7 @@
 import { RpcClient, RpcGroup, RpcSerialization } from "@effect/rpc";
 import { Effect, Layer, ManagedRuntime, Scope } from "effect";
 
-import { MemoizeRpcs } from "@memoize/wire";
+import { MemoizeRpcs } from "@zuse/wire";
 
 import { getBridge } from "./bridge.ts";
 import { electronClientProtocolLayer } from "./electron-client-protocol.ts";

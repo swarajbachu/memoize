@@ -12,7 +12,7 @@ import type {
   Session,
   SessionId,
   WorktreeId,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
 import { formatError } from "../lib/format-error.ts";

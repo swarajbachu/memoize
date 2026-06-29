@@ -7,7 +7,7 @@ import {
   UPDATE_INSTALL_CHANNEL,
   UPDATE_STATUS_CHANNEL,
   type UpdateStatus,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 /**
  * Preload bridge — the only seam between the renderer and the main process.
@@ -102,7 +102,7 @@ const bridge = {
     // Dev-only escape hatch: only handled in dev (see updater.ts
     // `registerUpdaterDemo`). Calling in a packaged build rejects harmlessly.
     __demoSet: (status: UpdateStatus) =>
-      ipcRenderer.invoke("memoize:update-demo-set", status) as Promise<void>,
+      ipcRenderer.invoke("zuse:update-demo-set", status) as Promise<void>,
   },
   menu: {
     onAction: (handler: (action: string) => void) => {
@@ -131,4 +131,5 @@ const bridge = {
   },
 };
 
+contextBridge.exposeInMainWorld("zuse", bridge);
 contextBridge.exposeInMainWorld("memoize", bridge);

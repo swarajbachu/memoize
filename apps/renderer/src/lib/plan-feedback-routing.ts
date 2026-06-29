@@ -3,7 +3,7 @@ import type {
   PermissionMode,
   PermissionRequest,
   SessionId,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 export const isPlanApprovalRequest = (
   req: PermissionRequest,

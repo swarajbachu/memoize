@@ -17,8 +17,8 @@ import type {
   SessionId,
   StartSessionInput,
   WorktreeId,
-} from "@memoize/wire";
-import { ComposerInput, RepositorySettings, Worktree } from "@memoize/wire";
+} from "@zuse/wire";
+import { ComposerInput, RepositorySettings, Worktree } from "@zuse/wire";
 
 import { NdjsonLogger } from "../src/persistence/ndjson-logger.ts";
 import { Migration0001Initial } from "../src/persistence/migrations/0001_initial.ts";

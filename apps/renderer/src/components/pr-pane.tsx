@@ -17,7 +17,7 @@ import type {
   GitPrInfo,
   GitPrReviewState,
   WorktreeId,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { softTone, type Tone } from "../lib/tones.ts";
 import { gitStatusKey, useGitStatusStore } from "../store/git-status.ts";
@@ -28,7 +28,7 @@ import { MarkdownBody } from "./markdown-body.tsx";
 import { ShimmerText } from "./ui/shimmer-text.tsx";
 
 const openExternal = (url: string) => {
-  const bridge = window.memoize?.app;
+  const bridge = window.zuse?.app;
   if (bridge !== undefined) {
     bridge.openExternal(url);
     return;

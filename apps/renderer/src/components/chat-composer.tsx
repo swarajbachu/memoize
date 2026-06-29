@@ -30,7 +30,7 @@ import {
   type Session,
   type SessionId,
   type ThreadGoal,
-} from "@memoize/wire";
+} from "@zuse/wire";
 import { ModelPicker } from "./model-picker.tsx";
 
 import { Card, CardPanel } from "~/components/ui/card";
@@ -531,7 +531,7 @@ export function ChatComposer({
   /**
    * Insert chips for `files`. Image files render with a thumbnail; other types
    * (PDFs, docs, archives) get a generic file-icon chip. The chip's underlying
-   * token swaps from a temp id to a `memoize://attachments/<id>` URL once the
+   * token swaps from a temp id to a `zuse://attachments/<id>` URL once the
    * upload resolves. Files beyond the per-turn cap are dropped with a warning.
    */
   const attachFiles = (files: readonly File[]): void => {
@@ -575,7 +575,7 @@ export function ChatComposer({
 
       void uploadOne(sessionId, file)
         .then((ref) => {
-          const finalUrl = isImage ? `memoize://attachments/${ref.id}` : "";
+          const finalUrl = isImage ? `zuse://attachments/${ref.id}` : "";
           editorViewRef.current?.dispatch({
             effects: updateImageChipEffect.of({
               previousId: tempId,

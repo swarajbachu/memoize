@@ -38,7 +38,7 @@ import {
   type GitBranchInfo,
   type GitMergeMethod,
   type WorktreeId,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
 import type { OpenTarget } from "../lib/bridge.ts";
@@ -89,7 +89,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip.tsx";
  * Mirrors `pr-pane.tsx`'s helper.
  */
 const openExternal = (url: string): void => {
-  const bridge = window.memoize?.app;
+  const bridge = window.zuse?.app;
   if (bridge !== undefined) {
     bridge.openExternal(url);
     return;
@@ -117,7 +117,7 @@ export function TopBarLeft() {
       className={`${SECTION_CLASS} pr-1 ${isFullScreen ? "pl-3" : "pl-20"}`}
     >
       <span className="truncate font-semibold tracking-tight text-foreground">
-        Memoize
+        Zuse Alpha
       </span>
       <span className="flex-1" />
       <Tooltip>
@@ -613,7 +613,7 @@ function OpenInMenu({ rootPath }: { rootPath: string | null }) {
 
   const refreshTargets = async (): Promise<void> => {
     if (rootPath === null) return;
-    const bridge = window.memoize?.app;
+    const bridge = window.zuse?.app;
     if (bridge?.listOpenTargets === undefined) return;
     setLoading(true);
     try {
@@ -630,7 +630,7 @@ function OpenInMenu({ rootPath }: { rootPath: string | null }) {
 
   const openTarget = async (target: OpenTarget): Promise<void> => {
     if (rootPath === null) return;
-    const bridge = window.memoize?.app;
+    const bridge = window.zuse?.app;
     if (target.id === "finder") {
       await bridge?.revealPath?.(rootPath);
       return;
@@ -640,7 +640,7 @@ function OpenInMenu({ rootPath }: { rootPath: string | null }) {
 
   const copyPath = async (): Promise<void> => {
     if (rootPath === null) return;
-    await window.memoize?.app?.copyPath?.(rootPath);
+    await window.zuse?.app?.copyPath?.(rootPath);
   };
 
   return (
@@ -1370,7 +1370,7 @@ const errorMessage = (err: unknown): string => {
 
 /**
  * Failing-checks CTA. Asks the server to drop a captured
- * `.memoize/failing-checks-<ts>.txt` artifact, then **auto-submits** a new chat
+ * `.zuse/failing-checks-<ts>.txt` artifact, then **auto-submits** a new chat
  * message referencing it as a file ref — the agent starts working immediately,
  * no manual Send.
  *

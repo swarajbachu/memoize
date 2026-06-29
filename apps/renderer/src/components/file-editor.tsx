@@ -2,7 +2,7 @@ import { PatchDiff } from "@pierre/diffs/react";
 import { Effect } from "effect";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { CodeAnnotation, GitDiffResult } from "@memoize/wire";
+import type { CodeAnnotation, GitDiffResult } from "@zuse/wire";
 
 import { cn } from "~/lib/utils";
 import { ShimmerText } from "~/components/ui/shimmer-text";
@@ -110,7 +110,7 @@ export function FileEditor() {
 /**
  * Inline image preview — used for attachment screenshots so clicking the
  * thumbnail keeps the user inside the app rather than punting to the OS
- * handler. No toolbar, no read RPC; the privileged `memoize://` scheme
+ * handler. No toolbar, no read RPC; the privileged `zuse://` scheme
  * (see `apps/desktop/src/main.ts`) lets the renderer fetch the bytes
  * directly.
  */

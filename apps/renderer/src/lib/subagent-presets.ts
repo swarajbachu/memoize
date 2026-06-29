@@ -1,4 +1,4 @@
-import type { AgentDefinition } from "@memoize/wire";
+import type { AgentDefinition } from "@zuse/wire";
 
 /**
  * One named preset the user can toggle and edit. The `name` is the key the

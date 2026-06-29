@@ -11,7 +11,7 @@ import {
   type ProviderAuthStatus,
   type ProviderHealthStatus,
   type ProviderId,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import type { Account } from "./codex-app-protocol/v2/Account.ts";
 import type { GetAccountResponse } from "./codex-app-protocol/v2/GetAccountResponse.ts";

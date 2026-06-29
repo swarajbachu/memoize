@@ -14,7 +14,7 @@ import {
   type PermissionMode,
   type StartSessionInput,
   type UserQuestionAnswer,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
 import { createAcpTranslator } from "./acp/translate.ts";
@@ -249,7 +249,7 @@ export const startGeminiSession = (
       sessionId,
       projectId: input.folderId,
       requestPermission: (
-        kind: import("@memoize/wire").PermissionKind,
+        kind: import("@zuse/wire").PermissionKind,
         options: { readonly forcePrompt: boolean },
       ) => requestPermission(sessionId, kind, options),
       getRuntimeMode,

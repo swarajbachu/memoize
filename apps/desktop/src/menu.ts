@@ -6,7 +6,7 @@ import {
   type MenuItemConstructorOptions,
 } from "electron";
 
-import type { UpdateStatus } from "@memoize/wire";
+import type { UpdateStatus } from "@zuse/wire";
 
 import {
   triggerUpdateCheck,
@@ -18,7 +18,7 @@ import {
  * Action ids that travel from a menu click → renderer (via
  * `webContents.send("menu:action", ...)`) → the keybinding-dispatcher
  * `commands.ts` registry in the renderer. The set mirrors the menu-relevant
- * subset of `Command` in `@memoize/wire/keybindings`.
+ * subset of `Command` in `@zuse/wire/keybindings`.
  */
 export type MenuCommand =
   | "new-chat"
@@ -56,7 +56,7 @@ export const DEFAULT_MENU_ACCELERATORS: MenuAccelerators = {
   "focus-composer": "CmdOrCtrl+L",
 };
 
-const GITHUB_REPO_URL = "https://github.com/swarajbachu/memoize";
+const GITHUB_REPO_URL = "https://github.com/swarajbachu/zuse";
 const GITHUB_RELEASES_URL = `${GITHUB_REPO_URL}/releases`;
 const GITHUB_ISSUE_NEW_URL = `${GITHUB_REPO_URL}/issues/new`;
 
@@ -281,7 +281,7 @@ export function installAppMenu(
       },
       { type: "separator" },
       {
-        label: "memoize on GitHub",
+        label: "Zuse on GitHub",
         click: () => {
           void shell.openExternal(GITHUB_REPO_URL);
         },

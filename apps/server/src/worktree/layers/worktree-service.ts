@@ -21,7 +21,7 @@ import {
   WorktreeSetupError,
   WorktreeSetupStatusEvent,
   type WorktreeSetupStatus,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { RepositorySettingsService } from "../../repository-settings/services/repository-settings-service.ts";
 import { WorkspaceService } from "../../workspace/services/workspace-service.ts";
@@ -94,7 +94,7 @@ const pokemonSummaryFor = (
     generation: pokemon.generation,
     rarity: pokemon.rarity,
     points: pokemon.points,
-    spriteUrl: `memoize://pokemon/${pokemonSpriteStem(pokemon.number, variantId)}`,
+    spriteUrl: `zuse://pokemon/${pokemonSpriteStem(pokemon.number, variantId)}`,
   });
 };
 
@@ -442,14 +442,14 @@ export const WorktreeServiceLive = Layer.effect(
           );
         }
         const repoPath = folder.path;
-        // Layout: ~/.memoize/<repo-name>-<projectId-short>/<branch>/. Living
+        // Layout: ~/.zuse/<repo-name>-<projectId-short>/<branch>/. Living
         // in the user's home dir (next to Downloads, Developer, etc.) keeps
         // the repo itself untouched — `git status`, file pickers, and any
         // tree walker stay clean. The projectId suffix disambiguates two
         // registered projects that happen to share a folder name.
         const baseDir = Path.join(
           os.homedir(),
-          ".memoize",
+          ".zuse",
           `${folder.name}-${folder.id.slice(0, 8)}`,
         );
 
@@ -848,10 +848,16 @@ export const WorktreeServiceLive = Layer.effect(
       env: Readonly<Record<string, string>>,
     ): Record<string, string> => ({
       ...env,
+      ZUSE_ROOT_PATH: repoPath,
+      ZUSE_WORKTREE_PATH: worktree.path,
+      ZUSE_WORKTREE_ID: worktree.id,
+      ZUSE_PORT:
+        process.env.ZUSE_PORT ?? process.env.MEMOIZE_PORT ?? process.env.PORT ?? "",
       MEMOIZE_ROOT_PATH: repoPath,
       MEMOIZE_WORKTREE_PATH: worktree.path,
       MEMOIZE_WORKTREE_ID: worktree.id,
-      MEMOIZE_PORT: process.env.MEMOIZE_PORT ?? process.env.PORT ?? "",
+      MEMOIZE_PORT:
+        process.env.MEMOIZE_PORT ?? process.env.ZUSE_PORT ?? process.env.PORT ?? "",
     });
 
     function runSetupFor(

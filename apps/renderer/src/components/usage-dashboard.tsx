@@ -14,7 +14,7 @@ import type {
   UsageGroup,
   UsageReport,
   UsageSourceStatus,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { cn } from "~/lib/utils";
 import {
@@ -113,7 +113,7 @@ export function UsageDashboard({
         <div>
           <div className="text-sm font-medium">Tokenmaxer · {scopeLabel}</div>
           <div className="text-[11px] text-muted-foreground">
-            Local token usage across Memoize and detected agent CLIs
+            Local token usage across Zuse Alpha and detected agent CLIs
           </div>
         </div>
         <button

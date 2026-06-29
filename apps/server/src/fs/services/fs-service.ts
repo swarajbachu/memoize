@@ -14,7 +14,7 @@ import {
   type FsReadError,
   type FsTooLargeError,
   type WorktreeId,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 type TreeFailure = FsFolderNotFoundError | FsPathOutsideError | FsReadError;
 type ReadFileFailure = TreeFailure | FsTooLargeError;

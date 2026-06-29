@@ -2,7 +2,7 @@ import { NodeContext } from "@effect/platform-node";
 import { RpcServer } from "@effect/rpc";
 import { Layer } from "effect";
 
-import { MemoizeRpcs } from "@memoize/wire";
+import { MemoizeRpcs } from "@zuse/wire";
 
 import { AppPaths } from "./app-paths.ts";
 import { AttachmentServiceLive } from "./attachment/layers/attachment-service.ts";
@@ -38,7 +38,7 @@ import { WorktreeServiceLive } from "./worktree/layers/worktree-service.ts";
  * UI-toolkit-specific. See ADR 0007 for the rules that make WS extraction
  * cheap later.
  *
- * - `userData`: where persistence files (memoize.sqlite, OS keychain) live.
+ * - `userData`: where persistence files (zuse.sqlite, OS keychain) live.
  *   Electron resolves this from `app.getPath("userData")`; a headless
  *   server resolves it from `XDG_DATA_HOME` or a CLI flag.
  * - `folderPicker`: a callback returning the user-chosen path. Electron

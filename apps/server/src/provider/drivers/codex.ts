@@ -20,7 +20,7 @@ import {
   type ThreadGoalSetInput,
   type ThreadGoalStatus,
   type UserQuestionAnswer,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
 import { applyPlanModePrefix } from "./planMode.ts";
@@ -220,8 +220,11 @@ const probeModelFastTier = async (
 const toolIdentifierPart = (value: string): string =>
   value.replace(/[^A-Za-z0-9_]/g, "_");
 
+const normalizeMcpServerName = (server: string): string =>
+  server === "memoize" ? "zuse" : server;
+
 const toMcpToolName = (server: string, tool: string): string =>
-  `mcp__${toolIdentifierPart(server)}__${toolIdentifierPart(tool)}`;
+  `mcp__${toolIdentifierPart(normalizeMcpServerName(server))}__${toolIdentifierPart(tool)}`;
 
 const dynamicToolName = (namespace: string | null, tool: string): string =>
   namespace !== null ? `${namespace}.${tool}` : tool;
@@ -748,7 +751,7 @@ export const startCodexSession = (
       cwd,
       approvalPolicy: "never" as const,
       sandbox: toSandboxMode(currentMode),
-      serviceName: "memoize",
+      serviceName: "zuse",
     };
 
     const startOrResume = async (): Promise<void> => {

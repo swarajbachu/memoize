@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 import { Effect } from "effect";
 
-import { ComposerInput, QueuedMessage, type SessionId } from "@memoize/wire";
+import { ComposerInput, QueuedMessage, type SessionId } from "@zuse/wire";
 
 const {
   setMessagesRpcClientForTest,

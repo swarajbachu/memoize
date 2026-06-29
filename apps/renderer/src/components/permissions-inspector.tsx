@@ -9,7 +9,7 @@ import {
 } from "@hugeicons-pro/core-bulk-rounded";
 import { useEffect, useMemo, useState } from "react";
 
-import type { FolderId, PermissionKind, SavedDecision } from "@memoize/wire";
+import type { FolderId, PermissionKind, SavedDecision } from "@zuse/wire";
 
 import {
   Dialog,

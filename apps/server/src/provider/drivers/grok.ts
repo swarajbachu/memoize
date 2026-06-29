@@ -15,7 +15,7 @@ import {
   type StartSessionInput,
   type ThreadGoalSetInput,
   type UserQuestionAnswer,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
 import { isIgnorableGrokAuthNoise } from "./acp/grok-auth-noise.ts";
@@ -286,7 +286,7 @@ export const startGrokSession = (
       sessionId,
       projectId: input.folderId,
       requestPermission: (
-        kind: import("@memoize/wire").PermissionKind,
+        kind: import("@zuse/wire").PermissionKind,
         options: { readonly forcePrompt: boolean },
       ) => requestPermission(sessionId, kind, options),
       getRuntimeMode,

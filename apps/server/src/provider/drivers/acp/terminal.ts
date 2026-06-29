@@ -31,7 +31,7 @@ import type {
   PermissionKind,
   PermissionMode,
   RuntimeMode,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { getBashPolicy } from "../../policy.ts";
 import { ensureUnderCwd } from "./fs.ts";

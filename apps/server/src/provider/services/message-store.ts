@@ -35,7 +35,7 @@ import type {
   ThreadGoalSetInput,
   UserQuestionAnswer,
   WorktreeId,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 /**
  * Persistence-backed orchestration of chat sessions and their message log.

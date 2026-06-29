@@ -24,7 +24,7 @@ import {
   type StartSessionInput,
   type UserQuestion,
   type UserQuestionAnswer,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
 import {
@@ -76,13 +76,13 @@ const toSdkPermissionMode = (mode: PermissionMode): SdkPermissionMode =>
 /**
  * Name we register the in-process AskUserQuestion tool under. The SDK
  * exposes MCP tools to the model as `mcp__<server>__<tool>`, so the
- * model sees `mcp__memoize__ask_user_question` and the translator
+ * model sees `mcp__zuse__ask_user_question` and the translator
  * matches on that exact prefix to emit `UserQuestion` instead of a
  * generic `ToolUse`.
  */
-const MEMOIZE_MCP_NAME = "memoize";
+const ZUSE_MCP_NAME = "zuse";
 const ASK_USER_QUESTION_TOOL = "ask_user_question";
-const ASK_USER_QUESTION_FQN = `mcp__${MEMOIZE_MCP_NAME}__${ASK_USER_QUESTION_TOOL}`;
+const ASK_USER_QUESTION_FQN = `mcp__${ZUSE_MCP_NAME}__${ASK_USER_QUESTION_TOOL}`;
 
 /**
  * Anthropic accepts these media types as image content blocks. Anything else
@@ -975,28 +975,28 @@ const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
   // worktree-local SQLite — they can't mutate anything, so prompting on
   // every call (and failing to dedupe because the per-input JSON ends up
   // in the kindKey) is pure noise. Auto-allow them like Grep/Glob.
-  `mcp__${MEMOIZE_MCP_NAME}__code_search`,
-  `mcp__${MEMOIZE_MCP_NAME}__symbol_lookup`,
-  `mcp__${MEMOIZE_MCP_NAME}__find_references`,
-  `mcp__${MEMOIZE_MCP_NAME}__read_chunk`,
-  `mcp__${MEMOIZE_MCP_NAME}__list_module`,
+  `mcp__${ZUSE_MCP_NAME}__code_search`,
+  `mcp__${ZUSE_MCP_NAME}__symbol_lookup`,
+  `mcp__${ZUSE_MCP_NAME}__find_references`,
+  `mcp__${ZUSE_MCP_NAME}__read_chunk`,
+  `mcp__${ZUSE_MCP_NAME}__list_module`,
   // Agent browser — navigate / screenshot / snapshot / wait are read-only and
   // fully visible to the user (the page loads in the on-screen webview,
   // screenshots flash a shutter). Auto-allow like the index reads.
   // `browser_click` and `browser_type` are deliberately absent: they mutate
   // page state, so they fall through to the regular permission prompt.
-  `mcp__${MEMOIZE_MCP_NAME}__browser_navigate`,
-  `mcp__${MEMOIZE_MCP_NAME}__browser_screenshot`,
-  `mcp__${MEMOIZE_MCP_NAME}__browser_snapshot`,
-  `mcp__${MEMOIZE_MCP_NAME}__browser_wait`,
+  `mcp__${ZUSE_MCP_NAME}__browser_navigate`,
+  `mcp__${ZUSE_MCP_NAME}__browser_screenshot`,
+  `mcp__${ZUSE_MCP_NAME}__browser_snapshot`,
+  `mcp__${ZUSE_MCP_NAME}__browser_wait`,
   // Read-only / non-mutating browsing: scroll, hover, read text, console,
   // and history (back/forward/reload — like navigate, which also auto-allows).
   // `browser_select` and `browser_press` change page state, so they prompt.
-  `mcp__${MEMOIZE_MCP_NAME}__browser_scroll`,
-  `mcp__${MEMOIZE_MCP_NAME}__browser_hover`,
-  `mcp__${MEMOIZE_MCP_NAME}__browser_read`,
-  `mcp__${MEMOIZE_MCP_NAME}__browser_console`,
-  `mcp__${MEMOIZE_MCP_NAME}__browser_history`,
+  `mcp__${ZUSE_MCP_NAME}__browser_scroll`,
+  `mcp__${ZUSE_MCP_NAME}__browser_hover`,
+  `mcp__${ZUSE_MCP_NAME}__browser_read`,
+  `mcp__${ZUSE_MCP_NAME}__browser_console`,
+  `mcp__${ZUSE_MCP_NAME}__browser_history`,
 ]);
 
 /**
@@ -1051,7 +1051,7 @@ const editPathOf = (toolInput: Record<string, unknown>): string =>
 /**
  * Match every "ask the user a question" surface we know about. The
  * Claude SDK has a built-in `AskUserQuestion` tool (PascalCase) that
- * the model can call; we register our own `mcp__memoize__ask_user_question`
+ * the model can call; we register our own `mcp__zuse__ask_user_question`
  * to drive a renderer card. Either form should bypass the permission
  * toast — asking permission to ask a question is double-prompting.
  *
@@ -1301,7 +1301,7 @@ export const startClaudeSession = (
   resumeCursor: string | null = null,
   // Extra MCP tools to register inside the in-process memoize MCP server.
   // Phase B uses this to expose `code_search`, `symbol_lookup`,
-  // `find_references`, `read_chunk`, `list_module` from `@memoize/index`.
+  // `find_references`, `read_chunk`, `list_module` from `@zuse/index`.
   // Tools arrive already bound to the session's worktree handle, so the
   // driver itself stays path-agnostic. Typed loosely because the SDK's
   // `SdkMcpToolDefinition` is parameterized by each tool's zod schema and
@@ -1506,7 +1506,7 @@ export const startClaudeSession = (
     );
 
     const memoizeMcpServer = createSdkMcpServer({
-      name: MEMOIZE_MCP_NAME,
+      name: ZUSE_MCP_NAME,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       tools: [askUserQuestionToolDefinition, ...extraTools] as any,
       alwaysLoad: !(input.toolSearch ?? false),
@@ -1565,7 +1565,7 @@ export const startClaudeSession = (
               (t) => !subagentOptions.allowedTools!.includes(t),
             )),
       ],
-      mcpServers: { [MEMOIZE_MCP_NAME]: memoizeMcpServer },
+      mcpServers: { [ZUSE_MCP_NAME]: memoizeMcpServer },
       permissionMode: toSdkPermissionMode(initialPermissionMode),
       // Trim the SDK's stock plan-mode body to nudge the agent toward
       // memoize's two structured-interaction tools. The SDK still wraps

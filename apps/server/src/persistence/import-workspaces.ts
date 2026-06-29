@@ -3,7 +3,7 @@ import { SqlClient } from "@effect/sql";
 import { Effect, Schema } from "effect";
 import * as Path from "node:path";
 
-import { Folder, FolderId } from "@memoize/wire";
+import { Folder, FolderId } from "@zuse/wire";
 
 import { AppPaths } from "../app-paths.ts";
 
