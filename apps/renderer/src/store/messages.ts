@@ -232,6 +232,16 @@ const handoffReleaseTimers = new Map<
 >();
 
 const stopLiveFiber = async () => {
+  // Clear the live marker FIRST, before any interrupt yields the event loop.
+  // The status fiber's `resetOnStreamEnd` + stale-status-event handler both
+  // guard on `liveSessionId === sessionId`. If a yield happens while this
+  // still points at the outgoing session — e.g. the awaited `goalFiber`
+  // interrupt below, which only exists for Codex/Grok — those handlers drain
+  // and wrongly clobber `runningBySession[sessionId]` to false, dropping the
+  // sidebar spinner for a backgrounded-but-still-running Codex/Grok chat the
+  // moment you switch away. Claude has no `goalFiber` and so never yielded
+  // here before this assignment, which is why the bug was Codex/Grok-only.
+  liveSessionId = null;
   const tasks: Array<Promise<unknown>> = [];
   if (liveFiber !== null) {
     tasks.push(Effect.runPromise(Fiber.interrupt(liveFiber)));
@@ -249,7 +259,6 @@ const stopLiveFiber = async () => {
     await Effect.runPromise(Fiber.interrupt(goalFiber));
     goalFiber = null;
   }
-  liveSessionId = null;
   await Promise.all(tasks);
   // We intentionally do NOT clear the prior session's `runningBySession`
   // entry here. The sidebar-root `useSessionRunningSubscriptions` hook
