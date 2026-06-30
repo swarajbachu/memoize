@@ -18,7 +18,7 @@ import type {
 
 import { groupMessages } from "../lib/group-messages.ts";
 import { useRegisterPane } from "../store/pane-focus.ts";
-import { useMessagesStore } from "../store/messages.ts";
+import { teardownLiveStreams, useMessagesStore } from "../store/messages.ts";
 import { usePermissionsStore } from "../store/permissions.ts";
 import { useSessionsStore } from "../store/sessions.ts";
 import { useSkillsStore } from "../store/skills.ts";
@@ -107,6 +107,15 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
   useEffect(() => {
     void hydrate(sessionId);
     void hydrateSkills(sessionId);
+    // Tear down the live message fibers on unmount / session change. Without
+    // this, the previous session's stream lingered until the next hydrate
+    // tore it down, and a hydrate caught mid-await could install orphaned
+    // fibers after the view was gone. `teardownLiveStreams` bumps the hydrate
+    // epoch so any in-flight hydrate bails. The next hydrate re-subscribes;
+    // `messagesBySession` is preserved, so there's no empty-state flash.
+    return () => {
+      void teardownLiveStreams();
+    };
   }, [sessionId, hydrate, hydrateSkills]);
 
   // Track whether the user is near the bottom of the timeline; if they

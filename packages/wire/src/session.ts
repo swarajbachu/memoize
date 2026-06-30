@@ -784,6 +784,12 @@ export const MessagesSendRpc = Rpc.make("messages.send", {
     text: Schema.optional(Schema.String),
     input: Schema.optional(ComposerInput),
     asGoal: Schema.optional(Schema.Boolean),
+    // Optional renderer-minted id for the user message. When present the
+    // server persists the row under this id instead of generating one, so the
+    // renderer can insert the message optimistically and have the live-stream
+    // echo dedupe against it. Omitted by non-interactive callers (queue
+    // flush), which keep server-generated ids.
+    clientMessageId: Schema.optional(MessageId),
   }),
   success: Schema.Void,
   error: SessionNotFoundError,
