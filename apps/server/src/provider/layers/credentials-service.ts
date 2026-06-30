@@ -79,18 +79,25 @@ const tryKeychain = <A>(
       }),
   });
 
+const getPasswordWithLegacyPromotion = async (
+  account: string,
+): Promise<string | null> => {
+  const current = await keytar.getPassword(SERVICE_NAME, account);
+  if (current !== null) return current;
+
+  const legacy = await keytar.getPassword(LEGACY_SERVICE_NAME, account);
+  if (legacy !== null) {
+    await keytar.setPassword(SERVICE_NAME, account, legacy);
+  }
+  return legacy;
+};
+
 export const CredentialsServiceLive = Layer.succeed(
   CredentialsService,
   CredentialsService.of({
     get: (providerId) =>
       tryKeychain(providerId, () =>
-        keytar
-          .getPassword(SERVICE_NAME, accountFor(providerId))
-          .then(
-            (value) =>
-              value ??
-              keytar.getPassword(LEGACY_SERVICE_NAME, accountFor(providerId)),
-          ),
+        getPasswordWithLegacyPromotion(accountFor(providerId)),
       ),
     set: (providerId, apiKey) =>
       tryKeychain(providerId, () =>
@@ -130,16 +137,7 @@ export const CredentialsServiceLive = Layer.succeed(
       ),
     getBrowser: (origin) =>
       tryKeychain("*", () =>
-        keytar
-          .getPassword(SERVICE_NAME, browserAccountFor(origin))
-          .then(
-            (value) =>
-              value ??
-              keytar.getPassword(
-                LEGACY_SERVICE_NAME,
-                browserAccountFor(origin),
-              ),
-          ),
+        getPasswordWithLegacyPromotion(browserAccountFor(origin)),
       ).pipe(Effect.map(parseBrowserCred)),
     removeBrowser: (origin) =>
       tryKeychain("*", async () =>

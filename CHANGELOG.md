@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1]
+
+### Fixed
+- Restored the macOS bundle identifier to `app.memoize.desktop` so existing memoize Alpha installs can accept Zuse Alpha updates in place through Squirrel.Mac. The app name and GitHub release feed stay Zuse, but the updater identity remains stable for compatibility.
+- Legacy memoize keychain credentials are now promoted into the Zuse keychain namespace after first successful fallback read.
+
 ## [0.8.0]
 
 ### Added

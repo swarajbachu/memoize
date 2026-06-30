@@ -1,4 +1,7 @@
-appId: app.zuse.desktop
+# Keep the original bundle id so existing memoize Alpha installs can
+# auto-update in place through Squirrel.Mac. The visible app name and release
+# feed are Zuse, but macOS updater identity must remain stable.
+appId: app.memoize.desktop
 productName: Zuse Alpha
 copyright: © ${author}
 
