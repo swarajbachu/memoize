@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.2]
+
+### Fixed
+- Zuse now migrates data from legacy sibling Application Support folders such as `memoize Alpha` and `memoize` when the new `Zuse Alpha` database is still empty. The empty Zuse database is backed up before the legacy database is copied forward.
+
 ## [0.8.1]
 
 ### Fixed
