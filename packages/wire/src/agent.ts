@@ -475,6 +475,16 @@ const ContextUsageEvent = Schema.TaggedStruct("ContextUsage", {
   source: Schema.optional(Schema.String),
 });
 
+const ContextCompactionEvent = Schema.TaggedStruct("ContextCompaction", {
+  itemId: AgentItemId,
+  providerId: ProviderId,
+  startedAt: Schema.Number,
+  durationMs: Schema.Number,
+  beforeTokens: Schema.NullOr(Schema.Number),
+  afterTokens: Schema.NullOr(Schema.Number),
+  status: Schema.Literal("in_progress", "completed"),
+});
+
 const UsageLimitEvent = Schema.TaggedStruct("UsageLimit", {
   providerId: ProviderId,
   label: Schema.String,
@@ -607,6 +617,7 @@ export const AgentEvent = Schema.Union(
   SubagentSummaryEvent,
   UsageDeltaEvent,
   ContextUsageEvent,
+  ContextCompactionEvent,
   UsageLimitEvent,
   SessionCursorEvent,
   UserQuestionEvent,

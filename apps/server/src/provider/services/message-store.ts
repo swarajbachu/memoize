@@ -19,6 +19,7 @@ import type {
   FolderId,
   GoalUnsupportedError,
   Message,
+  MessageId,
   PermissionMode,
   ProviderId,
   QueueState,
@@ -352,6 +353,7 @@ export interface MessageStoreShape {
     skillRefs?: ReadonlyArray<SkillRef>,
     annotations?: ReadonlyArray<Annotation>,
     asGoal?: boolean,
+    clientMessageId?: MessageId,
   ) => Effect.Effect<void, SessionNotFoundError>;
 
   readonly interruptSession: (

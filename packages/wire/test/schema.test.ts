@@ -83,6 +83,19 @@ describe("AgentEvent round-trips", () => {
       },
     },
     {
+      name: "ContextCompaction",
+      encoded: {
+        _tag: "ContextCompaction",
+        itemId: "compact1",
+        providerId: "codex",
+        startedAt: 1_800_000_000,
+        durationMs: 37_000,
+        beforeTokens: 231_450,
+        afterTokens: 9_535,
+        status: "completed",
+      },
+    },
+    {
       name: "Completed",
       encoded: { _tag: "Completed", reason: "ended" },
     },
@@ -236,6 +249,23 @@ describe("Message round-trip", () => {
         itemId: "i1",
         tool: "Bash",
         input: { command: "ls" },
+      },
+    });
+  });
+
+  it("round-trips a context compaction message", () => {
+    roundTrip(Message, {
+      ...base,
+      role: "system" as const,
+      content: {
+        _tag: "context_compaction",
+        itemId: "compact1",
+        providerId: "codex",
+        startedAt: 1_800_000_000,
+        durationMs: 37_000,
+        beforeTokens: 231_450,
+        afterTokens: 9_535,
+        status: "completed",
       },
     });
   });

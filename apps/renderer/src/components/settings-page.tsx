@@ -9,14 +9,13 @@ import {
   GlobeIcon,
   KeyboardIcon,
   PackageIcon,
-  RotateRight01Icon,
   Settings01Icon,
   TaskDone01Icon,
   TestTubeIcon,
   Tick01Icon,
   VolumeHighIcon,
 } from "@hugeicons-pro/core-bulk-rounded";
-import { Plus } from "lucide-react";
+import { Plus, RefreshCw as RefreshIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Effect } from "effect";
@@ -869,8 +868,7 @@ function ProvidersPane() {
               disabled={loading}
               aria-label="Refresh provider status"
             >
-              <HugeiconsIcon
-                icon={RotateRight01Icon}
+              <RefreshIcon
                 className={cn("size-3.5", loading && "animate-spin")}
                 aria-hidden
               />
