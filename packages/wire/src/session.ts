@@ -260,6 +260,18 @@ const ContextUsageContent = Schema.TaggedStruct("context_usage", {
   source: Schema.optional(Schema.String),
 });
 
+const ContextCompactionContent = Schema.TaggedStruct("context_compaction", {
+  itemId: AgentItemId,
+  providerId: ProviderId,
+  startedAt: Schema.Number,
+  durationMs: Schema.Number,
+  beforeTokens: Schema.NullOr(Schema.Number),
+  afterTokens: Schema.NullOr(Schema.Number),
+  status: Schema.optionalWith(Schema.Literal("in_progress", "completed"), {
+    default: () => "completed" as const,
+  }),
+});
+
 const UsageLimitContent = Schema.TaggedStruct("usage_limit", {
   providerId: ProviderId,
   label: Schema.String,
@@ -317,6 +329,7 @@ export const MessageContent = Schema.Union(
   SubagentSummaryContent,
   UsageContent,
   ContextUsageContent,
+  ContextCompactionContent,
   UsageLimitContent,
   UserQuestionContent,
   UserQuestionAnswerContent,

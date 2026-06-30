@@ -1,5 +1,39 @@
 [
   {
+    "version": "0.8.3",
+    "sections": [
+      {
+        "title": "Fixed",
+        "items": [
+          "Zuse data migration now checks the actual project count before deciding whether the new `Zuse Alpha` database is empty. This recovers users who already launched Zuse once and have a migrated schema with no projects."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "0.8.2",
+    "sections": [
+      {
+        "title": "Fixed",
+        "items": [
+          "Zuse now migrates data from legacy sibling Application Support folders such as `memoize Alpha` and `memoize` when the new `Zuse Alpha` database is still empty. The empty Zuse database is backed up before the legacy database is copied forward."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "0.8.1",
+    "sections": [
+      {
+        "title": "Fixed",
+        "items": [
+          "Restored the macOS bundle identifier to `app.memoize.desktop` so existing memoize Alpha installs can accept Zuse Alpha updates in place through Squirrel.Mac. The app name and GitHub release feed stay Zuse, but the updater identity remains stable for compatibility.",
+          "Legacy memoize keychain credentials are now promoted into the Zuse keychain namespace after first successful fallback read."
+        ]
+      }
+    ]
+  },
+  {
     "version": "0.8.0",
     "sections": [
       {
