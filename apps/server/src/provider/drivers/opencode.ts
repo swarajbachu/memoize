@@ -28,6 +28,12 @@ import {
 } from "@opencode-ai/sdk";
 
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
+import {
+  finishCompactEvent,
+  isCompactCommand,
+  startCompactEvent,
+  startCompactSnapshot,
+} from "./compact.ts";
 
 /**
  * Live handle for one OpenCode conversation. Mirrors the other driver
@@ -943,6 +949,18 @@ export const startOpencodeSession = (
     // === Prompt queue — serializes turns inside a single session. ===
     let inflight: Promise<void> = Promise.resolve();
     const enqueuePrompt = (text: string): void => {
+      const compactSnapshot = isCompactCommand(text)
+        ? startCompactSnapshot(null)
+        : null;
+      if (compactSnapshot !== null) {
+        events.unsafeOffer(
+          startCompactEvent({
+            providerId: "opencode",
+            snapshot: compactSnapshot,
+          }),
+        );
+      }
+      const promptText = compactSnapshot !== null ? text.trim() : text;
       inflight = inflight
         .then(async () => {
           if (closed) return;
@@ -973,10 +991,10 @@ export const startOpencodeSession = (
           const body = {
             agent,
             ...(modelField !== null ? { model: modelField } : {}),
-            parts: [{ type: "text" as const, text }],
+            parts: [{ type: "text" as const, text: promptText }],
           };
           dlog(
-            `prompt: agent=${agent} providerID=${providerID ?? "(default)"} modelID=${modelID ?? "(default)"} variant=${variantOpt ?? "(default)"} textLen=${text.length}`,
+            `prompt: agent=${agent} providerID=${providerID ?? "(default)"} modelID=${modelID ?? "(default)"} variant=${variantOpt ?? "(default)"} textLen=${promptText.length}`,
           );
           ddump(`  prompt.body`, body);
           try {
@@ -1037,6 +1055,16 @@ export const startOpencodeSession = (
             // prompt resolved before the SSE got there).
             for (const evt of flushDeltaState(deltaState)) {
               events.unsafeOffer(evt);
+            }
+            if (compactSnapshot !== null && !closed) {
+              events.unsafeOffer(
+                finishCompactEvent({
+                  itemId: compactSnapshot.itemId,
+                  providerId: "opencode",
+                  snapshot: compactSnapshot,
+                  afterTokens: null,
+                }),
+              );
             }
             events.unsafeOffer({ _tag: "Completed", reason: "ended" });
           } catch (cause) {

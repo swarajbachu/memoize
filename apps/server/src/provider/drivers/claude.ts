@@ -31,6 +31,13 @@ import {
   applyClaudeWorktreeEnv,
   claudeWorktreePrompt,
 } from "./claude-worktree-prompt.ts";
+import {
+  finishCompactEvent,
+  isCompactCommand,
+  startCompactEvent,
+  startCompactSnapshot,
+  type CompactSnapshot,
+} from "./compact.ts";
 
 /**
  * Live-only handle for one Claude SDK conversation. The orchestrator
@@ -277,6 +284,7 @@ interface TranslateState {
    * when the turn's `result` lands (which carries the real `contextWindow`).
    */
   lastContextUsedTokens: number | null;
+  pendingCompact: CompactSnapshot | null;
   /**
    * Set once we've re-emitted an auth failure as an Error from a top-level
    * assistant text block, so the turn's terminal `result` doesn't surface the
@@ -301,6 +309,7 @@ const newTranslateState = (): TranslateState => ({
   askUserQuestionIds: new Set(),
   exitPlanModeIds: new Set(),
   lastContextUsedTokens: null,
+  pendingCompact: null,
   emittedAuthError: false,
   interrupted: false,
 });
@@ -886,6 +895,8 @@ const translate = (
         const v = usage[key];
         return typeof v === "number" ? v : 0;
       };
+      const compactAfterTokens =
+        state.pendingCompact !== null ? num("output_tokens") : 0;
       out.push({
         _tag: "UsageDelta",
         parentItemId,
@@ -895,6 +906,9 @@ const translate = (
         cacheCreationTokens: num("cache_creation_input_tokens"),
         model: modelOnResult,
       });
+      if (state.pendingCompact !== null && compactAfterTokens > 0) {
+        state.lastContextUsedTokens = compactAfterTokens;
+      }
     }
     // The session-level `result` (no parent_tool_use_id) closes the turn.
     // A sub-agent's `result` does NOT close the parent's turn — the SDK
@@ -912,6 +926,17 @@ const translate = (
           precision: "exact",
           source: "Claude usage",
         });
+      }
+      if (state.pendingCompact !== null) {
+        out.push(
+          finishCompactEvent({
+            itemId: state.pendingCompact.itemId,
+            providerId: "claude",
+            snapshot: state.pendingCompact,
+            afterTokens: state.lastContextUsedTokens,
+          }),
+        );
+        state.pendingCompact = null;
       }
       // The user interrupted this turn. The SDK ends it with an
       // `error_during_execution` result, but that's a normal user action — emit
@@ -1729,11 +1754,25 @@ export const startClaudeSession = (
       events: Mailbox.toStream(events),
       send: (text, attachmentRefs) =>
         Effect.promise(async () => {
+          const compactCommand = isCompactCommand(text);
+          if (compactCommand) {
+            translateState.pendingCompact = startCompactSnapshot(
+              translateState.lastContextUsedTokens,
+            );
+            events.unsafeOffer(
+              startCompactEvent({
+                providerId: "claude",
+                snapshot: translateState.pendingCompact,
+              }),
+            );
+          }
           // Ultrathink is the only `effort` tier that's not forwarded to
           // the SDK as a knob — instead the literal word `"ultrathink"` is
           // prepended to the user's prompt. The session-level modelOptions
           // were captured at start() so we can apply the prefix here.
-          const promptText = applyUltrathinkPrefix(input.modelOptions, text);
+          const promptText = compactCommand
+            ? text.trim()
+            : applyUltrathinkPrefix(input.modelOptions, text);
           console.log(
             `[claude.send] sessionId=${sessionId} textLen=${promptText.length} attachments=${attachmentRefs?.length ?? 0}`,
           );

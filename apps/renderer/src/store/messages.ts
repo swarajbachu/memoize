@@ -20,9 +20,7 @@ import { useSessionsStore } from "./sessions.ts";
 
 let getMessagesRpcClient: typeof getRpcClient = getRpcClient;
 
-export const setMessagesRpcClientForTest = (
-  fn: typeof getRpcClient,
-): void => {
+export const setMessagesRpcClientForTest = (fn: typeof getRpcClient): void => {
   getMessagesRpcClient = fn;
 };
 
@@ -328,7 +326,13 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
   queuePausedBySession: {},
   goalBySession: {},
   hydrate: async (sessionId) => {
-    if (liveSessionId === sessionId && liveFiber !== null) return;
+    if (
+      liveSessionId === sessionId &&
+      liveFiber !== null &&
+      (get().messagesBySession[sessionId]?.length ?? 0) > 0
+    ) {
+      return;
+    }
     await stopLiveFiber();
     liveSessionId = sessionId;
     set((s) => ({
@@ -345,8 +349,9 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
     }));
     try {
       const client = await getMessagesRpcClient();
-      liveFiber = Effect.runFork(
-        Stream.runForEach(client.messages.stream({ sessionId }), (message) =>
+      const messageProgram = Stream.runForEach(
+        client.messages.stream({ sessionId }),
+        (message) =>
           Effect.sync(() => {
             set((s) => {
               const current = s.messagesBySession[sessionId] ?? [];
@@ -398,8 +403,28 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
               };
             });
           }),
+      ).pipe(
+        Effect.catchAll((err) =>
+          Effect.sync(() => {
+            console.error("[messages] message stream errored", err);
+            set((s) => ({
+              errorBySession: {
+                ...s.errorBySession,
+                [sessionId]: classifyError(
+                  err,
+                  lookupSessionProvider(sessionId),
+                ),
+              },
+            }));
+          }),
+        ),
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (liveSessionId === sessionId) liveFiber = null;
+          }),
         ),
       );
+      liveFiber = Effect.runFork(messageProgram);
       // Status mirror — keeps the composer's "running" indicator stable
       // across the whole tool-call loop. When a turn ends we also refresh
       // the project's PR state so freshly pushed branches recolor the

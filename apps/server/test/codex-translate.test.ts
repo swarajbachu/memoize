@@ -141,11 +141,39 @@ describe("translateCodexItem", () => {
     expect(ev.tool).toBe("mcp__zuse__browser_screenshot");
   });
 
-  it("renders context compaction as a compacted message", () => {
+  it("renders context compaction as a compact event with token counts", () => {
     const item: ThreadItem = { type: "contextCompaction", id: "compact1" };
 
-    const ev = only(translateCodexItem(item, "completed"), "AssistantMessage");
-    expect(ev.text).toBe("Conversation context compacted.");
+    const ev = only(
+      translateCodexItem(item, "completed", {
+        itemId: "compact1",
+        startedAt: 1_800_000_000,
+        durationMs: 37_000,
+        beforeTokens: 231_450,
+        afterTokens: 9_535,
+      }),
+      "ContextCompaction",
+    );
+    expect(ev.itemId).toBe("compact1");
+    expect(ev.providerId).toBe("codex");
+    expect(ev.startedAt).toBe(1_800_000_000);
+    expect(ev.durationMs).toBe(37_000);
+    expect(ev.beforeTokens).toBe(231_450);
+    expect(ev.afterTokens).toBe(9_535);
+    expect(ev.status).toBe("completed");
+  });
+
+  it("renders context compaction gracefully without token counts", () => {
+    const item: ThreadItem = { type: "contextCompaction", id: "compact1" };
+
+    const ev = only(
+      translateCodexItem(item, "completed"),
+      "ContextCompaction",
+    );
+    expect(ev.beforeTokens).toBeNull();
+    expect(ev.afterTokens).toBeNull();
+    expect(ev.status).toBe("completed");
+    expect(ev.durationMs).toBeGreaterThanOrEqual(0);
   });
 });
 

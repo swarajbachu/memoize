@@ -19,6 +19,12 @@ import {
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
 import { createAcpTranslator } from "./acp/translate.ts";
 import { applyPlanModePrefix } from "./planMode.ts";
+import {
+  finishCompactEvent,
+  isCompactCommand,
+  startCompactEvent,
+  startCompactSnapshot,
+} from "./compact.ts";
 import { handleFsRequest } from "./acp/fs.ts";
 import { handleTerminalRequest } from "./acp/terminal.ts";
 import type { GetRuntimeMode, RequestPermission } from "./claude.ts";
@@ -636,9 +642,20 @@ export const startGeminiSession = (
     const enqueuePrompt = (text: string): void => {
       const sid = acpSessionId;
       if (sid === null) return;
+      const compactSnapshot = isCompactCommand(text)
+        ? startCompactSnapshot(null)
+        : null;
+      if (compactSnapshot !== null) {
+        events.unsafeOffer(
+          startCompactEvent({ providerId: "gemini", snapshot: compactSnapshot }),
+        );
+      }
       // Plan-mode emulation: gemini ACP has no native read-only switch, so
       // prepend a developer-instructions block while plan mode is active.
-      const promptText = applyPlanModePrefix(currentMode, text);
+      const promptText =
+        compactSnapshot !== null
+          ? text.trim()
+          : applyPlanModePrefix(currentMode, text);
       inflight = inflight
         .then(async () => {
           if (closed) return;
@@ -665,6 +682,16 @@ export const startGeminiSession = (
             );
             if (GEMINI_RPC_TRACE) {
               process.stderr.write(`[gemini.prompt] completed\n`);
+            }
+            if (compactSnapshot !== null && !closed) {
+              events.unsafeOffer(
+                finishCompactEvent({
+                  itemId: compactSnapshot.itemId,
+                  providerId: "gemini",
+                  snapshot: compactSnapshot,
+                  afterTokens: null,
+                }),
+              );
             }
           } catch (cause) {
             const reason = cause instanceof Error ? cause.message : String(cause);
