@@ -18,7 +18,12 @@ import type {
   StartSessionInput,
   WorktreeId,
 } from "@zuse/wire";
-import { ComposerInput, RepositorySettings, Worktree } from "@zuse/wire";
+import {
+  ComposerInput,
+  MessageId,
+  RepositorySettings,
+  Worktree,
+} from "@zuse/wire";
 
 import { NdjsonLogger } from "../src/persistence/ndjson-logger.ts";
 import { Migration0001Initial } from "../src/persistence/migrations/0001_initial.ts";
@@ -602,6 +607,45 @@ describe("MessageStore — chat & session lifecycle", () => {
         _tag: "user",
         text: "hello there",
       });
+    });
+  });
+
+  it("sendMessage persists the user row under a supplied clientMessageId", async () => {
+    await withRuntime(async (run) => {
+      const { initialSession } = await run(
+        Effect.flatMap(store, (s) =>
+          s.createChat({
+            projectId: PROJECT_ID,
+            providerId: "claude",
+            model: "claude-opus-4-8",
+          }),
+        ),
+      );
+      const id = initialSession.id;
+      const clientId = MessageId.make(`m_client_${Date.now()}`);
+
+      await run(
+        Effect.flatMap(store, (s) =>
+          s.sendMessage(
+            id,
+            "with a client id",
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            clientId,
+          ),
+        ),
+      );
+
+      const messages = await run(
+        Effect.flatMap(store, (s) => s.listMessages(id)),
+      );
+      const user = messages.filter((m) => m.role === "user");
+      // The row the renderer inserted optimistically and the persisted/echoed
+      // row share the id, so the live stream dedupes against it.
+      expect(user.some((m) => m.id === clientId)).toBe(true);
     });
   });
 

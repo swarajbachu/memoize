@@ -901,9 +901,14 @@ export const MessageStoreLive = Layer.scoped(
     const persistMessage = (
       sessionId: SessionId,
       content: MessageContent,
+      idOverride?: MessageId,
     ): Effect.Effect<Message> =>
       Effect.gen(function* () {
-        const id = MessageId.make(crypto.randomUUID());
+        // `idOverride` is the renderer-minted `clientMessageId` for an
+        // optimistic user message — reuse it so the live-stream echo carries
+        // the same id the renderer already inserted. All other persists
+        // (assistant/tool/error/goal) omit it and get a fresh server id.
+        const id = idOverride ?? MessageId.make(crypto.randomUUID());
         const role = roleForContent(content);
         const now = new Date();
         const nowIso = now.toISOString();
@@ -2716,6 +2721,7 @@ export const MessageStoreLive = Layer.scoped(
       skillRefs?: ReadonlyArray<SkillRef>,
       annotations?: ReadonlyArray<CodeAnnotation>,
       asGoal?: boolean,
+      clientMessageId?: MessageId,
     ): Effect.Effect<boolean, SessionNotFoundError> =>
       Effect.gen(function* () {
         const session = yield* lookupSession(sessionId);
@@ -2766,7 +2772,11 @@ export const MessageStoreLive = Layer.scoped(
           annotationList.length > 0
             ? `${serializeAnnotations(annotationList)}\n\n${text}`.trim()
             : text;
-        const persisted = yield* persistMessage(sessionId, content);
+        const persisted = yield* persistMessage(
+          sessionId,
+          content,
+          clientMessageId,
+        );
         // Pin the attachments so the GC sweep treats them as referenced —
         // a separate row per (message, attachment) keeps the existing
         // GC join intact.
@@ -2958,6 +2968,7 @@ export const MessageStoreLive = Layer.scoped(
       skillRefs,
       annotations,
       asGoal,
+      clientMessageId,
     ) =>
       Effect.gen(function* () {
         yield* submitUserMessage(
@@ -2968,6 +2979,7 @@ export const MessageStoreLive = Layer.scoped(
           skillRefs,
           annotations,
           asGoal,
+          clientMessageId,
         );
       });
 
