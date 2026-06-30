@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.3]
+
+### Fixed
+- Zuse data migration now checks the actual project count before deciding whether the new `Zuse Alpha` database is empty. This recovers users who already launched Zuse once and have a migrated schema with no projects.
+
 ## [0.8.2]
 
 ### Fixed

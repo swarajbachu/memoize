@@ -1,5 +1,16 @@
 [
   {
+    "version": "0.8.3",
+    "sections": [
+      {
+        "title": "Fixed",
+        "items": [
+          "Zuse data migration now checks the actual project count before deciding whether the new `Zuse Alpha` database is empty. This recovers users who already launched Zuse once and have a migrated schema with no projects."
+        ]
+      }
+    ]
+  },
+  {
     "version": "0.8.2",
     "sections": [
       {
