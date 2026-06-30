@@ -1,5 +1,8 @@
+import { execFile } from "node:child_process";
 import { copyFile, rename, stat, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { basename, dirname, join } from "node:path";
+import { promisify } from "node:util";
 
 export const ZUSE_SQLITE_FILENAME = "zuse.sqlite";
 const LEGACY_MEMOIZE_SQLITE_FILENAME = "memoize.sqlite";
@@ -11,6 +14,22 @@ const LEGACY_USER_DATA_DIR_NAMES = [
   "memoize (Dev)",
 ] as const;
 const EMPTY_SQLITE_MAX_BYTES = 64 * 1024;
+const require = createRequire(import.meta.url);
+const execFileAsync = promisify(execFile);
+
+type SqliteRow = Record<string, unknown>;
+type SqliteStatement = {
+  readonly get: () => SqliteRow | undefined;
+};
+type SqliteDatabase = {
+  readonly prepare: (sql: string) => SqliteStatement;
+  readonly close: () => void;
+};
+type SqliteDatabaseConstructor = new (
+  path: string,
+  options: { readonly readonly: boolean; readonly fileMustExist: boolean },
+) => SqliteDatabase;
+const Database = require("better-sqlite3") as SqliteDatabaseConstructor;
 
 export const sqliteDbPath = (userData: string): string =>
   join(userData, ZUSE_SQLITE_FILENAME);
@@ -28,6 +47,57 @@ const exists = async (path: string): Promise<boolean> => {
   } catch {
     return false;
   }
+};
+
+const projectCount = (path: string): number | null => {
+  try {
+    const db = new Database(path, { readonly: true, fileMustExist: true });
+    try {
+      const hasProjects = db
+        .prepare(
+          "SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'projects'",
+        )
+        .get();
+      if (typeof hasProjects?.count !== "number" || !hasProjects.count) {
+        return 0;
+      }
+
+      const projects = db
+        .prepare("SELECT count(*) AS count FROM projects")
+        .get();
+      return typeof projects?.count === "number" ? projects.count : 0;
+    } finally {
+      db.close();
+    }
+  } catch {
+    return null;
+  }
+};
+
+const projectCountViaSqliteCli = async (path: string): Promise<number | null> => {
+  try {
+    const { stdout } = await execFileAsync(
+      "/usr/bin/sqlite3",
+      [
+        path,
+        "SELECT CASE WHEN EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'projects') THEN (SELECT count(*) FROM projects) ELSE 0 END;",
+      ],
+      { timeout: 2_000 },
+    );
+    const count = Number(stdout.trim());
+    return Number.isFinite(count) ? count : null;
+  } catch {
+    return null;
+  }
+};
+
+const detectedProjectCount = async (path: string): Promise<number | null> =>
+  projectCount(path) ?? (await projectCountViaSqliteCli(path));
+
+const looksEmpty = async (path: string): Promise<boolean> => {
+  const projects = await detectedProjectCount(path);
+  if (projects !== null) return projects === 0;
+  return (await stat(path)).size <= EMPTY_SQLITE_MAX_BYTES;
 };
 
 const legacySiblingDbCandidates = async (
@@ -51,12 +121,19 @@ const newestNonEmptyLegacyDb = async (
   const withStats = await Promise.all(
     candidates.map(async (path) => ({
       path,
+      projects: await detectedProjectCount(path),
       stats: await stat(path),
     })),
   );
   const nonEmpty = withStats
-    .filter((candidate) => candidate.stats.size > EMPTY_SQLITE_MAX_BYTES)
+    .filter((candidate) =>
+      candidate.projects !== null
+        ? candidate.projects > 0
+        : candidate.stats.size > EMPTY_SQLITE_MAX_BYTES,
+    )
     .sort((a, b) => {
+      const projectDiff = (b.projects ?? 0) - (a.projects ?? 0);
+      if (projectDiff !== 0) return projectDiff;
       const sizeDiff = b.stats.size - a.stats.size;
       if (sizeDiff !== 0) return sizeDiff;
       return b.stats.mtimeMs - a.stats.mtimeMs;
@@ -91,8 +168,7 @@ export const ensureSqliteRenameCompatibility = async (
 ): Promise<void> => {
   const current = sqliteDbPath(userData);
   if (await exists(current)) {
-    const currentStats = await stat(current);
-    if (currentStats.size > EMPTY_SQLITE_MAX_BYTES) return;
+    if (!(await looksEmpty(current))) return;
 
     const legacySibling = await newestNonEmptyLegacyDb(userData);
     if (legacySibling === null) return;
