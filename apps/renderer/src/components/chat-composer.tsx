@@ -1637,16 +1637,99 @@ function ContextRing({ percent }: { percent: number | null }) {
   );
 }
 
+function StickMeter({
+  percent,
+  tone = "default",
+}: {
+  readonly percent: number | null;
+  readonly tone?: "default" | "warning";
+}) {
+  const segments = 38;
+  const clamped = percent === null ? 0 : Math.min(Math.max(percent, 0), 100);
+  const filled = percent === null ? 0 : Math.ceil((clamped / 100) * segments);
+  return (
+    <div
+      className="grid h-4 grid-cols-[repeat(38,minmax(0,1fr))] gap-0.5"
+      aria-hidden
+    >
+      {Array.from({ length: segments }, (_, index) => {
+        const active = index < filled;
+        return (
+          <div
+            key={index}
+            className={cn(
+              "rounded-[2px] transition-colors",
+              active
+                ? tone === "warning"
+                  ? "bg-amber-300/65"
+                  : "bg-primary/70"
+                : "bg-muted-foreground/16",
+            )}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 function ContextStatusPopover({ session }: { session: Session }) {
   const messages = useMessagesStore(
     (s) => s.messagesBySession[session.id] ?? EMPTY_MESSAGES,
   );
 
   const latestContext = useMemo(() => {
+    let latestUsage: Extract<
+      Message["content"],
+      { _tag: "context_usage" }
+    > | null = null;
+    let latestUsageIndex = -1;
+    let latestCompact: Extract<
+      Message["content"],
+      { _tag: "context_compaction" }
+    > | null = null;
+    let latestCompactIndex = -1;
     for (let i = messages.length - 1; i >= 0; i--) {
       const content = messages[i]!.content;
       if (
         content._tag === "context_usage" &&
+        content.providerId === session.providerId
+      ) {
+        latestUsage = content;
+        latestUsageIndex = i;
+        break;
+      }
+    }
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const content = messages[i]!.content;
+      if (
+        content._tag === "context_compaction" &&
+        content.providerId === session.providerId &&
+        (content.status ?? "completed") === "completed" &&
+        content.afterTokens !== null
+      ) {
+        latestCompact = content;
+        latestCompactIndex = i;
+        break;
+      }
+    }
+    if (latestCompact !== null && latestCompactIndex > latestUsageIndex) {
+      return {
+        _tag: "context_usage" as const,
+        providerId: latestCompact.providerId,
+        usedTokens: latestCompact.afterTokens,
+        windowTokens: latestUsage?.windowTokens ?? null,
+        precision: "exact" as const,
+        source: "Context compaction",
+      };
+    }
+    return latestUsage;
+  }, [messages, session.providerId]);
+
+  const usageLimit = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const content = messages[i]!.content;
+      if (
+        content._tag === "usage_limit" &&
         content.providerId === session.providerId
       ) {
         return content;
@@ -1655,27 +1738,17 @@ function ContextStatusPopover({ session }: { session: Session }) {
     return null;
   }, [messages, session.providerId]);
 
-  const usageLimits = useMemo(
-    () =>
-      messages
-        .filter(
-          (m) =>
-            m.content._tag === "usage_limit" &&
-            m.content.providerId === session.providerId,
-        )
-        .slice(-2)
-        .map((m) => (m.content._tag === "usage_limit" ? m.content : null))
-        .filter((v): v is NonNullable<typeof v> => v !== null),
-    [messages, session.providerId],
-  );
-
-  // Real numbers only — but the context window itself is a real capacity we
-  // know from the model, so we show it from the first message and fill in
-  // the live bar once Claude/Codex report exact usage.
   const usedTokens = latestContext?.usedTokens ?? null;
+  const reportedWindowTokens = latestContext?.windowTokens ?? null;
+  const fallbackWindowTokens = selectedContextWindowTokens(
+    session.id,
+    session.providerId,
+    session.model,
+  );
   const windowTokens =
-    latestContext?.windowTokens ??
-    selectedContextWindowTokens(session.id, session.providerId, session.model);
+    usedTokens !== null
+      ? (reportedWindowTokens ?? fallbackWindowTokens)
+      : reportedWindowTokens;
 
   const percent =
     usedTokens !== null && windowTokens !== null && windowTokens > 0
@@ -1686,8 +1759,8 @@ function ContextStatusPopover({ session }: { session: Session }) {
       ? Math.max(0, windowTokens - usedTokens)
       : null;
 
-  const hasContext = usedTokens !== null || windowTokens !== null;
-  const hasLimits = usageLimits.length > 0;
+  const hasContext = usedTokens !== null && windowTokens !== null;
+  const hasLimits = usageLimit !== null;
   if (!hasContext && !hasLimits) return null;
 
   const high = percent !== null && percent >= 90;
@@ -1720,10 +1793,10 @@ function ContextStatusPopover({ session }: { session: Session }) {
         side="top"
         align="end"
         sideOffset={8}
-        className="w-[256px] overflow-hidden rounded-xl border-border bg-popover p-0 text-[13px] shadow-lg"
+        className="w-[300px] overflow-hidden rounded-xl border-border bg-popover p-0 text-[13px] shadow-lg"
       >
         {hasContext ? (
-          <div className="flex flex-col gap-2.5 p-3">
+          <div className="flex flex-col gap-3 p-3.5">
             <div className="flex items-baseline justify-between gap-3">
               <span className="font-medium text-foreground">Context</span>
               <span className="tabular-nums text-muted-foreground">
@@ -1732,22 +1805,19 @@ function ContextStatusPopover({ session }: { session: Session }) {
             </div>
             {percent !== null ? (
               <>
-                <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className={cn(
-                      "h-full rounded-full transition-[width]",
-                      high ? "bg-amber-400" : "bg-foreground",
-                    )}
-                    style={{ width: `${Math.max(percent, 2)}%` }}
-                  />
-                </div>
+                <StickMeter
+                  percent={percent}
+                  tone={high ? "warning" : "default"}
+                />
                 <div className="flex items-center justify-between text-muted-foreground">
-                  <span className="tabular-nums">
-                    {percent.toFixed(1)}% used
-                  </span>
+                  <span>Window used</span>
+                  <span className="tabular-nums">{percent.toFixed(1)}%</span>
+                </div>
+                <div className="flex items-center justify-between text-muted-foreground/70">
+                  <span>Available</span>
                   {freeTokens !== null ? (
                     <span className="tabular-nums">
-                      {formatTokens(freeTokens)} free
+                      {formatTokens(freeTokens)}
                     </span>
                   ) : null}
                 </div>
@@ -1762,40 +1832,44 @@ function ContextStatusPopover({ session }: { session: Session }) {
         {hasLimits ? (
           <div
             className={cn(
-              "flex flex-col gap-2 p-3",
+              "flex flex-col gap-3 p-3.5",
               hasContext && "border-t border-border",
             )}
           >
-            <span className="font-medium text-foreground">Usage limits</span>
-            <div className="flex flex-col gap-1.5">
-              {usageLimits.map((limit, index) => {
-                const reset = resetLabel(limit.resetsAt);
-                const remaining =
-                  limit.usedPercent !== null
-                    ? `${Math.max(0, 100 - limit.usedPercent).toFixed(0)}% left`
-                    : "Active";
-                return (
-                  <div
-                    key={`${limit.label}-${index}`}
-                    className="flex flex-col gap-0.5"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="truncate text-foreground">
-                        {limit.label}
-                      </span>
-                      <span className="shrink-0 tabular-nums text-muted-foreground">
-                        {remaining}
-                      </span>
-                    </div>
-                    {reset !== null ? (
-                      <span className="tabular-nums text-muted-foreground/50">
-                        resets {reset}
-                      </span>
-                    ) : null}
+            {(() => {
+              const limit = usageLimit!;
+              const reset = resetLabel(limit.resetsAt);
+              const used = limit.usedPercent;
+              const remaining =
+                used !== null
+                  ? `${Math.max(0, 100 - used).toFixed(0)}% left`
+                  : "Active";
+              const limitHigh = used !== null && used >= 80;
+              return (
+                <>
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="font-medium text-foreground">
+                      {limit.label}
+                    </span>
+                    <span className="shrink-0 tabular-nums text-muted-foreground">
+                      {remaining}
+                    </span>
                   </div>
-                );
-              })}
-            </div>
+                  {used !== null ? (
+                    <StickMeter
+                      percent={used}
+                      tone={limitHigh ? "warning" : "default"}
+                    />
+                  ) : null}
+                  <div className="flex items-center justify-between text-muted-foreground/70">
+                    <span>Reset</span>
+                    <span className="tabular-nums">
+                      {reset !== null ? reset : "unknown"}
+                    </span>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         ) : null}
       </TooltipPopup>

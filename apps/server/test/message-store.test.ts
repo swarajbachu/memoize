@@ -397,9 +397,7 @@ describe("MessageStore — chat & session lifecycle", () => {
 
       expect(result.chat.worktreeId).toBe(TEST_WORKTREE_ID);
       expect(result.initialSession.worktreeId).toBe(TEST_WORKTREE_ID);
-      expect(providerStartInputs.at(-1)?.cwdOverride).toBe(
-        TEST_WORKTREE_PATH,
-      );
+      expect(providerStartInputs.at(-1)?.cwdOverride).toBe(TEST_WORKTREE_PATH);
     });
   });
 
@@ -603,6 +601,55 @@ describe("MessageStore — chat & session lifecycle", () => {
       expect(user.at(-1)?.content).toMatchObject({
         _tag: "user",
         text: "hello there",
+      });
+    });
+  });
+
+  it("reads legacy context compaction rows without status", async () => {
+    await withRuntime(async (run) => {
+      const { initialSession } = await run(
+        Effect.flatMap(store, (s) =>
+          s.createChat({
+            projectId: PROJECT_ID,
+            providerId: "codex",
+            model: "gpt-5",
+          }),
+        ),
+      );
+      const id = initialSession.id;
+      const createdAt = "2026-06-30T07:22:00.000Z";
+      const legacyContent = JSON.stringify({
+        _tag: "context_compaction",
+        itemId: "compact_legacy",
+        providerId: "codex",
+        startedAt: 1_782_803_407_285,
+        durationMs: 31_110,
+        beforeTokens: null,
+        afterTokens: null,
+      });
+
+      await run(
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`
+            INSERT INTO messages
+              (id, session_id, role, kind, content_json, created_at)
+            VALUES
+              (${"msg_legacy_compact"}, ${id}, ${"system"}, ${"context_compaction"}, ${legacyContent}, ${createdAt})
+          `;
+        }),
+      );
+
+      const messages = await run(
+        Effect.flatMap(store, (s) => s.listMessages(id)),
+      );
+      const compact = messages.find(
+        (message) => message.content._tag === "context_compaction",
+      );
+
+      expect(compact?.content).toMatchObject({
+        _tag: "context_compaction",
+        status: "completed",
       });
     });
   });
@@ -812,9 +859,7 @@ describe("MessageStore — chat & session lifecycle", () => {
         Effect.flatMap(store, (s) => s.listQueuedMessages(initialSession.id)),
       );
       expect(queue.paused).toBe(true);
-      expect(queue.items.map((item) => item.input.text)).toEqual([
-        "resume me",
-      ]);
+      expect(queue.items.map((item) => item.input.text)).toEqual(["resume me"]);
     });
   });
 

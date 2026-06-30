@@ -63,6 +63,7 @@ export const shouldSendPlanFeedbackNow = ({
       case "subagent_summary":
       case "usage":
       case "context_usage":
+      case "context_compaction":
       case "usage_limit":
       case "user_question_answer":
         continue;
