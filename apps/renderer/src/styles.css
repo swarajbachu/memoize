@@ -319,7 +319,7 @@ body,
   --secondary: hsl(72 4% 10%);
   --secondary-foreground: hsl(72 4% 92%);
 
-  --muted: hsl(72 4% 16%);
+  --muted: hsl(72 4% 10%);
   --muted-foreground: hsl(72 2% 64%);
 
   --accent: hsl(72 4% 13%);
