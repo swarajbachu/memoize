@@ -1,7 +1,6 @@
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ArrowDown01Icon,
-  ArrowRight01Icon,
   ArrowUpRight01Icon,
   Search01Icon,
   Tick01Icon,
@@ -144,9 +143,6 @@ export function ModelPicker(props: ModelPickerProps) {
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState<Scope>("all");
   const [events, setEvents] = useState<ModelPickerEvent[]>([]);
-  const [expandedGroup, setExpandedGroup] = useState<ProviderId | null>(
-    providerId,
-  );
   // Inline feedback for failed picks. The session-mode handlers
   // (createSession / setSessionProvider / setSessionModel) used to fire-
   // and-forget, so a failed switch (cursor-agent not installed, ACP
@@ -168,11 +164,10 @@ export function ModelPicker(props: ModelPickerProps) {
       setQuery("");
       setEvents(readModelPickerEvents());
       setScope("all");
-      setExpandedGroup(providerId);
       setPickError(null);
       setPicking(false);
     }
-  }, [open, providerId]);
+  }, [open]);
 
   const modelsForProvider = useCallback(
     (pid: ProviderId): ReadonlyArray<{ id: string; label: string }> => {
@@ -368,19 +363,12 @@ export function ModelPicker(props: ModelPickerProps) {
       });
     }
     if (inAccordionView) {
-      const group = accordionGroups.find((g) => g.providerId === expandedGroup);
-      if (group !== undefined) out.push(...group.models);
+      for (const group of accordionGroups) out.push(...group.models);
     } else {
       out.push(...flatMatches);
     }
     return out;
-  }, [
-    scopedRecents,
-    inAccordionView,
-    accordionGroups,
-    expandedGroup,
-    flatMatches,
-  ]);
+  }, [scopedRecents, inAccordionView, accordionGroups, flatMatches]);
 
   // STABLE REFS — this is the fix so shortcuts actually work while the
   // composer editor is focused and causing re-renders.
@@ -525,61 +513,36 @@ export function ModelPicker(props: ModelPickerProps) {
               {inAccordionView ? (
                 <>
                   <SectionLabel title="Models" />
-                  {accordionGroups.map((g) => {
-                    const expanded = expandedGroup === g.providerId;
-                    return (
-                      <div key={g.providerId}>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setExpandedGroup(expanded ? null : g.providerId)
-                          }
-                          aria-expanded={expanded}
-                          className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-muted/60"
-                        >
-                          <span className="flex size-3 items-center justify-center text-muted-foreground">
-                            {expanded ? (
-                              <HugeiconsIcon
-                                icon={ArrowDown01Icon}
-                                className="size-3"
-                              />
-                            ) : (
-                              <HugeiconsIcon
-                                icon={ArrowRight01Icon}
-                                className="size-3"
-                              />
-                            )}
-                          </span>
-                          <ProviderIcon
-                            providerId={g.providerId}
-                            className="size-4"
-                          />
-                          <span className="flex-1 font-medium">
-                            {PROVIDER_LABEL[g.providerId]}
-                          </span>
-                          <span className="text-muted-foreground text-[11px] tabular-nums">
-                            {g.models.length} shown
-                          </span>
-                        </button>
-                        {expanded && (
-                          <div className="ml-3 border-l border-border/60 pl-2 pb-1">
-                            {g.models.map((m) => (
-                              <ModelRow
-                                key={`${m.providerId}-${m.modelId}`}
-                                entry={m}
-                                currentProviderId={providerId}
-                                currentModelId={currentModel}
-                                isFresh={isFresh}
-                                onSelect={handlePick}
-                                dense
-                                shortcut={shortcutFor(m.providerId, m.modelId)}
-                              />
-                            ))}
-                          </div>
-                        )}
+                  {accordionGroups.map((g) => (
+                    <div key={g.providerId} className="pb-1">
+                      <div className="flex w-full items-center gap-2 px-2 py-2 text-left text-sm">
+                        <ProviderIcon
+                          providerId={g.providerId}
+                          className="size-4"
+                        />
+                        <span className="flex-1 font-medium">
+                          {PROVIDER_LABEL[g.providerId]}
+                        </span>
+                        <span className="text-muted-foreground text-[11px] tabular-nums">
+                          {g.models.length} shown
+                        </span>
                       </div>
-                    );
-                  })}
+                      <div className="ml-3 border-l border-border/60 pl-2 pb-1">
+                        {g.models.map((m) => (
+                          <ModelRow
+                            key={`${m.providerId}-${m.modelId}`}
+                            entry={m}
+                            currentProviderId={providerId}
+                            currentModelId={currentModel}
+                            isFresh={isFresh}
+                            onSelect={handlePick}
+                            dense
+                            shortcut={shortcutFor(m.providerId, m.modelId)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
                 </>
               ) : (
                 flatMatches.length > 0 && (
