@@ -1,7 +1,6 @@
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   AlertCircleIcon,
-  ArrowDown01Icon,
   CircleArrowUp01Icon,
   Copy01Icon,
   LinkSquare01Icon,
@@ -97,7 +96,6 @@ export function ProviderCard({
   availability: AgentAvailability | undefined;
   loading: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const subscription = SUBSCRIPTION_INFO[providerId];
   const persistedEnabled =
     useSettingsStore((s) => s.providerEnabled[providerId]) ?? true;
@@ -157,11 +155,7 @@ export function ProviderCard({
         !enabled && !unmetSubscriptionRequirement && "opacity-70",
       )}
     >
-      <button
-        type="button"
-        onClick={() => setExpanded((e) => !e)}
-        className="flex w-full items-center gap-3 px-3.5 py-3 text-left group-first:rounded-t-xl group-last:rounded-b-xl transition-colors hover:bg-muted/40"
-      >
+      <div className="flex w-full items-center gap-3 px-3.5 py-3 text-left group-first:rounded-t-xl">
         <span className="flex size-7 shrink-0 items-center justify-center">
           <ProviderIcon providerId={providerId} className="size-5" />
         </span>
@@ -217,57 +211,44 @@ export function ProviderCard({
               : undefined
           }
         />
-        <HugeiconsIcon
-          icon={ArrowDown01Icon}
-          className={cn(
-            "size-4 shrink-0 text-muted-foreground transition-transform",
-            expanded && "rotate-180",
-          )}
-          aria-hidden
-        />
-      </button>
+      </div>
 
-      {expanded && (
-        <div
-          className={cn(
-            "flex flex-col gap-4 border-t border-border/40 px-3.5 py-3 text-xs",
-            !enabled && "pointer-events-none",
-          )}
-        >
-          {showUpgrade && (
-            <CodeRow
-              label="Update CLI"
-              command={
-                availability?.cliUpgradeCommand ?? INSTALL_HINT[providerId]
-              }
-            />
-          )}
-          {availability !== undefined && !availability.cliInstalled && (
-            <CodeRow label="Install" command={INSTALL_HINT[providerId]} />
-          )}
-          {availability?.cliInstalled &&
-            availability.authStatus === "unauthenticated" &&
-            (providerId === "cursor" || providerId === "claude" ? (
-              <ProviderSignInRow providerId={providerId} />
-            ) : (
-              <CodeRow label="Sign in" command={LOGIN_HINT[providerId]} />
-            ))}
-          <SubscriptionRow
-            providerId={providerId}
-            availability={availability}
+      <div
+        className={cn(
+          "flex flex-col gap-4 border-t border-border/40 px-3.5 py-3 text-xs",
+          !enabled && "pointer-events-none",
+        )}
+      >
+        {showUpgrade && (
+          <CodeRow
+            label="Update CLI"
+            command={
+              availability?.cliUpgradeCommand ?? INSTALL_HINT[providerId]
+            }
           />
+        )}
+        {availability !== undefined && !availability.cliInstalled && (
+          <CodeRow label="Install" command={INSTALL_HINT[providerId]} />
+        )}
+        {availability?.cliInstalled &&
+          availability.authStatus === "unauthenticated" &&
+          (providerId === "cursor" || providerId === "claude" ? (
+            <ProviderSignInRow providerId={providerId} />
+          ) : (
+            <CodeRow label="Sign in" command={LOGIN_HINT[providerId]} />
+          ))}
+        <SubscriptionRow providerId={providerId} availability={availability} />
 
-          <ModelDefault providerId={providerId} />
-          <ModelVisibilitySettings providerId={providerId} />
+        <ModelDefault providerId={providerId} />
+        <ModelVisibilitySettings providerId={providerId} />
 
-          <div className="flex flex-col gap-1.5">
-            <span className="text-[11px] font-medium text-muted-foreground">
-              API key (optional)
-            </span>
-            <ApiKeyRow providerId={providerId} />
-          </div>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[11px] font-medium text-muted-foreground">
+            API key (optional)
+          </span>
+          <ApiKeyRow providerId={providerId} />
         </div>
-      )}
+      </div>
     </div>
   );
 }
