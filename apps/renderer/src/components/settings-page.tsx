@@ -30,6 +30,7 @@ import {
   type FolderId,
   type ProviderId,
   type RuntimeMode,
+  visibleModelsForProvider,
 } from "@zuse/wire";
 
 import {
@@ -812,6 +813,8 @@ function ProvidersPane() {
     "cursor",
     "opencode",
   ];
+  const [selectedProvider, setSelectedProvider] =
+    useState<ProviderId>("claude");
   const availabilityById = useMemo(() => {
     const map = new Map<ProviderId, (typeof availability)[number]>();
     for (const a of availability) map.set(a.providerId, a);
@@ -853,18 +856,47 @@ function ProvidersPane() {
             </Button>
           </div>
         </FrameHeader>
-        <Card>
-          <div className="flex flex-col divide-y divide-border/40">
-            {providers.map((pid) => (
-              <ProviderCard
-                key={pid}
-                providerId={pid}
-                availability={availabilityById.get(pid)}
-                loading={loading}
-              />
-            ))}
+        <div className="flex flex-col gap-2 px-2 pb-2">
+          <div
+            role="tablist"
+            aria-label="Provider settings"
+            className="flex min-w-0 gap-1 overflow-x-auto border-b border-border/50"
+          >
+            {providers.map((pid) => {
+              const selected = selectedProvider === pid;
+              return (
+                <button
+                  key={pid}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  onClick={() => setSelectedProvider(pid)}
+                  className={cn(
+                    "flex min-h-9 shrink-0 items-center gap-2 border-b px-2.5 text-sm transition-colors",
+                    selected
+                      ? "border-primary text-foreground"
+                      : "border-transparent text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <ProviderIcon providerId={pid} className="size-3.5" />
+                  <span>{PROVIDER_LABEL[pid]}</span>
+                  {pid === "opencode" && (
+                    <span className="rounded border border-border/60 bg-muted/70 px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      New
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
-        </Card>
+          <Card>
+            <ProviderCard
+              providerId={selectedProvider}
+              availability={availabilityById.get(selectedProvider)}
+              loading={loading}
+            />
+          </Card>
+        </div>
         <FrameFooter className="px-2 py-1 w-full">
           <p className="text-xs leading-relaxed text-muted-foreground">
             Zuse Alpha uses your existing CLI credentials — Claude Code, Codex,
@@ -953,8 +985,14 @@ function SubagentsSection() {
   const presets = useSubagentsStore((s) => s.presets);
   const setPresetEnabled = useSubagentsStore((s) => s.setPresetEnabled);
   const setPresetOverride = useSubagentsStore((s) => s.setPresetOverride);
+  const modelEnabledByProvider = useSettingsStore(
+    (s) => s.modelEnabledByProvider,
+  );
 
-  const claudeModels = MODELS_BY_PROVIDER.claude;
+  const claudeModels = visibleModelsForProvider(
+    "claude",
+    modelEnabledByProvider,
+  );
 
   return (
     <Frame>
@@ -1572,7 +1610,12 @@ export function ModelSelect({
   value: string | null;
   onChange: (model: string) => void;
 }) {
-  const models = MODELS_BY_PROVIDER[providerId] ?? [];
+  const modelEnabledByProvider = useSettingsStore(
+    (s) => s.modelEnabledByProvider,
+  );
+  const models = visibleModelsForProvider(providerId, modelEnabledByProvider, {
+    includeModelId: value,
+  });
   const normalizedValue =
     value !== null &&
     (models.some((m) => m.id === value) || models.length === 0)
@@ -1620,6 +1663,8 @@ export function ensureValidDefaultsForRuntime(
     : ready[0]!;
   const model =
     settings.defaultModelByProvider[provider] ??
+    visibleModelsForProvider(provider, settings.modelEnabledByProvider)[0]
+      ?.id ??
     MODELS_BY_PROVIDER[provider][0]!.id;
   return {
     providerId: provider,
