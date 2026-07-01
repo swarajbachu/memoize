@@ -30,6 +30,7 @@ import {
   type FolderId,
   type ProviderId,
   type RuntimeMode,
+  visibleModelsForProvider,
 } from "@zuse/wire";
 
 import {
@@ -953,8 +954,14 @@ function SubagentsSection() {
   const presets = useSubagentsStore((s) => s.presets);
   const setPresetEnabled = useSubagentsStore((s) => s.setPresetEnabled);
   const setPresetOverride = useSubagentsStore((s) => s.setPresetOverride);
+  const modelEnabledByProvider = useSettingsStore(
+    (s) => s.modelEnabledByProvider,
+  );
 
-  const claudeModels = MODELS_BY_PROVIDER.claude;
+  const claudeModels = visibleModelsForProvider(
+    "claude",
+    modelEnabledByProvider,
+  );
 
   return (
     <Frame>
@@ -1572,7 +1579,12 @@ export function ModelSelect({
   value: string | null;
   onChange: (model: string) => void;
 }) {
-  const models = MODELS_BY_PROVIDER[providerId] ?? [];
+  const modelEnabledByProvider = useSettingsStore(
+    (s) => s.modelEnabledByProvider,
+  );
+  const models = visibleModelsForProvider(providerId, modelEnabledByProvider, {
+    includeModelId: value,
+  });
   const normalizedValue =
     value !== null &&
     (models.some((m) => m.id === value) || models.length === 0)
@@ -1620,6 +1632,8 @@ export function ensureValidDefaultsForRuntime(
     : ready[0]!;
   const model =
     settings.defaultModelByProvider[provider] ??
+    visibleModelsForProvider(provider, settings.modelEnabledByProvider)[0]
+      ?.id ??
     MODELS_BY_PROVIDER[provider][0]!.id;
   return {
     providerId: provider,

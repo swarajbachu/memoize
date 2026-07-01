@@ -26,6 +26,7 @@ import type {
 import {
   MODELS_BY_PROVIDER,
   findModelDescriptor,
+  isModelVisible,
   type Message,
   type SelectOptionDescriptor,
 } from "@zuse/wire";
@@ -102,6 +103,9 @@ export function ModelPicker(props: ModelPickerProps) {
     (s) => s.defaultModelByProvider,
   );
   const providerEnabled = useSettingsStore((s) => s.providerEnabled);
+  const modelEnabledByProvider = useSettingsStore(
+    (s) => s.modelEnabledByProvider,
+  );
 
   const providerId = isDefault ? defaultProviderId : props.providerId;
   const currentModel = isDefault
@@ -203,6 +207,9 @@ export function ModelPicker(props: ModelPickerProps) {
     const out: ModelPickerEntry[] = [];
     for (const pid of pickableProviders) {
       for (const m of modelsForProvider(pid)) {
+        const visible = isModelVisible(pid, m.id, modelEnabledByProvider);
+        const selectedHidden = pid === providerId && m.id === currentModel;
+        if (!visible && !selectedHidden) continue;
         const descriptor = findModelDescriptor(pid, m.id);
         const ctxDescriptor = descriptor?.optionDescriptors?.find(
           (d): d is SelectOptionDescriptor =>
@@ -226,7 +233,13 @@ export function ModelPicker(props: ModelPickerProps) {
       }
     }
     return out;
-  }, [pickableProviders, modelsForProvider]);
+  }, [
+    pickableProviders,
+    modelsForProvider,
+    modelEnabledByProvider,
+    providerId,
+    currentModel,
+  ]);
 
   const countByProvider = useMemo(() => {
     const map = new globalThis.Map<ProviderId, number>();
@@ -258,10 +271,15 @@ export function ModelPicker(props: ModelPickerProps) {
         (m) => m.providerId === r.providerId && m.modelId === r.modelId,
       );
       if (match === undefined) continue;
+      if (
+        !isModelVisible(match.providerId, match.modelId, modelEnabledByProvider)
+      ) {
+        continue;
+      }
       out.push({ ...match, count: r.count });
     }
     return out;
-  }, [events, scope, allModels]);
+  }, [events, scope, allModels, modelEnabledByProvider]);
 
   const accordionGroups = useMemo(() => {
     if (scope !== "all" || query.trim() !== "") return [];
@@ -506,7 +524,7 @@ export function ModelPicker(props: ModelPickerProps) {
 
               {inAccordionView ? (
                 <>
-                  <SectionLabel title={`all ${totalCount} by provider`} />
+                  <SectionLabel title="Models" />
                   {accordionGroups.map((g) => {
                     const expanded = expandedGroup === g.providerId;
                     return (
@@ -517,7 +535,7 @@ export function ModelPicker(props: ModelPickerProps) {
                             setExpandedGroup(expanded ? null : g.providerId)
                           }
                           aria-expanded={expanded}
-                          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted/60"
+                          className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-muted/60"
                         >
                           <span className="flex size-3 items-center justify-center text-muted-foreground">
                             {expanded ? (
@@ -534,17 +552,17 @@ export function ModelPicker(props: ModelPickerProps) {
                           </span>
                           <ProviderIcon
                             providerId={g.providerId}
-                            className="size-3.5"
+                            className="size-4"
                           />
                           <span className="flex-1 font-medium">
                             {PROVIDER_LABEL[g.providerId]}
                           </span>
-                          <span className="text-muted-foreground text-xs">
-                            {g.models.length}
+                          <span className="text-muted-foreground text-[11px] tabular-nums">
+                            {g.models.length} shown
                           </span>
                         </button>
                         {expanded && (
-                          <div className="ml-3 border-l border-border/60 pl-2">
+                          <div className="ml-3 border-l border-border/60 pl-2 pb-1">
                             {g.models.map((m) => (
                               <ModelRow
                                 key={`${m.providerId}-${m.modelId}`}
@@ -736,6 +754,13 @@ function ModelRow({
           icon={ArrowUpRight01Icon}
           className="size-3 text-muted-foreground/70"
           aria-label="Open in new tab"
+        />
+      )}
+      {isActive && (
+        <HugeiconsIcon
+          icon={Tick01Icon}
+          className="size-3.5 shrink-0 text-primary"
+          aria-label="Selected"
         />
       )}
       {countSuffix !== undefined && (

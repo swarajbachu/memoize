@@ -3,8 +3,10 @@ import { create } from "zustand";
 
 import {
   type BranchNamingStyle,
+  defaultModelEnabledByProvider,
   defaultModelFor,
   type CompletionSoundPreset,
+  type ModelEnabledByProvider,
   type ProviderId,
   resolveModelSlug,
   type RuntimeMode,
@@ -52,6 +54,22 @@ const seedProviderEnabled = (): Record<ProviderId, boolean> => {
   return out;
 };
 
+const seedModelEnabledByProvider = defaultModelEnabledByProvider;
+
+const mergeModelEnabled = (
+  input: Partial<Record<ProviderId, Partial<Record<string, boolean>>>>,
+): ModelEnabledByProvider => {
+  const base = seedModelEnabledByProvider();
+  for (const id of PROVIDER_IDS) {
+    const providerFlags = input[id];
+    if (providerFlags === undefined) continue;
+    for (const [modelId, value] of Object.entries(providerFlags)) {
+      if (typeof value === "boolean") base[id][modelId] = value;
+    }
+  }
+  return base;
+};
+
 const OLD_SETTINGS_KEY = "memoize.settings.v1";
 const OLD_SUBAGENTS_KEY = "memoize.subagents";
 
@@ -64,6 +82,7 @@ const fallbackSnapshot = (): SettingsSlice => ({
   completionSoundPreset: "chime",
   onboardingCompleted: false,
   providerEnabled: seedProviderEnabled(),
+  modelEnabledByProvider: seedModelEnabledByProvider(),
   branchNamingStyle: DEFAULT_BRANCH_NAMING_STYLE,
   branchNamingPrefix: "",
 });
@@ -90,6 +109,7 @@ const sliceFromFile = (file: SettingsFile): SettingsSlice => {
       ...seedProviderEnabled(),
       ...file.providerEnabled,
     },
+    modelEnabledByProvider: mergeModelEnabled(file.modelEnabledByProvider),
     branchNamingStyle: file.branchNamingStyle,
     branchNamingPrefix: file.branchNamingPrefix,
   };
@@ -104,6 +124,7 @@ interface SettingsSlice {
   readonly completionSoundPreset: CompletionSoundPreset;
   readonly onboardingCompleted: boolean;
   readonly providerEnabled: Record<ProviderId, boolean>;
+  readonly modelEnabledByProvider: ModelEnabledByProvider;
   readonly branchNamingStyle: BranchNamingStyle;
   readonly branchNamingPrefix: string;
 }
@@ -130,6 +151,11 @@ type SettingsState = SettingsSlice & {
   readonly setCompletionSoundPreset: (preset: CompletionSoundPreset) => void;
   readonly setOnboardingCompleted: (value: boolean) => void;
   readonly setProviderEnabled: (providerId: ProviderId, value: boolean) => void;
+  readonly setModelEnabled: (
+    providerId: ProviderId,
+    modelId: string,
+    value: boolean,
+  ) => void;
   readonly setBranchNamingStyle: (style: BranchNamingStyle) => void;
   readonly setBranchNamingPrefix: (prefix: string) => void;
 };
@@ -287,6 +313,23 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const client = await getRpcClient();
       await Effect.runPromise(
         client.settings.update({ patch: { providerEnabled: next } }),
+      );
+    })();
+  },
+  setModelEnabled: (providerId, modelId, value) => {
+    const current = get().modelEnabledByProvider;
+    const next: ModelEnabledByProvider = {
+      ...current,
+      [providerId]: {
+        ...current[providerId],
+        [modelId]: value,
+      },
+    };
+    set({ modelEnabledByProvider: next });
+    void (async () => {
+      const client = await getRpcClient();
+      await Effect.runPromise(
+        client.settings.update({ patch: { modelEnabledByProvider: next } }),
       );
     })();
   },

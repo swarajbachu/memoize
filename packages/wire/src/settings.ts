@@ -72,6 +72,14 @@ export class SettingsFile extends Schema.Class<SettingsFile>("SettingsFile")({
     key: ProviderId,
     value: Schema.Boolean,
   }),
+  /**
+   * Per-model visibility toggles from provider settings. Missing entries are
+   * filled from each model's catalog `defaultVisible` flag by config-store.
+   */
+  modelEnabledByProvider: Schema.Record({
+    key: ProviderId,
+    value: Schema.Record({ key: Schema.String, value: Schema.Boolean }),
+  }),
   subagents: Schema.Struct({
     enableForNewSessions: Schema.Boolean,
     presets: Schema.Record({
@@ -110,6 +118,12 @@ export const SettingsPatch = Schema.Struct({
   completionSoundPreset: Schema.optional(CompletionSoundPreset),
   providerEnabled: Schema.optional(
     Schema.Record({ key: ProviderId, value: Schema.Boolean }),
+  ),
+  modelEnabledByProvider: Schema.optional(
+    Schema.Record({
+      key: ProviderId,
+      value: Schema.Record({ key: Schema.String, value: Schema.Boolean }),
+    }),
   ),
   subagents: Schema.optional(
     Schema.Struct({
