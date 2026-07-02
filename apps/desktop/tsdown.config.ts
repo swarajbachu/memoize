@@ -42,9 +42,9 @@ const shared = {
   // inline transpiles it to CJS so the main bundle can call it directly.
   deps: {
     alwaysBundle: [
-      "@memoize/wire",
-      "@memoize/server",
-      "@memoize/index",
+      "@zuse/wire",
+      "@zuse/server",
+      "@zuse/index",
       "fix-path",
     ],
   },

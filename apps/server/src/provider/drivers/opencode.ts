@@ -17,7 +17,7 @@ import {
   type PermissionMode,
   type StartSessionInput,
   type UserQuestionAnswer,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import {
   createOpencodeClient,
@@ -28,6 +28,12 @@ import {
 } from "@opencode-ai/sdk";
 
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
+import {
+  finishCompactEvent,
+  isCompactCommand,
+  startCompactEvent,
+  startCompactSnapshot,
+} from "./compact.ts";
 
 /**
  * Live handle for one OpenCode conversation. Mirrors the other driver
@@ -119,8 +125,8 @@ if (OPENCODE_DEBUG) {
 
 const OPENCODE_EMPTY_CONFIG = "{}";
 
-// stdout marker the opencode server prints once it's bound to the port —
-// mirrors t3code's `parseServerUrlFromOutput`. We grep for either the
+// stdout marker the opencode server prints once it's bound to the port. We
+// grep for either the
 // human-readable line or any naked URL on a line by itself so future
 // server message tweaks don't break the handshake.
 const SERVER_READY_REGEX = /(https?:\/\/[^\s]+)/;
@@ -129,8 +135,8 @@ const SERVER_READY_REGEX = /(https?:\/\/[^\s]+)/;
  * Grab a free TCP port. We bind to port 0, read the kernel-assigned port,
  * close the socket, and hand the number to `opencode serve`. A tiny race
  * window remains (another process could grab the port between our close
- * and opencode's bind) but it's the same approach t3code uses and the
- * worst case is a clean spawn error we surface as `AgentSessionStartError`.
+ * and opencode's bind); the worst case is a clean spawn error we surface as
+ * `AgentSessionStartError`.
  */
 const findFreePort = (): Promise<number> =>
   new Promise((resolve, reject) => {
@@ -943,6 +949,18 @@ export const startOpencodeSession = (
     // === Prompt queue — serializes turns inside a single session. ===
     let inflight: Promise<void> = Promise.resolve();
     const enqueuePrompt = (text: string): void => {
+      const compactSnapshot = isCompactCommand(text)
+        ? startCompactSnapshot(null)
+        : null;
+      if (compactSnapshot !== null) {
+        events.unsafeOffer(
+          startCompactEvent({
+            providerId: "opencode",
+            snapshot: compactSnapshot,
+          }),
+        );
+      }
+      const promptText = compactSnapshot !== null ? text.trim() : text;
       inflight = inflight
         .then(async () => {
           if (closed) return;
@@ -973,10 +991,10 @@ export const startOpencodeSession = (
           const body = {
             agent,
             ...(modelField !== null ? { model: modelField } : {}),
-            parts: [{ type: "text" as const, text }],
+            parts: [{ type: "text" as const, text: promptText }],
           };
           dlog(
-            `prompt: agent=${agent} providerID=${providerID ?? "(default)"} modelID=${modelID ?? "(default)"} variant=${variantOpt ?? "(default)"} textLen=${text.length}`,
+            `prompt: agent=${agent} providerID=${providerID ?? "(default)"} modelID=${modelID ?? "(default)"} variant=${variantOpt ?? "(default)"} textLen=${promptText.length}`,
           );
           ddump(`  prompt.body`, body);
           try {
@@ -1037,6 +1055,16 @@ export const startOpencodeSession = (
             // prompt resolved before the SSE got there).
             for (const evt of flushDeltaState(deltaState)) {
               events.unsafeOffer(evt);
+            }
+            if (compactSnapshot !== null && !closed) {
+              events.unsafeOffer(
+                finishCompactEvent({
+                  itemId: compactSnapshot.itemId,
+                  providerId: "opencode",
+                  snapshot: compactSnapshot,
+                  afterTokens: null,
+                }),
+              );
             }
             events.unsafeOffer({ _tag: "Completed", reason: "ended" });
           } catch (cause) {

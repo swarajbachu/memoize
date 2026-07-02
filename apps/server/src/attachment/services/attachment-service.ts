@@ -5,7 +5,7 @@ import type {
   AttachmentTooLargeError,
   SessionId,
   SessionNotFoundError,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 export type UploadFailure =
   | AttachmentTooLargeError

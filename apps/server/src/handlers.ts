@@ -4,6 +4,7 @@ import { AttachmentHandlersLayer } from "./attachment/handlers.ts";
 import { AuthHandlersLayer } from "./auth/handlers.ts";
 import { CodeIndexHandlersLayer } from "./code-index/handlers.ts";
 import { ConfigStoreHandlersLayer } from "./config-store/handlers.ts";
+import { DiagnosticsHandlersLayer } from "./diagnostics/handlers.ts";
 import { FsHandlersLayer } from "./fs/handlers.ts";
 import { GitHandlersLayer } from "./git/handlers.ts";
 import { PingHandlersLayer } from "./ping/handlers.ts";
@@ -38,4 +39,5 @@ export const HandlersLayer = Layer.mergeAll(
   CodeIndexHandlersLayer,
   PokemonHandlersLayer,
   UsageHandlersLayer,
+  DiagnosticsHandlersLayer,
 );

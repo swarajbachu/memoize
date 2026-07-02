@@ -12,7 +12,7 @@ import type {
   Session,
   SessionId,
   WorktreeId,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
 import { formatError } from "../lib/format-error.ts";
@@ -72,7 +72,13 @@ type ChatsState = {
     chatId: ChatId,
     sessionId: SessionId,
   ) => Promise<void>;
-  readonly archive: (chatId: ChatId) => Promise<void>;
+  readonly archive: (
+    chatId: ChatId,
+    force?: boolean,
+  ) => Promise<
+    | { readonly ok: true }
+    | { readonly ok: false; readonly dirty: boolean; readonly reason: string }
+  >;
   readonly unarchive: (chatId: ChatId) => Promise<void>;
   readonly remove: (chatId: ChatId) => Promise<void>;
   readonly select: (chatId: ChatId | null) => void;
@@ -368,11 +374,13 @@ export const useChatsStore = create<ChatsState>((set, get) => ({
       set({ error: formatError(err) });
     }
   },
-  archive: async (chatId) => {
+  archive: async (chatId, force = false) => {
     set({ error: null });
     try {
       const client = await getRpcClient();
-      const result = await Effect.runPromise(client.chat.archive({ chatId }));
+      const result = await Effect.runPromise(
+        client.chat.archive({ chatId, force }),
+      );
       const projectId = findChatProject(get().chatsByProject, chatId);
       if (projectId !== null) {
         set((s) => {
@@ -426,8 +434,19 @@ export const useChatsStore = create<ChatsState>((set, get) => ({
       // layout so an archived chat leaks no shells or tab state.
       useTerminalsStore.getState().disposeChat(chatId);
       useUiStore.getState().clearChatPanels(chatId);
+      return { ok: true } as const;
     } catch (err) {
-      set({ error: formatError(err) });
+      const reason = formatError(err);
+      // A dirty worktree blocks removal; the caller can re-issue with
+      // `force: true` after confirming the discard with the user.
+      const dirty =
+        !force &&
+        (reason.includes("WorktreeDirtyError") ||
+          reason.toLowerCase().includes("dirty"));
+      // Keep the dirty case out of the global error banner — the caller owns
+      // the confirm-and-retry flow. Surface every other failure as before.
+      set({ error: dirty ? null : reason });
+      return { ok: false, dirty, reason } as const;
     }
   },
   unarchive: async (chatId) => {
@@ -657,6 +676,26 @@ export const useChatsStore = create<ChatsState>((set, get) => ({
     void get().hydrate(projectId);
   },
 }));
+
+/**
+ * Archive a chat, surfacing the dirty-worktree case as a confirm prompt.
+ * Mirrors the settings page's force-remove flow: when the chat's worktree has
+ * uncommitted/untracked changes, ask the user to confirm discarding them, then
+ * retry with `force: true`. Resolves quietly when the user declines; throws on
+ * any other failure so button-level error UI can surface it.
+ */
+export async function archiveChatWithConfirm(chatId: ChatId): Promise<void> {
+  const { archive } = useChatsStore.getState();
+  const first = await archive(chatId);
+  if (first.ok) return;
+  if (!first.dirty) throw new Error(first.reason);
+  const confirmed = window.confirm(
+    "This chat's worktree has uncommitted changes. Discard them and archive anyway?",
+  );
+  if (!confirmed) return;
+  const forced = await archive(chatId, true);
+  if (!forced.ok) throw new Error(forced.reason);
+}
 
 // Mirror `selectedChatId` from the active project's slot — same pattern
 // as `useSessionsStore` so switching projects swaps the active chat too.

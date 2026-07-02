@@ -19,6 +19,7 @@ import type {
   FolderId,
   GoalUnsupportedError,
   Message,
+  MessageId,
   PermissionMode,
   ProviderId,
   QueueState,
@@ -35,7 +36,7 @@ import type {
   ThreadGoalSetInput,
   UserQuestionAnswer,
   WorktreeId,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 /**
  * Persistence-backed orchestration of chat sessions and their message log.
@@ -273,6 +274,7 @@ export interface MessageStoreShape {
 
   readonly archiveChat: (
     chatId: ChatId,
+    force: boolean,
   ) => Effect.Effect<
     ChatArchiveResult,
     | ChatNotFoundError
@@ -351,6 +353,7 @@ export interface MessageStoreShape {
     skillRefs?: ReadonlyArray<SkillRef>,
     annotations?: ReadonlyArray<CodeAnnotation>,
     asGoal?: boolean,
+    clientMessageId?: MessageId,
   ) => Effect.Effect<void, SessionNotFoundError>;
 
   readonly interruptSession: (

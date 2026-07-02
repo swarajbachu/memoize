@@ -1,23 +1,24 @@
 import keytar from "keytar";
 import { Effect, Layer } from "effect";
 
-import { type ProviderId } from "@memoize/wire";
+import { type ProviderId } from "@zuse/wire";
 
 import { CredentialsError } from "../errors.ts";
 import { CredentialsService } from "../services/credentials-service.ts";
 
-const SERVICE_NAME = "memoize";
+const SERVICE_NAME = "zuse";
+const LEGACY_SERVICE_NAME = "memoize";
 
 /**
  * Keychain entries are namespaced as `apiKey:<providerId>` under the
- * `memoize` service. Listing uses `findCredentials(SERVICE_NAME)` and filters
+ * `zuse` service. Listing uses `findCredentials(SERVICE_NAME)` and filters
  * to the `apiKey:` prefix — keeps room for future credential kinds (refresh
  * tokens, OAuth state) without colliding with API keys.
  */
 const accountFor = (providerId: ProviderId): string => `apiKey:${providerId}`;
 
 /**
- * Browser credentials share the `memoize` keychain service but use a separate
+ * Browser credentials share the `zuse` keychain service but use a separate
  * `browserCred:` prefix so they never collide with `apiKey:` entries. The
  * origin is normalized (scheme + host[:port]) so `https://x.com/login` and
  * `https://x.com/` resolve to the same saved credential.
@@ -84,23 +85,43 @@ const tryKeychain = <A>(
       }),
   });
 
+const getPasswordWithLegacyPromotion = async (
+  account: string,
+): Promise<string | null> => {
+  const current = await keytar.getPassword(SERVICE_NAME, account);
+  if (current !== null) return current;
+
+  const legacy = await keytar.getPassword(LEGACY_SERVICE_NAME, account);
+  if (legacy !== null) {
+    await keytar.setPassword(SERVICE_NAME, account, legacy);
+  }
+  return legacy;
+};
+
 export const CredentialsServiceLive = Layer.succeed(
   CredentialsService,
   CredentialsService.of({
     get: (providerId) =>
       tryKeychain(providerId, () =>
-        keytar.getPassword(SERVICE_NAME, accountFor(providerId)),
+        getPasswordWithLegacyPromotion(accountFor(providerId)),
       ),
     set: (providerId, apiKey) =>
       tryKeychain(providerId, () =>
         keytar.setPassword(SERVICE_NAME, accountFor(providerId), apiKey),
       ),
     remove: (providerId) =>
-      tryKeychain(providerId, () =>
-        keytar.deletePassword(SERVICE_NAME, accountFor(providerId)),
+      tryKeychain(providerId, async () =>
+        (await keytar.deletePassword(SERVICE_NAME, accountFor(providerId))) ||
+        (await keytar.deletePassword(
+          LEGACY_SERVICE_NAME,
+          accountFor(providerId),
+        )),
       ).pipe(Effect.asVoid),
     listConfigured: () =>
-      tryKeychain("*", () => keytar.findCredentials(SERVICE_NAME)).pipe(
+      tryKeychain("*", async () => [
+        ...(await keytar.findCredentials(SERVICE_NAME)),
+        ...(await keytar.findCredentials(LEGACY_SERVICE_NAME)),
+      ]).pipe(
         Effect.map((entries) => {
           const out: ProviderId[] = [];
           for (const { account } of entries) {
@@ -122,14 +143,21 @@ export const CredentialsServiceLive = Layer.succeed(
       ),
     getBrowser: (origin) =>
       tryKeychain("*", () =>
-        keytar.getPassword(SERVICE_NAME, browserAccountFor(origin)),
+        getPasswordWithLegacyPromotion(browserAccountFor(origin)),
       ).pipe(Effect.map(parseBrowserCred)),
     removeBrowser: (origin) =>
-      tryKeychain("*", () =>
-        keytar.deletePassword(SERVICE_NAME, browserAccountFor(origin)),
+      tryKeychain("*", async () =>
+        (await keytar.deletePassword(SERVICE_NAME, browserAccountFor(origin))) ||
+        (await keytar.deletePassword(
+          LEGACY_SERVICE_NAME,
+          browserAccountFor(origin),
+        )),
       ).pipe(Effect.asVoid),
     listBrowser: () =>
-      tryKeychain("*", () => keytar.findCredentials(SERVICE_NAME)).pipe(
+      tryKeychain("*", async () => [
+        ...(await keytar.findCredentials(SERVICE_NAME)),
+        ...(await keytar.findCredentials(LEGACY_SERVICE_NAME)),
+      ]).pipe(
         Effect.map((entries) => {
           const out: Array<{ origin: string; username: string }> = [];
           for (const { account, password } of entries) {

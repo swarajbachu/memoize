@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import type { CodeAnnotation, SessionId } from "@memoize/wire";
+import type { CodeAnnotation, SessionId } from "@zuse/wire";
 
 /**
  * Draft code annotations, keyed by chat session. The user selects code in the

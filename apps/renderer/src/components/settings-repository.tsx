@@ -7,7 +7,8 @@ import {
   MODELS_BY_PROVIDER,
   type FolderId,
   type ProviderId,
-} from "@memoize/wire";
+  visibleModelsForProvider,
+} from "@zuse/wire";
 
 import { useRepositorySettingsStore } from "../store/repository-settings.ts";
 import { useSettingsStore } from "../store/settings.ts";
@@ -165,6 +166,9 @@ function ProviderOverrideSection({
     (s) => s.defaultModelByProvider,
   );
   const providerEnabled = useSettingsStore((s) => s.providerEnabled);
+  const modelEnabledByProvider = useSettingsStore(
+    (s) => s.modelEnabledByProvider,
+  );
   const effectiveProvider: ProviderId = defaultProviderId ?? globalProviderId;
   const globalModel = globalModelByProvider[globalProviderId];
   const globalModelLabel =
@@ -186,7 +190,9 @@ function ProviderOverrideSection({
   });
 
   const firstModelFor = (pid: ProviderId): string | null =>
-    MODELS_BY_PROVIDER[pid]?.[0]?.id ?? null;
+    visibleModelsForProvider(pid, modelEnabledByProvider)[0]?.id ??
+    MODELS_BY_PROVIDER[pid]?.[0]?.id ??
+    null;
 
   const onToggle = (next: boolean) => {
     if (next) {
@@ -231,7 +237,14 @@ function ProviderOverrideSection({
         >
           {availableProviders.map((pid) => {
             const selected = effectiveProvider === pid;
-            const models = MODELS_BY_PROVIDER[pid] ?? [];
+            const models = visibleModelsForProvider(
+              pid,
+              modelEnabledByProvider,
+              {
+                includeModelId:
+                  selected && selectedModel !== null ? selectedModel : null,
+              },
+            );
             return (
               <div
                 key={pid}
@@ -335,7 +348,10 @@ function RuntimeModeOverrideSection({
                 onClick={() => onChange(mode)}
                 className="group flex w-full items-start gap-3 border-b border-border/40 px-3 py-2.5 text-left transition-colors last:border-b-0 hover:bg-muted/40"
               >
-                <HugeiconsIcon icon={m.Icon} className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                <HugeiconsIcon
+                  icon={m.Icon}
+                  className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                />
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <span className="text-sm font-medium text-foreground">
                     {m.label}
@@ -446,8 +462,8 @@ function WorktreeSection({
       <div className="flex flex-col">
         {sorted.length === 0 ? (
           <p className="px-4 py-8 text-center text-xs text-muted-foreground">
-            No worktrees yet. Memoize creates one for you when you start a new
-            chat.
+            No worktrees yet. Zuse Alpha creates one for you when you start a
+            new chat.
           </p>
         ) : (
           <ul className="flex flex-col divide-y divide-border/40">
@@ -456,11 +472,11 @@ function WorktreeSection({
                 key={wt.id}
                 className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/20"
               >
-                <HugeiconsIcon icon={GitBranchIcon} className="size-4 shrink-0 text-muted-foreground" />
-                <div
-                  className="flex min-w-0 flex-col gap-0.5"
-                  title={wt.path}
-                >
+                <HugeiconsIcon
+                  icon={GitBranchIcon}
+                  className="size-4 shrink-0 text-muted-foreground"
+                />
+                <div className="flex min-w-0 flex-col gap-0.5" title={wt.path}>
                   <span className="truncate text-sm font-medium text-foreground">
                     {wt.name}
                   </span>
@@ -517,7 +533,7 @@ function WorktreeSection({
         ) : (
           <p className="text-xs leading-relaxed text-muted-foreground">
             Git worktrees for this repo. Each lives under
-            ~/.memoize/&lt;repo&gt;/&lt;name&gt;/ on disk.
+            ~/.zuse/&lt;repo&gt;/&lt;name&gt;/ on disk.
           </p>
         )}
       </div>
@@ -614,14 +630,14 @@ function ScriptsSection({
           value={envDraft}
           onChange={(event) => setEnvDraft(event.currentTarget.value)}
           onBlur={persistEnv}
-          placeholder="MEMOIZE_PORT=5733"
+          placeholder="ZUSE_PORT=5733"
           minHeightClassName="min-h-24"
         />
       </div>
       <div className="px-4 py-3">
         <p className="text-xs leading-relaxed text-muted-foreground">
           Want to share scripts with your team? Create a{" "}
-          <span className="font-mono">.memoize/settings.toml</span> file.
+          <span className="font-mono">.zuse/settings.toml</span> file.
         </p>
       </div>
     </SettingsGroup>

@@ -19,12 +19,18 @@ import {
   type RuntimeMode,
   type StartSessionInput,
   type UserQuestionAnswer,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
 import { handleFsRequest } from "./acp/fs.ts";
 import { handleTerminalRequest } from "./acp/terminal.ts";
 import { createAcpTranslator } from "./acp/translate.ts";
+import {
+  finishCompactEvent,
+  isCompactCommand,
+  startCompactEvent,
+  startCompactSnapshot,
+} from "./compact.ts";
 import type { GetRuntimeMode, RequestPermission } from "./claude.ts";
 
 /**
@@ -994,19 +1000,31 @@ export const startCursorSession = (
     const enqueuePrompt = (text: string): void => {
       const sid = acpSessionId;
       if (sid === null) return;
+      const compactSnapshot = isCompactCommand(text)
+        ? startCompactSnapshot(null)
+        : null;
+      if (compactSnapshot !== null) {
+        events.unsafeOffer(
+          startCompactEvent({ providerId: "cursor", snapshot: compactSnapshot }),
+        );
+      }
+      const promptText = compactSnapshot !== null ? text.trim() : text;
       const n = ++promptCount;
       inflight = inflight
         .then(async () => {
           if (closed) return;
           firstChunkSeenForPrompt = false;
           const promptStart = Date.now();
-          log("prompt.send", `#${n} len=${text.length} mode=${currentMode}`);
+          log(
+            "prompt.send",
+            `#${n} len=${promptText.length} mode=${currentMode}`,
+          );
           try {
             await request(
               "session/prompt",
               {
                 sessionId: sid,
-                prompt: [{ type: "text", text }],
+                prompt: [{ type: "text", text: promptText }],
                 _meta: { permissionMode: currentMode },
               },
               5 * 60_000,
@@ -1015,6 +1033,16 @@ export const startCursorSession = (
               },
             );
             log("prompt.done", `#${n} ${Date.now() - promptStart}ms`);
+            if (compactSnapshot !== null && !closed) {
+              events.unsafeOffer(
+                finishCompactEvent({
+                  itemId: compactSnapshot.itemId,
+                  providerId: "cursor",
+                  snapshot: compactSnapshot,
+                  afterTokens: null,
+                }),
+              );
+            }
           } catch (cause) {
             const reason = cause instanceof Error ? cause.message : String(cause);
             log("prompt.fail", `#${n} ${Date.now() - promptStart}ms reason=${reason}`);

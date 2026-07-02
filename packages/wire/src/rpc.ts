@@ -38,12 +38,17 @@ import {
   IndexSymbolLookupRpc,
 } from "./code-index.ts";
 import {
+  FsCreateDirectoryRpc,
+  FsCreateFileRpc,
   FsReadExternalFileRpc,
   FsReadFileRpc,
+  FsRemoveRpc,
   FsTreeRpc,
+  FsWatchTreeRpc,
   FsWriteExternalFileRpc,
   FsWriteFileRpc,
 } from "./fs.ts";
+import { DiagnosticsExportRpc } from "./diagnostics.ts";
 import {
   GitBranchesRpc,
   GitChangesRpc,
@@ -218,8 +223,12 @@ export const MemoizeRpcs = RpcGroup.make(
   GitRevertAllRpc,
   GitDiffStatRpc,
   FsTreeRpc,
+  FsWatchTreeRpc,
   FsReadFileRpc,
   FsWriteFileRpc,
+  FsCreateFileRpc,
+  FsCreateDirectoryRpc,
+  FsRemoveRpc,
   FsReadExternalFileRpc,
   FsWriteExternalFileRpc,
   AgentAvailabilityRpc,
@@ -306,6 +315,7 @@ export const MemoizeRpcs = RpcGroup.make(
   SettingsStreamRpc,
   SettingsMigrateLocalStorageRpc,
   UsageReportRpc,
+  DiagnosticsExportRpc,
   KeybindingsGetRpc,
   KeybindingsReplaceRpc,
   KeybindingsStreamRpc,

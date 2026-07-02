@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import type { GitMergeMethod } from "@memoize/wire";
+import type { GitMergeMethod } from "@zuse/wire";
 
 /**
  * Local UI preferences for the top-bar Merge button. Purely cosmetic state —

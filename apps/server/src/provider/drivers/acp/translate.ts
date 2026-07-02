@@ -1,4 +1,4 @@
-import type { AgentEvent, AgentItemId } from "@memoize/wire";
+import type { AgentEvent, AgentItemId } from "@zuse/wire";
 
 import { isIgnorableGrokAuthNoise } from "./grok-auth-noise.ts";
 

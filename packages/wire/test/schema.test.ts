@@ -5,11 +5,15 @@ import {
   AgentEvent,
   Chat,
   ComposerInput,
+  defaultModelEnabledByProvider,
+  defaultModelFor,
   GitBranchInfo,
+  isModelVisible,
   Message,
   PokemonPokedexEntry,
   SettingsFile,
   Session,
+  visibleModelsForProvider,
   Worktree,
 } from "../src/index.ts";
 
@@ -80,6 +84,19 @@ describe("AgentEvent round-trips", () => {
         cacheReadTokens: 0,
         cacheCreationTokens: 0,
         model: "claude-opus-4-8",
+      },
+    },
+    {
+      name: "ContextCompaction",
+      encoded: {
+        _tag: "ContextCompaction",
+        itemId: "compact1",
+        providerId: "codex",
+        startedAt: 1_800_000_000,
+        durationMs: 37_000,
+        beforeTokens: 231_450,
+        afterTokens: 9_535,
+        status: "completed",
       },
     },
     {
@@ -240,6 +257,23 @@ describe("Message round-trip", () => {
     });
   });
 
+  it("round-trips a context compaction message", () => {
+    roundTrip(Message, {
+      ...base,
+      role: "system" as const,
+      content: {
+        _tag: "context_compaction",
+        itemId: "compact1",
+        providerId: "codex",
+        startedAt: 1_800_000_000,
+        durationMs: 37_000,
+        beforeTokens: 231_450,
+        afterTokens: 9_535,
+        status: "completed",
+      },
+    });
+  });
+
   it("rejects an unknown content _tag", () => {
     expect(() =>
       Schema.decodeUnknownSync(Message)({
@@ -263,14 +297,14 @@ describe("Pokemon and Worktree round-trips", () => {
       unlocked: true,
       unlockedAt: "2026-06-18T00:00:00.000Z",
       worktreeId: "wt1",
-      spriteUrl: "memoize://pokemon/25",
+      spriteUrl: "zuse://pokemon/25",
       silhouetteUrl:
         "https://img.pokemondb.net/sprites/scarlet-violet/icon/pikachu.png",
       variants: [
         {
           id: "home",
           label: "Home",
-          spriteUrl: "memoize://pokemon/25-home",
+          spriteUrl: "zuse://pokemon/25-home",
         },
       ],
       evolutionLine: [
@@ -280,7 +314,7 @@ describe("Pokemon and Worktree round-trips", () => {
           name: "Pikachu",
           rarity: "rare" as const,
           unlocked: true,
-          spriteUrl: "memoize://pokemon/25",
+          spriteUrl: "zuse://pokemon/25",
           silhouetteUrl:
             "https://img.pokemondb.net/sprites/scarlet-violet/icon/pikachu.png",
         },
@@ -308,7 +342,7 @@ describe("Pokemon and Worktree round-trips", () => {
         generation: 1,
         rarity: "rare" as const,
         points: 75,
-        spriteUrl: "memoize://pokemon/25",
+        spriteUrl: "zuse://pokemon/25",
       },
     });
   });
@@ -378,6 +412,13 @@ describe("SettingsFile round-trip", () => {
         gemini: true,
         opencode: true,
       },
+      modelEnabledByProvider: {
+        ...defaultModelEnabledByProvider(),
+        codex: {
+          ...defaultModelEnabledByProvider().codex,
+          "gpt-5.3-codex": true,
+        },
+      },
       subagents: { enableForNewSessions: true, presets: {} },
       branchNamingStyle: "username-slug",
       branchNamingPrefix: "",
@@ -410,11 +451,49 @@ describe("SettingsFile round-trip", () => {
           gemini: true,
           opencode: true,
         },
+        modelEnabledByProvider: defaultModelEnabledByProvider(),
         subagents: { enableForNewSessions: true, presets: {} },
         branchNamingStyle: "username-slug",
         branchNamingPrefix: "",
       }),
     ).toThrow();
+  });
+});
+
+describe("model visibility helpers", () => {
+  it("uses Sonnet 5 as the default visible Claude model", () => {
+    expect(defaultModelFor("claude")).toBe("claude-sonnet-5");
+    expect(isModelVisible("claude", "claude-sonnet-5")).toBe(true);
+    expect(isModelVisible("claude", "claude-sonnet-4-6")).toBe(false);
+  });
+
+  it("filters hidden models unless they are explicitly enabled", () => {
+    expect(isModelVisible("codex", "gpt-5.3-codex")).toBe(false);
+    expect(
+      visibleModelsForProvider("codex").some(
+        (model) => model.id === "gpt-5.3-codex",
+      ),
+    ).toBe(false);
+
+    const overrides = defaultModelEnabledByProvider();
+    overrides.codex["gpt-5.3-codex"] = true;
+
+    expect(isModelVisible("codex", "gpt-5.3-codex", overrides)).toBe(true);
+    expect(
+      visibleModelsForProvider("codex", overrides).some(
+        (model) => model.id === "gpt-5.3-codex",
+      ),
+    ).toBe(true);
+  });
+
+  it("can include a hidden selected model without making all hidden models visible", () => {
+    const models = visibleModelsForProvider("codex", undefined, {
+      includeModelId: "gpt-5.3-codex",
+    });
+    expect(models.some((model) => model.id === "gpt-5.3-codex")).toBe(true);
+    expect(models.some((model) => model.id === "gpt-5.3-codex-spark")).toBe(
+      false,
+    );
   });
 });
 

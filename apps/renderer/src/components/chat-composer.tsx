@@ -30,7 +30,7 @@ import {
   type Session,
   type SessionId,
   type ThreadGoal,
-} from "@memoize/wire";
+} from "@zuse/wire";
 import { ModelPicker } from "./model-picker.tsx";
 
 import { Card, CardPanel } from "~/components/ui/card";
@@ -76,6 +76,11 @@ import {
   useComposerDraftsStore,
 } from "../store/composer-drafts.ts";
 import { cn, formatCompactNumber } from "~/lib/utils";
+import {
+  chooseComposerSubmitRoute,
+  findPendingPlanApprovalRequest,
+  shouldSendPlanFeedbackNow,
+} from "~/lib/plan-feedback-routing";
 import {
   matchBuiltin,
   type BuiltinCommand,
@@ -223,6 +228,7 @@ export function ChatComposer({
   // because the agent is already mid-tool-call.
   const requestsById = usePermissionsStore((s) => s.requestsById);
   const hydratePermissions = usePermissionsStore((s) => s.hydrate);
+  const decidePermission = usePermissionsStore((s) => s.decide);
   const pendingPermissions = useMemo(() => {
     const out: PermissionRequest[] = [];
     for (const req of Object.values(requestsById)) {
@@ -236,6 +242,20 @@ export function ChatComposer({
     out.sort((a, b) => a.requestedAt.getTime() - b.requestedAt.getTime());
     return out;
   }, [requestsById, sessionId]);
+  const pendingPlanApprovalRequest = useMemo(
+    () =>
+      findPendingPlanApprovalRequest(Object.values(requestsById), sessionId),
+    [requestsById, sessionId],
+  );
+  const sendPlanFeedbackNow = useMemo(
+    () =>
+      shouldSendPlanFeedbackNow({
+        permissionMode: session.permissionMode,
+        messages: sessionMessages ?? [],
+        pendingPlanApprovalRequest,
+      }),
+    [pendingPlanApprovalRequest, session.permissionMode, sessionMessages],
+  );
   useEffect(() => {
     if (isDraft) return;
     void hydratePermissions(sessionId);
@@ -511,7 +531,7 @@ export function ChatComposer({
   /**
    * Insert chips for `files`. Image files render with a thumbnail; other types
    * (PDFs, docs, archives) get a generic file-icon chip. The chip's underlying
-   * token swaps from a temp id to a `memoize://attachments/<id>` URL once the
+   * token swaps from a temp id to a `zuse://attachments/<id>` URL once the
    * upload resolves. Files beyond the per-turn cap are dropped with a warning.
    */
   const attachFiles = (files: readonly File[]): void => {
@@ -555,7 +575,7 @@ export function ChatComposer({
 
       void uploadOne(sessionId, file)
         .then((ref) => {
-          const finalUrl = isImage ? `memoize://attachments/${ref.id}` : "";
+          const finalUrl = isImage ? `zuse://attachments/${ref.id}` : "";
           editorViewRef.current?.dispatch({
             effects: updateImageChipEffect.of({
               previousId: tempId,
@@ -685,15 +705,35 @@ export function ChatComposer({
       onDraftSubmit(input, { asGoal: goalSendMode });
       return true;
     }
-    if (goalSendMode) {
-      void send(sessionId, input, { asGoal: true });
-    } else if (inFlight || holdForSetup) {
-      // Mid-turn submit — or a submit while the worktree/provider is still
-      // coming up — becomes a queue chip; auto-flushed when the turn ends,
-      // setup completes, or steered manually.
-      queue(sessionId, input);
-    } else {
-      void send(sessionId, input);
+    switch (
+      chooseComposerSubmitRoute({
+        sendPlanFeedbackNow,
+        goalSendMode,
+        shouldQueue: inFlight || holdForSetup,
+      })
+    ) {
+      case "planFeedback":
+        void (async () => {
+          if (pendingPlanApprovalRequest !== null) {
+            await decidePermission(pendingPlanApprovalRequest.id, {
+              _tag: "Deny",
+            });
+          }
+          await send(sessionId, input);
+        })();
+        break;
+      case "goal":
+        void send(sessionId, input, { asGoal: true });
+        break;
+      case "queue":
+        // Mid-turn submit — or a submit while the worktree/provider is still
+        // coming up — becomes a queue chip; auto-flushed when the turn ends,
+        // setup completes, or steered manually.
+        queue(sessionId, input);
+        break;
+      case "send":
+        void send(sessionId, input);
+        break;
     }
     return true;
   };
@@ -1597,16 +1637,99 @@ function ContextRing({ percent }: { percent: number | null }) {
   );
 }
 
+function StickMeter({
+  percent,
+  tone = "default",
+}: {
+  readonly percent: number | null;
+  readonly tone?: "default" | "warning";
+}) {
+  const segments = 38;
+  const clamped = percent === null ? 0 : Math.min(Math.max(percent, 0), 100);
+  const filled = percent === null ? 0 : Math.ceil((clamped / 100) * segments);
+  return (
+    <div
+      className="grid h-4 grid-cols-[repeat(38,minmax(0,1fr))] gap-0.5"
+      aria-hidden
+    >
+      {Array.from({ length: segments }, (_, index) => {
+        const active = index < filled;
+        return (
+          <div
+            key={index}
+            className={cn(
+              "rounded-[2px] transition-colors",
+              active
+                ? tone === "warning"
+                  ? "bg-amber-300/65"
+                  : "bg-primary/70"
+                : "bg-muted-foreground/16",
+            )}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 function ContextStatusPopover({ session }: { session: Session }) {
   const messages = useMessagesStore(
     (s) => s.messagesBySession[session.id] ?? EMPTY_MESSAGES,
   );
 
   const latestContext = useMemo(() => {
+    let latestUsage: Extract<
+      Message["content"],
+      { _tag: "context_usage" }
+    > | null = null;
+    let latestUsageIndex = -1;
+    let latestCompact: Extract<
+      Message["content"],
+      { _tag: "context_compaction" }
+    > | null = null;
+    let latestCompactIndex = -1;
     for (let i = messages.length - 1; i >= 0; i--) {
       const content = messages[i]!.content;
       if (
         content._tag === "context_usage" &&
+        content.providerId === session.providerId
+      ) {
+        latestUsage = content;
+        latestUsageIndex = i;
+        break;
+      }
+    }
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const content = messages[i]!.content;
+      if (
+        content._tag === "context_compaction" &&
+        content.providerId === session.providerId &&
+        (content.status ?? "completed") === "completed" &&
+        content.afterTokens !== null
+      ) {
+        latestCompact = content;
+        latestCompactIndex = i;
+        break;
+      }
+    }
+    if (latestCompact !== null && latestCompactIndex > latestUsageIndex) {
+      return {
+        _tag: "context_usage" as const,
+        providerId: latestCompact.providerId,
+        usedTokens: latestCompact.afterTokens,
+        windowTokens: latestUsage?.windowTokens ?? null,
+        precision: "exact" as const,
+        source: "Context compaction",
+      };
+    }
+    return latestUsage;
+  }, [messages, session.providerId]);
+
+  const usageLimit = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const content = messages[i]!.content;
+      if (
+        content._tag === "usage_limit" &&
         content.providerId === session.providerId
       ) {
         return content;
@@ -1615,27 +1738,17 @@ function ContextStatusPopover({ session }: { session: Session }) {
     return null;
   }, [messages, session.providerId]);
 
-  const usageLimits = useMemo(
-    () =>
-      messages
-        .filter(
-          (m) =>
-            m.content._tag === "usage_limit" &&
-            m.content.providerId === session.providerId,
-        )
-        .slice(-2)
-        .map((m) => (m.content._tag === "usage_limit" ? m.content : null))
-        .filter((v): v is NonNullable<typeof v> => v !== null),
-    [messages, session.providerId],
-  );
-
-  // Real numbers only — but the context window itself is a real capacity we
-  // know from the model, so we show it from the first message and fill in
-  // the live bar once Claude/Codex report exact usage.
   const usedTokens = latestContext?.usedTokens ?? null;
+  const reportedWindowTokens = latestContext?.windowTokens ?? null;
+  const fallbackWindowTokens = selectedContextWindowTokens(
+    session.id,
+    session.providerId,
+    session.model,
+  );
   const windowTokens =
-    latestContext?.windowTokens ??
-    selectedContextWindowTokens(session.id, session.providerId, session.model);
+    usedTokens !== null
+      ? (reportedWindowTokens ?? fallbackWindowTokens)
+      : reportedWindowTokens;
 
   const percent =
     usedTokens !== null && windowTokens !== null && windowTokens > 0
@@ -1646,8 +1759,8 @@ function ContextStatusPopover({ session }: { session: Session }) {
       ? Math.max(0, windowTokens - usedTokens)
       : null;
 
-  const hasContext = usedTokens !== null || windowTokens !== null;
-  const hasLimits = usageLimits.length > 0;
+  const hasContext = usedTokens !== null && windowTokens !== null;
+  const hasLimits = usageLimit !== null;
   if (!hasContext && !hasLimits) return null;
 
   const high = percent !== null && percent >= 90;
@@ -1680,10 +1793,10 @@ function ContextStatusPopover({ session }: { session: Session }) {
         side="top"
         align="end"
         sideOffset={8}
-        className="w-[256px] overflow-hidden rounded-xl border-border bg-popover p-0 text-[13px] shadow-lg"
+        className="w-[300px] overflow-hidden rounded-xl border-border bg-popover p-0 text-[13px] shadow-lg"
       >
         {hasContext ? (
-          <div className="flex flex-col gap-2.5 p-3">
+          <div className="flex flex-col gap-3 p-3.5">
             <div className="flex items-baseline justify-between gap-3">
               <span className="font-medium text-foreground">Context</span>
               <span className="tabular-nums text-muted-foreground">
@@ -1692,22 +1805,19 @@ function ContextStatusPopover({ session }: { session: Session }) {
             </div>
             {percent !== null ? (
               <>
-                <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className={cn(
-                      "h-full rounded-full transition-[width]",
-                      high ? "bg-amber-400" : "bg-foreground",
-                    )}
-                    style={{ width: `${Math.max(percent, 2)}%` }}
-                  />
-                </div>
+                <StickMeter
+                  percent={percent}
+                  tone={high ? "warning" : "default"}
+                />
                 <div className="flex items-center justify-between text-muted-foreground">
-                  <span className="tabular-nums">
-                    {percent.toFixed(1)}% used
-                  </span>
+                  <span>Window used</span>
+                  <span className="tabular-nums">{percent.toFixed(1)}%</span>
+                </div>
+                <div className="flex items-center justify-between text-muted-foreground/70">
+                  <span>Available</span>
                   {freeTokens !== null ? (
                     <span className="tabular-nums">
-                      {formatTokens(freeTokens)} free
+                      {formatTokens(freeTokens)}
                     </span>
                   ) : null}
                 </div>
@@ -1722,40 +1832,44 @@ function ContextStatusPopover({ session }: { session: Session }) {
         {hasLimits ? (
           <div
             className={cn(
-              "flex flex-col gap-2 p-3",
+              "flex flex-col gap-3 p-3.5",
               hasContext && "border-t border-border",
             )}
           >
-            <span className="font-medium text-foreground">Usage limits</span>
-            <div className="flex flex-col gap-1.5">
-              {usageLimits.map((limit, index) => {
-                const reset = resetLabel(limit.resetsAt);
-                const remaining =
-                  limit.usedPercent !== null
-                    ? `${Math.max(0, 100 - limit.usedPercent).toFixed(0)}% left`
-                    : "Active";
-                return (
-                  <div
-                    key={`${limit.label}-${index}`}
-                    className="flex flex-col gap-0.5"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="truncate text-foreground">
-                        {limit.label}
-                      </span>
-                      <span className="shrink-0 tabular-nums text-muted-foreground">
-                        {remaining}
-                      </span>
-                    </div>
-                    {reset !== null ? (
-                      <span className="tabular-nums text-muted-foreground/50">
-                        resets {reset}
-                      </span>
-                    ) : null}
+            {(() => {
+              const limit = usageLimit!;
+              const reset = resetLabel(limit.resetsAt);
+              const used = limit.usedPercent;
+              const remaining =
+                used !== null
+                  ? `${Math.max(0, 100 - used).toFixed(0)}% left`
+                  : "Active";
+              const limitHigh = used !== null && used >= 80;
+              return (
+                <>
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="font-medium text-foreground">
+                      {limit.label}
+                    </span>
+                    <span className="shrink-0 tabular-nums text-muted-foreground">
+                      {remaining}
+                    </span>
                   </div>
-                );
-              })}
-            </div>
+                  {used !== null ? (
+                    <StickMeter
+                      percent={used}
+                      tone={limitHigh ? "warning" : "default"}
+                    />
+                  ) : null}
+                  <div className="flex items-center justify-between text-muted-foreground/70">
+                    <span>Reset</span>
+                    <span className="tabular-nums">
+                      {reset !== null ? reset : "unknown"}
+                    </span>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         ) : null}
       </TooltipPopup>

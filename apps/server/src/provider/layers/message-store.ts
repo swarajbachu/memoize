@@ -41,7 +41,7 @@ import {
   type ThreadGoalSetInput,
   type Worktree,
   WorktreeId,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { WorktreeService } from "../../worktree/services/worktree-service.ts";
 
@@ -268,8 +268,17 @@ const chatFromRow = (row: ChatRow): Chat =>
     updatedAt: new Date(row.updated_at),
   });
 
+const normalizeMessageContent = (content: MessageContent): MessageContent => {
+  if (content._tag === "context_compaction" && content.status === undefined) {
+    return { ...content, status: "completed" };
+  }
+  return content;
+};
+
 const messageFromRow = (row: MessageRow): Message => {
-  const content = JSON.parse(row.content_json) as MessageContent;
+  const content = normalizeMessageContent(
+    JSON.parse(row.content_json) as MessageContent,
+  );
   return Message.make({
     id: MessageId.make(row.id),
     sessionId: SessionId.make(row.session_id),
@@ -305,6 +314,7 @@ const parentItemIdOfContent = (content: MessageContent): string | null => {
     case "user_question_answer":
       return content.parentItemId ?? null;
     case "context_usage":
+    case "context_compaction":
     case "usage_limit":
       return null;
     case "subagent_summary":
@@ -331,8 +341,10 @@ const roleForContent = (content: MessageContent): MessageRole => {
     case "tool_result":
       return "tool";
     case "error":
+    case "interrupted":
     case "usage":
     case "context_usage":
+    case "context_compaction":
     case "usage_limit":
       return "system";
   }
@@ -406,6 +418,17 @@ const eventToContent = (event: AgentEvent): MessageContent | null => {
         precision: event.precision,
         source: event.source,
       };
+    case "ContextCompaction":
+      return {
+        _tag: "context_compaction",
+        itemId: event.itemId,
+        providerId: event.providerId,
+        startedAt: event.startedAt,
+        durationMs: event.durationMs,
+        beforeTokens: event.beforeTokens,
+        afterTokens: event.afterTokens,
+        status: event.status,
+      };
     case "UsageLimit":
       return {
         _tag: "usage_limit",
@@ -417,6 +440,8 @@ const eventToContent = (event: AgentEvent): MessageContent | null => {
       };
     case "Error":
       return { _tag: "error", message: event.message };
+    case "Interrupted":
+      return { _tag: "interrupted" };
     case "UserQuestion":
       return {
         _tag: "user_question",
@@ -876,9 +901,14 @@ export const MessageStoreLive = Layer.scoped(
     const persistMessage = (
       sessionId: SessionId,
       content: MessageContent,
+      idOverride?: MessageId,
     ): Effect.Effect<Message> =>
       Effect.gen(function* () {
-        const id = MessageId.make(crypto.randomUUID());
+        // `idOverride` is the renderer-minted `clientMessageId` for an
+        // optimistic user message — reuse it so the live-stream echo carries
+        // the same id the renderer already inserted. All other persists
+        // (assistant/tool/error/goal) omit it and get a fresh server id.
+        const id = idOverride ?? MessageId.make(crypto.randomUUID());
         const role = roleForContent(content);
         const now = new Date();
         const nowIso = now.toISOString();
@@ -1048,7 +1078,9 @@ export const MessageStoreLive = Layer.scoped(
         yield* broadcastQueue(sessionId);
       });
 
-    const clearQueuePauseIfEmpty = (sessionId: SessionId): Effect.Effect<void> =>
+    const clearQueuePauseIfEmpty = (
+      sessionId: SessionId,
+    ): Effect.Effect<void> =>
       Effect.gen(function* () {
         const queue = yield* listQueuedRows(sessionId);
         if (queue.length > 0 || !(yield* isQueuePaused(sessionId))) return;
@@ -1973,7 +2005,7 @@ export const MessageStoreLive = Layer.scoped(
       );
 
     /**
-     * Conductor-style auto-name: on a chat's first user message, summarize it
+     * Worktree-backed auto-name: on a chat's first user message, summarize it
      * into a short title (LLM, with truncation fallback) and use that to
      * rename both the chat and — when the chat has its own worktree — the
      * worktree's git branch per the user's `branchNamingStyle`. Runs on a
@@ -2122,7 +2154,7 @@ export const MessageStoreLive = Layer.scoped(
         `.pipe(Effect.asVoid, Effect.orDie);
       });
 
-    const archiveChat: MessageStoreShape["archiveChat"] = (chatId) =>
+    const archiveChat: MessageStoreShape["archiveChat"] = (chatId, force) =>
       Effect.gen(function* () {
         const chat = yield* lookupChat(chatId);
         if (chat.archivedAt !== null) {
@@ -2176,10 +2208,10 @@ export const MessageStoreLive = Layer.scoped(
             script: settings.archiveCleanupScript ?? "",
             cwd: worktree.path,
             env: {
-              MEMOIZE_ROOT_PATH: rootPath ?? "",
-              MEMOIZE_WORKSPACE_PATH: worktree.path,
-              MEMOIZE_CHAT_ID: chatId,
-              MEMOIZE_WORKTREE_ID: worktree.id,
+              ZUSE_ROOT_PATH: rootPath ?? "",
+              ZUSE_WORKSPACE_PATH: worktree.path,
+              ZUSE_CHAT_ID: chatId,
+              ZUSE_WORKTREE_ID: worktree.id,
             },
           });
           cleanup = { ran: true, output: result.output };
@@ -2188,7 +2220,7 @@ export const MessageStoreLive = Layer.scoped(
         }
 
         if (worktree !== null && settings.archiveRemoveWorktree) {
-          yield* worktrees.remove(worktree.id, false).pipe(
+          yield* worktrees.remove(worktree.id, force).pipe(
             Effect.mapError(
               (err) =>
                 new ChatArchiveWorktreeError({
@@ -2689,6 +2721,7 @@ export const MessageStoreLive = Layer.scoped(
       skillRefs?: ReadonlyArray<SkillRef>,
       annotations?: ReadonlyArray<CodeAnnotation>,
       asGoal?: boolean,
+      clientMessageId?: MessageId,
     ): Effect.Effect<boolean, SessionNotFoundError> =>
       Effect.gen(function* () {
         const session = yield* lookupSession(sessionId);
@@ -2739,7 +2772,11 @@ export const MessageStoreLive = Layer.scoped(
           annotationList.length > 0
             ? `${serializeAnnotations(annotationList)}\n\n${text}`.trim()
             : text;
-        const persisted = yield* persistMessage(sessionId, content);
+        const persisted = yield* persistMessage(
+          sessionId,
+          content,
+          clientMessageId,
+        );
         // Pin the attachments so the GC sweep treats them as referenced —
         // a separate row per (message, attachment) keeps the existing
         // GC join intact.
@@ -2764,7 +2801,7 @@ export const MessageStoreLive = Layer.scoped(
         }
         // Path 2: an empty chat (no initialPrompt) receiving its first user
         // message via messages.send. When this is the chat's first user
-        // message, kick off the Conductor-style auto-name in the background
+        // message, kick off the worktree-backed auto-name in the background
         // (no-ops unless the chat has its own worktree).
         const firstUserCount = yield* sql<{ readonly c: number }>`
           SELECT COUNT(*) AS c FROM messages m
@@ -2931,6 +2968,7 @@ export const MessageStoreLive = Layer.scoped(
       skillRefs,
       annotations,
       asGoal,
+      clientMessageId,
     ) =>
       Effect.gen(function* () {
         yield* submitUserMessage(
@@ -2941,6 +2979,7 @@ export const MessageStoreLive = Layer.scoped(
           skillRefs,
           annotations,
           asGoal,
+          clientMessageId,
         );
       });
 

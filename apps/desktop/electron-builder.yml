@@ -1,5 +1,8 @@
+# Keep the original bundle id so existing memoize Alpha installs can
+# auto-update in place through Squirrel.Mac. The visible app name and release
+# feed are Zuse, but macOS updater identity must remain stable.
 appId: app.memoize.desktop
-productName: memoize Alpha
+productName: Zuse Alpha
 copyright: © ${author}
 
 # Register the `memoize://` custom scheme so packaged builds receive the WorkOS
@@ -28,12 +31,12 @@ files:
   - "package.json"
   - "!**/*.{ts,tsx,map,md}"
   - "!**/tsconfig*.json"
-  # @memoize/* workspace packages are inlined into dist-electron/main.cjs by
+  # @zuse/* workspace packages are inlined into dist-electron/main.cjs by
   # tsdown (`deps.alwaysBundle`), so we don't need their source in
   # node_modules. Their bun symlinks resolve to apps/server and apps/wire,
   # which trip electron-builder's "must be under apps/desktop/" check during
   # the asarUnpack walk. Exclude them outright.
-  - "!node_modules/@memoize/**"
+  - "!node_modules/@zuse/**"
   # Build-time tooling and type packages — never required at runtime.
   - "!node_modules/@repo/**"
   - "!node_modules/@types/**"
@@ -82,8 +85,8 @@ mac:
   entitlementsInherit: build/entitlements.mac.plist
   icon: build/icon.png
   extendInfo:
-    NSCameraUsageDescription: memoize does not use the camera.
-    NSMicrophoneUsageDescription: memoize does not use the microphone.
+    NSCameraUsageDescription: Zuse Alpha does not use the camera.
+    NSMicrophoneUsageDescription: Zuse Alpha does not use the microphone.
 
 dmg:
   writeUpdateInfo: true
@@ -106,5 +109,5 @@ dmg:
 publish:
   provider: github
   owner: swarajbachu
-  repo: memoize
+  repo: zuse
   releaseType: release

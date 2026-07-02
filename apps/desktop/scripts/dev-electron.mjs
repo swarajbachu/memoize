@@ -1,7 +1,6 @@
 // Dev runner: waits for the Vite dev server + bundled main/preload, then spawns
-// Electron pointing at them. Restarts Electron on rebuilds. Modeled on t3code's
-// dev-electron.mjs but slimmed down — no cross-app server checks, no macOS
-// app-bundle renaming.
+// Electron pointing at them. Restarts Electron on rebuilds. Slimmed down:
+// no cross-app server checks, no macOS app-bundle renaming.
 
 import { spawn, spawnSync } from "node:child_process";
 import { watch } from "node:fs";

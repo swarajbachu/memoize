@@ -4,19 +4,19 @@ import {
   Alert01Icon,
   ArrowLeft01Icon,
   Delete02Icon,
+  DocumentAttachmentIcon,
   Folder01Icon,
   GitBranchIcon,
   GlobeIcon,
   KeyboardIcon,
   PackageIcon,
-  RotateRight01Icon,
   Settings01Icon,
   TaskDone01Icon,
   TestTubeIcon,
   Tick01Icon,
   VolumeHighIcon,
 } from "@hugeicons-pro/core-bulk-rounded";
-import { Plus } from "lucide-react";
+import { Plus, RefreshCw as RefreshIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Effect } from "effect";
@@ -31,7 +31,8 @@ import {
   type FolderId,
   type ProviderId,
   type RuntimeMode,
-} from "@memoize/wire";
+  visibleModelsForProvider,
+} from "@zuse/wire";
 
 import {
   formatRelativeTime,
@@ -116,6 +117,12 @@ const TOP_RAIL: ReadonlyArray<RailItemBase> = [
     label: "Browser",
     Icon: GlobeIcon,
     section: { kind: "browser" },
+  },
+  {
+    id: "diagnostics",
+    label: "Diagnostics",
+    Icon: DocumentAttachmentIcon,
+    section: { kind: "diagnostics" },
   },
   {
     id: "shortcuts",
@@ -318,6 +325,12 @@ function SectionTitle({
         subtitle: "Dummy test logins the agent browser can autofill.",
       };
     }
+    if (section.kind === "diagnostics") {
+      return {
+        title: "Diagnostics",
+        subtitle: "Export a redacted support bundle for debugging user issues.",
+      };
+    }
     if (section.kind === "shortcuts") {
       return {
         title: "Keyboard shortcuts",
@@ -363,9 +376,132 @@ function Pane({ section }: { section: SettingsSection }) {
   if (section.kind === "workspace") return <WorkspacePane />;
   if (section.kind === "pokedex") return <PokedexPane />;
   if (section.kind === "browser") return <BrowserSettingsPane />;
+  if (section.kind === "diagnostics") return <DiagnosticsPane />;
   if (section.kind === "shortcuts") return <KeybindingsPane />;
   if (section.kind === "developer") return <DeveloperPane />;
   return <RepositorySettings projectId={section.projectId} />;
+}
+
+function DiagnosticsPane() {
+  const [isExporting, setIsExporting] = useState(false);
+  const [lastExport, setLastExport] = useState<{
+    diagnosticId: string;
+    bundlePath: string;
+    summary: string;
+    agentPrompt: string;
+    included: ReadonlyArray<string>;
+  } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState<"summary" | "prompt" | null>(null);
+
+  const copyText = async (kind: "summary" | "prompt", text: string) => {
+    await navigator.clipboard?.writeText(text);
+    setCopied(kind);
+    window.setTimeout(() => {
+      setCopied((current) => (current === kind ? null : current));
+    }, 1400);
+  };
+
+  const exportDiagnostics = async () => {
+    setIsExporting(true);
+    setError(null);
+    try {
+      const client = await getRpcClient();
+      const result = await Effect.runPromise(client.diagnostics.export({}));
+      setLastExport({
+        diagnosticId: result.diagnosticId,
+        bundlePath: result.bundlePath,
+        summary: result.summary,
+        agentPrompt: result.agentPrompt,
+        included: result.included,
+      });
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Could not export diagnostics bundle.",
+      );
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <SettingsGroup
+        title="Support bundle"
+        description="Creates a local redacted diagnostics file plus agent-readable artifacts. Raw prompts and full transcripts are not included by default."
+      >
+        <SettingsRow
+          title="Included by default"
+          description="Manifest, trace summary, recent errors, environment, provider status, and redacted session-event previews."
+          action={
+            <Button
+              size="sm"
+              onClick={() => void exportDiagnostics()}
+              disabled={isExporting}
+            >
+              <HugeiconsIcon
+                icon={DocumentAttachmentIcon}
+                className="size-3.5"
+              />
+              {isExporting ? "Exporting..." : "Export diagnostics"}
+            </Button>
+          }
+        />
+        {lastExport && (
+          <SettingsRow
+            title={`Last export: ${lastExport.diagnosticId}`}
+            description={lastExport.bundlePath}
+          >
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="settings"
+                size="sm"
+                onClick={() => void copyText("summary", lastExport.summary)}
+              >
+                {copied === "summary" ? "Copied" : "Copy summary"}
+              </Button>
+              <Button
+                variant="settings"
+                size="sm"
+                onClick={() => void copyText("prompt", lastExport.agentPrompt)}
+              >
+                {copied === "prompt" ? "Copied" : "Copy agent prompt"}
+              </Button>
+            </div>
+            <div className="mt-3 rounded-lg border border-border/40 bg-background/60 p-3">
+              <div className="mb-2 text-xs font-medium text-muted-foreground">
+                Bundle contents
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {lastExport.included.map((item) => (
+                  <span
+                    key={item}
+                    className="rounded bg-muted px-2 py-0.5 font-mono text-[11px] text-muted-foreground"
+                  >
+                    {item}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </SettingsRow>
+        )}
+        {error && (
+          <SettingsRow
+            icon={Alert01Icon}
+            title="Export failed"
+            description={error}
+          />
+        )}
+      </SettingsGroup>
+
+      <SettingsFrame
+        title="Agent intake"
+        description="After a user sends the exported JSON file, run bun run diagnostics:inspect path/to/memoize-diagnostics.json in a repo workspace. The script writes .context/diagnostics/<id>/REPORT.md for an agent to inspect."
+      />
+    </div>
+  );
 }
 
 interface BrowserCredRow {
@@ -774,11 +910,11 @@ function GeneralPane() {
 
       <SettingsGroup
         title="Workspace naming"
-        description="Controls how memoize names new worktree-backed branches."
+        description="Controls how Zuse Alpha names new worktree-backed branches."
       >
         <SettingsRow
           title="Branch naming"
-          description="When a new chat with its own worktree gets its first message, memoize summarizes it and renames the chat plus its git branch in this shape."
+          description="When a new chat with its own worktree gets its first message, Zuse Alpha summarizes it and renames the chat plus its git branch in this shape."
           action={
             <Select
               value={branchNamingStyle}
@@ -900,6 +1036,8 @@ function ProvidersPane() {
     "cursor",
     "opencode",
   ];
+  const [selectedProvider, setSelectedProvider] =
+    useState<ProviderId>("claude");
   const availabilityById = useMemo(() => {
     const map = new Map<ProviderId, (typeof availability)[number]>();
     for (const a of availability) map.set(a.providerId, a);
@@ -934,29 +1072,57 @@ function ProvidersPane() {
               disabled={loading}
               aria-label="Refresh provider status"
             >
-              <HugeiconsIcon
-                icon={RotateRight01Icon}
+              <RefreshIcon
                 className={cn("size-3.5", loading && "animate-spin")}
                 aria-hidden
               />
             </Button>
           </div>
         </FrameHeader>
-        <Card>
-          <div className="flex flex-col divide-y divide-border/40">
-            {providers.map((pid) => (
-              <ProviderCard
-                key={pid}
-                providerId={pid}
-                availability={availabilityById.get(pid)}
-                loading={loading}
-              />
-            ))}
+        <div className="flex flex-col gap-2 px-2 pb-2">
+          <div
+            role="tablist"
+            aria-label="Provider settings"
+            className="flex min-w-0 gap-1 overflow-x-auto border-b border-border/50"
+          >
+            {providers.map((pid) => {
+              const selected = selectedProvider === pid;
+              return (
+                <button
+                  key={pid}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  onClick={() => setSelectedProvider(pid)}
+                  className={cn(
+                    "flex min-h-9 shrink-0 items-center gap-2 border-b px-2.5 text-sm transition-colors",
+                    selected
+                      ? "border-primary text-foreground"
+                      : "border-transparent text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <ProviderIcon providerId={pid} className="size-3.5" />
+                  <span>{PROVIDER_LABEL[pid]}</span>
+                  {pid === "opencode" && (
+                    <span className="rounded border border-border/60 bg-muted/70 px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      New
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
-        </Card>
+          <Card>
+            <ProviderCard
+              providerId={selectedProvider}
+              availability={availabilityById.get(selectedProvider)}
+              loading={loading}
+            />
+          </Card>
+        </div>
         <FrameFooter className="px-2 py-1 w-full">
           <p className="text-xs leading-relaxed text-muted-foreground">
-            Memoize uses your existing CLI credentials — Claude Code, Codex,
+            Zuse Alpha uses your existing CLI credentials — Claude Code, Codex,
             Grok, Gemini, Cursor, and OpenCode all sign in through their own
             login flows.
           </p>
@@ -1024,7 +1190,7 @@ function WorkspacePane() {
           onCheckedChange={setDefaultAutoCreateWorktree}
         />
       }
-      description="When on, each new chat runs in its own git worktree under ~/.memoize/<repo>/<name>/, branched off the project's HEAD. Per-repo settings can override this default."
+      description="When on, each new chat runs in its own git worktree under ~/.zuse/<repo>/<name>/, branched off the project's HEAD. Per-repo settings can override this default."
     />
   );
 }
@@ -1042,8 +1208,14 @@ function SubagentsSection() {
   const presets = useSubagentsStore((s) => s.presets);
   const setPresetEnabled = useSubagentsStore((s) => s.setPresetEnabled);
   const setPresetOverride = useSubagentsStore((s) => s.setPresetOverride);
+  const modelEnabledByProvider = useSettingsStore(
+    (s) => s.modelEnabledByProvider,
+  );
 
-  const claudeModels = MODELS_BY_PROVIDER.claude;
+  const claudeModels = visibleModelsForProvider(
+    "claude",
+    modelEnabledByProvider,
+  );
 
   return (
     <Frame>
@@ -1661,7 +1833,12 @@ export function ModelSelect({
   value: string | null;
   onChange: (model: string) => void;
 }) {
-  const models = MODELS_BY_PROVIDER[providerId] ?? [];
+  const modelEnabledByProvider = useSettingsStore(
+    (s) => s.modelEnabledByProvider,
+  );
+  const models = visibleModelsForProvider(providerId, modelEnabledByProvider, {
+    includeModelId: value,
+  });
   const normalizedValue =
     value !== null &&
     (models.some((m) => m.id === value) || models.length === 0)
@@ -1709,6 +1886,8 @@ export function ensureValidDefaultsForRuntime(
     : ready[0]!;
   const model =
     settings.defaultModelByProvider[provider] ??
+    visibleModelsForProvider(provider, settings.modelEnabledByProvider)[0]
+      ?.id ??
     MODELS_BY_PROVIDER[provider][0]!.id;
   return {
     providerId: provider,

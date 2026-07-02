@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react";
 
-import type { CodeAnnotation, FolderId, WorktreeId } from "@memoize/wire";
+import type { CodeAnnotation, FolderId, WorktreeId } from "@zuse/wire";
 
 import { cn } from "~/lib/utils";
 import { useUiStore, type FileView } from "~/store/ui";
@@ -180,8 +180,8 @@ export function FileChip({
   });
 
   // Resolve the chip's effective root + workspace-relative path. Tool rows
-  // sometimes carry an absolute path from another workspace (Conductor
-  // side-checkouts, sibling repos); opening those would trigger
+  // sometimes carry an absolute path from another checkout or sibling repo;
+  // opening those would trigger
   // `FsPathOutsideError` on the server. Detect early, surface as a
   // non-clickable chip with an explanatory tooltip.
   const name = basename(relPath);

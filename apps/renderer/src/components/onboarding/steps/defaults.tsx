@@ -97,7 +97,7 @@ export function DefaultsStep() {
             </span>
             <span className="text-[11px] leading-snug text-muted-foreground">
               A git worktree is a second checkout of your repo on its own branch.
-              Each chat gets one under <code>~/.memoize/</code>, so agents can run
+              Each chat gets one under <code>~/.zuse/</code>, so agents can run
               in parallel without stepping on each other or your working tree.
               You merge the branches you like.
             </span>

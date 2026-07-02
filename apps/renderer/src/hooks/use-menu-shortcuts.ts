@@ -1,9 +1,10 @@
 import { useEffect } from "react";
 
-import type { Command } from "@memoize/wire";
+import type { Command } from "@zuse/wire";
 
 import type { MenuAction } from "../lib/bridge";
 import { dispatchCommand } from "../lib/commands";
+import { useUiStore } from "../store/ui";
 
 /**
  * Subscribe to native Application Menu clicks emitted by the main process
@@ -16,10 +17,16 @@ import { dispatchCommand } from "../lib/commands";
  */
 export function useMenuShortcuts(): void {
   useEffect(() => {
-    const menu = window.memoize?.menu;
+    const menu = window.zuse?.menu;
     if (menu === undefined) return;
 
     const handle = (action: MenuAction) => {
+      if (action === "export-diagnostics") {
+        const ui = useUiStore.getState();
+        ui.setSettingsSection({ kind: "diagnostics" });
+        ui.setView("settings");
+        return;
+      }
       dispatchCommand(action as Command);
     };
 

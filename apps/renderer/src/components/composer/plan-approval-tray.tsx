@@ -1,7 +1,7 @@
 import { CheckListIcon } from "@hugeicons-pro/core-bulk-rounded";
 import { HugeiconsIcon } from "@hugeicons/react";
 
-import type { SessionId } from "@memoize/wire";
+import type { SessionId } from "@zuse/wire";
 
 import { usePermissionsStore } from "../../store/permissions.ts";
 import { TrayPill } from "./tray-pill.tsx";

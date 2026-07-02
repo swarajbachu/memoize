@@ -6,12 +6,12 @@ import {
   DashboardSpeedIcon,
   Loading02Icon,
   PlayIcon,
-  RotateRight01Icon,
   Settings01Icon,
   Tick01Icon,
 } from "@hugeicons-pro/core-bulk-rounded";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useState } from "react";
+import { RefreshCw as RefreshIcon } from "lucide-react";
+import { useEffect, useState } from "react";
 import type {
   AgentItemId,
   AttachmentRef,
@@ -22,13 +22,10 @@ import type {
   SessionId,
   SkillRef,
   UserQuestionAnswer,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { getFileIconUrl } from "~/lib/icons/material-icons";
-import {
-  openExternal,
-  useProviderLogin,
-} from "~/lib/use-provider-login";
+import { openExternal, useProviderLogin } from "~/lib/use-provider-login";
 import { cn } from "~/lib/utils";
 import {
   classifyMessage,
@@ -50,6 +47,7 @@ import {
   UserInputRow,
 } from "./tool-row.tsx";
 import { Button } from "./ui/button.tsx";
+import { ShimmerText } from "./ui/shimmer-text.tsx";
 
 export interface ToolResultRecord {
   readonly output: unknown;
@@ -76,6 +74,32 @@ const parseReconnectingStatus = (
   const maxAttempts = Number(match[2]);
   if (!Number.isFinite(attempt) || !Number.isFinite(maxAttempts)) return null;
   return { attempt, maxAttempts };
+};
+
+const formatDuration = (ms: number): string => {
+  const seconds = Math.max(0, ms) / 1000;
+  if (seconds < 60) return `${seconds.toFixed(1)}s`;
+  const min = Math.floor(seconds / 60);
+  const sec = seconds - min * 60;
+  return `${min}m, ${sec.toFixed(1)}s`;
+};
+
+const formatTokenCount = (tokens: number): string => tokens.toLocaleString();
+
+const formatCompactTokenDelta = (
+  beforeTokens: number | null,
+  afterTokens: number | null,
+): string | null => {
+  if (beforeTokens !== null && afterTokens !== null) {
+    return `${formatTokenCount(beforeTokens)} -> ${formatTokenCount(afterTokens)} tokens`;
+  }
+  if (beforeTokens !== null) {
+    return `${formatTokenCount(beforeTokens)} tokens before`;
+  }
+  if (afterTokens !== null) {
+    return `${formatTokenCount(afterTokens)} tokens after`;
+  }
+  return null;
 };
 
 /**
@@ -169,6 +193,16 @@ export function MessageRow({
       // The paired `user_question` row above renders the answer inline, so
       // the standalone answer row is suppressed.
       return null;
+    case "context_compaction":
+      return (
+        <CompactRow
+          beforeTokens={message.content.beforeTokens}
+          afterTokens={message.content.afterTokens}
+          startedAt={message.content.startedAt}
+          durationMs={message.content.durationMs}
+          status={message.content.status ?? "completed"}
+        />
+      );
     case "usage":
     case "context_usage":
     case "usage_limit":
@@ -188,7 +222,65 @@ export function MessageRow({
           sessionId={sessionId}
         />
       );
+    case "interrupted":
+      // The user stopped the turn — a normal action, so render a small muted
+      // badge rather than an error bubble.
+      return (
+        <div className="flex justify-center py-1">
+          <span className="rounded-full bg-muted/50 px-2.5 py-0.5 text-[11px] text-muted-foreground">
+            Interrupted by user
+          </span>
+        </div>
+      );
   }
+}
+
+function CompactRow({
+  beforeTokens,
+  afterTokens,
+  startedAt,
+  durationMs,
+  status,
+}: {
+  readonly beforeTokens: number | null;
+  readonly afterTokens: number | null;
+  readonly startedAt: number;
+  readonly durationMs: number;
+  readonly status: "in_progress" | "completed";
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  const inProgress = status === "in_progress";
+  useEffect(() => {
+    if (!inProgress) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [inProgress]);
+  const elapsedMs = inProgress ? Math.max(0, now - startedAt) : durationMs;
+  const tokenDelta = formatCompactTokenDelta(beforeTokens, afterTokens);
+  const detail =
+    tokenDelta === null
+      ? formatDuration(elapsedMs)
+      : `${tokenDelta} · ${formatDuration(elapsedMs)}`;
+
+  return (
+    <div className="px-4 py-2 text-muted-foreground">
+      <div className="flex items-center gap-2">
+        <RefreshIcon
+          aria-hidden
+          className={cn(
+            "size-3.5 shrink-0 opacity-70",
+            inProgress && "animate-spin",
+          )}
+        />
+        <span className="text-sm font-medium text-foreground/90">
+          {inProgress ? "Compacting..." : "Chat compacted"}
+        </span>
+      </div>
+      <div className="mt-1 pl-5 text-[11px] tabular-nums text-muted-foreground/70">
+        {detail}
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -290,7 +382,7 @@ function UserBubble({
             {(attachments ?? []).map((a) => {
               const isImage = a.mimeType.startsWith("image/");
               const iconUrl = isImage ? null : getFileIconUrl(a.originalName);
-              const src = `memoize://attachments/${a.id}`;
+              const src = `zuse://attachments/${a.id}`;
               const className =
                 "inline-flex items-center gap-1.5 rounded-md border border-border/45 bg-[var(--chip-bg)] px-1.5 py-0.5 text-[11px] text-foreground/90 shadow-[inset_0_1px_0_color-mix(in_oklch,white_4%,transparent),0_1px_2px_color-mix(in_oklch,black_22%,transparent)] hover:bg-[color-mix(in_oklch,var(--chip-bg)_80%,var(--foreground)_4%)] hover:text-foreground";
               const inner = (
@@ -586,7 +678,7 @@ function ProviderAuthCard({
               className="size-3.5 animate-spin"
               aria-hidden
             />
-            <span>Waiting for browser sign-in…</span>
+            <ShimmerText as="span">Waiting for browser sign-in…</ShimmerText>
             <button
               type="button"
               onClick={cancel}
@@ -602,7 +694,7 @@ function ProviderAuthCard({
               className="size-3.5 animate-spin"
               aria-hidden
             />
-            <span>Signed in. Finishing…</span>
+            <ShimmerText as="span">Signed in. Finishing…</ShimmerText>
           </div>
         ) : (
           <>
@@ -611,7 +703,9 @@ function ProviderAuthCard({
               automatically.
             </p>
             {state.kind === "failed" && (
-              <p className="mt-1 text-[11px] text-destructive">{state.reason}</p>
+              <p className="mt-1 text-[11px] text-destructive">
+                {state.reason}
+              </p>
             )}
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
               <Button
@@ -681,8 +775,8 @@ function GeminiUpgradeCard({ onDismiss }: { onDismiss?: () => void }) {
               Gemini CLI needs an upgrade
             </div>
             <p className="mt-1 leading-relaxed text-muted-foreground">
-              Your installed Gemini CLI does not support ACP mode yet, so
-              memoize cannot start Gemini sessions until the CLI is updated.
+              Your installed Gemini CLI does not support ACP mode yet, so Zuse
+              Alpha cannot start Gemini sessions until the CLI is updated.
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <code className="rounded-md border border-border/60 bg-background/60 px-2 py-1 font-mono text-[11px] text-foreground">
@@ -874,11 +968,7 @@ export function ErrorBubble({
                   onClick={onRetry}
                   className="gap-1"
                 >
-                  <HugeiconsIcon
-                    icon={RotateRight01Icon}
-                    className="size-3"
-                    aria-hidden
-                  />
+                  <RefreshIcon className="size-3" aria-hidden />
                   Retry
                 </Button>
                 {error.kind === "auth" && (

@@ -20,11 +20,18 @@ import {
   type ThreadGoalSetInput,
   type ThreadGoalStatus,
   type UserQuestionAnswer,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
 import { applyPlanModePrefix } from "./planMode.ts";
 import { CodexAppServerClient } from "../codex-app-server-client.ts";
+import {
+  finishCompactEvent,
+  nextCompactItemId,
+  startCompactEvent,
+  startCompactSnapshot,
+  type CompactSnapshot,
+} from "./compact.ts";
 import type { ServerNotification } from "../codex-app-protocol/ServerNotification";
 import type { ServerRequest } from "../codex-app-protocol/ServerRequest";
 import type { SandboxPolicy } from "../codex-app-protocol/v2/SandboxPolicy";
@@ -220,8 +227,11 @@ const probeModelFastTier = async (
 const toolIdentifierPart = (value: string): string =>
   value.replace(/[^A-Za-z0-9_]/g, "_");
 
+const normalizeMcpServerName = (server: string): string =>
+  server === "memoize" ? "zuse" : server;
+
 const toMcpToolName = (server: string, tool: string): string =>
-  `mcp__${toolIdentifierPart(server)}__${toolIdentifierPart(tool)}`;
+  `mcp__${toolIdentifierPart(normalizeMcpServerName(server))}__${toolIdentifierPart(tool)}`;
 
 const dynamicToolName = (namespace: string | null, tool: string): string =>
   namespace !== null ? `${namespace}.${tool}` : tool;
@@ -499,6 +509,10 @@ const createCodexToolTranslationLogger = (
 export const translateCodexItem = (
   item: ThreadItem,
   phase: "started" | "completed",
+  contextCompaction?: CompactSnapshot & {
+    readonly afterTokens: number | null;
+    readonly durationMs?: number;
+  },
 ): ReadonlyArray<AgentEvent> => {
   switch (item.type) {
     case "agentMessage":
@@ -620,13 +634,17 @@ export const translateCodexItem = (
       ];
     case "contextCompaction":
       if (phase !== "completed") return [];
-      return [
-        {
-          _tag: "AssistantMessage",
-          itemId: item.id as AgentItemId,
-          text: "Conversation context compacted.",
-        },
-      ];
+      {
+        return [
+          finishCompactEvent({
+            itemId: contextCompaction?.itemId ?? (item.id as AgentItemId),
+            providerId: "codex",
+            snapshot: contextCompaction ?? null,
+            afterTokens: contextCompaction?.afterTokens ?? null,
+            durationMs: contextCompaction?.durationMs,
+          }),
+        ];
+      }
     default:
       return [];
   }
@@ -699,6 +717,8 @@ export const startCodexSession = (
     // does / does not advertise a fast tier. Only a definitive `false` blocks
     // the `serviceTier: "fast"` request in `runTurn`.
     let modelFastTier: boolean | null = null;
+    const latestContextTokensByThread = new Map<string, number>();
+    const pendingCompactionsByThread = new Map<string, CompactSnapshot>();
 
     type QuestionWaiter = {
       readonly questionIds: ReadonlyArray<string>;
@@ -748,7 +768,7 @@ export const startCodexSession = (
       cwd,
       approvalPolicy: "never" as const,
       sandbox: toSandboxMode(currentMode),
-      serviceName: "memoize",
+      serviceName: "zuse",
     };
 
     const startOrResume = async (): Promise<void> => {
@@ -958,10 +978,20 @@ export const startCodexSession = (
 
       switch (command) {
         case "compact":
-          await app.request("thread/compact/start", {
-            threadId: activeThreadId,
-          });
-          say("Compaction started.");
+          {
+            const threadId = activeThreadId;
+            const snapshot = startCompactSnapshot(
+              latestContextTokensByThread.get(threadId) ?? null,
+            );
+            pendingCompactionsByThread.set(threadId, snapshot);
+            emit(startCompactEvent({ providerId: "codex", snapshot }));
+            try {
+              await app.request("thread/compact/start", { threadId });
+            } catch (cause) {
+              pendingCompactionsByThread.delete(threadId);
+              throw cause;
+            }
+          }
           return true;
         case "fork": {
           const forked = await app.request<{ thread: { id: string } }>(
@@ -1125,6 +1155,16 @@ export const startCodexSession = (
     function translateNotification(
       notification: ServerNotification,
     ): ReadonlyArray<AgentEvent> {
+      if (
+        notification.method === "thread/tokenUsage/updated" &&
+        notification.params.threadId === activeThreadId
+      ) {
+        latestContextTokensByThread.set(
+          notification.params.threadId,
+          notification.params.tokenUsage.total.totalTokens,
+        );
+      }
+
       const statusEvents = translateCodexStatusNotification(
         notification,
         activeThreadId,
@@ -1182,9 +1222,34 @@ export const startCodexSession = (
         case "item/completed":
           if (notification.params.threadId !== activeThreadId) return [];
           {
+            const compactMetadata =
+              notification.params.item.type === "contextCompaction"
+                ? (() => {
+                    const threadId = notification.params.threadId;
+                    const started =
+                      pendingCompactionsByThread.get(threadId) ?? null;
+                    pendingCompactionsByThread.delete(threadId);
+                    const now = Date.now();
+                    const startedAt = started?.startedAt ?? now;
+                    const beforeTokens = started?.beforeTokens ?? null;
+                    const latestAfter =
+                      latestContextTokensByThread.get(threadId) ?? null;
+                    const afterTokens =
+                      latestAfter !== null && latestAfter !== beforeTokens
+                        ? latestAfter
+                        : null;
+                    return {
+                      itemId: started?.itemId ?? nextCompactItemId(),
+                      startedAt,
+                      beforeTokens,
+                      afterTokens,
+                    };
+                  })()
+                : undefined;
             const translated = translateCodexItem(
               notification.params.item,
               "completed",
+              compactMetadata,
             );
             toolTranslationLog.append(
               "completed",

@@ -1,8 +1,8 @@
-import type { UpdateStatus } from "@memoize/wire";
+import type { UpdateStatus } from "@zuse/wire";
 
 /**
  * Shape of the preload bridge that the main process exposes onto
- * `window.memoize`. The renderer's RPC client transport reads/writes raw
+ * `window.zuse`. The renderer's RPC client transport reads/writes raw
  * encoded RPC frames; serialization + framing happen at the Effect RPC layer.
  */
 export interface RpcBridge {
@@ -53,6 +53,7 @@ export type MenuAction =
   | "new-chat"
   | "open-project"
   | "settings"
+  | "export-diagnostics"
   | "toggle-left-sidebar"
   | "toggle-right-sidebar"
   | "toggle-terminal"
@@ -123,7 +124,7 @@ export interface BrowserBridge {
   ) => Promise<boolean>;
 }
 
-export interface MemoizeBridge {
+export interface ZuseBridge {
   readonly rpc: RpcBridge;
   readonly window?: WindowBridge;
   readonly menu?: MenuBridge;
@@ -134,15 +135,17 @@ export interface MemoizeBridge {
 
 declare global {
   interface Window {
-    memoize?: MemoizeBridge;
+    zuse?: ZuseBridge;
+    /** Legacy alias exposed for compatibility with pre-Zuse dev helpers. */
+    memoize?: ZuseBridge;
   }
 }
 
-export function getBridge(): MemoizeBridge {
-  const bridge = globalThis.window?.memoize;
+export function getBridge(): ZuseBridge {
+  const bridge = globalThis.window?.zuse ?? globalThis.window?.memoize;
   if (!bridge) {
     throw new Error(
-      "memoize bridge missing — preload.ts did not load. Are we running outside Electron?",
+      "zuse bridge missing — preload.ts did not load. Are we running outside Electron?",
     );
   }
   return bridge;

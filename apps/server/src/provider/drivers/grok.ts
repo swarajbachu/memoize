@@ -15,12 +15,18 @@ import {
   type StartSessionInput,
   type ThreadGoalSetInput,
   type UserQuestionAnswer,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
 import { isIgnorableGrokAuthNoise } from "./acp/grok-auth-noise.ts";
 import { createAcpTranslator } from "./acp/translate.ts";
 import { applyPlanModePrefix } from "./planMode.ts";
+import {
+  finishCompactEvent,
+  isCompactCommand,
+  startCompactEvent,
+  startCompactSnapshot,
+} from "./compact.ts";
 import { handleFsRequest } from "./acp/fs.ts";
 import { handleTerminalRequest } from "./acp/terminal.ts";
 import type { GetRuntimeMode, RequestPermission } from "./claude.ts";
@@ -286,7 +292,7 @@ export const startGrokSession = (
       sessionId,
       projectId: input.folderId,
       requestPermission: (
-        kind: import("@memoize/wire").PermissionKind,
+        kind: import("@zuse/wire").PermissionKind,
         options: { readonly forcePrompt: boolean },
       ) => requestPermission(sessionId, kind, options),
       getRuntimeMode,
@@ -821,9 +827,20 @@ export const startGrokSession = (
     }
 
     const enqueuePrompt = (text: string): void => {
+      const compactSnapshot = isCompactCommand(text)
+        ? startCompactSnapshot(null)
+        : null;
+      if (compactSnapshot !== null) {
+        events.unsafeOffer(
+          startCompactEvent({ providerId: "grok", snapshot: compactSnapshot }),
+        );
+      }
       // Plan-mode emulation: grok ACP has no native read-only switch, so
       // prepend a developer-instructions block while plan mode is active.
-      const promptText = applyPlanModePrefix(currentMode, text);
+      const promptText =
+        compactSnapshot !== null
+          ? text.trim()
+          : applyPlanModePrefix(currentMode, text);
       inflight = inflight
         .then(async () => {
           if (closed) return;
@@ -897,6 +914,16 @@ export const startGrokSession = (
               process.stderr.write(`[grok.prompt] completed\n`);
             }
             grokDiag("session/prompt completed successfully");
+            if (compactSnapshot !== null && !closed) {
+              events.unsafeOffer(
+                finishCompactEvent({
+                  itemId: compactSnapshot.itemId,
+                  providerId: "grok",
+                  snapshot: compactSnapshot,
+                  afterTokens: null,
+                }),
+              );
+            }
           } catch (cause) {
             const reason = cause instanceof Error ? cause.message : String(cause);
             if (GROK_RPC_TRACE || GROK_DIAG) {

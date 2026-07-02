@@ -171,7 +171,7 @@ const editToPatch = (edit: FileEdit): string =>
 // Polished vertical diff used for Edit/Write/MultiEdit tool results in the
 // chat timeline. Matches CodeBlock chrome, has internal scroll cap, tight
 // gutters (consistent with the tightened code-block-shiki rules), and app-
-// native colors (no t3code zinc-900 or heavy alpha washes).
+// native colors.
 // ---------------------------------------------------------------------------
 
 const basename = (p: string): string => {
