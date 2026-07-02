@@ -39,6 +39,7 @@ import {
   type OpencodeSessionHandle,
 } from "../drivers/opencode.ts";
 import { AttachmentService } from "../../attachment/services/attachment-service.ts";
+import { ConfigStoreService } from "../../config-store/services/config-store-service.ts";
 import { buildIndexTools } from "../../code-index/claude-tools.ts";
 import { buildBrowserTools } from "../drivers/browser-tools.ts";
 import { IndexRegistry } from "../../code-index/services/index-registry.ts";
@@ -91,6 +92,7 @@ export const ProviderServiceLive = Layer.effect(
     const attachmentService = yield* AttachmentService;
     const browserBridge = yield* BrowserBridgeService;
     const indexRegistry = yield* IndexRegistry;
+    const configStore = yield* ConfigStoreService;
     const runtime = yield* Effect.runtime<never>();
     const sessions = yield* Ref.make<Map<AgentSessionId, SessionEntry>>(
       new Map(),
@@ -188,6 +190,15 @@ export const ProviderServiceLive = Layer.effect(
             .get(input.providerId)
             .pipe(Effect.catchAll(() => Effect.succeed<string | null>(null)));
           const sessionId = input.sessionId ?? nextSessionId();
+          // Capture the plan-artifacts setting at session start so plan mode
+          // knows whether to ask the agent for a rich HTML plan. Threaded to
+          // every driver via `planInput.planHtml`; drivers that don't emulate
+          // plan mode simply ignore it.
+          const settings = yield* configStore.getSettings();
+          const planInput = {
+            ...input,
+            planHtml: settings.planArtifactsEnabled,
+          };
           let handle: SessionHandle;
           if (input.providerId === "gemini") {
             // Same story as Grok: hand the driver the user's installed
@@ -206,7 +217,7 @@ export const ProviderServiceLive = Layer.effect(
               );
             }
             handle = yield* startGeminiSession(
-              input,
+              planInput,
               cwd,
               apiKey,
               geminiPath,
@@ -233,7 +244,7 @@ export const ProviderServiceLive = Layer.effect(
               );
             }
             handle = yield* startGrokSession(
-              input,
+              planInput,
               cwd,
               apiKey,
               grokPath,
@@ -260,7 +271,7 @@ export const ProviderServiceLive = Layer.effect(
               );
             }
             handle = yield* startOpencodeSession(
-              input,
+              planInput,
               cwd,
               apiKey,
               opencodePath,
@@ -288,7 +299,7 @@ export const ProviderServiceLive = Layer.effect(
               );
             }
             handle = yield* startCursorSession(
-              input,
+              planInput,
               cwd,
               apiKey,
               cursorPath,
@@ -334,7 +345,7 @@ export const ProviderServiceLive = Layer.effect(
             );
 
             handle = yield* startClaudeSession(
-              input,
+              planInput,
               cwd,
               apiKey,
               claudePath,
@@ -373,7 +384,7 @@ export const ProviderServiceLive = Layer.effect(
             // either the banner before sending or the friendly error after,
             // never the cryptic SDK trace.
             handle = yield* startCodexSession(
-              input,
+              planInput,
               cwd,
               apiKey,
               codexPath,

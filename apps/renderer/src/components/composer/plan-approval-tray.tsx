@@ -1,16 +1,23 @@
 import { CheckListIcon } from "@hugeicons-pro/core-bulk-rounded";
 import { HugeiconsIcon } from "@hugeicons/react";
 
-import type { SessionId } from "@zuse/wire";
+import { ComposerInput, type SessionId } from "@zuse/wire";
 
+import {
+  annotationsForSession,
+  useAnnotationsStore,
+} from "../../store/annotations.ts";
+import { useMessagesStore } from "../../store/messages.ts";
 import { usePermissionsStore } from "../../store/permissions.ts";
 import { TrayPill } from "./tray-pill.tsx";
 
 /**
  * Pinned "Review plan" bar docked above the composer. The proposed plan still
- * renders inline in the chat scrollback (see `ExitPlanModeRow`); this tray only
+ * renders inline in the chat scrollback (see `ExitPlanModeRow`); this tray
  * hoists the Approve / Cancel decision down to where the user's cursor already
- * sits, so they don't have to scroll back up to act. Renders nothing unless an
+ * sits. If the user left annotations on the plan, the decision also DELIVERS
+ * them: they're sent as a message (so they land in the chat and reach the
+ * agent) before the plan is approved or cancelled. Renders nothing unless an
  * `ExitPlanMode` permission request is open for this session.
  */
 export function PlanApprovalTray({ sessionId }: { sessionId: SessionId }) {
@@ -24,35 +31,71 @@ export function PlanApprovalTray({ sessionId }: { sessionId: SessionId }) {
     return null;
   });
   const decide = usePermissionsStore((s) => s.decide);
+  const send = useMessagesStore((s) => s.send);
+  const annCount = useAnnotationsStore(
+    (s) => (s.bySession[sessionId] ?? []).length,
+  );
 
   if (pendingRequest === null) return null;
+
+  // Drain any pending annotations into a message so the user's comments land in
+  // the chat and reach the agent. Fire it before the decision so the feedback
+  // is registered alongside the plan response.
+  const flushAnnotations = () => {
+    const annotations = annotationsForSession(sessionId);
+    if (annotations.length === 0) return;
+    useAnnotationsStore.getState().clear(sessionId);
+    void send(
+      sessionId,
+      ComposerInput.make({
+        text: "",
+        attachments: [],
+        fileRefs: [],
+        skillRefs: [],
+        annotations,
+      }),
+    );
+  };
+
+  const decideWith = (decision: "AllowOnce" | "Deny") => {
+    flushAnnotations();
+    void decide(pendingRequest.id, { _tag: decision });
+  };
+
+  const hasComments = annCount > 0;
 
   return (
     <TrayPill
       flush
       className="bg-rose-500/10 hover:bg-rose-500/15"
       icon={
-        <HugeiconsIcon icon={CheckListIcon} strokeWidth={2} className="size-3.5" />
+        <HugeiconsIcon
+          icon={CheckListIcon}
+          strokeWidth={2}
+          className="size-3.5"
+        />
       }
       title="Review plan"
-      subtitle="Approve to start building"
+      subtitle={
+        hasComments
+          ? `${annCount} comment${annCount > 1 ? "s" : ""} will be sent`
+          : "Approve to start building"
+      }
       actions={
         <>
           <button
             type="button"
-            onClick={() => void decide(pendingRequest.id, { _tag: "Deny" })}
+            onClick={() => decideWith("Deny")}
             className="rounded-md px-2.5 py-0.5 text-[12px] text-muted-foreground hover:bg-muted/60 hover:text-foreground"
           >
-            Cancel
+            {hasComments ? "Send & cancel" : "Cancel"}
           </button>
           <button
             type="button"
-            onClick={() =>
-              void decide(pendingRequest.id, { _tag: "AllowOnce" })
-            }
+            onClick={() => decideWith("AllowOnce")}
             className="rounded-md bg-foreground px-2.5 py-0.5 text-[12px] font-medium text-background hover:opacity-90"
           >
-            Approve
+            {hasComments ? "Send & approve" : "Approve"}
           </button>
         </>
       }

@@ -2,7 +2,11 @@ import { PatchDiff } from "@pierre/diffs/react";
 import { Effect } from "effect";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { CodeAnnotation, GitDiffResult } from "@zuse/wire";
+import {
+  isCodeAnnotation,
+  type Annotation,
+  type GitDiffResult,
+} from "@zuse/wire";
 
 import { cn } from "~/lib/utils";
 import { ShimmerText } from "~/components/ui/shimmer-text";
@@ -35,6 +39,9 @@ import {
 } from "../lib/codemirror/annotation-selection.ts";
 import { AnnotateOverlay } from "./annotation/annotate-overlay.tsx";
 import { useAddAnnotation } from "./annotation/use-add-annotation.ts";
+import { AnnotatableArtifact } from "./artifact/annotatable.tsx";
+import { HtmlArtifact } from "./artifact/html-artifact.tsx";
+import { MarkdownBody } from "./markdown-body.tsx";
 
 import type { EditorView } from "@codemirror/view";
 
@@ -87,6 +94,23 @@ export function FileEditor() {
     return <ImageBody src={openFile.src} name={openFile.name} />;
   }
 
+  if (openFile.kind === "artifact") {
+    return openFile.format === "html" ? (
+      <HtmlArtifact
+        source={openFile.source}
+        sourceRef={openFile.sourceRef}
+        title={openFile.title}
+        fill
+      />
+    ) : (
+      <div className="min-h-0 flex-1 overflow-auto p-4">
+        <AnnotatableArtifact sourceRef={openFile.sourceRef} title={openFile.title}>
+          <MarkdownBody>{openFile.source}</MarkdownBody>
+        </AnnotatableArtifact>
+      </div>
+    );
+  }
+
   const view = openFile.view;
   // External files have no git/folder context, so they're edit-only — no diff.
   const isExternal = openFile.kind === "external";
@@ -137,7 +161,7 @@ type EditableFile = Extract<OpenFile, { kind: "text" | "external" }>;
 // `[]` literal from a zustand/`useSyncExternalStore` selector fails React's
 // snapshot identity check every render → "getSnapshot should be cached" and
 // an infinite update loop. One shared constant keeps the reference stable.
-const EMPTY_ANNOTATIONS: ReadonlyArray<CodeAnnotation> = [];
+const EMPTY_ANNOTATIONS: ReadonlyArray<Annotation> = [];
 
 function CodeMirrorBody({
   openFile,
@@ -189,6 +213,7 @@ function CodeMirrorBody({
   const visibleAnnotations = useMemo(
     () =>
       draftAnnotations
+        .filter(isCodeAnnotation)
         .filter(
           (a) =>
             a.relPath === annotationPath || a.absPath === annotationAbsPath,
@@ -461,7 +486,7 @@ function CodeMirrorBody({
           onCardOpenChange={setCardOpen}
           onConfirm={(draft) => {
             const created = addAnnotation(draft);
-            if (created !== null) {
+            if (created !== null && isCodeAnnotation(created)) {
               useUiStore.getState().revealAnnotation(created);
             }
             // Collapse the selection so the affordance dismisses itself.

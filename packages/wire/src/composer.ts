@@ -69,6 +69,56 @@ export const CodeAnnotation = Schema.Struct({
 export type CodeAnnotation = typeof CodeAnnotation.Type;
 
 /**
+ * A pinned element or text region inside an embedded HTML artifact (a plan or a
+ * fenced `html` block rendered inline in chat). The rendered-HTML analogue of
+ * `CodeAnnotation`: the user clicks an element or selects text in the preview
+ * and pins a comment; it stacks in the same tray and serialises into the same
+ * prompt. No HTML crosses the wire — `selector` + `label` pinpoint the element
+ * inside the document the agent itself produced, so it can map the comment back.
+ */
+export const ElementAnnotation = Schema.Struct({
+  _tag: Schema.Literal("element"),
+  /** Client-generated v4 UUID — list keys + removal. */
+  id: Schema.String,
+  /** Id of the source message / plan whose rendered artifact this targets. */
+  sourceRef: Schema.String,
+  /** Best-effort unique CSS selector within the artifact root. */
+  selector: Schema.String,
+  /** Human label: tag + trimmed text, e.g. `button "Get started"`. */
+  label: Schema.String,
+  /** Present when the user annotated a text selection rather than an element. */
+  text: Schema.optional(Schema.String),
+  comment: Schema.String,
+});
+export type ElementAnnotation = typeof ElementAnnotation.Type;
+
+/**
+ * Either kind of pinned annotation. Decode tries `ElementAnnotation` first (it
+ * requires `_tag: "element"`); anything without that tag falls back to the
+ * untagged `CodeAnnotation`, so annotations persisted before HTML artifacts
+ * existed still decode.
+ */
+export const Annotation = Schema.Union(ElementAnnotation, CodeAnnotation);
+export type Annotation = typeof Annotation.Type;
+
+/**
+ * An annotation before the store mints its `id`. Spelled as an explicit
+ * (distributive) union because `Omit<Annotation, "id">` over a union collapses
+ * to only the shared keys, dropping each variant's distinct fields.
+ */
+export type NewAnnotation =
+  | Omit<CodeAnnotation, "id">
+  | Omit<ElementAnnotation, "id">;
+
+/** Narrow an `Annotation` to the HTML-artifact element/text variant. */
+export const isElementAnnotation = (a: Annotation): a is ElementAnnotation =>
+  "_tag" in a;
+
+/** Narrow an `Annotation` to the code-region variant. */
+export const isCodeAnnotation = (a: Annotation): a is CodeAnnotation =>
+  !("_tag" in a);
+
+/**
  * The full payload of a single composer submission. `text` is the editor
  * document with `@` / `/` tokens preserved as plain text; the typed arrays
  * give the server enough metadata to expand each segment without re-parsing.
@@ -79,7 +129,7 @@ export class ComposerInput extends Schema.Class<ComposerInput>("ComposerInput")(
     attachments: Schema.Array(AttachmentRef),
     fileRefs: Schema.Array(FileRef),
     skillRefs: Schema.Array(SkillRef),
-    annotations: Schema.optionalWith(Schema.Array(CodeAnnotation), {
+    annotations: Schema.optionalWith(Schema.Array(Annotation), {
       default: () => [],
     }),
   },

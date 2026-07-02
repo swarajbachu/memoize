@@ -1,6 +1,11 @@
 import { useCallback } from "react";
 
-import type { CodeAnnotation, FolderId, WorktreeId } from "@zuse/wire";
+import {
+  isElementAnnotation,
+  type Annotation,
+  type FolderId,
+  type WorktreeId,
+} from "@zuse/wire";
 
 import { useUiStore } from "~/store/ui";
 import { useWorkspaceStore } from "~/store/workspace";
@@ -15,7 +20,7 @@ const basename = (p: string): string => {
 export const useRevealAnnotation = (opts?: {
   readonly folderId?: FolderId | null;
   readonly worktreeId?: WorktreeId | null;
-}): ((annotation: CodeAnnotation) => void) => {
+}): ((annotation: Annotation) => void) => {
   const context = useFileChipContext();
   const folderId = opts?.folderId ?? context.folderId;
   const worktreeId = opts?.worktreeId ?? context.worktreeId;
@@ -32,7 +37,11 @@ export const useRevealAnnotation = (opts?: {
   });
 
   return useCallback(
-    (annotation: CodeAnnotation) => {
+    (annotation: Annotation) => {
+      // Element annotations live inside a rendered HTML artifact in the chat,
+      // not a file — there's nothing to open in the editor. (Scrolling the
+      // chat back to the source artifact is a future enhancement.)
+      if (isElementAnnotation(annotation)) return;
       const rootPath = worktreePath ?? folderPath;
       const resolvedAbs =
         annotation.absPath ||

@@ -98,6 +98,13 @@ export class SettingsFile extends Schema.Class<SettingsFile>("SettingsFile")({
    * Empty falls back to a bare slug.
    */
   branchNamingPrefix: Schema.String,
+  /**
+   * Opt-in: render plans as embedded, annotatable HTML artifacts. When on,
+   * plan mode instructs the agent to emit a visual HTML plan and the renderer
+   * shows it as a clickable artifact; when off, plans render as plain markdown.
+   * Defaults off.
+   */
+  planArtifactsEnabled: Schema.Boolean,
 }) {}
 
 /**
@@ -136,6 +143,7 @@ export const SettingsPatch = Schema.Struct({
   ),
   branchNamingStyle: Schema.optional(BranchNamingStyle),
   branchNamingPrefix: Schema.optional(Schema.String),
+  planArtifactsEnabled: Schema.optional(Schema.Boolean),
 });
 export type SettingsPatch = typeof SettingsPatch.Type;
 

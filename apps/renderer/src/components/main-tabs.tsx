@@ -166,8 +166,14 @@ export function MainTabs({ projectId, emptyLabel }: Props) {
         {openFile && (
           <FileTabButton
             active={activeMainTab === "file"}
-            name={openFile.name}
-            path={openFile.kind === "text" ? openFile.path : openFile.name}
+            name={openFile.kind === "artifact" ? openFile.title : openFile.name}
+            path={
+              openFile.kind === "text"
+                ? openFile.path
+                : openFile.kind === "artifact"
+                  ? openFile.title
+                  : openFile.name
+            }
             dirty={openFile.kind === "text" ? fileDirty : false}
             onClick={() => setActiveMainTab("file")}
             onClose={closeFileTab}

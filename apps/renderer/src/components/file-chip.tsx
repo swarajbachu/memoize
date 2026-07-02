@@ -1,6 +1,14 @@
 import { createContext, useContext } from "react";
 
-import type { CodeAnnotation, FolderId, WorktreeId } from "@zuse/wire";
+import {
+  isElementAnnotation,
+  type Annotation,
+  type CodeAnnotation,
+  type FolderId,
+  type WorktreeId,
+} from "@zuse/wire";
+import { CursorMagicSelection02Icon } from "@hugeicons-pro/core-bulk-rounded";
+import { HugeiconsIcon } from "@hugeicons/react";
 
 import { cn } from "~/lib/utils";
 import { useUiStore, type FileView } from "~/store/ui";
@@ -105,9 +113,33 @@ export function AnnotationFileChip({
   annotation,
   className,
 }: {
-  readonly annotation: CodeAnnotation;
+  readonly annotation: Annotation;
   readonly className?: string;
 }) {
+  // Element annotations target a node in a rendered HTML artifact — there is no
+  // file to name, so the chip shows the picker icon + the element's human label.
+  if (isElementAnnotation(annotation)) {
+    return (
+      <span
+        className={cn(
+          "inline-flex max-w-full shrink-0 items-center gap-1.5 rounded-[0.375rem] border border-border/45 bg-[var(--chip-bg)] px-1.5 py-0.5 text-[11px] text-foreground/90 shadow-[inset_0_1px_0_color-mix(in_oklch,white_4%,transparent),0_1px_2px_color-mix(in_oklch,black_22%,transparent)]",
+          className,
+        )}
+        title={annotation.selector}
+      >
+        <HugeiconsIcon
+          icon={CursorMagicSelection02Icon}
+          className="size-3.5 shrink-0 text-muted-foreground"
+        />
+        <span className="min-w-0 truncate">
+          {annotation.text !== undefined && annotation.text.length > 0
+            ? `"${annotation.text}"`
+            : annotation.label}
+        </span>
+      </span>
+    );
+  }
+
   const name = basename(annotation.relPath);
   const range = annotationRangeLabel(annotation);
 

@@ -202,6 +202,7 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(AttachmentLayer),
     Layer.provide(BrowserBridgeLayer),
     Layer.provide(IndexLayer),
+    Layer.provide(ConfigStoreLayer),
     Layer.provide(NodeContext.layer),
   );
 

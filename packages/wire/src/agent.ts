@@ -711,6 +711,14 @@ export const StartSessionInput = Schema.Struct({
   modelOptions: Schema.optional(
     Schema.Record({ key: Schema.String, value: Schema.String }),
   ),
+  /**
+   * Opt-in (mirrors `SettingsFile.planArtifactsEnabled`): when true, plan mode
+   * instructs the agent to present its plan as a rich, self-contained HTML
+   * document so the renderer can show it as an embedded, annotatable artifact.
+   * When false/omitted, the plan-mode prompt stays plain. Set once at session
+   * start by `ProviderService` from the current setting.
+   */
+  planHtml: Schema.optional(Schema.Boolean),
 });
 export type StartSessionInput = typeof StartSessionInput.Type;
 

@@ -85,6 +85,7 @@ const fallbackSnapshot = (): SettingsSlice => ({
   modelEnabledByProvider: seedModelEnabledByProvider(),
   branchNamingStyle: DEFAULT_BRANCH_NAMING_STYLE,
   branchNamingPrefix: "",
+  planArtifactsEnabled: false,
 });
 
 const sliceFromFile = (file: SettingsFile): SettingsSlice => {
@@ -112,6 +113,7 @@ const sliceFromFile = (file: SettingsFile): SettingsSlice => {
     modelEnabledByProvider: mergeModelEnabled(file.modelEnabledByProvider),
     branchNamingStyle: file.branchNamingStyle,
     branchNamingPrefix: file.branchNamingPrefix,
+    planArtifactsEnabled: file.planArtifactsEnabled,
   };
 };
 
@@ -127,6 +129,7 @@ interface SettingsSlice {
   readonly modelEnabledByProvider: ModelEnabledByProvider;
   readonly branchNamingStyle: BranchNamingStyle;
   readonly branchNamingPrefix: string;
+  readonly planArtifactsEnabled: boolean;
 }
 
 type SettingsState = SettingsSlice & {
@@ -158,6 +161,7 @@ type SettingsState = SettingsSlice & {
   ) => void;
   readonly setBranchNamingStyle: (style: BranchNamingStyle) => void;
   readonly setBranchNamingPrefix: (prefix: string) => void;
+  readonly setPlanArtifactsEnabled: (value: boolean) => void;
 };
 
 let streamFiber: Fiber.RuntimeFiber<unknown, unknown> | null = null;
@@ -348,6 +352,15 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const client = await getRpcClient();
       await Effect.runPromise(
         client.settings.update({ patch: { branchNamingPrefix: prefix } }),
+      );
+    })();
+  },
+  setPlanArtifactsEnabled: (value) => {
+    set({ planArtifactsEnabled: value });
+    void (async () => {
+      const client = await getRpcClient();
+      await Effect.runPromise(
+        client.settings.update({ patch: { planArtifactsEnabled: value } }),
       );
     })();
   },

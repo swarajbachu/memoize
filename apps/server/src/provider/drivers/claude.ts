@@ -38,6 +38,7 @@ import {
   startCompactSnapshot,
   type CompactSnapshot,
 } from "./compact.ts";
+import { PLAN_MODE_HTML_INSTRUCTIONS } from "./planMode.ts";
 
 /**
  * Live-only handle for one Claude SDK conversation. The orchestrator
@@ -1600,7 +1601,9 @@ export const startClaudeSession = (
         "Phase 1 — Explore. Use only read-only tools (Read, Glob, Grep).",
         "Phase 2 — Track. Maintain a TodoWrite list as you discover work; keep it crisp.",
         `Phase 3 — Ask. When a real fork in the road exists (which library, which scope, which approach), call ${ASK_USER_QUESTION_FQN} with the choices instead of guessing.`,
-        "Phase 4 — Propose. Call ExitPlanMode with a concise plan: what changes, where, and how to verify.",
+        "Phase 4 — Propose. Call ExitPlanMode with a plan covering what changes, where, and how to verify.",
+        // Visual-HTML plan formatting only when the plan-artifacts setting is on.
+        ...(input.planHtml === true ? [PLAN_MODE_HTML_INSTRUCTIONS] : []),
       ].join("\n"),
       // Reasoning effort: mapped from FE picker via `input.modelOptions
       // .effort` (or legacy `reasoning`). The per-model descriptor in

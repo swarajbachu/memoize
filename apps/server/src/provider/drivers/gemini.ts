@@ -655,7 +655,7 @@ export const startGeminiSession = (
       const promptText =
         compactSnapshot !== null
           ? text.trim()
-          : applyPlanModePrefix(currentMode, text);
+          : applyPlanModePrefix(currentMode, text, input.planHtml ?? false);
       inflight = inflight
         .then(async () => {
           if (closed) return;
