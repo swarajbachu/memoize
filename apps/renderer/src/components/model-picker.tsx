@@ -673,7 +673,7 @@ function ProviderSectionHeader({
         {PROVIDER_LABEL[providerId]}
       </span>
       {current && (
-        <span className="rounded-[0.25rem] border border-primary/55 bg-primary/35 px-1.5 py-px text-[9px] font-semibold text-primary-foreground uppercase tracking-wide dark:border-primary/45 dark:bg-primary/22 dark:text-primary">
+        <span className="rounded-[0.25rem] border border-primary/55 bg-primary/35 px-1.5 py-px text-[9px] font-semibold text-primary-foreground uppercase tracking-wide dark:border-0 dark:bg-primary/15 dark:text-primary">
           Current
         </span>
       )}
@@ -753,7 +753,7 @@ function ModelRow({
           {entry.contextWindowLabel !== undefined && (
             <span
               title={`${entry.contextWindowLabel} context window`}
-              className="shrink-0 rounded-[0.25rem] border border-border/70 bg-muted px-1.5 py-px text-[10px] font-medium text-foreground/70"
+              className="shrink-0 rounded-[0.25rem] border border-border/70 bg-muted px-1.5 py-px text-[10px] font-medium text-foreground/70 dark:border-0 dark:bg-muted/70 dark:px-1 dark:text-muted-foreground"
             >
               {entry.contextWindowLabel}
             </span>
@@ -767,7 +767,7 @@ function ModelRow({
       </span>
       <span className="flex-1" />
       {entry.badgeLabel !== undefined && (
-        <span className="shrink-0 rounded-[0.25rem] border border-primary/55 bg-primary/35 px-1.5 py-px text-[9px] font-semibold text-primary-foreground uppercase tracking-wide dark:border-primary/45 dark:bg-primary/22 dark:text-primary">
+        <span className="shrink-0 rounded-[0.25rem] border border-primary/55 bg-primary/35 px-1.5 py-px text-[9px] font-semibold text-primary-foreground uppercase tracking-wide dark:border-0 dark:bg-primary/15 dark:text-primary">
           {entry.badgeLabel}
         </span>
       )}
@@ -791,12 +791,12 @@ function ModelRow({
         </span>
       )}
       {showNowBadge && isActive && (
-        <span className="rounded-[0.25rem] border border-primary/65 bg-primary/40 px-1.5 py-px font-semibold text-[9px] text-primary-foreground uppercase tracking-wide dark:border-primary/55 dark:bg-primary/28 dark:text-primary">
+        <span className="rounded-[0.25rem] border border-primary/65 bg-primary/40 px-1.5 py-px font-semibold text-[9px] text-primary-foreground uppercase tracking-wide dark:border-0 dark:bg-primary dark:font-medium dark:text-primary-foreground dark:tracking-wider">
           now
         </span>
       )}
       {shortcut !== undefined && shortcut !== null && (
-        <kbd className="ml-0.5 flex h-5 min-w-5 items-center justify-center rounded-[0.25rem] border border-border/70 bg-muted px-1 font-medium text-[10px] text-foreground/70 tabular-nums">
+        <kbd className="ml-0.5 flex h-5 min-w-5 items-center justify-center rounded-[0.25rem] border border-border/70 bg-muted px-1 font-medium text-[10px] text-foreground/70 tabular-nums dark:h-auto dark:min-w-0 dark:border-0 dark:bg-muted/70 dark:text-muted-foreground">
           {shortcut}
         </kbd>
       )}
