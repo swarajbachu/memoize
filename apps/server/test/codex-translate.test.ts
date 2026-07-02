@@ -124,6 +124,47 @@ describe("translateCodexItem", () => {
     });
   });
 
+  it("renders multi-file Codex file changes as patch-backed multi-edit rows", () => {
+    const item: ThreadItem = {
+      type: "fileChange",
+      id: "patch-many",
+      status: "completed",
+      changes: [
+        {
+          path: "a.txt",
+          kind: { type: "update", move_path: null },
+          diff: "@@ -1 +1 @@\n-old\n+new",
+        },
+        {
+          path: "b.txt",
+          kind: { type: "add" },
+          diff: "@@ -0,0 +1 @@\n+created",
+        },
+      ],
+    };
+
+    const out = translateCodexItem(item, "completed");
+    expect(tags(out)).toEqual(["ToolUse", "ToolResult"]);
+    const use = out[0] as Extract<AgentEvent, { _tag: "ToolUse" }>;
+    expect(use.tool).toBe("MultiEdit");
+    expect(use.input).toEqual({
+      patches: [
+        {
+          file_path: "a.txt",
+          kind: "update",
+          patch: "@@ -1 +1 @@\n-old\n+new",
+          move_path: null,
+        },
+        {
+          file_path: "b.txt",
+          kind: "add",
+          patch: "@@ -0,0 +1 @@\n+created",
+          move_path: undefined,
+        },
+      ],
+    });
+  });
+
   it("normalizes MCP tool names to Claude-style names", () => {
     const item: ThreadItem = {
       type: "mcpToolCall",
@@ -166,10 +207,7 @@ describe("translateCodexItem", () => {
   it("renders context compaction gracefully without token counts", () => {
     const item: ThreadItem = { type: "contextCompaction", id: "compact1" };
 
-    const ev = only(
-      translateCodexItem(item, "completed"),
-      "ContextCompaction",
-    );
+    const ev = only(translateCodexItem(item, "completed"), "ContextCompaction");
     expect(ev.beforeTokens).toBeNull();
     expect(ev.afterTokens).toBeNull();
     expect(ev.status).toBe("completed");

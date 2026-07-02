@@ -378,7 +378,6 @@ const codexFileChangeInput = (
   return {
     tool: "MultiEdit",
     input: {
-      file_path: patches.map((patch) => patch.file_path).join(", "),
       patches,
     },
   };
