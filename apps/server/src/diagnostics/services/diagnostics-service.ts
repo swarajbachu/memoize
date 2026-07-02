@@ -3,7 +3,7 @@ import { Context, type Effect } from "effect";
 import type {
   DiagnosticsExportError,
   DiagnosticsExportResult,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 export interface DiagnosticsServiceShape {
   readonly exportBundle: () => Effect.Effect<

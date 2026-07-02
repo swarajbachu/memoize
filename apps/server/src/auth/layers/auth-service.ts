@@ -6,7 +6,7 @@ import {
   AuthSession,
   AuthState,
   AuthUser,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import { CredentialsService } from "../../provider/services/credentials-service.ts";
 import { AuthTokenError } from "../errors.ts";
