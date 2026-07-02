@@ -17,7 +17,7 @@ import {
   DiagnosticsExportError,
   DiagnosticsExportResult,
   type AgentAvailability,
-} from "@memoize/wire";
+} from "@zuse/wire";
 
 import packageJson from "../../../package.json" with { type: "json" };
 import { AppPaths } from "../../app-paths.ts";
