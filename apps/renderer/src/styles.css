@@ -25,6 +25,69 @@ body,
   border-radius: 4px;
 }
 
+.chat-row-enter {
+  animation: chat-row-enter 150ms cubic-bezier(0.215, 0.61, 0.355, 1) both;
+  will-change: transform, opacity;
+}
+
+.chat-row-enter-user {
+  animation-duration: 210ms;
+}
+
+.chat-send-flight {
+  animation: chat-send-flight 220ms cubic-bezier(0.215, 0.61, 0.355, 1) both;
+  pointer-events: none;
+  transform-origin: top left;
+  will-change: transform, opacity;
+}
+
+@keyframes chat-row-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 5px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes chat-send-flight {
+  0% {
+    opacity: 0.82;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  70% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(var(--chat-send-x), var(--chat-send-y), 0)
+      scale(0.96);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-row-enter {
+    animation: chat-row-enter-reduced 80ms ease-out both;
+    will-change: opacity;
+  }
+
+  .chat-send-flight {
+    animation: none;
+    display: none;
+  }
+
+  @keyframes chat-row-enter-reduced {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+}
+
 @theme inline {
   --animate-skeleton: skeleton 2s -1s infinite linear;
   --animate-caret-blink: 1s ease-out infinite caret-blink;

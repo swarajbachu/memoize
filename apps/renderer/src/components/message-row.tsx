@@ -347,7 +347,10 @@ function UserBubble({
     name.length > 28 ? `${name.slice(0, 25)}...` : name;
   return (
     <div className="group/message flex justify-end px-4 py-2">
-      <div className="relative max-w-[80%] rounded-2xl rounded-tr-sm bg-user-bubble px-3 py-2 pr-9 text-sm text-user-bubble-foreground">
+      <div
+        data-chat-user-bubble
+        className="relative max-w-[80%] rounded-2xl rounded-tr-sm bg-user-bubble px-3 py-2 pr-9 text-sm text-user-bubble-foreground"
+      >
         <CopyButton
           text={display || text}
           label="Copy message"
