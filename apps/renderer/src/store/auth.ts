@@ -1,7 +1,7 @@
 import { Effect, Fiber, Schedule, Stream } from "effect";
 import { create } from "zustand";
 
-import type { AuthState } from "@memoize/wire";
+import type { AuthState } from "@zuse/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
 

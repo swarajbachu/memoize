@@ -1,4 +1,4 @@
-import type { AuthUser } from "@memoize/wire";
+import type { AuthUser } from "@zuse/wire";
 
 import { useAuthStore } from "../store/auth.ts";
 
