@@ -24,8 +24,8 @@ import {
 /** Refresh when the access token is within this window of expiry. */
 const REFRESH_SKEW_MS = 60_000;
 
-/** How long `signIn` waits for the deep link before giving up. */
-const SIGN_IN_TIMEOUT = "5 minutes";
+/** How long `signIn` waits for the browser callback before giving up. */
+const SIGN_IN_TIMEOUT = "45 seconds";
 
 const SIGNED_OUT: AuthState = { _tag: "SignedOut" };
 
@@ -35,7 +35,7 @@ const SIGNED_OUT: AuthState = { _tag: "SignedOut" };
  * which case `signIn` fails with a clear message and the rest of the app keeps
  * working (auth is additive).
  */
-const CLIENT_ID = process.env.WORKOS_CLIENT_ID ?? "";
+const CLIENT_ID = (process.env.WORKOS_CLIENT_ID ?? "").trim();
 
 interface PendingSignIn {
   readonly deferred: Deferred.Deferred<SessionBundle, AuthFlowError>;
@@ -211,6 +211,15 @@ export const AuthServiceLive = Layer.scoped(
         }
         const pkce = makePkce();
         const deferred = yield* Deferred.make<SessionBundle, AuthFlowError>();
+        const previous = yield* Ref.get(pending);
+        if (previous !== null) {
+          yield* Deferred.fail(
+            previous.deferred,
+            new AuthFlowError({
+              reason: "A newer sign-in attempt was started.",
+            }),
+          );
+        }
         yield* Ref.set(pending, {
           deferred,
           verifier: pkce.verifier,

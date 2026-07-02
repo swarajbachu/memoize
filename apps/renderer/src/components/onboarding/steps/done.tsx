@@ -8,7 +8,11 @@ export function DoneStep({ onFinish }: { onFinish: () => void }) {
       <div className="relative flex size-16 items-center justify-center">
         <span className="absolute inset-0 rounded-full bg-emerald-400/15 blur-xl" />
         <span className="relative flex size-14 items-center justify-center rounded-full bg-emerald-400/15 text-emerald-300">
-          <HugeiconsIcon icon={Tick01Icon} className="size-6" strokeWidth={2.25} />
+          <HugeiconsIcon
+            icon={Tick01Icon}
+            className="size-6"
+            strokeWidth={2.25}
+          />
         </span>
       </div>
       <div className="flex flex-col gap-2.5">

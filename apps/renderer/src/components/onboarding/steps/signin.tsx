@@ -68,7 +68,10 @@ export function SigninStep() {
       </div>
 
       {error && !isSignedIn ? (
-        <p className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
+        <p
+          className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          role="alert"
+        >
           {error}
         </p>
       ) : null}
@@ -88,7 +91,13 @@ export function SigninStep() {
   );
 }
 
-function Hint({ title, children }: { title: string; children: React.ReactNode }) {
+function Hint({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="rounded-lg bg-white/[0.025] px-3 py-2.5">
       <div className="font-medium text-foreground">{title}</div>
