@@ -673,7 +673,7 @@ function ProviderSectionHeader({
         {PROVIDER_LABEL[providerId]}
       </span>
       {current && (
-        <span className="rounded-[0.25rem] border border-primary/55 bg-primary/35 px-1.5 py-px text-[9px] font-semibold text-primary uppercase tracking-wide dark:border-primary/45 dark:bg-primary/22">
+        <span className="rounded-[0.25rem] border border-primary/55 bg-primary/35 px-1.5 py-px text-[9px] font-semibold text-primary-foreground uppercase tracking-wide dark:border-primary/45 dark:bg-primary/22 dark:text-primary">
           Current
         </span>
       )}
@@ -767,7 +767,7 @@ function ModelRow({
       </span>
       <span className="flex-1" />
       {entry.badgeLabel !== undefined && (
-        <span className="shrink-0 rounded-[0.25rem] border border-primary/55 bg-primary/35 px-1.5 py-px text-[9px] font-semibold text-primary uppercase tracking-wide dark:border-primary/45 dark:bg-primary/22">
+        <span className="shrink-0 rounded-[0.25rem] border border-primary/55 bg-primary/35 px-1.5 py-px text-[9px] font-semibold text-primary-foreground uppercase tracking-wide dark:border-primary/45 dark:bg-primary/22 dark:text-primary">
           {entry.badgeLabel}
         </span>
       )}
@@ -791,7 +791,7 @@ function ModelRow({
         </span>
       )}
       {showNowBadge && isActive && (
-        <span className="rounded-[0.25rem] border border-primary/65 bg-primary/40 px-1.5 py-px font-semibold text-[9px] text-primary uppercase tracking-wide dark:border-primary/55 dark:bg-primary/28">
+        <span className="rounded-[0.25rem] border border-primary/65 bg-primary/40 px-1.5 py-px font-semibold text-[9px] text-primary-foreground uppercase tracking-wide dark:border-primary/55 dark:bg-primary/28 dark:text-primary">
           now
         </span>
       )}
