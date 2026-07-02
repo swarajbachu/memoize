@@ -125,13 +125,13 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         set({ state: result.next, signingIn: false, error: null });
         return;
       }
-      const cancelled = result.err._tag === "AuthCancelledError";
       set({
         signingIn: false,
-        error: cancelled
-          ? null
-          : ("reason" in result.err && result.err.reason) ||
-            "Sign-in failed. Please try again.",
+        error:
+          result.err._tag === "AuthCancelledError"
+            ? "No sign-in callback was received. Check the WorkOS client ID and redirect URI, then try again."
+            : ("reason" in result.err && result.err.reason) ||
+              "Sign-in failed. Please try again.",
       });
     } catch (err) {
       set({
