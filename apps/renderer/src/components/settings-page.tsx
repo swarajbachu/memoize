@@ -4,6 +4,7 @@ import {
   Alert01Icon,
   ArrowLeft01Icon,
   Delete02Icon,
+  DocumentAttachmentIcon,
   Folder01Icon,
   GitBranchIcon,
   GlobeIcon,
@@ -114,6 +115,12 @@ const TOP_RAIL: ReadonlyArray<RailItemBase> = [
     label: "Browser",
     Icon: GlobeIcon,
     section: { kind: "browser" },
+  },
+  {
+    id: "diagnostics",
+    label: "Diagnostics",
+    Icon: DocumentAttachmentIcon,
+    section: { kind: "diagnostics" },
   },
   {
     id: "shortcuts",
@@ -316,6 +323,12 @@ function SectionTitle({
         subtitle: "Dummy test logins the agent browser can autofill.",
       };
     }
+    if (section.kind === "diagnostics") {
+      return {
+        title: "Diagnostics",
+        subtitle: "Export a redacted support bundle for debugging user issues.",
+      };
+    }
     if (section.kind === "shortcuts") {
       return {
         title: "Keyboard shortcuts",
@@ -361,9 +374,132 @@ function Pane({ section }: { section: SettingsSection }) {
   if (section.kind === "workspace") return <WorkspacePane />;
   if (section.kind === "pokedex") return <PokedexPane />;
   if (section.kind === "browser") return <BrowserSettingsPane />;
+  if (section.kind === "diagnostics") return <DiagnosticsPane />;
   if (section.kind === "shortcuts") return <KeybindingsPane />;
   if (section.kind === "developer") return <DeveloperPane />;
   return <RepositorySettings projectId={section.projectId} />;
+}
+
+function DiagnosticsPane() {
+  const [isExporting, setIsExporting] = useState(false);
+  const [lastExport, setLastExport] = useState<{
+    diagnosticId: string;
+    bundlePath: string;
+    summary: string;
+    agentPrompt: string;
+    included: ReadonlyArray<string>;
+  } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState<"summary" | "prompt" | null>(null);
+
+  const copyText = async (kind: "summary" | "prompt", text: string) => {
+    await navigator.clipboard?.writeText(text);
+    setCopied(kind);
+    window.setTimeout(() => {
+      setCopied((current) => (current === kind ? null : current));
+    }, 1400);
+  };
+
+  const exportDiagnostics = async () => {
+    setIsExporting(true);
+    setError(null);
+    try {
+      const client = await getRpcClient();
+      const result = await Effect.runPromise(client.diagnostics.export({}));
+      setLastExport({
+        diagnosticId: result.diagnosticId,
+        bundlePath: result.bundlePath,
+        summary: result.summary,
+        agentPrompt: result.agentPrompt,
+        included: result.included,
+      });
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Could not export diagnostics bundle.",
+      );
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <SettingsGroup
+        title="Support bundle"
+        description="Creates a local redacted diagnostics file plus agent-readable artifacts. Raw prompts and full transcripts are not included by default."
+      >
+        <SettingsRow
+          title="Included by default"
+          description="Manifest, trace summary, recent errors, environment, provider status, and redacted session-event previews."
+          action={
+            <Button
+              size="sm"
+              onClick={() => void exportDiagnostics()}
+              disabled={isExporting}
+            >
+              <HugeiconsIcon
+                icon={DocumentAttachmentIcon}
+                className="size-3.5"
+              />
+              {isExporting ? "Exporting..." : "Export diagnostics"}
+            </Button>
+          }
+        />
+        {lastExport && (
+          <SettingsRow
+            title={`Last export: ${lastExport.diagnosticId}`}
+            description={lastExport.bundlePath}
+          >
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="settings"
+                size="sm"
+                onClick={() => void copyText("summary", lastExport.summary)}
+              >
+                {copied === "summary" ? "Copied" : "Copy summary"}
+              </Button>
+              <Button
+                variant="settings"
+                size="sm"
+                onClick={() => void copyText("prompt", lastExport.agentPrompt)}
+              >
+                {copied === "prompt" ? "Copied" : "Copy agent prompt"}
+              </Button>
+            </div>
+            <div className="mt-3 rounded-lg border border-border/40 bg-background/60 p-3">
+              <div className="mb-2 text-xs font-medium text-muted-foreground">
+                Bundle contents
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {lastExport.included.map((item) => (
+                  <span
+                    key={item}
+                    className="rounded bg-muted px-2 py-0.5 font-mono text-[11px] text-muted-foreground"
+                  >
+                    {item}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </SettingsRow>
+        )}
+        {error && (
+          <SettingsRow
+            icon={Alert01Icon}
+            title="Export failed"
+            description={error}
+          />
+        )}
+      </SettingsGroup>
+
+      <SettingsFrame
+        title="Agent intake"
+        description="After a user sends the exported JSON file, run bun run diagnostics:inspect path/to/memoize-diagnostics.json in a repo workspace. The script writes .context/diagnostics/<id>/REPORT.md for an agent to inspect."
+      />
+    </div>
+  );
 }
 
 interface BrowserCredRow {
