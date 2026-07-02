@@ -272,7 +272,7 @@ export const DiagnosticsServiceLive = Layer.effect(
           errors: latestFailures,
         };
         const environment = {
-          app: "memoize",
+          app: "zuse",
           version: packageJson.version,
           createdAt: createdAt.toISOString(),
           platform: platform(),
@@ -297,7 +297,7 @@ export const DiagnosticsServiceLive = Layer.effect(
           "redacted-session-events",
         ];
         const manifest = {
-          app: "memoize",
+          app: "zuse",
           version: packageJson.version,
           createdAt: createdAt.toISOString(),
           platform: `${platform()}-${arch()}`,
@@ -326,7 +326,7 @@ export const DiagnosticsServiceLive = Layer.effect(
         const bundlePath = join(
           paths.userData,
           "diagnostics",
-          `memoize-diagnostics-${safeIsoForFile(createdAt)}-${diagnosticId}.json`,
+          `zuse-diagnostics-${safeIsoForFile(createdAt)}-${diagnosticId}.json`,
         );
         const bundle = {
           manifest,
@@ -350,7 +350,7 @@ export const DiagnosticsServiceLive = Layer.effect(
           providerCount: providers.length,
         });
         const agentPrompt = [
-          `A user exported diagnostics for memoize issue ${diagnosticId}.`,
+          `A user exported diagnostics for Zuse Alpha issue ${diagnosticId}.`,
           `Inspect .context/diagnostics/${diagnosticId}.`,
           "Start with REPORT.md, then use trace-summary.json and the raw bundle files.",
           "Find the root cause and propose or implement a fix.",

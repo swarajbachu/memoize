@@ -46,7 +46,7 @@ import { useUiStore } from "./store/ui.ts";
 import { useWorkspaceStore } from "./store/workspace.ts";
 import { useWorktreesStore } from "./store/worktrees.ts";
 
-const PANEL_GROUP_ID = "memoize.shell.v3";
+const PANEL_GROUP_ID = "zuse.shell.v3";
 const PANEL_IDS = ["projects", "main", "files"];
 
 const SIDEBAR_ANIM_MS = 200;
@@ -210,7 +210,7 @@ export function App() {
       } catch (error) {
         if (cancelled) return;
         // eslint-disable-next-line no-console
-        console.error("[memoize] RPC smoke test failed:", error);
+        console.error("[zuse] RPC smoke test failed:", error);
       }
     })();
     return () => {

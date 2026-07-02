@@ -50,7 +50,7 @@ import { WorktreeServiceLive } from "./worktree/layers/worktree-service.ts";
  * - `serverProtocol`: the RPC transport. Electron supplies an in-process
  *   IPC protocol; the future WS server will supply a WebSocket protocol.
  * - `authShell`: the WorkOS OAuth deep-link seam. Electron opens the system
- *   browser via `shell.openExternal` and funnels the `memoize://auth/callback`
+ *   browser via `shell.openExternal` and funnels the `zuse://auth/callback`
  *   deep link back in; a headless server supplies a loopback-HTTP variant.
  */
 export interface MainLayerDeps {
