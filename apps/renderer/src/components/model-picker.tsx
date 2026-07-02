@@ -673,7 +673,7 @@ function ProviderSectionHeader({
         {PROVIDER_LABEL[providerId]}
       </span>
       {current && (
-        <span className="rounded bg-primary/15 px-1.5 py-px text-[9px] font-semibold text-primary uppercase tracking-wide">
+        <span className="rounded-full border border-primary/25 bg-primary/8 px-1.5 py-px text-[9px] font-semibold text-primary uppercase tracking-wide">
           Current
         </span>
       )}
@@ -753,7 +753,7 @@ function ModelRow({
           {entry.contextWindowLabel !== undefined && (
             <span
               title={`${entry.contextWindowLabel} context window`}
-              className="shrink-0 rounded bg-muted/70 px-1 py-px text-[10px] font-medium text-muted-foreground"
+              className="shrink-0 rounded-full border border-border/50 bg-muted/45 px-1.5 py-px text-[10px] font-medium text-muted-foreground"
             >
               {entry.contextWindowLabel}
             </span>
@@ -767,7 +767,7 @@ function ModelRow({
       </span>
       <span className="flex-1" />
       {entry.badgeLabel !== undefined && (
-        <span className="shrink-0 rounded bg-primary/15 px-1.5 py-px text-[9px] font-semibold text-primary uppercase tracking-wide">
+        <span className="shrink-0 rounded-full border border-primary/25 bg-primary/8 px-2 py-0.5 text-[9px] font-semibold text-primary uppercase tracking-[0.08em]">
           {entry.badgeLabel}
         </span>
       )}
@@ -791,12 +791,12 @@ function ModelRow({
         </span>
       )}
       {showNowBadge && isActive && (
-        <span className="rounded bg-primary px-1.5 py-px font-medium text-[9px] text-primary-foreground uppercase tracking-wider">
+        <span className="rounded-full border border-primary/35 bg-primary/15 px-1.5 py-px font-semibold text-[9px] text-primary uppercase tracking-[0.08em]">
           now
         </span>
       )}
       {shortcut !== undefined && shortcut !== null && (
-        <kbd className="ml-0.5 rounded bg-muted/70 px-1 py-px font-medium text-[10px] text-muted-foreground tabular-nums">
+        <kbd className="ml-0.5 flex h-5 min-w-5 items-center justify-center rounded-full border border-border/45 bg-muted/45 px-1 font-medium text-[10px] text-muted-foreground tabular-nums">
           {shortcut}
         </kbd>
       )}
