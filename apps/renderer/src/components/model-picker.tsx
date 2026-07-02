@@ -19,6 +19,7 @@ import {
   findModelDescriptor,
   isModelVisible,
   type Message,
+  type ModelOption,
   type SelectOptionDescriptor,
 } from "@zuse/wire";
 
@@ -60,6 +61,7 @@ interface ModelPickerEntry {
   providerId: ProviderId;
   modelId: string;
   label: string;
+  badgeLabel?: string;
   /**
    * When set, render a small context-window pill on this row. We only show
    * a pill when the model's `contextWindow` descriptor defaults to `"1m"`
@@ -162,7 +164,9 @@ export function ModelPicker(props: ModelPickerProps) {
   }, [open]);
 
   const modelsForProvider = useCallback(
-    (pid: ProviderId): ReadonlyArray<{ id: string; label: string }> => {
+    (
+      pid: ProviderId,
+    ): ReadonlyArray<Pick<ModelOption, "id" | "label" | "badgeLabel">> => {
       if (pid !== "opencode" || opencodeInventory === null) {
         return MODELS_BY_PROVIDER[pid] ?? [];
       }
@@ -215,6 +219,7 @@ export function ModelPicker(props: ModelPickerProps) {
           providerId: pid,
           modelId: m.id,
           label: m.label,
+          ...(m.badgeLabel !== undefined ? { badgeLabel: m.badgeLabel } : {}),
           ...(contextWindowLabel !== undefined ? { contextWindowLabel } : {}),
         });
       }
@@ -352,6 +357,10 @@ export function ModelPicker(props: ModelPickerProps) {
         providerId: r.providerId,
         modelId: r.modelId,
         label: r.label,
+        ...(r.badgeLabel !== undefined ? { badgeLabel: r.badgeLabel } : {}),
+        ...(r.contextWindowLabel !== undefined
+          ? { contextWindowLabel: r.contextWindowLabel }
+          : {}),
       });
     }
     if (inGroupedView) {
@@ -757,6 +766,11 @@ function ModelRow({
         )}
       </span>
       <span className="flex-1" />
+      {entry.badgeLabel !== undefined && (
+        <span className="shrink-0 rounded bg-primary/15 px-1.5 py-px text-[9px] font-semibold text-primary uppercase tracking-wide">
+          {entry.badgeLabel}
+        </span>
+      )}
       {opensNewTab && (
         <HugeiconsIcon
           icon={ArrowUpRight01Icon}
