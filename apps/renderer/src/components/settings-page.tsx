@@ -498,7 +498,7 @@ function DiagnosticsPane() {
 
       <SettingsFrame
         title="Agent intake"
-        description="After a user sends the exported JSON file, run bun run diagnostics:inspect path/to/memoize-diagnostics.json in a repo workspace. The script writes .context/diagnostics/<id>/REPORT.md for an agent to inspect."
+        description="After a user sends the exported JSON file, run bun run diagnostics:inspect path/to/zuse-diagnostics.json in a repo workspace. The script writes .context/diagnostics/<id>/REPORT.md for an agent to inspect."
       />
     </div>
   );
@@ -776,7 +776,7 @@ function GeneralPane() {
             </div>
             <SettingsRow
               title="Display name"
-              description="How your name shows in memoize. Local to this device — it doesn't change your WorkOS profile."
+              description="How your name shows in Zuse Alpha. Local to this device — it doesn't change your WorkOS profile."
             >
               <input
                 value={nameDraft}
@@ -795,7 +795,7 @@ function GeneralPane() {
         ) : (
           <SettingsRow
             title="Not signed in"
-            description="You're using memoize locally without an account. Sign in to sync and unlock remote agents."
+            description="You're using Zuse Alpha locally without an account. Sign in to sync and unlock remote agents."
             action={
               <Button
                 variant="settings"

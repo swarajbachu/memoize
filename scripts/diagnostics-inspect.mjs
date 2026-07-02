@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 
 function usage() {
-  return "Usage: bun run diagnostics:inspect <memoize-diagnostics.json>";
+  return "Usage: bun run diagnostics:inspect <zuse-diagnostics.json>";
 }
 
 function readJson(path) {

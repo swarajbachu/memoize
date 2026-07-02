@@ -152,10 +152,10 @@ const startAuthLoopback = (): void => {
     handleAuthCallback(parsed.toString());
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
     res.end(
-      `<!doctype html><meta charset="utf-8"><title>memoize</title>` +
+      `<!doctype html><meta charset="utf-8"><title>Zuse Alpha</title>` +
         `<body style="font-family:-apple-system,system-ui,sans-serif;background:#0b0b0c;color:#e5e5e5;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">` +
         `<div style="text-align:center"><h2 style="font-weight:600">Signed in</h2>` +
-        `<p style="color:#a3a3a3">You can close this tab and return to memoize.</p></div>`,
+        `<p style="color:#a3a3a3">You can close this tab and return to Zuse Alpha.</p></div>`,
     );
     focusMainWindow();
   });
