@@ -16,6 +16,7 @@ import {
 
 import { formatError } from "../lib/format-error.ts";
 import { getRpcClient } from "../lib/rpc-client.ts";
+import { readStorageWithLegacy } from "../lib/storage-keys.ts";
 import { usePrDetailsStore } from "./pr-details.ts";
 import { usePrStateStore } from "./pr-state.ts";
 import { useSessionsStore } from "./sessions.ts";
@@ -73,8 +74,10 @@ const readSessionModelOptions = (
   if (typeof window === "undefined") return null;
   const out: Record<string, string> = {};
   for (const key of SESSION_MODEL_OPTION_KEYS) {
-    const v = window.sessionStorage.getItem(
-      `memoize.modelOptions.${sessionId}.${key}`,
+    const v = readStorageWithLegacy(
+      window.sessionStorage,
+      `zuse.modelOptions.${sessionId}.${key}`,
+      [`memoize.modelOptions.${sessionId}.${key}`],
     );
     if (v !== null && v.length > 0) out[key] = v;
   }
@@ -82,8 +85,10 @@ const readSessionModelOptions = (
   // bare `memoize.reasoning.<sessionId>` key. Read it if the new key
   // wasn't set so existing sessions don't lose their picker selection.
   if (out["reasoning"] === undefined) {
-    const legacy = window.sessionStorage.getItem(
-      `memoize.reasoning.${sessionId}`,
+    const legacy = readStorageWithLegacy(
+      window.sessionStorage,
+      `zuse.reasoning.${sessionId}`,
+      [`memoize.reasoning.${sessionId}`],
     );
     if (legacy !== null && legacy.length > 0) out["reasoning"] = legacy;
   }

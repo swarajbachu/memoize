@@ -14,6 +14,7 @@ import {
 import { Effect, Fiber, Layer } from "effect";
 import fixPath from "fix-path";
 import { execFile, spawn } from "node:child_process";
+import * as http from "node:http";
 import * as fsSync from "node:fs";
 import * as fs from "node:fs/promises";
 import { homedir } from "node:os";
@@ -78,6 +79,111 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
+// Register `zuse://` as a default protocol client so the OS routes the
+// WorkOS sign-in deep link (`zuse://auth/callback?...`) back to this app.
+// Safe to call before `whenReady`. On macOS packaged builds the scheme is also
+// declared in Info.plist; calling here covers dev + Win/Linux.
+app.setAsDefaultProtocolClient("zuse");
+
+// ---------------------------------------------------------------------------
+// Auth callback bridge. The WorkOS PKCE flow round-trips through the system
+// browser. We catch the callback two ways and funnel either into the embedded
+// server's AuthService (which registers `deliverAuthUrl` via the `authShell`
+// dep below):
+//
+//   1. A localhost loopback HTTP server (primary). Custom-scheme deep links are
+//      unreliable in dev on macOS — every project's prebuilt `Electron.app`
+//      shares the bundle id `com.github.Electron`, so the OS routes
+//      `zuse://` to an arbitrary one (or a fresh, app-less copy → the
+//      default Electron splash). Loopback HTTP has none of that ambiguity and
+//      works identically in dev and packaged builds.
+//   2. The `zuse://auth/callback` deep link (open-url / second-instance),
+//      kept for the future mobile/packaged path.
+//
+// A callback can arrive before the server runtime (and thus the sink) exists —
+// buffer and flush on register (R2).
+// ---------------------------------------------------------------------------
+const AUTH_LOOPBACK_PORT = 8976;
+const AUTH_LOOPBACK_URI = `http://localhost:${AUTH_LOOPBACK_PORT}/callback`;
+const AUTH_SCHEME_URI = "zuse://auth/callback";
+// Packaged builds use the custom scheme — a signed app with its own bundle id
+// (app.memoize.desktop) + Info.plist `CFBundleURLTypes` (electron-builder
+// `protocols`) resolves it unambiguously, and it's the same mechanism mobile
+// will use. Dev uses the loopback because the prebuilt Electron.app's shared
+// `com.github.Electron` bundle id makes custom schemes unroutable.
+const AUTH_REDIRECT_URI = app.isPackaged ? AUTH_SCHEME_URI : AUTH_LOOPBACK_URI;
+const AUTH_DEEP_LINK_SCHEMES = ["zuse://", "memoize://"] as const;
+
+const isAuthDeepLink = (arg: string): boolean =>
+  AUTH_DEEP_LINK_SCHEMES.some((scheme) => arg.startsWith(scheme));
+
+let deliverAuthUrl: ((url: string) => void) | null = null;
+let pendingAuthUrls: string[] = [];
+
+const handleAuthCallback = (url: string): void => {
+  if (deliverAuthUrl !== null) {
+    deliverAuthUrl(url);
+  } else {
+    pendingAuthUrls.push(url);
+  }
+};
+
+const focusMainWindow = (): void => {
+  if (mainWindow === null) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.focus();
+};
+
+let authLoopbackServer: http.Server | null = null;
+
+const startAuthLoopback = (): void => {
+  if (authLoopbackServer !== null) return;
+  const server = http.createServer((req, res) => {
+    const requestUrl = req.url ?? "";
+    let parsed: URL;
+    try {
+      parsed = new URL(`http://localhost:${AUTH_LOOPBACK_PORT}${requestUrl}`);
+    } catch {
+      res.writeHead(400);
+      res.end();
+      return;
+    }
+    if (parsed.pathname !== "/callback") {
+      res.writeHead(404);
+      res.end("Not found");
+      return;
+    }
+    handleAuthCallback(parsed.toString());
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    res.end(
+      `<!doctype html><meta charset="utf-8"><title>Zuse Alpha</title>` +
+        `<body style="font-family:-apple-system,system-ui,sans-serif;background:#0b0b0c;color:#e5e5e5;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">` +
+        `<div style="text-align:center"><h2 style="font-weight:600">Signed in</h2>` +
+        `<p style="color:#a3a3a3">You can close this tab and return to Zuse Alpha.</p></div>`,
+    );
+    focusMainWindow();
+  });
+  server.on("error", (err) => {
+    console.error("[zuse] auth loopback server error", err);
+  });
+  server.listen(AUTH_LOOPBACK_PORT, "127.0.0.1");
+  authLoopbackServer = server;
+};
+
+// Single-instance lock: required so a deep link launched while the app is
+// already running routes through `second-instance` (Win/Linux) rather than
+// spawning a second copy. macOS delivers via `open-url` regardless.
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+}
+
+// macOS: deep links arrive here (also on cold launch, before whenReady).
+app.on("open-url", (event, url) => {
+  event.preventDefault();
+  handleAuthCallback(url);
+});
+
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL?.trim() || "";
 const isDevelopment = Boolean(DEV_SERVER_URL);
 
@@ -102,6 +208,15 @@ nativeTheme.themeSource = "dark";
 
 let mainWindow: BrowserWindow | null = null;
 let runtimeFiber: Fiber.RuntimeFiber<void, never> | null = null;
+
+// Win/Linux: a second launch (e.g. the OS opening the deep link) lands here in
+// the primary instance. Pull any auth deep-link arg out of its argv and focus
+// the existing window.
+app.on("second-instance", (_event, argv) => {
+  const url = argv.find(isAuthDeepLink);
+  if (url !== undefined) handleAuthCallback(url);
+  focusMainWindow();
+});
 const USER_APPLICATIONS_DIR = Path.join(homedir(), "Applications");
 const execFileAsync = promisify(execFile);
 
@@ -395,6 +510,26 @@ const folderPicker = {
     ),
 };
 
+// The WorkOS OAuth deep-link seam for the server's AuthService (ADR 0007 keeps
+// apps/server free of electron). `open` launches the system browser; the
+// server hands us its callback sink via `onCallbackUrl`, which we store in the
+// module-level `deliverAuthUrl` and prime with any deep links buffered before
+// the runtime came up.
+const authShell = {
+  redirectUri: AUTH_REDIRECT_URI,
+  open: (url: string) =>
+    Effect.sync(() => {
+      void shell.openExternal(url);
+    }),
+  onCallbackUrl: (handler: (url: string) => void) =>
+    Effect.sync(() => {
+      deliverAuthUrl = handler;
+      const queued = pendingAuthUrls;
+      pendingAuthUrls = [];
+      for (const url of queued) handler(url);
+    }),
+};
+
 function createMainWindow() {
   const isMac = process.platform === "darwin";
   mainWindow = new BrowserWindow({
@@ -576,7 +711,7 @@ function createMainWindow() {
     } catch (err) {
       // The only expected failure here is "already attached by DevTools" —
       // surface so the renderer can fall back gracefully.
-      console.error("[memoize] failed to attach CDP debugger", err);
+      console.error("[zuse] failed to attach CDP debugger", err);
       return false;
     }
   });
@@ -674,7 +809,7 @@ function createMainWindow() {
             return false;
         }
       } catch (err) {
-        console.error("[memoize] CDP dispatch failed", err);
+        console.error("[zuse] CDP dispatch failed", err);
         return false;
       }
     },
@@ -755,6 +890,7 @@ function createMainWindow() {
         userData: app.getPath("userData"),
         folderPicker,
         serverProtocol,
+        authShell,
       }),
     ).pipe(
       Effect.catchAllCause((cause) =>
@@ -762,7 +898,7 @@ function createMainWindow() {
           // Boot-time layer failures (sqlite open, migrator, config) are
           // unrecoverable — surface the cause and bail. Quiet
           // success-after-restart is preferable to a half-running app.
-          console.error("[memoize] fatal boot error", cause);
+          console.error("[zuse] fatal boot error", cause);
           app.exit(1);
         }),
       ),
@@ -966,6 +1102,18 @@ ipcMain.on("menu:setAccelerators", (_event, payload: unknown) => {
 });
 
 void app.whenReady().then(() => {
+  // Non-primary instance is on its way out (lost the single-instance lock) —
+  // don't build a window or boot the runtime.
+  if (!gotSingleInstanceLock) return;
+
+  // Dev only: localhost loopback that catches the WorkOS OAuth callback.
+  // Packaged builds receive it via the `zuse://` deep link instead.
+  if (!app.isPackaged) startAuthLoopback();
+
+  // Win/Linux cold launch from a deep link: the URL is an argv entry.
+  const initialDeepLink = process.argv.find(isAuthDeepLink);
+  if (initialDeepLink !== undefined) handleAuthCallback(initialDeepLink);
+
   registerZuseProtocol();
 
   // Populate the native About panel so "About Zuse" shows the current

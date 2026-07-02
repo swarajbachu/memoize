@@ -23,6 +23,9 @@ describe("config-store settings coercion", () => {
     expect(settings.modelEnabledByProvider.claude["claude-sonnet-5"]).toBe(
       true,
     );
+    expect(settings.modelEnabledByProvider.claude["claude-fable-5"]).toBe(
+      true,
+    );
     expect(settings.modelEnabledByProvider.claude["claude-sonnet-4-6"]).toBe(
       false,
     );

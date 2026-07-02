@@ -14,6 +14,12 @@ import {
 } from "./agent.ts";
 import { AttachmentTouchRpc, AttachmentUploadRpc } from "./attachment.ts";
 import {
+  AuthGetSessionRpc,
+  AuthSessionChangesRpc,
+  AuthSignInRpc,
+  AuthSignOutRpc,
+} from "./auth.ts";
+import {
   BrowserCommandsRpc,
   BrowserFillForOriginRpc,
   BrowserListCredentialsRpc,
@@ -42,6 +48,7 @@ import {
   FsWriteExternalFileRpc,
   FsWriteFileRpc,
 } from "./fs.ts";
+import { DiagnosticsExportRpc } from "./diagnostics.ts";
 import {
   GitBranchesRpc,
   GitChangesRpc,
@@ -174,6 +181,10 @@ import {
  */
 export const MemoizeRpcs = RpcGroup.make(
   PingRpc,
+  AuthGetSessionRpc,
+  AuthSignInRpc,
+  AuthSignOutRpc,
+  AuthSessionChangesRpc,
   WorkspaceAddRpc,
   WorkspaceListRpc,
   WorkspaceRemoveRpc,
@@ -304,6 +315,7 @@ export const MemoizeRpcs = RpcGroup.make(
   SettingsStreamRpc,
   SettingsMigrateLocalStorageRpc,
   UsageReportRpc,
+  DiagnosticsExportRpc,
   KeybindingsGetRpc,
   KeybindingsReplaceRpc,
   KeybindingsStreamRpc,
@@ -327,4 +339,4 @@ export type MemoizeRpcs = typeof MemoizeRpcs;
  * Renderer → main: `ipcRenderer.send(IPC_CHANNEL, frame)`
  * Main → renderer: `webContents.send(IPC_CHANNEL, frame)`
  */
-export const IPC_CHANNEL = "memoize:rpc" as const;
+export const IPC_CHANNEL = "zuse:rpc" as const;

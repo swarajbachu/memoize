@@ -26,6 +26,7 @@ export type SettingsSection =
   | { readonly kind: "workspace" }
   | { readonly kind: "pokedex" }
   | { readonly kind: "browser" }
+  | { readonly kind: "diagnostics" }
   | { readonly kind: "shortcuts" }
   | { readonly kind: "developer" }
   | { readonly kind: "repository"; readonly projectId: FolderId };

@@ -1,16 +1,7 @@
 import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  ArrowDown01Icon,
-  Message01Icon,
-} from "@hugeicons-pro/core-bulk-rounded";
-import {
-  Fragment,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { Message01Icon } from "@hugeicons-pro/core-bulk-rounded";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import type { CSSProperties } from "react";
 
 import type {
   AgentItemId,
@@ -25,8 +16,10 @@ import {
   type ChatArchiveProgressPhase,
   useChatsStore,
 } from "../store/chats.ts";
+import { useChatScroll } from "../lib/use-chat-scroll.ts";
 import { useRegisterPane } from "../store/pane-focus.ts";
 import { teardownLiveStreams, useMessagesStore } from "../store/messages.ts";
+import { useChatMotionStore } from "../store/chat-motion.ts";
 import { usePermissionsStore } from "../store/permissions.ts";
 import { useSessionsStore } from "../store/sessions.ts";
 import { useSkillsStore } from "../store/skills.ts";
@@ -38,25 +31,36 @@ import {
   MessageRow,
   type ToolResultRecord,
 } from "./message-row.tsx";
+import { JumpToLatestPill } from "./jump-to-latest-pill.tsx";
 import { SubagentRow } from "./subagent-row.tsx";
 import { TurnSummary } from "./turn-summary.tsx";
 import { NextUnreadButton } from "./next-unread-button.tsx";
-import { Button } from "./ui/button";
 import { ShimmerText } from "./ui/shimmer-text.tsx";
 import { Spinner } from "./ui/spinner";
-
-const NEAR_BOTTOM_PX = 80;
 
 // Stable empty-array reference for the selector below. Returning a fresh
 // `[]` from a Zustand selector each call breaks `useSyncExternalStore`'s
 // snapshot-equality check and triggers an infinite re-render loop.
 const EMPTY_MESSAGES: ReadonlyArray<Message> = [];
 
+const isUserMessage = (m: Message | undefined): boolean =>
+  m !== undefined &&
+  (m.content._tag === "user" || m.content._tag === "user_rich");
+
+type SendFlight = {
+  readonly id: string;
+  readonly text: string;
+  readonly style: CSSProperties & {
+    readonly "--chat-send-x": string;
+    readonly "--chat-send-y": string;
+  };
+};
+
 /**
  * Read-only timeline of one session. Subscribes to `messages.stream` via the
  * messages store on mount / session-change; the store owns the live fiber.
- * Auto-scrolls to bottom on new messages unless the user has scrolled up out
- * of the "near-bottom" band.
+ * Scroll behavior is owned by `useChatScroll`: it anchors each new turn near
+ * the top and follows the live edge only while the reader is there.
  */
 export function ChatView({ sessionId }: { sessionId: SessionId }) {
   const messages = useMessagesStore(
@@ -115,10 +119,22 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
       : (s.archiveProgressByChat[session.chatId] ?? null),
   );
 
-  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const {
+    scrollRef,
+    contentRef,
+    sentinelRef,
+    spacerRef,
+    spacerHeight,
+    showPill,
+    streaming,
+    jumpToLatest,
+  } = useChatScroll({ sessionId, messages, inFlight });
+  const pendingSendMotion = useChatMotionStore(
+    (s) => s.pendingBySession[sessionId as string] ?? null,
+  );
+  const consumeSendMotion = useChatMotionStore((s) => s.consumeSend);
+  const [sendFlight, setSendFlight] = useState<SendFlight | null>(null);
   useRegisterPane("chat", scrollRef);
-  const stickToBottomRef = useRef(true);
-  const [isNearBottom, setIsNearBottom] = useState(true);
 
   useEffect(() => {
     void hydrate(sessionId);
@@ -134,40 +150,54 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
     };
   }, [sessionId, hydrate, hydrateSkills]);
 
-  // Track whether the user is near the bottom of the timeline; if they
-  // scroll up, we stop auto-scrolling so reading older context isn't
-  // disrupted by streaming new replies.
-  const onScroll = () => {
-    const el = scrollRef.current;
-    if (el === null) return;
-    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
-    const nextIsNearBottom = distance < NEAR_BOTTOM_PX;
-    stickToBottomRef.current = nextIsNearBottom;
-    setIsNearBottom(nextIsNearBottom);
-  };
-
-  const scrollToBottom = () => {
-    const el = scrollRef.current;
-    if (el === null) return;
-    stickToBottomRef.current = true;
-    setIsNearBottom(true);
-    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  };
-
-  useLayoutEffect(() => {
-    // A message the user just sent always re-engages auto-scroll, even if
-    // they had scrolled up to read older context.
-    const last = messages[messages.length - 1];
-    if (last?.content._tag === "user" || last?.content._tag === "user_rich") {
-      stickToBottomRef.current = true;
-      setIsNearBottom(true);
+  useEffect(() => {
+    if (pendingSendMotion === null) return;
+    let latestUser: Message | null = null;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const candidate = messages[i]!;
+      if (isUserMessage(candidate)) {
+        latestUser = candidate;
+        break;
+      }
     }
-    if (!stickToBottomRef.current) return;
-    const el = scrollRef.current;
-    if (el === null) return;
-    el.scrollTop = el.scrollHeight;
-    setIsNearBottom(true);
-  }, [messages.length]);
+    if (latestUser === null) return;
+    if (latestUser.createdAt.getTime() + 1_000 < pendingSendMotion.createdAt) {
+      return;
+    }
+
+    const content = contentRef.current;
+    if (content === null) return;
+    const anchor = content.querySelector<HTMLElement>(
+      `[data-user-anchor="${CSS.escape(String(latestUser.id))}"]`,
+    );
+    if (anchor === null) return;
+    const bubble =
+      anchor.querySelector<HTMLElement>("[data-chat-user-bubble]") ?? anchor;
+    const target = bubble.getBoundingClientRect();
+    const source = pendingSendMotion.sourceRect;
+    const fromLeft = source.left + 12;
+    const fromTop = source.top + 8;
+    setSendFlight({
+      id: pendingSendMotion.id,
+      text: pendingSendMotion.text,
+      style: {
+        left: fromLeft,
+        top: fromTop,
+        maxWidth: Math.max(160, Math.min(source.width - 24, 420)),
+        "--chat-send-x": `${target.left - fromLeft}px`,
+        "--chat-send-y": `${target.top - fromTop}px`,
+      },
+    });
+    consumeSendMotion(sessionId, pendingSendMotion.id);
+    const timeout = window.setTimeout(() => setSendFlight(null), 260);
+    return () => window.clearTimeout(timeout);
+  }, [
+    contentRef,
+    consumeSendMotion,
+    messages,
+    pendingSendMotion,
+    sessionId,
+  ]);
 
   // Pair tool_result rows back to their originating tool_use by AgentItemId.
   // The driver assigns the SDK's tool_use id to both events, so each
@@ -246,7 +276,6 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
       <div className="relative flex min-h-0 flex-1">
         <div
           ref={scrollRef}
-          onScroll={onScroll}
           data-pane="chat"
           tabIndex={-1}
           className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto outline-none"
@@ -268,7 +297,7 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
               </div>
             )
           ) : (
-            <div className="flex flex-col py-2">
+            <div ref={contentRef} className="flex flex-col py-2">
               {turns.map((turn, idx) => {
                 const isLastTurn = idx === turns.length - 1;
                 const isLive = inFlight && isLastTurn;
@@ -325,52 +354,68 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
                 return (
                   <Fragment key={turnKey}>
                     {turn.user !== null ? (
-                      <MessageRow
-                        message={turn.user}
-                        resultsByItemId={resultsByItemId}
-                        answersByItemId={answersByItemId}
-                        sessionId={sessionId}
-                      />
+                      <div
+                        data-user-anchor={turn.user.id}
+                        className="chat-row-enter chat-row-enter-user scroll-mt-6"
+                      >
+                        <MessageRow
+                          message={turn.user}
+                          resultsByItemId={resultsByItemId}
+                          answersByItemId={answersByItemId}
+                          sessionId={sessionId}
+                        />
+                      </div>
                     ) : null}
                     {showSummary ? (
                       <>
                         {planMessages.map((m) => (
-                          <MessageRow
-                            key={m.id}
-                            message={m}
+                          <div key={m.id} className="chat-row-enter">
+                            <MessageRow
+                              message={m}
+                              resultsByItemId={resultsByItemId}
+                              answersByItemId={answersByItemId}
+                              sessionId={sessionId}
+                            />
+                          </div>
+                        ))}
+                        <div className="chat-row-enter">
+                          <TurnSummary
+                            body={summaryBody}
                             resultsByItemId={resultsByItemId}
                             answersByItemId={answersByItemId}
-                            sessionId={sessionId}
                           />
-                        ))}
-                        <TurnSummary
-                          body={summaryBody}
-                          resultsByItemId={resultsByItemId}
-                          answersByItemId={answersByItemId}
-                        />
+                        </div>
                       </>
                     ) : (
                       bodyGroups.map((group) =>
                         group.kind === "single" ? (
-                          <MessageRow
+                          <div
                             key={group.message.id}
-                            message={group.message}
-                            resultsByItemId={resultsByItemId}
-                            answersByItemId={answersByItemId}
-                            sessionId={sessionId}
-                          />
+                            className="chat-row-enter"
+                          >
+                            <MessageRow
+                              message={group.message}
+                              resultsByItemId={resultsByItemId}
+                              answersByItemId={answersByItemId}
+                              sessionId={sessionId}
+                            />
+                          </div>
                         ) : (
-                          <SubagentRow
+                          <div
                             key={group.parent.id}
-                            agentToolUseId={group.parentItemId}
-                            agentName={group.agentName}
-                            prompt={group.prompt}
-                            modelRequested={group.modelRequested}
-                            children={group.children}
-                            summary={group.summary}
-                            resultsByItemId={resultsByItemId}
-                            answersByItemId={answersByItemId}
-                          />
+                            className="chat-row-enter"
+                          >
+                            <SubagentRow
+                              agentToolUseId={group.parentItemId}
+                              agentName={group.agentName}
+                              prompt={group.prompt}
+                              modelRequested={group.modelRequested}
+                              children={group.children}
+                              summary={group.summary}
+                              resultsByItemId={resultsByItemId}
+                              answersByItemId={answersByItemId}
+                            />
+                          </div>
                         ),
                       )
                     )}
@@ -389,22 +434,32 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
               onDismiss={() => clearError(sessionId)}
             />
           )}
+          {/* Live-edge sentinel — must be the last child so it sits at the very
+          bottom of the real content (before the spacer). */}
+          <div ref={sentinelRef} aria-hidden className="h-px w-full shrink-0" />
+          {/* Dynamic spacer: lets a freshly-sent turn be read from the top while
+          its answer streams into the space below. */}
+          <div
+            ref={spacerRef}
+            aria-hidden
+            className="shrink-0"
+            style={{ height: spacerHeight }}
+          />
         </div>
-        {!isNearBottom && (
-          <div className="pointer-events-none absolute bottom-3 left-3 z-20">
-            <Button
-              variant="outline"
-              size="xs"
-              className="pointer-events-auto text-muted-foreground shadow-md"
-              onClick={scrollToBottom}
-              title="Scroll to bottom"
-              aria-label="Scroll to bottom"
-            >
-              <HugeiconsIcon icon={ArrowDown01Icon} className="size-3.5" />
-              Scroll to bottom
-            </Button>
+        <JumpToLatestPill
+          visible={showPill}
+          streaming={streaming}
+          onClick={jumpToLatest}
+        />
+        {sendFlight !== null ? (
+          <div
+            key={sendFlight.id}
+            className="chat-send-flight fixed z-50 truncate rounded-2xl rounded-tr-sm bg-user-bubble px-3 py-2 text-sm text-user-bubble-foreground shadow-lg/20"
+            style={sendFlight.style}
+          >
+            {sendFlight.text}
           </div>
-        )}
+        ) : null}
         <div className="pointer-events-none absolute right-3 bottom-3 z-20 flex items-center gap-2">
           <NextUnreadButton />
         </div>

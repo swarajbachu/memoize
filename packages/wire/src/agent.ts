@@ -734,6 +734,15 @@ export interface ModelOption {
   readonly id: string;
   readonly label: string;
   /**
+   * Optional small picker badge for launch/newness callouts.
+   */
+  readonly badgeLabel?: string;
+  /**
+   * Preferred default for this provider. When omitted, the first visible model
+   * remains the fallback default.
+   */
+  readonly defaultModel?: boolean;
+  /**
    * Whether this model appears in normal picker/default selectors before the
    * user opts it back in from provider settings. Omitted means visible.
    */
@@ -836,8 +845,32 @@ export const MODELS_BY_PROVIDER: Record<
   // picker accordion opens on the latest recommended model by default.
   claude: [
     {
+      id: "claude-fable-5",
+      label: "Fable 5",
+      badgeLabel: "Available now",
+      optionDescriptors: [
+        claudeEffortDescriptor({
+          options: [
+            { id: "low", label: "Low" },
+            { id: "medium", label: "Medium" },
+            { id: "high", label: "High" },
+            { id: "xhigh", label: "Extra High" },
+            { id: "max", label: "Max" },
+            { id: "ultracode", label: "Ultracode" },
+          ],
+          defaultId: "high",
+        }),
+        booleanDescriptor("fastMode", "Fast Mode"),
+        claudeContextWindowDescriptor(),
+      ],
+      supportsPlanMode: true,
+      supportsWebSearch: "native",
+    },
+    {
       id: "claude-sonnet-5",
       label: "Sonnet 5",
+      badgeLabel: "New",
+      defaultModel: true,
       optionDescriptors: [
         claudeEffortDescriptor({
           options: [
@@ -1143,7 +1176,10 @@ export const MODELS_BY_PROVIDER: Record<
 };
 
 export const defaultModelFor = (providerId: ProviderId): string =>
-  (MODELS_BY_PROVIDER[providerId].find((m) => m.defaultVisible !== false) ??
+  (MODELS_BY_PROVIDER[providerId].find(
+    (m) => m.defaultModel === true && m.defaultVisible !== false,
+  ) ??
+    MODELS_BY_PROVIDER[providerId].find((m) => m.defaultVisible !== false) ??
     MODELS_BY_PROVIDER[providerId][0]!)!.id;
 
 export type ModelEnabledByProvider = Record<
@@ -1224,6 +1260,9 @@ export const MODEL_ALIASES_BY_PROVIDER: Record<
     "claude-opus-4.7": "claude-opus-4-7",
     "opus-4.6": "claude-opus-4-6",
     "claude-opus-4.6": "claude-opus-4-6",
+    fable: "claude-fable-5",
+    "fable-5": "claude-fable-5",
+    "claude-fable-5": "claude-fable-5",
     sonnet: "claude-sonnet-5",
     "sonnet-5": "claude-sonnet-5",
     "claude-sonnet-5": "claude-sonnet-5",
@@ -1317,6 +1356,12 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
     output: 25,
     cacheRead: 0.5,
     cacheCreate: 6.25,
+  },
+  "claude-fable-5": {
+    input: 10,
+    output: 50,
+    cacheRead: 1,
+    cacheCreate: 12.5,
   },
   "claude-sonnet-5": {
     input: 3,

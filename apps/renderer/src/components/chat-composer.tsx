@@ -56,6 +56,7 @@ import {
   setComposerDoc,
   type ActiveTrigger,
 } from "~/lib/codemirror/composer";
+import { readStorageWithLegacy } from "~/lib/storage-keys";
 import { useKeybindingsStore } from "../store/keybindings";
 import {
   addChipEffect,
@@ -79,6 +80,7 @@ import { cn, formatCompactNumber } from "~/lib/utils";
 import {
   chooseComposerSubmitRoute,
   findPendingPlanApprovalRequest,
+  hasEmulatedPlanAwaitingAction,
   shouldSendPlanFeedbackNow,
 } from "~/lib/plan-feedback-routing";
 import {
@@ -89,7 +91,10 @@ import { parseComposerInput } from "../composer/segment-parser.ts";
 import { AnnotationTray } from "./composer/annotation-tray.tsx";
 import { ComposerChipOverlay } from "./composer/composer-chip-overlay.tsx";
 import { FileTagPopover } from "./composer/file-tag-popover.tsx";
-import { PlanApprovalTray } from "./composer/plan-approval-tray.tsx";
+import {
+  EMULATED_PLAN_APPROVAL_PROMPT,
+  PlanApprovalTray,
+} from "./composer/plan-approval-tray.tsx";
 import { ProjectPlanTray } from "./composer/project-plan-tray.tsx";
 import { QueueTray } from "./composer/queue-tray.tsx";
 import { TrayPill, trayPillActionClass } from "./composer/tray-pill.tsx";
@@ -112,6 +117,7 @@ import {
   TooltipTrigger,
 } from "~/components/ui/tooltip";
 import { useMessagesStore } from "../store/messages.ts";
+import { useChatMotionStore } from "../store/chat-motion.ts";
 import { useOpencodeInventory } from "../store/opencode-inventory.ts";
 import { useProvidersStore } from "../store/providers.ts";
 import { useSettingsStore } from "../store/settings.ts";
@@ -126,6 +132,17 @@ import { ProviderIcon } from "./provider-icons.tsx";
 const MIN_HEIGHT = 56;
 const MAX_HEIGHT = 240;
 const MAX_ATTACHMENTS_PER_TURN = 20;
+
+const prefersReducedMotion = (): boolean =>
+  typeof window !== "undefined" &&
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+const motionSnippet = (text: string): string => {
+  const trimmed = text.replace(/\s+/g, " ").trim();
+  if (trimmed.length === 0) return "Message sent";
+  return trimmed.length > 120 ? `${trimmed.slice(0, 117)}...` : trimmed;
+};
 
 export function ChatComposer({
   session,
@@ -256,6 +273,15 @@ export function ChatComposer({
       }),
     [pendingPlanApprovalRequest, session.permissionMode, sessionMessages],
   );
+  const emulatedPlanReady = useMemo(
+    () =>
+      hasEmulatedPlanAwaitingAction({
+        permissionMode: session.permissionMode,
+        messages: sessionMessages ?? [],
+        pendingPlanApprovalRequest,
+      }),
+    [pendingPlanApprovalRequest, session.permissionMode, sessionMessages],
+  );
   useEffect(() => {
     if (isDraft) return;
     void hydratePermissions(sessionId);
@@ -315,6 +341,7 @@ export function ChatComposer({
   const [isDragging, setIsDragging] = useState(false);
   const editorHostRef = useRef<HTMLDivElement | null>(null);
   const editorViewRef = useRef<EditorView | null>(null);
+  const composerCardRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const dragDepthRef = useRef(0);
   const uploadOne = useAttachmentsStore((s) => s.uploadOne);
@@ -338,6 +365,7 @@ export function ChatComposer({
   const revealPanel = useUiStore((s) => s.revealPanel);
   const setView = useUiStore((s) => s.setView);
   const setSettingsSection = useUiStore((s) => s.setSettingsSection);
+  const startSendMotion = useChatMotionStore((s) => s.startSend);
   const workspaceRoot = useActiveWorkspaceRoot(session.projectId);
   const annotationCount = useAnnotationsStore(
     (s) => (s.bySession[sessionId] ?? []).length,
@@ -693,6 +721,31 @@ export function ChatComposer({
             annotations,
           })
         : parsed;
+    const route =
+      onDraftSubmit === undefined
+        ? chooseComposerSubmitRoute({
+            sendPlanFeedbackNow,
+            goalSendMode,
+            shouldQueue: inFlight || holdForSetup,
+          })
+        : null;
+    const sourceRect = composerCardRef.current?.getBoundingClientRect() ?? null;
+    if (
+      route !== null &&
+      route !== "queue" &&
+      sourceRect !== null &&
+      !prefersReducedMotion()
+    ) {
+      startSendMotion(sessionId, {
+        text: motionSnippet(input.text),
+        sourceRect: {
+          left: sourceRect.left,
+          top: sourceRect.top,
+          width: sourceRect.width,
+          height: sourceRect.height,
+        },
+      });
+    }
     clearComposer(view);
     clearComposerDraft(draftKey);
     setGoalSendMode(false);
@@ -705,13 +758,7 @@ export function ChatComposer({
       onDraftSubmit(input, { asGoal: goalSendMode });
       return true;
     }
-    switch (
-      chooseComposerSubmitRoute({
-        sendPlanFeedbackNow,
-        goalSendMode,
-        shouldQueue: inFlight || holdForSetup,
-      })
-    ) {
+    switch (route) {
       case "planFeedback":
         void (async () => {
           if (pendingPlanApprovalRequest !== null) {
@@ -756,6 +803,15 @@ export function ChatComposer({
   };
 
   const inPlanMode = session.permissionMode === "plan";
+  const approveEmulatedPlan = () => {
+    void (async () => {
+      await setPermissionMode(sessionId, "default");
+      await send(sessionId, EMULATED_PLAN_APPROVAL_PROMPT);
+    })();
+  };
+  const cancelEmulatedPlan = () => {
+    void setPermissionMode(sessionId, "default");
+  };
   const inUltracodeMode = reasoningLevel === "ultracode";
   // Keep the editor mounted at all times. Permissions / questions render as
   // a sibling above it, and we hide the editor block with `display: none`
@@ -803,7 +859,12 @@ export function ChatComposer({
           <Frame>
             {!isDraft ? (
               <div className="mb-1 overflow-hidden rounded-md border border-border/50 bg-muted/30 empty:hidden empty:mb-0">
-                <PlanApprovalTray sessionId={sessionId} />
+                <PlanApprovalTray
+                  sessionId={sessionId}
+                  emulatedPlanReady={emulatedPlanReady}
+                  onApproveEmulatedPlan={approveEmulatedPlan}
+                  onCancelEmulatedPlan={cancelEmulatedPlan}
+                />
                 {goalCapable && goal !== null ? (
                   <GoalBanner
                     goal={goal}
@@ -828,6 +889,7 @@ export function ChatComposer({
               </div>
             ) : null}
             <Card
+              ref={composerCardRef}
               className={cn(
                 "min-h-30 rounded-lg transition-colors",
                 goalSendMode
@@ -1025,18 +1087,27 @@ export function ChatComposer({
  * per-session sessionStorage namespace the send path already reads.
  */
 function FastModeToggle({ sessionId }: { sessionId: SessionId }) {
-  const storageKey = `memoize.modelOptions.${sessionId}.fastMode`;
+  const storageKey = `zuse.modelOptions.${sessionId}.fastMode`;
+  const legacyStorageKey = `memoize.modelOptions.${sessionId}.fastMode`;
   const [enabled, setEnabled] = useState(() => {
     if (typeof window === "undefined") return false;
-    return window.sessionStorage.getItem(storageKey) === "true";
+    return (
+      readStorageWithLegacy(window.sessionStorage, storageKey, [
+        legacyStorageKey,
+      ]) === "true"
+    );
   });
   useEffect(() => {
     if (typeof window === "undefined") {
       setEnabled(false);
       return;
     }
-    setEnabled(window.sessionStorage.getItem(storageKey) === "true");
-  }, [storageKey]);
+    setEnabled(
+      readStorageWithLegacy(window.sessionStorage, storageKey, [
+        legacyStorageKey,
+      ]) === "true",
+    );
+  }, [legacyStorageKey, storageKey]);
 
   const onClick = () => {
     const next = !enabled;
@@ -1046,6 +1117,7 @@ function FastModeToggle({ sessionId }: { sessionId: SessionId }) {
         window.sessionStorage.setItem(storageKey, "true");
       } else {
         window.sessionStorage.removeItem(storageKey);
+        window.sessionStorage.removeItem(legacyStorageKey);
       }
     }
   };
@@ -1444,14 +1516,19 @@ function ReasoningPicker({
 
   const defaultId = resolved?.defaultId ?? "medium";
   const descriptorId = resolved?.descriptorId ?? "reasoning";
-  const storageKey = `memoize.modelOptions.${sessionId}.${descriptorId}`;
+  const storageKey = `zuse.modelOptions.${sessionId}.${descriptorId}`;
+  const legacyStorageKey = `memoize.modelOptions.${sessionId}.${descriptorId}`;
   const [level, setLevel] = useState<string>(() => {
     if (typeof window === "undefined") return defaultId;
-    const stored = window.sessionStorage.getItem(storageKey);
+    const stored = readStorageWithLegacy(window.sessionStorage, storageKey, [
+      legacyStorageKey,
+    ]);
     if (stored !== null) return stored;
     // One-shot legacy migration so users mid-session keep their pick.
-    const legacy = window.sessionStorage.getItem(
-      `memoize.reasoning.${sessionId}`,
+    const legacy = readStorageWithLegacy(
+      window.sessionStorage,
+      `zuse.reasoning.${sessionId}`,
+      [`memoize.reasoning.${sessionId}`],
     );
     if (legacy !== null && legacy.length > 0) return legacy;
     return defaultId;
@@ -1560,8 +1637,10 @@ const selectedContextWindowTokens = (
   if (typeof window === "undefined") {
     return descriptorContextWindowTokens(providerId, model);
   }
-  const stored = window.sessionStorage.getItem(
-    `memoize.modelOptions.${sessionId}.contextWindow`,
+  const stored = readStorageWithLegacy(
+    window.sessionStorage,
+    `zuse.modelOptions.${sessionId}.contextWindow`,
+    [`memoize.modelOptions.${sessionId}.contextWindow`],
   );
   return (
     contextWindowTokensFromId(stored ?? undefined) ??
@@ -1725,17 +1804,27 @@ function ContextStatusPopover({ session }: { session: Session }) {
     return latestUsage;
   }, [messages, session.providerId]);
 
-  const usageLimit = useMemo(() => {
+  const usageLimits = useMemo(() => {
+    const latestByKey = new Map<
+      string,
+      Extract<Message["content"], { _tag: "usage_limit" }>
+    >();
     for (let i = messages.length - 1; i >= 0; i--) {
       const content = messages[i]!.content;
       if (
         content._tag === "usage_limit" &&
         content.providerId === session.providerId
       ) {
-        return content;
+        const key =
+          content.windowMinutes !== null
+            ? `window:${content.windowMinutes}`
+            : `label:${content.label}`;
+        if (!latestByKey.has(key)) {
+          latestByKey.set(key, content);
+        }
       }
     }
-    return null;
+    return [...latestByKey.values()].reverse();
   }, [messages, session.providerId]);
 
   const usedTokens = latestContext?.usedTokens ?? null;
@@ -1760,7 +1849,7 @@ function ContextStatusPopover({ session }: { session: Session }) {
       : null;
 
   const hasContext = usedTokens !== null && windowTokens !== null;
-  const hasLimits = usageLimit !== null;
+  const hasLimits = usageLimits.length > 0;
   if (!hasContext && !hasLimits) return null;
 
   const high = percent !== null && percent >= 90;
@@ -1836,8 +1925,7 @@ function ContextStatusPopover({ session }: { session: Session }) {
               hasContext && "border-t border-border",
             )}
           >
-            {(() => {
-              const limit = usageLimit!;
+            {usageLimits.map((limit) => {
               const reset = resetLabel(limit.resetsAt);
               const used = limit.usedPercent;
               const remaining =
@@ -1846,7 +1934,14 @@ function ContextStatusPopover({ session }: { session: Session }) {
                   : "Active";
               const limitHigh = used !== null && used >= 80;
               return (
-                <>
+                <div
+                  key={
+                    limit.windowMinutes !== null
+                      ? `window:${limit.windowMinutes}`
+                      : `label:${limit.label}`
+                  }
+                  className="flex flex-col gap-3"
+                >
                   <div className="flex items-baseline justify-between gap-3">
                     <span className="font-medium text-foreground">
                       {limit.label}
@@ -1867,9 +1962,9 @@ function ContextStatusPopover({ session }: { session: Session }) {
                       {reset !== null ? reset : "unknown"}
                     </span>
                   </div>
-                </>
+                </div>
               );
-            })()}
+            })}
           </div>
         ) : null}
       </TooltipPopup>

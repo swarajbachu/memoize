@@ -35,6 +35,7 @@ import { UsageDashboard } from "./components/usage-dashboard.tsx";
 import { useKeybindingDispatch } from "./hooks/use-keybinding-dispatch.ts";
 import { useMenuShortcuts } from "./hooks/use-menu-shortcuts.ts";
 import { getRpcClient } from "./lib/rpc-client.ts";
+import { useAuthStore } from "./store/auth.ts";
 import { useKeybindingsStore } from "./store/keybindings.ts";
 import { usePermissionsStore } from "./store/permissions.ts";
 import { useProvidersStore } from "./store/providers.ts";
@@ -46,7 +47,7 @@ import { useUiStore } from "./store/ui.ts";
 import { useWorkspaceStore } from "./store/workspace.ts";
 import { useWorktreesStore } from "./store/worktrees.ts";
 
-const PANEL_GROUP_ID = "memoize.shell.v3";
+const PANEL_GROUP_ID = "zuse.shell.v3";
 const PANEL_IDS = ["projects", "main", "files"];
 
 const SIDEBAR_ANIM_MS = 200;
@@ -151,6 +152,16 @@ export function App() {
     startPermissionsStream();
   }, [startPermissionsStream]);
 
+  // WorkOS auth: subscribe to session changes + cold-load the current session.
+  // Optional (no gate) — the sidebar account control, onboarding step, and
+  // settings panel all render off this state.
+  const startAuthStream = useAuthStore((s) => s.start);
+  const hydrateAuth = useAuthStore((s) => s.hydrate);
+  useEffect(() => {
+    startAuthStream();
+    void hydrateAuth();
+  }, [startAuthStream, hydrateAuth]);
+
   // Native Application Menu → renderer action dispatcher. Lives on the
   // root so the bindings work in every view (chat, settings, onboarding).
   useMenuShortcuts();
@@ -200,7 +211,7 @@ export function App() {
       } catch (error) {
         if (cancelled) return;
         // eslint-disable-next-line no-console
-        console.error("[memoize] RPC smoke test failed:", error);
+        console.error("[zuse] RPC smoke test failed:", error);
       }
     })();
     return () => {
