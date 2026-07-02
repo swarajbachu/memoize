@@ -51,20 +51,41 @@ const withConfirm = async (
   confirmed: boolean,
   fn: () => Promise<void>,
 ): Promise<void> => {
+  const cleanup = installConfirm(confirmed);
+  try {
+    await fn();
+  } finally {
+    cleanup();
+  }
+};
+
+const installConfirm = (confirmed: boolean): (() => void) => {
   const globalWithWindow = globalThis as typeof globalThis & {
     window?: { confirm: () => boolean };
   };
   const previousWindow = globalWithWindow.window;
   globalWithWindow.window = { confirm: () => confirmed };
-  try {
-    await fn();
-  } finally {
+  return () => {
     if (previousWindow === undefined) {
       delete globalWithWindow.window;
     } else {
       globalWithWindow.window = previousWindow;
     }
-  }
+  };
+};
+
+const deferred = <T>(): {
+  readonly promise: Promise<T>;
+  readonly resolve: (value: T) => void;
+  readonly reject: (reason?: unknown) => void;
+} => {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
 };
 
 describe("chats store selection", () => {
@@ -80,8 +101,11 @@ describe("chats store selection", () => {
       chatsByProject: { [projectId]: [chat] },
       selectedChatId: null,
       selectedChatByProject: {},
+      archiveProgressByChat: {},
       error: null,
       archive: initialChatsState.archive,
+      setArchiveProgress: initialChatsState.setArchiveProgress,
+      clearArchiveProgress: initialChatsState.clearArchiveProgress,
     });
   });
 
@@ -112,9 +136,30 @@ describe("archiveChatWithConfirm", () => {
       chatsByProject: { [projectId]: [chat] },
       selectedChatId: chatId,
       selectedChatByProject: { [projectId]: chatId },
+      archiveProgressByChat: {},
       error: null,
       archive: initialChatsState.archive,
+      setArchiveProgress: initialChatsState.setArchiveProgress,
+      clearArchiveProgress: initialChatsState.clearArchiveProgress,
     });
+  });
+
+  it("sets archive progress during the first archive attempt and clears it on success", async () => {
+    const first = deferred<{ readonly ok: true }>();
+    useChatsStore.setState({
+      archive: async () => first.promise,
+    });
+
+    const run = archiveChatWithConfirm(chatId);
+
+    expect(useChatsStore.getState().archiveProgressByChat[chatId]).toBe(
+      "archiving",
+    );
+    first.resolve({ ok: true });
+    await run;
+    expect(
+      useChatsStore.getState().archiveProgressByChat[chatId],
+    ).toBeUndefined();
   });
 
   it("retries dirty worktree archives with force after confirmation", async () => {
@@ -138,6 +183,41 @@ describe("archiveChatWithConfirm", () => {
     expect(calls).toEqual([undefined, true]);
   });
 
+  it("switches progress while removing a confirmed dirty worktree", async () => {
+    const forced = deferred<{ readonly ok: true }>();
+    const cleanup = installConfirm(true);
+    const calls: Array<boolean | undefined> = [];
+    useChatsStore.setState({
+      archive: async (_chatId, force) => {
+        calls.push(force);
+        return force === true
+          ? forced.promise
+          : ({
+              ok: false,
+              dirty: true,
+              reason: "Worktree has uncommitted changes.",
+            } as const);
+      },
+    });
+
+    const run = archiveChatWithConfirm(chatId);
+    await Promise.resolve();
+
+    expect(calls).toEqual([undefined, true]);
+    expect(useChatsStore.getState().archiveProgressByChat[chatId]).toBe(
+      "removing-dirty-worktree",
+    );
+    forced.resolve({ ok: true });
+    try {
+      await run;
+    } finally {
+      cleanup();
+    }
+    expect(
+      useChatsStore.getState().archiveProgressByChat[chatId],
+    ).toBeUndefined();
+  });
+
   it("stops quietly when dirty archive removal is declined", async () => {
     const calls: Array<boolean | undefined> = [];
     useChatsStore.setState({
@@ -157,5 +237,32 @@ describe("archiveChatWithConfirm", () => {
 
     expect(calls).toEqual([undefined]);
     expect(useChatsStore.getState().error).toBeNull();
+    expect(
+      useChatsStore.getState().archiveProgressByChat[chatId],
+    ).toBeUndefined();
+  });
+
+  it("clears progress and throws when forced dirty removal fails", async () => {
+    useChatsStore.setState({
+      archive: async (_chatId, force) =>
+        force === true
+          ? ({
+              ok: false,
+              dirty: false,
+              reason: "git worktree remove failed",
+            } as const)
+          : ({
+              ok: false,
+              dirty: true,
+              reason: "Worktree has uncommitted changes.",
+            } as const),
+    });
+
+    await expect(
+      withConfirm(true, async () => archiveChatWithConfirm(chatId)),
+    ).rejects.toThrow("git worktree remove failed");
+    expect(
+      useChatsStore.getState().archiveProgressByChat[chatId],
+    ).toBeUndefined();
   });
 });
