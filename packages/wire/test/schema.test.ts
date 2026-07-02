@@ -5,11 +5,17 @@ import {
   AgentEvent,
   Chat,
   ComposerInput,
+  defaultModelEnabledByProvider,
+  defaultModelFor,
   GitBranchInfo,
+  isModelVisible,
   Message,
+  MODELS_BY_PROVIDER,
   PokemonPokedexEntry,
+  resolveModelSlug,
   SettingsFile,
   Session,
+  visibleModelsForProvider,
   Worktree,
 } from "../src/index.ts";
 
@@ -80,6 +86,19 @@ describe("AgentEvent round-trips", () => {
         cacheReadTokens: 0,
         cacheCreationTokens: 0,
         model: "claude-opus-4-8",
+      },
+    },
+    {
+      name: "ContextCompaction",
+      encoded: {
+        _tag: "ContextCompaction",
+        itemId: "compact1",
+        providerId: "codex",
+        startedAt: 1_800_000_000,
+        durationMs: 37_000,
+        beforeTokens: 231_450,
+        afterTokens: 9_535,
+        status: "completed",
       },
     },
     {
@@ -240,6 +259,23 @@ describe("Message round-trip", () => {
     });
   });
 
+  it("round-trips a context compaction message", () => {
+    roundTrip(Message, {
+      ...base,
+      role: "system" as const,
+      content: {
+        _tag: "context_compaction",
+        itemId: "compact1",
+        providerId: "codex",
+        startedAt: 1_800_000_000,
+        durationMs: 37_000,
+        beforeTokens: 231_450,
+        afterTokens: 9_535,
+        status: "completed",
+      },
+    });
+  });
+
   it("rejects an unknown content _tag", () => {
     expect(() =>
       Schema.decodeUnknownSync(Message)({
@@ -378,6 +414,13 @@ describe("SettingsFile round-trip", () => {
         gemini: true,
         opencode: true,
       },
+      modelEnabledByProvider: {
+        ...defaultModelEnabledByProvider(),
+        codex: {
+          ...defaultModelEnabledByProvider().codex,
+          "gpt-5.3-codex": true,
+        },
+      },
       subagents: { enableForNewSessions: true, presets: {} },
       branchNamingStyle: "username-slug",
       branchNamingPrefix: "",
@@ -410,11 +453,60 @@ describe("SettingsFile round-trip", () => {
           gemini: true,
           opencode: true,
         },
+        modelEnabledByProvider: defaultModelEnabledByProvider(),
         subagents: { enableForNewSessions: true, presets: {} },
         branchNamingStyle: "username-slug",
         branchNamingPrefix: "",
       }),
     ).toThrow();
+  });
+});
+
+describe("model visibility helpers", () => {
+  it("uses Sonnet 5 as the default visible Claude model", () => {
+    expect(defaultModelFor("claude")).toBe("claude-sonnet-5");
+    expect(visibleModelsForProvider("claude")[0]?.id).toBe("claude-fable-5");
+    expect(isModelVisible("claude", "claude-sonnet-5")).toBe(true);
+    expect(isModelVisible("claude", "claude-fable-5")).toBe(true);
+    expect(resolveModelSlug("claude", "fable")).toBe("claude-fable-5");
+    expect(
+      MODELS_BY_PROVIDER.claude.find((m) => m.id === "claude-sonnet-5")
+        ?.badgeLabel,
+    ).toBe("New");
+    expect(
+      MODELS_BY_PROVIDER.claude.find((m) => m.id === "claude-fable-5")
+        ?.badgeLabel,
+    ).toBe("Available now");
+    expect(isModelVisible("claude", "claude-sonnet-4-6")).toBe(false);
+  });
+
+  it("filters hidden models unless they are explicitly enabled", () => {
+    expect(isModelVisible("codex", "gpt-5.3-codex")).toBe(false);
+    expect(
+      visibleModelsForProvider("codex").some(
+        (model) => model.id === "gpt-5.3-codex",
+      ),
+    ).toBe(false);
+
+    const overrides = defaultModelEnabledByProvider();
+    overrides.codex["gpt-5.3-codex"] = true;
+
+    expect(isModelVisible("codex", "gpt-5.3-codex", overrides)).toBe(true);
+    expect(
+      visibleModelsForProvider("codex", overrides).some(
+        (model) => model.id === "gpt-5.3-codex",
+      ),
+    ).toBe(true);
+  });
+
+  it("can include a hidden selected model without making all hidden models visible", () => {
+    const models = visibleModelsForProvider("codex", undefined, {
+      includeModelId: "gpt-5.3-codex",
+    });
+    expect(models.some((model) => model.id === "gpt-5.3-codex")).toBe(true);
+    expect(models.some((model) => model.id === "gpt-5.3-codex-spark")).toBe(
+      false,
+    );
   });
 });
 

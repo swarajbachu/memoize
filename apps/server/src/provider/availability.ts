@@ -180,13 +180,13 @@ export const selectCliPathCandidate = (
   if (candidates.length === 0) return null;
   if (cliBinary !== "codex") return candidates[0]!;
 
-  // Conductor can prepend its managed Codex shim to PATH for app internals.
+  // Some environments can prepend a managed Codex shim to PATH for internals.
   // Provider settings should report the user's real Codex install, not that
   // managed binary.
   return (
     candidates.find(
       (candidate) =>
-        !isConductorManagedCodexPath(normalizeCommandPath(candidate)),
+        !isManagedCodexShimPath(normalizeCommandPath(candidate)),
     ) ?? null
   );
 };
@@ -436,7 +436,7 @@ const isHomebrewPath = (p: string): boolean =>
   p.startsWith("/opt/homebrew/bin/") ||
   p.startsWith("/usr/local/bin/");
 
-const isConductorManagedCodexPath = (p: string): boolean =>
+const isManagedCodexShimPath = (p: string): boolean =>
   p.endsWith("/application support/com.conductor.app/bin/codex") ||
   (p.includes("/application support/com.conductor.app/agent-binaries/codex/") &&
     p.endsWith("/codex"));

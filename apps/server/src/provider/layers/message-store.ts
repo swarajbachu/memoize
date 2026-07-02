@@ -268,8 +268,17 @@ const chatFromRow = (row: ChatRow): Chat =>
     updatedAt: new Date(row.updated_at),
   });
 
+const normalizeMessageContent = (content: MessageContent): MessageContent => {
+  if (content._tag === "context_compaction" && content.status === undefined) {
+    return { ...content, status: "completed" };
+  }
+  return content;
+};
+
 const messageFromRow = (row: MessageRow): Message => {
-  const content = JSON.parse(row.content_json) as MessageContent;
+  const content = normalizeMessageContent(
+    JSON.parse(row.content_json) as MessageContent,
+  );
   return Message.make({
     id: MessageId.make(row.id),
     sessionId: SessionId.make(row.session_id),
@@ -305,6 +314,7 @@ const parentItemIdOfContent = (content: MessageContent): string | null => {
     case "user_question_answer":
       return content.parentItemId ?? null;
     case "context_usage":
+    case "context_compaction":
     case "usage_limit":
       return null;
     case "subagent_summary":
@@ -334,6 +344,7 @@ const roleForContent = (content: MessageContent): MessageRole => {
     case "interrupted":
     case "usage":
     case "context_usage":
+    case "context_compaction":
     case "usage_limit":
       return "system";
   }
@@ -406,6 +417,17 @@ const eventToContent = (event: AgentEvent): MessageContent | null => {
         windowTokens: event.windowTokens,
         precision: event.precision,
         source: event.source,
+      };
+    case "ContextCompaction":
+      return {
+        _tag: "context_compaction",
+        itemId: event.itemId,
+        providerId: event.providerId,
+        startedAt: event.startedAt,
+        durationMs: event.durationMs,
+        beforeTokens: event.beforeTokens,
+        afterTokens: event.afterTokens,
+        status: event.status,
       };
     case "UsageLimit":
       return {
@@ -879,9 +901,14 @@ export const MessageStoreLive = Layer.scoped(
     const persistMessage = (
       sessionId: SessionId,
       content: MessageContent,
+      idOverride?: MessageId,
     ): Effect.Effect<Message> =>
       Effect.gen(function* () {
-        const id = MessageId.make(crypto.randomUUID());
+        // `idOverride` is the renderer-minted `clientMessageId` for an
+        // optimistic user message — reuse it so the live-stream echo carries
+        // the same id the renderer already inserted. All other persists
+        // (assistant/tool/error/goal) omit it and get a fresh server id.
+        const id = idOverride ?? MessageId.make(crypto.randomUUID());
         const role = roleForContent(content);
         const now = new Date();
         const nowIso = now.toISOString();
@@ -1051,7 +1078,9 @@ export const MessageStoreLive = Layer.scoped(
         yield* broadcastQueue(sessionId);
       });
 
-    const clearQueuePauseIfEmpty = (sessionId: SessionId): Effect.Effect<void> =>
+    const clearQueuePauseIfEmpty = (
+      sessionId: SessionId,
+    ): Effect.Effect<void> =>
       Effect.gen(function* () {
         const queue = yield* listQueuedRows(sessionId);
         if (queue.length > 0 || !(yield* isQueuePaused(sessionId))) return;
@@ -2692,6 +2721,7 @@ export const MessageStoreLive = Layer.scoped(
       skillRefs?: ReadonlyArray<SkillRef>,
       annotations?: ReadonlyArray<CodeAnnotation>,
       asGoal?: boolean,
+      clientMessageId?: MessageId,
     ): Effect.Effect<boolean, SessionNotFoundError> =>
       Effect.gen(function* () {
         const session = yield* lookupSession(sessionId);
@@ -2742,7 +2772,11 @@ export const MessageStoreLive = Layer.scoped(
           annotationList.length > 0
             ? `${serializeAnnotations(annotationList)}\n\n${text}`.trim()
             : text;
-        const persisted = yield* persistMessage(sessionId, content);
+        const persisted = yield* persistMessage(
+          sessionId,
+          content,
+          clientMessageId,
+        );
         // Pin the attachments so the GC sweep treats them as referenced —
         // a separate row per (message, attachment) keeps the existing
         // GC join intact.
@@ -2934,6 +2968,7 @@ export const MessageStoreLive = Layer.scoped(
       skillRefs,
       annotations,
       asGoal,
+      clientMessageId,
     ) =>
       Effect.gen(function* () {
         yield* submitUserMessage(
@@ -2944,6 +2979,7 @@ export const MessageStoreLive = Layer.scoped(
           skillRefs,
           annotations,
           asGoal,
+          clientMessageId,
         );
       });
 

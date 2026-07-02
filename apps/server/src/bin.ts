@@ -44,6 +44,17 @@ export const runHeadlessServer = (): void => {
     // is a later refinement. Returning null is the documented contract.
     folderPicker: { pick: () => Effect.succeed(null) },
     serverProtocol: wsServerProtocolLayer({ port, host }),
+    // Inert AuthShell for headless boot. The WorkOS deep-link flow needs a host
+    // to open a browser and receive the callback; a headless server's proper
+    // variant is a loopback-HTTP listener, wired with the auth/pairing work.
+    // Until then this no-op satisfies the seam without offering server-side
+    // login (clients authenticate to the environment via pairing/relay tokens).
+    authShell: {
+      redirectUri:
+        process.env.ZUSE_AUTH_REDIRECT_URI ?? "http://127.0.0.1/auth/callback",
+      open: () => Effect.void,
+      onCallbackUrl: () => Effect.void,
+    },
   });
 
   NodeRuntime.runMain(Layer.launch(layer));

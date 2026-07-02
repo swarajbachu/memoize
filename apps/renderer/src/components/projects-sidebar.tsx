@@ -6,10 +6,13 @@ import {
   Delete02Icon,
   Edit01Icon,
   HelpCircleIcon,
+  Login03Icon,
+  Logout01Icon,
   PencilIcon,
   Settings01Icon,
   SquareLock01Icon,
   TaskDone01Icon,
+  UserCircleIcon,
 } from "@hugeicons-pro/core-bulk-rounded";
 import {
   ArchiveArrowDownIcon,
@@ -29,8 +32,15 @@ import {
 } from "@zuse/wire";
 
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
-import { Menu, MenuItem, MenuPopup } from "~/components/ui/menu";
+import {
+  Menu,
+  MenuItem,
+  MenuPopup,
+  MenuSeparator,
+  MenuTrigger,
+} from "~/components/ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
+import { useAuth } from "~/hooks/use-auth.ts";
 import {
   deriveChatAttentionState,
   derivePermissionAttention,
@@ -43,6 +53,7 @@ import { formatShortcut } from "../lib/shortcuts.ts";
 import { getRpcClient } from "../lib/rpc-client.ts";
 import {
   archiveChatWithConfirm,
+  chatArchiveProgressLabel,
   isChatUnread,
   useChatsStore,
 } from "../store/chats.ts";
@@ -383,6 +394,7 @@ function SidebarFooter() {
     view === "chat" && activeMainTab === "usage" && usageScope === "global";
   return (
     <div className="flex flex-col gap-0.5 border-t border-sidebar-border/40 px-2 py-1.5">
+      <SidebarAccount />
       <Tooltip>
         <TooltipTrigger
           render={
@@ -445,6 +457,73 @@ function SidebarFooter() {
         </TooltipPopup>
       </Tooltip>
     </div>
+  );
+}
+
+/**
+ * Bottom-of-sidebar account control. Signed out → a "Sign in" button. Signed
+ * in → avatar + name that opens a menu (Account settings, Sign out). Auth is
+ * optional, so this is the primary place to discover sign-in after onboarding.
+ */
+function SidebarAccount() {
+  const { isSignedIn, user, name, signingIn, signIn, signOut } = useAuth();
+  const setView = useUiStore((s) => s.setView);
+  const setSettingsSection = useUiStore((s) => s.setSettingsSection);
+
+  // Always render an affordance. Until auth state resolves (or whenever signed
+  // out) we show "Sign in" — a brief flash to the signed-in row on cold load
+  // is fine and far better than showing nothing.
+  if (!isSignedIn) {
+    return (
+      <button
+        type="button"
+        onClick={() => void signIn()}
+        disabled={signingIn}
+        className="flex w-full items-center gap-2 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground disabled:opacity-60"
+      >
+        <HugeiconsIcon icon={Login03Icon} className="size-3.5" />
+        <span>{signingIn ? "Signing in…" : "Sign in"}</span>
+      </button>
+    );
+  }
+
+  const initial = (name || user?.email || "?").charAt(0).toUpperCase();
+
+  return (
+    <Menu>
+      <MenuTrigger
+        render={
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
+          >
+            <Avatar className="size-5 text-[9px]">
+              {user?.profilePictureUrl ? (
+                <AvatarImage src={user.profilePictureUrl} alt={name} />
+              ) : null}
+              <AvatarFallback className="text-[9px]">{initial}</AvatarFallback>
+            </Avatar>
+            <span className="min-w-0 flex-1 truncate text-left">{name}</span>
+          </button>
+        }
+      />
+      <MenuPopup side="top" align="start" className="min-w-44">
+        <MenuItem
+          onClick={() => {
+            setSettingsSection({ kind: "general" });
+            setView("settings");
+          }}
+        >
+          <HugeiconsIcon icon={UserCircleIcon} />
+          Account settings
+        </MenuItem>
+        <MenuSeparator />
+        <MenuItem variant="destructive" onClick={() => void signOut()}>
+          <HugeiconsIcon icon={Logout01Icon} />
+          Sign out
+        </MenuItem>
+      </MenuPopup>
+    </Menu>
   );
 }
 
@@ -812,6 +891,9 @@ function ChatRow({ chat }: { chat: Chat }) {
   const renameChat = useChatsStore((s) => s.rename);
   const unarchiveChat = useChatsStore((s) => s.unarchive);
   const removeChat = useChatsStore((s) => s.remove);
+  const archiveProgress = useChatsStore(
+    (s) => s.archiveProgressByChat[chat.id] ?? null,
+  );
 
   // PR state is keyed by (project, worktree). A chat owns its worktree,
   // so all its sessions share the same PR row — hydrate once per chat.
@@ -943,7 +1025,16 @@ function ChatRow({ chat }: { chat: Chat }) {
   const primaryActionIcon = isArchived
     ? ArchiveArrowUpIcon
     : ArchiveArrowDownIcon;
-  const primaryActionLabel = isArchived ? "Unarchive" : "Archive";
+  const isArchiving = archiveProgress !== null;
+  const archiveProgressText =
+    archiveProgress === null ? null : chatArchiveProgressLabel(archiveProgress);
+  const primaryActionLabel = isArchived
+    ? "Unarchive"
+    : (archiveProgressText ?? "Archive");
+  const archiveChat = () => {
+    if (isArchiving) return;
+    void archiveChatWithConfirm(chat.id);
+  };
 
   return (
     <>
@@ -1007,17 +1098,27 @@ function ChatRow({ chat }: { chat: Chat }) {
           </span>
           <button
             type="button"
+            disabled={isArchiving}
             onClick={(e) => {
               e.stopPropagation();
-              void (isArchived
-                ? unarchiveChat(chat.id)
-                : archiveChatWithConfirm(chat.id));
+              if (isArchived) {
+                void unarchiveChat(chat.id);
+              } else {
+                archiveChat();
+              }
             }}
-            className="hidden items-center rounded p-0.5 text-muted-foreground transition-opacity duration-150 ease-out hover:text-sidebar-accent-foreground group-hover:flex motion-reduce:transition-none"
+            className={cn(
+              "items-center rounded p-0.5 text-muted-foreground transition-opacity duration-150 ease-out hover:text-sidebar-accent-foreground motion-reduce:transition-none",
+              isArchiving ? "flex" : "hidden group-hover:flex",
+            )}
             aria-label={`${primaryActionLabel} ${chat.title}`}
             title={primaryActionLabel}
           >
-            <HugeiconsIcon icon={primaryActionIcon} className="size-3.5" />
+            {isArchiving ? (
+              <Spinner className="size-3.5" />
+            ) : (
+              <HugeiconsIcon icon={primaryActionIcon} className="size-3.5" />
+            )}
           </button>
         </div>
       </li>
@@ -1045,11 +1146,19 @@ function ChatRow({ chat }: { chat: Chat }) {
             </MenuItem>
           ) : (
             <MenuItem
-              onClick={() => void archiveChatWithConfirm(chat.id)}
+              disabled={isArchiving}
+              onClick={archiveChat}
               className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-sidebar-accent"
             >
-              <HugeiconsIcon icon={ArchiveArrowDownIcon} className="size-3.5" />
-              Archive
+              {isArchiving ? (
+                <Spinner className="size-3.5" />
+              ) : (
+                <HugeiconsIcon
+                  icon={ArchiveArrowDownIcon}
+                  className="size-3.5"
+                />
+              )}
+              {archiveProgressText ?? "Archive"}
             </MenuItem>
           )}
           <MenuItem

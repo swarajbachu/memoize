@@ -46,12 +46,21 @@ import { SetupCardView } from "./worktree-setup-card.tsx";
  */
 const migrateModelOptions = (fromId: string, toId: string): void => {
   if (typeof window === "undefined") return;
-  const prefix = `memoize.modelOptions.${fromId}.`;
+  const prefix = `zuse.modelOptions.${fromId}.`;
+  const legacyPrefix = `memoize.modelOptions.${fromId}.`;
   const moves: Array<[string, string]> = [];
   for (let i = 0; i < window.sessionStorage.length; i++) {
     const key = window.sessionStorage.key(i);
     if (key !== null && key.startsWith(prefix)) {
-      moves.push([key, `memoize.modelOptions.${toId}.${key.slice(prefix.length)}`]);
+      moves.push([
+        key,
+        `zuse.modelOptions.${toId}.${key.slice(prefix.length)}`,
+      ]);
+    } else if (key !== null && key.startsWith(legacyPrefix)) {
+      moves.push([
+        key,
+        `zuse.modelOptions.${toId}.${key.slice(legacyPrefix.length)}`,
+      ]);
     }
   }
   for (const [from, to] of moves) {
@@ -190,14 +199,21 @@ export function ChatLanding() {
     setSubmitError(null);
     setSubmitting(true);
     setPendingProviderId(draft.providerId);
-    setPendingPrompt(input.text.trim().length > 0 ? input.text.trim() : "New chat");
+    setPendingPrompt(
+      input.text.trim().length > 0 ? input.text.trim() : "New chat",
+    );
     const worktreeId = await resolveAutoWorktreeId(selectedFolderId);
     setPendingWorktreeId(worktreeId);
-    const result = await create(selectedFolderId, draft.providerId, draft.model, {
-      runtimeMode: draft.runtimeMode,
-      permissionMode: draft.permissionMode,
-      worktreeId,
-    });
+    const result = await create(
+      selectedFolderId,
+      draft.providerId,
+      draft.model,
+      {
+        runtimeMode: draft.runtimeMode,
+        permissionMode: draft.permissionMode,
+        worktreeId,
+      },
+    );
     if (result === null) {
       const reason =
         useChatsStore.getState().error ??
