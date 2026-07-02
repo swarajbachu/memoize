@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0]
+
+### Changed
+- [codex] Fix dirty worktree removal feedback (#222)
+- [codex] Remove competitor mentions (#227)
+- [codex] Show approve bar for emulated plan mode (#226)
+- Clean up stale memoize branding (#225)
+- [codex] fix codex context status accounting (#224)
+- [codex] Fix stale wire package imports (#223)
+- [codex] Polish streaming chat motion (#221)
+- feat(auth): WorkOS AuthKit login (PKCE, keychain, optional) (#219)
+- [codex] Add Claude Fable 5 support (#220)
+- Add diagnostics bundle export (#206)
+- [codex] Refine renderer color palette (#216)
+- [codex] Float chat scroll controls (#217)
+- [codex] clean model picker (#215)
+- Fix messages not appearing until chat re-open (hydrate race) (#210)
+
 ## [0.8.3]
 
 ### Fixed
