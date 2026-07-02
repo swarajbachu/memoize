@@ -20,9 +20,9 @@ export function SigninStep() {
         subtitle="Sign in with WorkOS to sync this Mac with future remote agents and mobile controls. You can skip it for now and connect later from Settings."
       />
 
-      <div className="grid gap-4 rounded-xl border border-white/8 bg-white/[0.035] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] sm:grid-cols-[1fr_auto] sm:items-center">
+      <div className="grid gap-4 rounded-xl border border-border/60 bg-muted/50 p-4 sm:grid-cols-[1fr_auto] sm:items-center">
         <div className="flex min-w-0 items-start gap-3">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-white/[0.07] text-foreground">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-background/70 text-foreground">
             <HugeiconsIcon
               icon={isSignedIn ? Tick01Icon : UserCircleIcon}
               className="size-5"
@@ -42,7 +42,7 @@ export function SigninStep() {
         </div>
 
         {isSignedIn ? (
-          <span className="inline-flex h-9 items-center justify-center rounded-lg border border-emerald-400/20 bg-emerald-400/[0.08] px-3 text-[12px] font-medium text-emerald-200">
+          <span className="inline-flex h-9 items-center justify-center rounded-lg border border-success/20 bg-alert-success-bg px-3 text-[12px] font-medium text-success">
             Signed in
           </span>
         ) : (
@@ -99,7 +99,7 @@ function Hint({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg bg-white/[0.025] px-3 py-2.5">
+    <div className="rounded-lg bg-muted/50 px-3 py-2.5">
       <div className="font-medium text-foreground">{title}</div>
       <div className="mt-0.5 leading-snug">{children}</div>
     </div>

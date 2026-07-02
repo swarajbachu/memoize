@@ -16,6 +16,7 @@ export interface WindowBridge {
   readonly onFullScreenChange: (
     handler: (fullscreen: boolean) => void,
   ) => () => void;
+  readonly setAppearanceMode?: (mode: "system" | "light" | "dark") => void;
 }
 
 export interface AppBridge {

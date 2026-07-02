@@ -25,6 +25,9 @@ export const CompletionSoundPreset = Schema.Literal(
 );
 export type CompletionSoundPreset = typeof CompletionSoundPreset.Type;
 
+export const AppearanceMode = Schema.Literal("system", "light", "dark");
+export type AppearanceMode = typeof AppearanceMode.Type;
+
 /**
  * How the auto-namer (PR: "auto-name chat + branch after first message")
  * shapes a worktree's git branch once it has an LLM-derived title slug.
@@ -61,6 +64,7 @@ export class SettingsFile extends Schema.Class<SettingsFile>("SettingsFile")({
   defaultRuntimeMode: RuntimeMode,
   defaultAutoCreateWorktree: Schema.Boolean,
   onboardingCompleted: Schema.Boolean,
+  appearanceMode: AppearanceMode,
   completionSoundEnabled: Schema.Boolean,
   completionSoundPreset: CompletionSoundPreset,
   /**
@@ -114,6 +118,7 @@ export const SettingsPatch = Schema.Struct({
   defaultRuntimeMode: Schema.optional(RuntimeMode),
   defaultAutoCreateWorktree: Schema.optional(Schema.Boolean),
   onboardingCompleted: Schema.optional(Schema.Boolean),
+  appearanceMode: Schema.optional(AppearanceMode),
   completionSoundEnabled: Schema.optional(Schema.Boolean),
   completionSoundPreset: Schema.optional(CompletionSoundPreset),
   providerEnabled: Schema.optional(

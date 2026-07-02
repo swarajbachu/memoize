@@ -5,7 +5,9 @@ import { FileSystem, Path } from "@effect/platform";
 import { Effect, Layer, PubSub, Ref, Stream } from "effect";
 
 import {
+  type AppearanceMode,
   type BranchNamingStyle,
+  type CompletionSoundPreset,
   defaultModelEnabledByProvider,
   defaultModelFor,
   type KeybindingRule,
@@ -15,7 +17,6 @@ import {
   type ProviderId,
   resolveModelSlug,
   SettingsFile,
-  type CompletionSoundPreset,
   type SettingsPatch,
   type SubagentPresetState,
 } from "@zuse/wire";
@@ -72,6 +73,7 @@ const freshSettings = (): SettingsFile =>
     // agents stay isolated. Per-repo settings can still opt a repo out.
     defaultAutoCreateWorktree: true,
     onboardingCompleted: false,
+    appearanceMode: "dark",
     completionSoundEnabled: false,
     completionSoundPreset: "chime",
     providerEnabled: seedProviderEnabled(),
@@ -110,6 +112,9 @@ const isCompletionSoundPreset = (v: unknown): v is CompletionSoundPreset =>
   v === "bell" ||
   v === "rise" ||
   v === "bloom";
+
+const isAppearanceMode = (v: unknown): v is AppearanceMode =>
+  v === "system" || v === "light" || v === "dark";
 
 const isBranchNamingStyle = (v: unknown): v is BranchNamingStyle =>
   v === "username-slug" || v === "slug" || v === "feat-slug" || v === "custom";
@@ -154,6 +159,10 @@ const coerceSettings = (raw: unknown): SettingsFile => {
     typeof obj.onboardingCompleted === "boolean"
       ? obj.onboardingCompleted
       : base.onboardingCompleted;
+
+  const appearanceMode = isAppearanceMode(obj.appearanceMode)
+    ? obj.appearanceMode
+    : base.appearanceMode;
 
   const completionSoundEnabled =
     typeof obj.completionSoundEnabled === "boolean"
@@ -241,6 +250,7 @@ const coerceSettings = (raw: unknown): SettingsFile => {
     defaultRuntimeMode: runtime,
     defaultAutoCreateWorktree: autoWorktree,
     onboardingCompleted: onboarding,
+    appearanceMode,
     completionSoundEnabled,
     completionSoundPreset,
     providerEnabled,
@@ -487,6 +497,7 @@ export const ConfigStoreServiceLive = Layer.scoped(
             patch.defaultAutoCreateWorktree ?? cur.defaultAutoCreateWorktree,
           onboardingCompleted:
             patch.onboardingCompleted ?? cur.onboardingCompleted,
+          appearanceMode: patch.appearanceMode ?? cur.appearanceMode,
           completionSoundEnabled:
             patch.completionSoundEnabled ?? cur.completionSoundEnabled,
           completionSoundPreset:
@@ -536,6 +547,7 @@ export const ConfigStoreServiceLive = Layer.scoped(
               baseline.defaultAutoCreateWorktree &&
             cur.completionSoundEnabled === baseline.completionSoundEnabled &&
             cur.completionSoundPreset === baseline.completionSoundPreset &&
+            cur.appearanceMode === baseline.appearanceMode &&
             cur.onboardingCompleted === false &&
             Object.keys(cur.subagents.presets).length === 0;
           if (!currentLooksFresh) return cur;
@@ -548,6 +560,8 @@ export const ConfigStoreServiceLive = Layer.scoped(
             cur.defaultRuntimeMode;
           let autoWorktree: boolean = cur.defaultAutoCreateWorktree;
           let onboarding: boolean = cur.onboardingCompleted;
+          let appearanceMode: SettingsFile["appearanceMode"] =
+            cur.appearanceMode;
           let providerEnabled: SettingsFile["providerEnabled"] =
             cur.providerEnabled;
           let modelEnabledByProvider: SettingsFile["modelEnabledByProvider"] =
@@ -571,6 +585,7 @@ export const ConfigStoreServiceLive = Layer.scoped(
               runtime = fromLs.defaultRuntimeMode;
               autoWorktree = fromLs.defaultAutoCreateWorktree;
               onboarding = fromLs.onboardingCompleted;
+              appearanceMode = fromLs.appearanceMode;
               completionSoundEnabled = fromLs.completionSoundEnabled;
               completionSoundPreset = fromLs.completionSoundPreset;
               providerEnabled = fromLs.providerEnabled;
@@ -604,6 +619,7 @@ export const ConfigStoreServiceLive = Layer.scoped(
             defaultRuntimeMode: runtime,
             defaultAutoCreateWorktree: autoWorktree,
             onboardingCompleted: onboarding,
+            appearanceMode,
             completionSoundEnabled,
             completionSoundPreset,
             providerEnabled,

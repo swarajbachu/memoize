@@ -170,9 +170,34 @@ const startAuthLoopback = (): void => {
   authLoopbackServer = server;
 };
 
+const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL?.trim() || "";
+const isDevelopment = Boolean(DEV_SERVER_URL);
+
+const APP_NAME = isDevelopment ? "Zuse Alpha (Dev)" : "Zuse Alpha";
+const DEV_ICON_PATH = Path.resolve(__dirname, "..", "build", "icon.png");
+
+app.setName(APP_NAME);
+if (
+  isDevelopment &&
+  process.platform === "darwin" &&
+  fsSync.existsSync(DEV_ICON_PATH)
+) {
+  app.dock?.setIcon(DEV_ICON_PATH);
+}
+
+const ZUSE_USER_DATA_DIR =
+  process.env.ZUSE_USER_DATA_DIR?.trim() ||
+  process.env.MEMOIZE_USER_DATA_DIR?.trim();
+if (ZUSE_USER_DATA_DIR) {
+  fsSync.mkdirSync(ZUSE_USER_DATA_DIR, { recursive: true });
+  app.setPath("userData", ZUSE_USER_DATA_DIR);
+}
+
 // Single-instance lock: required so a deep link launched while the app is
 // already running routes through `second-instance` (Win/Linux) rather than
-// spawning a second copy. macOS delivers via `open-url` regardless.
+// spawning a second copy. macOS delivers via `open-url` regardless. App name
+// and userData must be set first so dev workspaces don't collide with the
+// packaged app or with each other.
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   app.quit();
@@ -184,27 +209,14 @@ app.on("open-url", (event, url) => {
   handleAuthCallback(url);
 });
 
-const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL?.trim() || "";
-const isDevelopment = Boolean(DEV_SERVER_URL);
-
-const APP_NAME = isDevelopment ? "Zuse Alpha (Dev)" : "Zuse Alpha";
-
-app.setName(APP_NAME);
-
-const ZUSE_USER_DATA_DIR =
-  process.env.ZUSE_USER_DATA_DIR?.trim() ||
-  process.env.MEMOIZE_USER_DATA_DIR?.trim();
-if (ZUSE_USER_DATA_DIR) {
-  fsSync.mkdirSync(ZUSE_USER_DATA_DIR, { recursive: true });
-  app.setPath("userData", ZUSE_USER_DATA_DIR);
-}
-
-// Lock the app to macOS's dark appearance so the sidebar vibrancy material
-// always renders in its dark variant. Without this, vibrancy follows the
-// user's system theme — on a light-mode Mac the bright material lets the
-// desktop wallpaper bleed through and washes out the (hardcoded-dark)
-// renderer UI.
+// Start dark to preserve the historical launch appearance. The renderer sends
+// the persisted Light / Dark / System preference after settings hydrate.
 nativeTheme.themeSource = "dark";
+
+ipcMain.on("window:setAppearanceMode", (_event, value: unknown) => {
+  if (value !== "system" && value !== "light" && value !== "dark") return;
+  nativeTheme.themeSource = value;
+});
 
 let mainWindow: BrowserWindow | null = null;
 let runtimeFiber: Fiber.RuntimeFiber<void, never> | null = null;
@@ -550,6 +562,7 @@ function createMainWindow() {
           backgroundColor: "#00000000",
         }
       : { backgroundColor: "#0b0b0c" }),
+    ...(fsSync.existsSync(DEV_ICON_PATH) ? { icon: DEV_ICON_PATH } : {}),
     titleBarStyle: isMac ? "hiddenInset" : "default",
     title: APP_NAME,
     webPreferences: {
@@ -924,7 +937,7 @@ function createMainWindow() {
 
   if (isDevelopment) {
     void mainWindow.loadURL(DEV_SERVER_URL);
-    mainWindow.webContents.openDevTools({ mode: "detach" });
+    mainWindow.webContents.openDevTools({ mode: "right" });
   } else {
     // In dev `dist-electron/main.cjs` lives at apps/desktop/dist-electron/
     // and the renderer is two levels up at apps/renderer/dist. In the
