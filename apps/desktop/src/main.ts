@@ -79,11 +79,11 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
-// Register `memoize://` as a default protocol client so the OS routes the
-// WorkOS sign-in deep link (`memoize://auth/callback?...`) back to this app.
+// Register `zuse://` as a default protocol client so the OS routes the
+// WorkOS sign-in deep link (`zuse://auth/callback?...`) back to this app.
 // Safe to call before `whenReady`. On macOS packaged builds the scheme is also
 // declared in Info.plist; calling here covers dev + Win/Linux.
-app.setAsDefaultProtocolClient("memoize");
+app.setAsDefaultProtocolClient("zuse");
 
 // ---------------------------------------------------------------------------
 // Auth callback bridge. The WorkOS PKCE flow round-trips through the system
@@ -94,10 +94,10 @@ app.setAsDefaultProtocolClient("memoize");
 //   1. A localhost loopback HTTP server (primary). Custom-scheme deep links are
 //      unreliable in dev on macOS — every project's prebuilt `Electron.app`
 //      shares the bundle id `com.github.Electron`, so the OS routes
-//      `memoize://` to an arbitrary one (or a fresh, app-less copy → the
+//      `zuse://` to an arbitrary one (or a fresh, app-less copy → the
 //      default Electron splash). Loopback HTTP has none of that ambiguity and
 //      works identically in dev and packaged builds.
-//   2. The `memoize://auth/callback` deep link (open-url / second-instance),
+//   2. The `zuse://auth/callback` deep link (open-url / second-instance),
 //      kept for the future mobile/packaged path.
 //
 // A callback can arrive before the server runtime (and thus the sink) exists —
@@ -105,13 +105,17 @@ app.setAsDefaultProtocolClient("memoize");
 // ---------------------------------------------------------------------------
 const AUTH_LOOPBACK_PORT = 8976;
 const AUTH_LOOPBACK_URI = `http://localhost:${AUTH_LOOPBACK_PORT}/callback`;
-const AUTH_SCHEME_URI = "memoize://auth/callback";
+const AUTH_SCHEME_URI = "zuse://auth/callback";
 // Packaged builds use the custom scheme — a signed app with its own bundle id
 // (app.memoize.desktop) + Info.plist `CFBundleURLTypes` (electron-builder
 // `protocols`) resolves it unambiguously, and it's the same mechanism mobile
 // will use. Dev uses the loopback because the prebuilt Electron.app's shared
 // `com.github.Electron` bundle id makes custom schemes unroutable.
 const AUTH_REDIRECT_URI = app.isPackaged ? AUTH_SCHEME_URI : AUTH_LOOPBACK_URI;
+const AUTH_DEEP_LINK_SCHEMES = ["zuse://", "memoize://"] as const;
+
+const isAuthDeepLink = (arg: string): boolean =>
+  AUTH_DEEP_LINK_SCHEMES.some((scheme) => arg.startsWith(scheme));
 
 let deliverAuthUrl: ((url: string) => void) | null = null;
 let pendingAuthUrls: string[] = [];
@@ -160,7 +164,7 @@ const startAuthLoopback = (): void => {
     focusMainWindow();
   });
   server.on("error", (err) => {
-    console.error("[memoize] auth loopback server error", err);
+    console.error("[zuse] auth loopback server error", err);
   });
   server.listen(AUTH_LOOPBACK_PORT, "127.0.0.1");
   authLoopbackServer = server;
@@ -206,10 +210,10 @@ let mainWindow: BrowserWindow | null = null;
 let runtimeFiber: Fiber.RuntimeFiber<void, never> | null = null;
 
 // Win/Linux: a second launch (e.g. the OS opening the deep link) lands here in
-// the primary instance. Pull any `memoize://` arg out of its argv and focus
+// the primary instance. Pull any auth deep-link arg out of its argv and focus
 // the existing window.
 app.on("second-instance", (_event, argv) => {
-  const url = argv.find((arg) => arg.startsWith("memoize://"));
+  const url = argv.find(isAuthDeepLink);
   if (url !== undefined) handleAuthCallback(url);
   focusMainWindow();
 });
@@ -707,7 +711,7 @@ function createMainWindow() {
     } catch (err) {
       // The only expected failure here is "already attached by DevTools" —
       // surface so the renderer can fall back gracefully.
-      console.error("[memoize] failed to attach CDP debugger", err);
+      console.error("[zuse] failed to attach CDP debugger", err);
       return false;
     }
   });
@@ -805,7 +809,7 @@ function createMainWindow() {
             return false;
         }
       } catch (err) {
-        console.error("[memoize] CDP dispatch failed", err);
+        console.error("[zuse] CDP dispatch failed", err);
         return false;
       }
     },
@@ -894,7 +898,7 @@ function createMainWindow() {
           // Boot-time layer failures (sqlite open, migrator, config) are
           // unrecoverable — surface the cause and bail. Quiet
           // success-after-restart is preferable to a half-running app.
-          console.error("[memoize] fatal boot error", cause);
+          console.error("[zuse] fatal boot error", cause);
           app.exit(1);
         }),
       ),
@@ -1103,13 +1107,11 @@ void app.whenReady().then(() => {
   if (!gotSingleInstanceLock) return;
 
   // Dev only: localhost loopback that catches the WorkOS OAuth callback.
-  // Packaged builds receive it via the `memoize://` deep link instead.
+  // Packaged builds receive it via the `zuse://` deep link instead.
   if (!app.isPackaged) startAuthLoopback();
 
   // Win/Linux cold launch from a deep link: the URL is an argv entry.
-  const initialDeepLink = process.argv.find((arg) =>
-    arg.startsWith("memoize://"),
-  );
+  const initialDeepLink = process.argv.find(isAuthDeepLink);
   if (initialDeepLink !== undefined) handleAuthCallback(initialDeepLink);
 
   registerZuseProtocol();

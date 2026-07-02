@@ -69,7 +69,6 @@ export interface CursorSessionHandle {
   ) => Effect.Effect<void>;
 }
 
-
 interface JsonRpcError {
   readonly code?: number;
   readonly message?: string;
@@ -95,18 +94,18 @@ const CURSOR_RPC_TRACE = process.env.MEMOIZE_DEBUG_CURSOR === "1";
 
 /**
  * File-tee location for cursor phase logs. Survives bun dev-server stdout
- * multiplexing so `tail -f ~/.cache/memoize/cursor.log` gives a clean
+ * multiplexing so `tail -f ~/.cache/zuse/cursor.log` gives a clean
  * timeline across restarts. Best-effort — falls back to tmpdir if HOME
  * isn't writable.
  */
 const CURSOR_LOG_PATH = ((): string => {
   try {
     const base = process.env.HOME ? homedir() : tmpdir();
-    const dir = join(base, ".cache", "memoize");
+    const dir = join(base, ".cache", "zuse");
     mkdirSync(dir, { recursive: true });
     return join(dir, "cursor.log");
   } catch {
-    return join(tmpdir(), "memoize-cursor.log");
+    return join(tmpdir(), "zuse-cursor.log");
   }
 })();
 
@@ -150,10 +149,7 @@ const makePhaseLogger = (tagSuffix: string): PhaseLogger => {
  * trailing chunk of cursor-agent's stderr captured during this session, used
  * when the JSON-RPC envelope itself is empty.
  */
-const formatRpcError = (
-  err: JsonRpcError,
-  stderrTail: string,
-): string => {
+const formatRpcError = (err: JsonRpcError, stderrTail: string): string => {
   const parts: string[] = [];
   if (typeof err.message === "string" && err.message.length > 0) {
     parts.push(err.message);
@@ -178,7 +174,8 @@ const formatRpcError = (
       } else {
         try {
           const serialized = JSON.stringify(err.data);
-          if (serialized !== "{}" && serialized.length > 0) parts.push(serialized);
+          if (serialized !== "{}" && serialized.length > 0)
+            parts.push(serialized);
         } catch {
           // unserialisable — fall through
         }
@@ -266,10 +263,7 @@ const connectAndAuthenticateCursor = async (
   apiKey: string | null,
   log: PhaseLogger,
 ): Promise<CursorReadyTransport> => {
-  log(
-    "spawn",
-    `path=${cursorPath} apiKey=${apiKey === null ? "no" : "yes"}`,
-  );
+  log("spawn", `path=${cursorPath} apiKey=${apiKey === null ? "no" : "yes"}`);
   const child = spawn(cursorPath, ["acp"], {
     cwd: process.env.HOME ?? process.cwd(),
     env: {
@@ -301,7 +295,10 @@ const connectAndAuthenticateCursor = async (
   // during prewarm (handlers auto-allow); startCursorSession swaps in the
   // real PermissionService bridge on takeover.
   let acpPermissionContext: AcpPermissionContext = {};
-  const acpHandlerContext = () => ({ cwd: sessionCwd, ...acpPermissionContext });
+  const acpHandlerContext = () => ({
+    cwd: sessionCwd,
+    ...acpPermissionContext,
+  });
 
   const writeMessage = (msg: Record<string, unknown>): void => {
     if (!child.stdin.writable) return;
@@ -430,7 +427,7 @@ const connectAndAuthenticateCursor = async (
           id: replyId,
           error: {
             code: -32601,
-            message: `Method not supported by memoize ACP client: ${msg.method}`,
+            message: `Method not supported by Zuse ACP client: ${msg.method}`,
           },
         });
         console.warn(
@@ -486,9 +483,10 @@ const connectAndAuthenticateCursor = async (
   child.on("close", (code, signal) => {
     rl.close();
     const trimmedStderr = stderrTail.trim();
-    const exitDetail = trimmedStderr.length > 0
-      ? `Cursor ACP exited (code ${code ?? "null"}, signal ${signal ?? "null"}): ${trimmedStderr}`
-      : `Cursor ACP exited unexpectedly (code ${code ?? "null"}, signal ${signal ?? "null"}).`;
+    const exitDetail =
+      trimmedStderr.length > 0
+        ? `Cursor ACP exited (code ${code ?? "null"}, signal ${signal ?? "null"}): ${trimmedStderr}`
+        : `Cursor ACP exited unexpectedly (code ${code ?? "null"}, signal ${signal ?? "null"}).`;
     for (const { reject, timer } of pending.values()) {
       clearTimeout(timer);
       reject(new Error(exitDetail));
@@ -545,12 +543,11 @@ const connectAndAuthenticateCursor = async (
     `${Date.now() - initStart}ms authMethods=[${Array.from(authIds).join(",") || "(none)"}]`,
   );
 
-  const methodId =
-    authIds.has("cursor_login")
-      ? "cursor_login"
-      : authIds.has("cached_token")
-        ? "cached_token"
-        : null;
+  const methodId = authIds.has("cursor_login")
+    ? "cursor_login"
+    : authIds.has("cached_token")
+      ? "cached_token"
+      : null;
   if (methodId === null) {
     child.kill("SIGTERM");
     throw new Error(
@@ -622,9 +619,7 @@ export const prewarmCursor = (
   // changed credentials or binary path; the old warm child is no longer
   // useful.
   if (prewarmSlot !== null && prewarmKey !== null && prewarmKey !== key) {
-    prewarmSlot
-      .then((t) => t.child.kill("SIGTERM"))
-      .catch(() => undefined);
+    prewarmSlot.then((t) => t.child.kill("SIGTERM")).catch(() => undefined);
     prewarmSlot = null;
     prewarmKey = null;
   }
@@ -714,7 +709,11 @@ export const startCursorSession = (
   requestPermission: RequestPermission,
   getRuntimeMode: GetRuntimeMode,
   resumeCursor: string | null = null,
-): Effect.Effect<CursorSessionHandle, AgentSessionStartError, AttachmentService> =>
+): Effect.Effect<
+  CursorSessionHandle,
+  AgentSessionStartError,
+  AttachmentService
+> =>
   Effect.gen(function* () {
     yield* AttachmentService;
     const events = yield* Mailbox.make<AgentEvent>();
@@ -912,7 +911,8 @@ export const startCursorSession = (
             );
             return resumeCursor;
           } catch (cause) {
-            const reason = cause instanceof Error ? cause.message : String(cause);
+            const reason =
+              cause instanceof Error ? cause.message : String(cause);
             log(
               "session-load.fail",
               `${Date.now() - loadStart}ms reason=${reason} — falling back to session/new`,
@@ -989,7 +989,10 @@ export const startCursorSession = (
         .then(() => log("set-model.ok", `${Date.now() - modelStart}ms`))
         .catch((err) => {
           const reason = err instanceof Error ? err.message : String(err);
-          log("set-model.fail", `${Date.now() - modelStart}ms reason=${reason}`);
+          log(
+            "set-model.fail",
+            `${Date.now() - modelStart}ms reason=${reason}`,
+          );
         });
     }
 
@@ -1005,7 +1008,10 @@ export const startCursorSession = (
         : null;
       if (compactSnapshot !== null) {
         events.unsafeOffer(
-          startCompactEvent({ providerId: "cursor", snapshot: compactSnapshot }),
+          startCompactEvent({
+            providerId: "cursor",
+            snapshot: compactSnapshot,
+          }),
         );
       }
       const promptText = compactSnapshot !== null ? text.trim() : text;
@@ -1044,8 +1050,12 @@ export const startCursorSession = (
               );
             }
           } catch (cause) {
-            const reason = cause instanceof Error ? cause.message : String(cause);
-            log("prompt.fail", `#${n} ${Date.now() - promptStart}ms reason=${reason}`);
+            const reason =
+              cause instanceof Error ? cause.message : String(cause);
+            log(
+              "prompt.fail",
+              `#${n} ${Date.now() - promptStart}ms reason=${reason}`,
+            );
             const isCancellation = /cancel|interrupt/i.test(reason);
             if (!closed && !isCancellation) {
               events.unsafeOffer({ _tag: "Error", message: reason });

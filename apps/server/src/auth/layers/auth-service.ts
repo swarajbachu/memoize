@@ -99,7 +99,7 @@ export const AuthServiceLive = Layer.scoped(
       credentials.setWorkosSession(JSON.stringify(bundle)).pipe(
         Effect.catchAll((cause) =>
           Effect.sync(() => {
-            console.error("[memoize] failed to persist auth session", cause);
+            console.error("[zuse] failed to persist auth session", cause);
           }),
         ),
       );
@@ -156,7 +156,7 @@ export const AuthServiceLive = Layer.scoped(
       Effect.gen(function* () {
         const inflight = yield* Ref.get(pending);
         // No sign-in in flight: a deep link arriving unsolicited is ignored —
-        // `memoize://` is an OS-wide surface any process can invoke (R4).
+        // `zuse://` is an OS-wide surface any process can invoke (R4).
         if (inflight === null) return;
 
         const { code, state, error } = parseCallbackUrl(url);
@@ -259,7 +259,7 @@ export const AuthServiceLive = Layer.scoped(
       );
 
     // Register our callback sink with the host. From here on, every
-    // `memoize://auth/callback` deep link the shell receives is funneled into
+    // `zuse://auth/callback` deep link the shell receives is funneled into
     // `deliverCallback` (fire-and-forget — the effect never fails).
     yield* shell.onCallbackUrl((url) => {
       Effect.runFork(deliverCallback(url));

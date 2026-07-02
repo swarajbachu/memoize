@@ -166,7 +166,7 @@ export const refreshSession = (
     refresh_token: refreshToken,
   });
 
-/** Parse the `code`/`state`/`error` out of a `memoize://auth/callback` URL. */
+/** Parse the `code`/`state`/`error` out of a `zuse://auth/callback` URL. */
 export const parseCallbackUrl = (
   raw: string,
 ): { code: string | null; state: string | null; error: string | null } => {

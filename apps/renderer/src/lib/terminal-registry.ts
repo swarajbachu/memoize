@@ -230,7 +230,7 @@ async function openPty(
   } catch (err) {
     if (live.disposed) return;
     // eslint-disable-next-line no-console
-    console.error("[memoize] failed to open pty:", err);
+    console.error("[zuse] failed to open pty:", err);
     term.write(
       "\r\n\x1b[38;5;203mfailed to open terminal — see devtools console\x1b[0m\r\n",
     );

@@ -56,6 +56,7 @@ import {
   setComposerDoc,
   type ActiveTrigger,
 } from "~/lib/codemirror/composer";
+import { readStorageWithLegacy } from "~/lib/storage-keys";
 import { useKeybindingsStore } from "../store/keybindings";
 import {
   addChipEffect,
@@ -1059,18 +1060,27 @@ export function ChatComposer({
  * per-session sessionStorage namespace the send path already reads.
  */
 function FastModeToggle({ sessionId }: { sessionId: SessionId }) {
-  const storageKey = `memoize.modelOptions.${sessionId}.fastMode`;
+  const storageKey = `zuse.modelOptions.${sessionId}.fastMode`;
+  const legacyStorageKey = `memoize.modelOptions.${sessionId}.fastMode`;
   const [enabled, setEnabled] = useState(() => {
     if (typeof window === "undefined") return false;
-    return window.sessionStorage.getItem(storageKey) === "true";
+    return (
+      readStorageWithLegacy(window.sessionStorage, storageKey, [
+        legacyStorageKey,
+      ]) === "true"
+    );
   });
   useEffect(() => {
     if (typeof window === "undefined") {
       setEnabled(false);
       return;
     }
-    setEnabled(window.sessionStorage.getItem(storageKey) === "true");
-  }, [storageKey]);
+    setEnabled(
+      readStorageWithLegacy(window.sessionStorage, storageKey, [
+        legacyStorageKey,
+      ]) === "true",
+    );
+  }, [legacyStorageKey, storageKey]);
 
   const onClick = () => {
     const next = !enabled;
@@ -1080,6 +1090,7 @@ function FastModeToggle({ sessionId }: { sessionId: SessionId }) {
         window.sessionStorage.setItem(storageKey, "true");
       } else {
         window.sessionStorage.removeItem(storageKey);
+        window.sessionStorage.removeItem(legacyStorageKey);
       }
     }
   };
@@ -1478,14 +1489,19 @@ function ReasoningPicker({
 
   const defaultId = resolved?.defaultId ?? "medium";
   const descriptorId = resolved?.descriptorId ?? "reasoning";
-  const storageKey = `memoize.modelOptions.${sessionId}.${descriptorId}`;
+  const storageKey = `zuse.modelOptions.${sessionId}.${descriptorId}`;
+  const legacyStorageKey = `memoize.modelOptions.${sessionId}.${descriptorId}`;
   const [level, setLevel] = useState<string>(() => {
     if (typeof window === "undefined") return defaultId;
-    const stored = window.sessionStorage.getItem(storageKey);
+    const stored = readStorageWithLegacy(window.sessionStorage, storageKey, [
+      legacyStorageKey,
+    ]);
     if (stored !== null) return stored;
     // One-shot legacy migration so users mid-session keep their pick.
-    const legacy = window.sessionStorage.getItem(
-      `memoize.reasoning.${sessionId}`,
+    const legacy = readStorageWithLegacy(
+      window.sessionStorage,
+      `zuse.reasoning.${sessionId}`,
+      [`memoize.reasoning.${sessionId}`],
     );
     if (legacy !== null && legacy.length > 0) return legacy;
     return defaultId;
@@ -1594,8 +1610,10 @@ const selectedContextWindowTokens = (
   if (typeof window === "undefined") {
     return descriptorContextWindowTokens(providerId, model);
   }
-  const stored = window.sessionStorage.getItem(
-    `memoize.modelOptions.${sessionId}.contextWindow`,
+  const stored = readStorageWithLegacy(
+    window.sessionStorage,
+    `zuse.modelOptions.${sessionId}.contextWindow`,
+    [`memoize.modelOptions.${sessionId}.contextWindow`],
   );
   return (
     contextWindowTokensFromId(stored ?? undefined) ??

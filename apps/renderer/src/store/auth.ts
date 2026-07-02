@@ -4,6 +4,10 @@ import { create } from "zustand";
 import type { AuthState } from "@zuse/wire";
 
 import { getRpcClient } from "../lib/rpc-client.ts";
+import {
+  readStorageWithLegacy,
+  removeStorageKeys,
+} from "../lib/storage-keys.ts";
 
 /**
  * WorkOS auth state mirror. Subscribes once to the server's `auth.sessionChanges`
@@ -20,11 +24,18 @@ import { getRpcClient } from "../lib/rpc-client.ts";
  * localStorage.
  */
 
-const DISPLAY_NAME_KEY = "memoize.auth.displayName";
+const DISPLAY_NAME_KEY = "zuse.auth.displayName";
+const LEGACY_DISPLAY_NAME_KEYS = ["memoize.auth.displayName"] as const;
 
 const readDisplayName = (): string => {
   try {
-    return window.localStorage.getItem(DISPLAY_NAME_KEY) ?? "";
+    return (
+      readStorageWithLegacy(
+        window.localStorage,
+        DISPLAY_NAME_KEY,
+        LEGACY_DISPLAY_NAME_KEYS,
+      ) ?? ""
+    );
   } catch {
     return "";
   }
@@ -32,8 +43,13 @@ const readDisplayName = (): string => {
 
 const writeDisplayName = (value: string): void => {
   try {
-    if (value.trim() === "") window.localStorage.removeItem(DISPLAY_NAME_KEY);
-    else window.localStorage.setItem(DISPLAY_NAME_KEY, value);
+    if (value.trim() === "") {
+      removeStorageKeys(
+        window.localStorage,
+        DISPLAY_NAME_KEY,
+        LEGACY_DISPLAY_NAME_KEYS,
+      );
+    } else window.localStorage.setItem(DISPLAY_NAME_KEY, value);
   } catch {
     // Private mode / disabled storage — the alias just won't persist.
   }

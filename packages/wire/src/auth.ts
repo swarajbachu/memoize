@@ -2,11 +2,11 @@ import { Rpc } from "@effect/rpc";
 import { Schema } from "effect";
 
 /**
- * WorkOS AuthKit identity — the first user-account primitive in memoize.
+ * WorkOS AuthKit identity — the first user-account primitive in Zuse.
  *
  * The desktop app authenticates the user against WorkOS via a PKCE OAuth flow
  * (public client, no secret) that round-trips through the system browser and a
- * `memoize://auth/callback` deep link. The access/refresh tokens never cross
+ * `zuse://auth/callback` deep link. The access/refresh tokens never cross
  * this wire — they live only in the OS keychain on the server side, mirroring
  * the `apiKey:` / `browserCred:` discipline. Only the non-secret profile and an
  * expiry timestamp are renderer-visible.
@@ -76,7 +76,7 @@ export const AuthGetSessionRpc = Rpc.make("auth.getSession", {
 
 /**
  * Begin sign-in. The server opens the system browser to WorkOS and BLOCKS this
- * request until the `memoize://auth/callback` deep link resolves the flow (or
+ * request until the `zuse://auth/callback` deep link resolves the flow (or
  * a 5-minute timeout fires → `AuthCancelledError`). Resolves to the new
  * `SignedIn` state.
  */

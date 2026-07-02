@@ -339,4 +339,4 @@ export type MemoizeRpcs = typeof MemoizeRpcs;
  * Renderer → main: `ipcRenderer.send(IPC_CHANNEL, frame)`
  * Main → renderer: `webContents.send(IPC_CHANNEL, frame)`
  */
-export const IPC_CHANNEL = "memoize:rpc" as const;
+export const IPC_CHANNEL = "zuse:rpc" as const;
