@@ -10,6 +10,7 @@ import { cn } from "~/lib/utils";
 import { useProvidersStore } from "../../store/providers.ts";
 import { useSettingsStore } from "../../store/settings.ts";
 import { useWorkspaceStore } from "../../store/workspace.ts";
+import { AppearanceStep } from "./steps/appearance.tsx";
 import { DefaultsStep } from "./steps/defaults.tsx";
 import { DoneStep } from "./steps/done.tsx";
 import { MaximizeStep } from "./steps/maximize.tsx";
@@ -24,6 +25,7 @@ type StepId =
   | "maximize"
   | "provider"
   | "project"
+  | "appearance"
   | "defaults"
   | "done";
 
@@ -32,6 +34,7 @@ const STEPS: ReadonlyArray<StepId> = [
   "maximize",
   "provider",
   "project",
+  "appearance",
   "defaults",
   "signin",
   "done",
@@ -117,6 +120,7 @@ export function OnboardingWizard() {
             {stepId === "maximize" && <MaximizeStep />}
             {stepId === "provider" && <ProviderStep />}
             {stepId === "project" && <ProjectStep />}
+            {stepId === "appearance" && <AppearanceStep />}
             {stepId === "defaults" && <DefaultsStep />}
             {stepId === "done" && <DoneStep onFinish={finish} />}
           </div>

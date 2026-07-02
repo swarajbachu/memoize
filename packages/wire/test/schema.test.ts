@@ -404,6 +404,7 @@ describe("SettingsFile round-trip", () => {
       defaultRuntimeMode: "approval-required",
       defaultAutoCreateWorktree: false,
       onboardingCompleted: true,
+      appearanceMode: "system",
       completionSoundEnabled: true,
       completionSoundPreset: "bloom",
       providerEnabled: {
@@ -443,8 +444,44 @@ describe("SettingsFile round-trip", () => {
         defaultRuntimeMode: "approval-required",
         defaultAutoCreateWorktree: false,
         onboardingCompleted: true,
+        appearanceMode: "dark",
         completionSoundEnabled: true,
         completionSoundPreset: "airhorn",
+        providerEnabled: {
+          claude: true,
+          codex: true,
+          grok: true,
+          cursor: true,
+          gemini: true,
+          opencode: true,
+        },
+        modelEnabledByProvider: defaultModelEnabledByProvider(),
+        subagents: { enableForNewSessions: true, presets: {} },
+        branchNamingStyle: "username-slug",
+        branchNamingPrefix: "",
+      }),
+    ).toThrow();
+  });
+
+  it("rejects an unknown appearance mode", () => {
+    expect(() =>
+      Schema.decodeUnknownSync(SettingsFile)({
+        schemaVersion: 1,
+        defaultProviderId: "claude",
+        defaultModelByProvider: {
+          claude: "claude-opus-4-8",
+          codex: "gpt-5-codex",
+          grok: "grok-code-fast-1",
+          cursor: "cursor-agent",
+          gemini: "gemini-3-pro",
+          opencode: "sonnet",
+        },
+        defaultRuntimeMode: "approval-required",
+        defaultAutoCreateWorktree: false,
+        onboardingCompleted: true,
+        appearanceMode: "sepia",
+        completionSoundEnabled: true,
+        completionSoundPreset: "chime",
         providerEnabled: {
           claude: true,
           codex: true,

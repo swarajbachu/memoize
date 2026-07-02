@@ -20,12 +20,11 @@ describe("config-store settings coercion", () => {
   it("seeds missing model visibility from catalog defaults", () => {
     const settings = coerceSettings({});
 
+    expect(settings.appearanceMode).toBe("dark");
     expect(settings.modelEnabledByProvider.claude["claude-sonnet-5"]).toBe(
       true,
     );
-    expect(settings.modelEnabledByProvider.claude["claude-fable-5"]).toBe(
-      true,
-    );
+    expect(settings.modelEnabledByProvider.claude["claude-fable-5"]).toBe(true);
     expect(settings.modelEnabledByProvider.claude["claude-sonnet-4-6"]).toBe(
       false,
     );
@@ -45,5 +44,17 @@ describe("config-store settings coercion", () => {
 
     expect(settings.modelEnabledByProvider.codex["gpt-5.3-codex"]).toBe(true);
     expect(settings.modelEnabledByProvider.codex["not-real"]).toBeUndefined();
+  });
+
+  it("preserves valid appearance modes and drops invalid ones", () => {
+    expect(coerceSettings({ appearanceMode: "system" }).appearanceMode).toBe(
+      "system",
+    );
+    expect(coerceSettings({ appearanceMode: "light" }).appearanceMode).toBe(
+      "light",
+    );
+    expect(coerceSettings({ appearanceMode: "sepia" }).appearanceMode).toBe(
+      "dark",
+    );
   });
 });

@@ -39,6 +39,9 @@ const bridge = {
         ipcRenderer.off("window:fullscreen", wrapped);
       };
     },
+    setAppearanceMode: (mode: "system" | "light" | "dark") => {
+      ipcRenderer.send("window:setAppearanceMode", mode);
+    },
   },
   browser: {
     /**

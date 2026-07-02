@@ -1136,7 +1136,7 @@ function FastModeToggle({ sessionId }: { sessionId: SessionId }) {
             className={cn(
               "flex h-6 items-center gap-1.5 rounded-md px-2 text-[11px] transition-colors",
               enabled
-                ? "bg-amber-300/15 text-amber-200 dark:text-amber-200 hover:bg-amber-300/25"
+                ? "bg-amber-400/20 text-amber-700 hover:bg-amber-400/30 dark:bg-amber-300/15 dark:text-amber-200 dark:hover:bg-amber-300/25"
                 : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
             )}
           >
@@ -1188,7 +1188,7 @@ function PlanModeToggle({
             className={cn(
               "flex h-6 items-center gap-1.5 rounded-md px-2 text-[11px] transition-colors",
               isPlan
-                ? "bg-rose-300/15 text-rose-200 dark:text-rose-200 hover:bg-rose-300/25"
+                ? "bg-rose-400/20 text-rose-700 hover:bg-rose-400/30 dark:bg-rose-300/15 dark:text-rose-200 dark:hover:bg-rose-300/25"
                 : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
             )}
           >
@@ -1226,9 +1226,9 @@ function GoalModeToggle({
             className={cn(
               "flex h-6 items-center gap-1.5 rounded-md px-2 text-[11px] transition-colors",
               active
-                ? "bg-amber-300/15 text-amber-200 hover:bg-amber-300/25"
+                ? "bg-amber-400/20 text-amber-700 hover:bg-amber-400/30 dark:bg-amber-300/15 dark:text-amber-200 dark:hover:bg-amber-300/25"
                 : hasGoal
-                  ? "text-amber-200 hover:bg-muted/60"
+                  ? "text-amber-700 hover:bg-muted/60 dark:text-amber-200"
                   : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
             )}
           >

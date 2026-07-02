@@ -35,6 +35,7 @@ import { UsageDashboard } from "./components/usage-dashboard.tsx";
 import { useKeybindingDispatch } from "./hooks/use-keybinding-dispatch.ts";
 import { useMenuShortcuts } from "./hooks/use-menu-shortcuts.ts";
 import { getRpcClient } from "./lib/rpc-client.ts";
+import { AppearanceController } from "./lib/appearance.tsx";
 import { useAuthStore } from "./store/auth.ts";
 import { useKeybindingsStore } from "./store/keybindings.ts";
 import { usePermissionsStore } from "./store/permissions.ts";
@@ -225,7 +226,8 @@ export function App() {
   if (!onboardingCompleted) {
     return (
       <TooltipProvider>
-        <div className="dark relative flex h-dvh max-h-dvh min-h-0 w-screen overflow-hidden bg-background text-foreground">
+        <AppearanceController />
+        <div className="relative flex h-dvh max-h-dvh min-h-0 w-screen overflow-hidden bg-background text-foreground">
           <OnboardingWizard />
         </div>
       </TooltipProvider>
@@ -235,7 +237,8 @@ export function App() {
   if (view === "settings") {
     return (
       <TooltipProvider>
-        <div className="dark flex h-dvh max-h-dvh min-h-0 w-screen overflow-hidden bg-background text-foreground">
+        <AppearanceController />
+        <div className="flex h-dvh max-h-dvh min-h-0 w-screen overflow-hidden bg-background text-foreground">
           <SettingsPage />
         </div>
       </TooltipProvider>
@@ -244,6 +247,7 @@ export function App() {
 
   return (
     <TooltipProvider>
+      <AppearanceController />
       <MainShell />
     </TooltipProvider>
   );
@@ -357,7 +361,7 @@ function MainShell() {
   useAnimatedPanelCollapse(rightPanelRef, rightSidebarOpen, 22, rightAnimating);
 
   return (
-    <div className="dark flex h-dvh max-h-dvh min-h-0 w-screen overflow-hidden text-foreground">
+    <div className="flex h-dvh max-h-dvh min-h-0 w-screen overflow-hidden text-foreground">
       <Group
         id={PANEL_GROUP_ID}
         orientation="horizontal"

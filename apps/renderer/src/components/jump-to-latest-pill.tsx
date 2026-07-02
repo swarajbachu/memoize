@@ -38,7 +38,7 @@ export function JumpToLatestPill({
         className={cn(
           "pointer-events-auto inline-flex items-center gap-1.5 rounded-full",
           "border border-border/60 bg-popover/95 px-3 py-1.5 text-xs text-muted-foreground",
-          "shadow-[0_2px_8px_color-mix(in_oklch,black_28%,transparent)] backdrop-blur",
+          "backdrop-blur dark:shadow-[0_2px_8px_color-mix(in_oklch,black_28%,transparent)]",
           "hover:text-foreground hover:bg-popover",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           !visible && "pointer-events-none",

@@ -24,6 +24,7 @@ import { Effect } from "effect";
 import { getRpcClient } from "../lib/rpc-client.ts";
 
 import {
+  type AppearanceMode,
   type BranchNamingStyle,
   MODELS_BY_PROVIDER,
   type CompletionSoundPreset,
@@ -563,7 +564,7 @@ function BrowserSettingsPane() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-start gap-2 rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2.5 text-[12px] leading-relaxed text-amber-200">
+      <div className="flex items-start gap-2 rounded-xl border border-warning/30 bg-alert-warning-bg px-3 py-2.5 text-[12px] leading-relaxed text-warning-foreground">
         <HugeiconsIcon icon={Alert01Icon} className="mt-0.5 size-4 shrink-0" />
         <span>
           <strong className="font-semibold">Dummy / test logins only.</strong>{" "}
@@ -688,7 +689,18 @@ const BRANCH_STYLE_META: Record<
   custom: { label: "custom prefix", example: "prefix/dark-mode" },
 };
 
+const APPEARANCE_OPTIONS: ReadonlyArray<{
+  readonly value: AppearanceMode;
+  readonly label: string;
+}> = [
+  { value: "system", label: "System" },
+  { value: "light", label: "Light" },
+  { value: "dark", label: "Dark" },
+];
+
 function GeneralPane() {
+  const appearanceMode = useSettingsStore((s) => s.appearanceMode);
+  const setAppearanceMode = useSettingsStore((s) => s.setAppearanceMode);
   const defaultRuntimeMode = useSettingsStore((s) => s.defaultRuntimeMode);
   const setDefaultRuntimeMode = useSettingsStore(
     (s) => s.setDefaultRuntimeMode,
@@ -808,6 +820,39 @@ function GeneralPane() {
             }
           />
         )}
+      </SettingsGroup>
+
+      <SettingsGroup
+        title="Appearance"
+        description="Choose the app theme, or follow your system setting."
+      >
+        <SettingsRow
+          title="Theme"
+          description="Choose the app theme, or follow your system setting."
+          action={
+            <div className="inline-flex rounded-lg border border-border/60 bg-muted p-0.5">
+              {APPEARANCE_OPTIONS.map((option) => {
+                const active = option.value === appearanceMode;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => setAppearanceMode(option.value)}
+                    className={cn(
+                      "h-7 rounded-md px-2.5 text-xs font-medium transition-colors",
+                      active
+                        ? "bg-background text-foreground"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+          }
+        />
       </SettingsGroup>
 
       <SettingsGroup
@@ -1787,7 +1832,7 @@ export function OverrideField({
             className={cn(
               "rounded px-2.5 py-1 transition-colors",
               !isOverridden
-                ? "bg-background text-foreground shadow-sm"
+                ? "bg-background text-foreground"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
@@ -1799,7 +1844,7 @@ export function OverrideField({
             className={cn(
               "rounded px-2.5 py-1 transition-colors",
               isOverridden
-                ? "bg-background text-foreground shadow-sm"
+                ? "bg-background text-foreground"
                 : "text-muted-foreground",
             )}
           >

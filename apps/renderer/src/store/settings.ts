@@ -2,6 +2,7 @@ import { Effect, Fiber, Stream } from "effect";
 import { create } from "zustand";
 
 import {
+  type AppearanceMode,
   type BranchNamingStyle,
   defaultModelEnabledByProvider,
   defaultModelFor,
@@ -80,6 +81,7 @@ const fallbackSnapshot = (): SettingsSlice => ({
   defaultAutoCreateWorktree: true,
   completionSoundEnabled: false,
   completionSoundPreset: "chime",
+  appearanceMode: "dark",
   onboardingCompleted: false,
   providerEnabled: seedProviderEnabled(),
   modelEnabledByProvider: seedModelEnabledByProvider(),
@@ -104,6 +106,7 @@ const sliceFromFile = (file: SettingsFile): SettingsSlice => {
     defaultAutoCreateWorktree: file.defaultAutoCreateWorktree,
     completionSoundEnabled: file.completionSoundEnabled,
     completionSoundPreset: file.completionSoundPreset,
+    appearanceMode: file.appearanceMode,
     onboardingCompleted: file.onboardingCompleted,
     providerEnabled: {
       ...seedProviderEnabled(),
@@ -122,6 +125,7 @@ interface SettingsSlice {
   readonly defaultAutoCreateWorktree: boolean;
   readonly completionSoundEnabled: boolean;
   readonly completionSoundPreset: CompletionSoundPreset;
+  readonly appearanceMode: AppearanceMode;
   readonly onboardingCompleted: boolean;
   readonly providerEnabled: Record<ProviderId, boolean>;
   readonly modelEnabledByProvider: ModelEnabledByProvider;
@@ -149,6 +153,7 @@ type SettingsState = SettingsSlice & {
   readonly setDefaultAutoCreateWorktree: (value: boolean) => void;
   readonly setCompletionSoundEnabled: (value: boolean) => void;
   readonly setCompletionSoundPreset: (preset: CompletionSoundPreset) => void;
+  readonly setAppearanceMode: (mode: AppearanceMode) => void;
   readonly setOnboardingCompleted: (value: boolean) => void;
   readonly setProviderEnabled: (providerId: ProviderId, value: boolean) => void;
   readonly setModelEnabled: (
@@ -294,6 +299,15 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const client = await getRpcClient();
       await Effect.runPromise(
         client.settings.update({ patch: { completionSoundPreset: preset } }),
+      );
+    })();
+  },
+  setAppearanceMode: (mode) => {
+    set({ appearanceMode: mode });
+    void (async () => {
+      const client = await getRpcClient();
+      await Effect.runPromise(
+        client.settings.update({ patch: { appearanceMode: mode } }),
       );
     })();
   },

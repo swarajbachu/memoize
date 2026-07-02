@@ -4,7 +4,8 @@
   "scripts": {
     "build": "turbo run build",
     "build:desktop": "turbo run build --filter=renderer --filter=desktop",
-    "dev": "turbo run dev --filter=renderer --filter=desktop",
+    "dev": "node scripts/dev.mjs",
+    "dev:turbo": "turbo run dev --filter=renderer --filter=desktop",
     "dev:desktop": "node scripts/dev.mjs",
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
