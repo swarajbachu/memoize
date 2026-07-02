@@ -1759,17 +1759,27 @@ function ContextStatusPopover({ session }: { session: Session }) {
     return latestUsage;
   }, [messages, session.providerId]);
 
-  const usageLimit = useMemo(() => {
+  const usageLimits = useMemo(() => {
+    const latestByKey = new Map<
+      string,
+      Extract<Message["content"], { _tag: "usage_limit" }>
+    >();
     for (let i = messages.length - 1; i >= 0; i--) {
       const content = messages[i]!.content;
       if (
         content._tag === "usage_limit" &&
         content.providerId === session.providerId
       ) {
-        return content;
+        const key =
+          content.windowMinutes !== null
+            ? `window:${content.windowMinutes}`
+            : `label:${content.label}`;
+        if (!latestByKey.has(key)) {
+          latestByKey.set(key, content);
+        }
       }
     }
-    return null;
+    return [...latestByKey.values()].reverse();
   }, [messages, session.providerId]);
 
   const usedTokens = latestContext?.usedTokens ?? null;
@@ -1794,7 +1804,7 @@ function ContextStatusPopover({ session }: { session: Session }) {
       : null;
 
   const hasContext = usedTokens !== null && windowTokens !== null;
-  const hasLimits = usageLimit !== null;
+  const hasLimits = usageLimits.length > 0;
   if (!hasContext && !hasLimits) return null;
 
   const high = percent !== null && percent >= 90;
@@ -1870,8 +1880,7 @@ function ContextStatusPopover({ session }: { session: Session }) {
               hasContext && "border-t border-border",
             )}
           >
-            {(() => {
-              const limit = usageLimit!;
+            {usageLimits.map((limit) => {
               const reset = resetLabel(limit.resetsAt);
               const used = limit.usedPercent;
               const remaining =
@@ -1880,7 +1889,14 @@ function ContextStatusPopover({ session }: { session: Session }) {
                   : "Active";
               const limitHigh = used !== null && used >= 80;
               return (
-                <>
+                <div
+                  key={
+                    limit.windowMinutes !== null
+                      ? `window:${limit.windowMinutes}`
+                      : `label:${limit.label}`
+                  }
+                  className="flex flex-col gap-3"
+                >
                   <div className="flex items-baseline justify-between gap-3">
                     <span className="font-medium text-foreground">
                       {limit.label}
@@ -1901,9 +1917,9 @@ function ContextStatusPopover({ session }: { session: Session }) {
                       {reset !== null ? reset : "unknown"}
                     </span>
                   </div>
-                </>
+                </div>
               );
-            })()}
+            })}
           </div>
         ) : null}
       </TooltipPopup>
