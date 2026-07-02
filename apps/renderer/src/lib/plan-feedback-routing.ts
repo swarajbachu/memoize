@@ -73,6 +73,22 @@ export const shouldSendPlanFeedbackNow = ({
   return false;
 };
 
+export const hasEmulatedPlanAwaitingAction = ({
+  permissionMode,
+  messages,
+  pendingPlanApprovalRequest,
+}: {
+  readonly permissionMode: PermissionMode;
+  readonly messages: ReadonlyArray<Pick<Message, "content">>;
+  readonly pendingPlanApprovalRequest: PermissionRequest | null;
+}): boolean =>
+  pendingPlanApprovalRequest === null &&
+  shouldSendPlanFeedbackNow({
+    permissionMode,
+    messages,
+    pendingPlanApprovalRequest,
+  });
+
 export type ComposerSubmitRoute = "planFeedback" | "goal" | "queue" | "send";
 
 export const chooseComposerSubmitRoute = ({

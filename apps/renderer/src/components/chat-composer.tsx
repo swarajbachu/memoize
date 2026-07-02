@@ -80,6 +80,7 @@ import { cn, formatCompactNumber } from "~/lib/utils";
 import {
   chooseComposerSubmitRoute,
   findPendingPlanApprovalRequest,
+  hasEmulatedPlanAwaitingAction,
   shouldSendPlanFeedbackNow,
 } from "~/lib/plan-feedback-routing";
 import {
@@ -90,7 +91,10 @@ import { parseComposerInput } from "../composer/segment-parser.ts";
 import { AnnotationTray } from "./composer/annotation-tray.tsx";
 import { ComposerChipOverlay } from "./composer/composer-chip-overlay.tsx";
 import { FileTagPopover } from "./composer/file-tag-popover.tsx";
-import { PlanApprovalTray } from "./composer/plan-approval-tray.tsx";
+import {
+  EMULATED_PLAN_APPROVAL_PROMPT,
+  PlanApprovalTray,
+} from "./composer/plan-approval-tray.tsx";
 import { ProjectPlanTray } from "./composer/project-plan-tray.tsx";
 import { QueueTray } from "./composer/queue-tray.tsx";
 import { TrayPill, trayPillActionClass } from "./composer/tray-pill.tsx";
@@ -263,6 +267,15 @@ export function ChatComposer({
   const sendPlanFeedbackNow = useMemo(
     () =>
       shouldSendPlanFeedbackNow({
+        permissionMode: session.permissionMode,
+        messages: sessionMessages ?? [],
+        pendingPlanApprovalRequest,
+      }),
+    [pendingPlanApprovalRequest, session.permissionMode, sessionMessages],
+  );
+  const emulatedPlanReady = useMemo(
+    () =>
+      hasEmulatedPlanAwaitingAction({
         permissionMode: session.permissionMode,
         messages: sessionMessages ?? [],
         pendingPlanApprovalRequest,
@@ -790,6 +803,15 @@ export function ChatComposer({
   };
 
   const inPlanMode = session.permissionMode === "plan";
+  const approveEmulatedPlan = () => {
+    void (async () => {
+      await setPermissionMode(sessionId, "default");
+      await send(sessionId, EMULATED_PLAN_APPROVAL_PROMPT);
+    })();
+  };
+  const cancelEmulatedPlan = () => {
+    void setPermissionMode(sessionId, "default");
+  };
   const inUltracodeMode = reasoningLevel === "ultracode";
   // Keep the editor mounted at all times. Permissions / questions render as
   // a sibling above it, and we hide the editor block with `display: none`
@@ -837,7 +859,12 @@ export function ChatComposer({
           <Frame>
             {!isDraft ? (
               <div className="mb-1 overflow-hidden rounded-md border border-border/50 bg-muted/30 empty:hidden empty:mb-0">
-                <PlanApprovalTray sessionId={sessionId} />
+                <PlanApprovalTray
+                  sessionId={sessionId}
+                  emulatedPlanReady={emulatedPlanReady}
+                  onApproveEmulatedPlan={approveEmulatedPlan}
+                  onCancelEmulatedPlan={cancelEmulatedPlan}
+                />
                 {goalCapable && goal !== null ? (
                   <GoalBanner
                     goal={goal}
