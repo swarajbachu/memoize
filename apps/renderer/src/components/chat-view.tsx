@@ -20,6 +20,11 @@ import type {
 } from "@zuse/wire";
 
 import { groupMessages } from "../lib/group-messages.ts";
+import {
+  chatArchiveProgressLabel,
+  type ChatArchiveProgressPhase,
+  useChatsStore,
+} from "../store/chats.ts";
 import { useRegisterPane } from "../store/pane-focus.ts";
 import { teardownLiveStreams, useMessagesStore } from "../store/messages.ts";
 import { usePermissionsStore } from "../store/permissions.ts";
@@ -104,6 +109,11 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
     return false;
   });
   const setupActive = worktreeSetupActive || session?.status === "booting";
+  const archiveProgress = useChatsStore((s) =>
+    session?.chatId === undefined
+      ? null
+      : (s.archiveProgressByChat[session.chatId] ?? null),
+  );
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   useRegisterPane("chat", scrollRef);
@@ -398,8 +408,35 @@ export function ChatView({ sessionId }: { sessionId: SessionId }) {
         <div className="pointer-events-none absolute right-3 bottom-3 z-20 flex items-center gap-2">
           <NextUnreadButton />
         </div>
+        {archiveProgress !== null ? (
+          <ArchiveProgressOverlay phase={archiveProgress} />
+        ) : null}
       </div>
     </FileChipProvider>
+  );
+}
+
+function ArchiveProgressOverlay({
+  phase,
+}: {
+  phase: ChatArchiveProgressPhase;
+}) {
+  const label = chatArchiveProgressLabel(phase);
+  const detail =
+    phase === "removing-dirty-worktree"
+      ? "Discarding local changes and removing the checkout."
+      : "Saving the chat to archives.";
+
+  return (
+    <div className="absolute inset-0 z-30 flex items-center justify-center bg-background/72 px-6 backdrop-blur-sm">
+      <div className="flex w-full max-w-sm items-center gap-3 rounded-lg border border-border/70 bg-popover px-4 py-3 text-popover-foreground shadow-lg/10">
+        <Spinner className="size-5 shrink-0" />
+        <div className="min-w-0">
+          <div className="font-medium text-sm">{label}</div>
+          <div className="mt-1 text-muted-foreground text-xs">{detail}</div>
+        </div>
+      </div>
+    </div>
   );
 }
 

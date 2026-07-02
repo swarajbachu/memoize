@@ -11,6 +11,7 @@ import {
 import { ChatComposer } from "./components/chat-composer";
 import { ChatLanding } from "./components/chat-landing.tsx";
 import { ChatSwitcher } from "./components/chat-switcher.tsx";
+import { ArchiveDirtyWorktreeDialogHost } from "./components/archive-dirty-worktree-dialog.tsx";
 import { ArchivedChatsPage } from "./components/archived-chats-page.tsx";
 import { CliUpgradeBanner } from "./components/cli-upgrade-banner.tsx";
 import { IndexProgressBanner } from "./components/index-progress-banner.tsx";
@@ -482,6 +483,7 @@ function MainShell() {
       <SidebarPeekTrigger />
       <SidebarPeekOverlay />
       <ChatSwitcher />
+      <ArchiveDirtyWorktreeDialogHost />
     </div>
   );
 }

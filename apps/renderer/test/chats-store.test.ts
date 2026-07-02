@@ -2,7 +2,12 @@ import { beforeEach, describe, expect, it } from "bun:test";
 
 import type { Chat, ChatId, FolderId, Session, SessionId } from "@zuse/wire";
 
-import { archiveChatWithConfirm, useChatsStore } from "../src/store/chats.ts";
+import {
+  archiveChatWithConfirm,
+  resetArchiveDirtyConfirm,
+  setArchiveDirtyConfirm,
+  useChatsStore,
+} from "../src/store/chats.ts";
 import { useSessionsStore } from "../src/store/sessions.ts";
 import { useUiStore } from "../src/store/ui.ts";
 import { useWorkspaceStore } from "../src/store/workspace.ts";
@@ -51,27 +56,12 @@ const withConfirm = async (
   confirmed: boolean,
   fn: () => Promise<void>,
 ): Promise<void> => {
-  const cleanup = installConfirm(confirmed);
+  setArchiveDirtyConfirm(async () => confirmed);
   try {
     await fn();
   } finally {
-    cleanup();
+    resetArchiveDirtyConfirm();
   }
-};
-
-const installConfirm = (confirmed: boolean): (() => void) => {
-  const globalWithWindow = globalThis as typeof globalThis & {
-    window?: { confirm: () => boolean };
-  };
-  const previousWindow = globalWithWindow.window;
-  globalWithWindow.window = { confirm: () => confirmed };
-  return () => {
-    if (previousWindow === undefined) {
-      delete globalWithWindow.window;
-    } else {
-      globalWithWindow.window = previousWindow;
-    }
-  };
 };
 
 const deferred = <T>(): {
@@ -132,6 +122,7 @@ describe("chats store selection", () => {
 
 describe("archiveChatWithConfirm", () => {
   beforeEach(() => {
+    resetArchiveDirtyConfirm();
     useChatsStore.setState({
       chatsByProject: { [projectId]: [chat] },
       selectedChatId: chatId,
@@ -185,8 +176,8 @@ describe("archiveChatWithConfirm", () => {
 
   it("switches progress while removing a confirmed dirty worktree", async () => {
     const forced = deferred<{ readonly ok: true }>();
-    const cleanup = installConfirm(true);
     const calls: Array<boolean | undefined> = [];
+    setArchiveDirtyConfirm(async () => true);
     useChatsStore.setState({
       archive: async (_chatId, force) => {
         calls.push(force);
@@ -202,6 +193,7 @@ describe("archiveChatWithConfirm", () => {
 
     const run = archiveChatWithConfirm(chatId);
     await Promise.resolve();
+    await Promise.resolve();
 
     expect(calls).toEqual([undefined, true]);
     expect(useChatsStore.getState().archiveProgressByChat[chatId]).toBe(
@@ -211,7 +203,7 @@ describe("archiveChatWithConfirm", () => {
     try {
       await run;
     } finally {
-      cleanup();
+      resetArchiveDirtyConfirm();
     }
     expect(
       useChatsStore.getState().archiveProgressByChat[chatId],

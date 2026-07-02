@@ -34,6 +34,27 @@ export const chatArchiveProgressLabel = (
     : "Archiving chat…";
 
 const FORCED_ARCHIVE_TOAST_DELAY_MS = 700;
+const DIRTY_ARCHIVE_CONFIRM_MESSAGE =
+  "This chat's worktree has uncommitted changes. Discard them and archive anyway?";
+
+type ArchiveDirtyConfirm = () => Promise<boolean>;
+
+const defaultArchiveDirtyConfirm: ArchiveDirtyConfirm = () => {
+  if (typeof window === "undefined") return Promise.resolve(false);
+  return Promise.resolve(window.confirm(DIRTY_ARCHIVE_CONFIRM_MESSAGE));
+};
+
+let archiveDirtyConfirm: ArchiveDirtyConfirm = defaultArchiveDirtyConfirm;
+
+export const setArchiveDirtyConfirm = (
+  confirm: ArchiveDirtyConfirm,
+): void => {
+  archiveDirtyConfirm = confirm;
+};
+
+export const resetArchiveDirtyConfirm = (): void => {
+  archiveDirtyConfirm = defaultArchiveDirtyConfirm;
+};
 
 /**
  * Sidebar-level chat catalog. A chat is the container that holds one or
@@ -735,9 +756,7 @@ export async function archiveChatWithConfirm(chatId: ChatId): Promise<void> {
     const first = await archive(chatId);
     if (first.ok) return;
     if (!first.dirty) throw new Error(first.reason);
-    const confirmed = window.confirm(
-      "This chat's worktree has uncommitted changes. Discard them and archive anyway?",
-    );
+    const confirmed = await archiveDirtyConfirm();
     if (!confirmed) return;
 
     setArchiveProgress(chatId, "removing-dirty-worktree");
