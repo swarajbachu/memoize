@@ -1,6 +1,7 @@
 import { Layer } from "effect";
 
 import { AttachmentHandlersLayer } from "./attachment/handlers.ts";
+import { AuthHandlersLayer } from "./auth/handlers.ts";
 import { CodeIndexHandlersLayer } from "./code-index/handlers.ts";
 import { ConfigStoreHandlersLayer } from "./config-store/handlers.ts";
 import { FsHandlersLayer } from "./fs/handlers.ts";
@@ -23,6 +24,7 @@ import { WorktreeHandlersLayer } from "./worktree/handlers.ts";
  */
 export const HandlersLayer = Layer.mergeAll(
   PingHandlersLayer,
+  AuthHandlersLayer,
   WorkspaceHandlersLayer,
   PtyHandlersLayer,
   GitHandlersLayer,

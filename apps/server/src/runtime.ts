@@ -5,6 +5,8 @@ import { Layer } from "effect";
 import { MemoizeRpcs } from "@memoize/wire";
 
 import { AppPaths } from "./app-paths.ts";
+import { AuthServiceLive } from "./auth/layers/auth-service.ts";
+import { AuthShell } from "./auth/services/auth-shell.ts";
 import { AttachmentServiceLive } from "./attachment/layers/attachment-service.ts";
 import { IndexRegistryLive } from "./code-index/layers/index-registry.ts";
 import { ConfigStoreServiceLive } from "./config-store/layers/config-store-service.ts";
@@ -46,11 +48,15 @@ import { WorktreeServiceLive } from "./worktree/layers/worktree-service.ts";
  *   forwards the prompt to a connected client).
  * - `serverProtocol`: the RPC transport. Electron supplies an in-process
  *   IPC protocol; the future WS server will supply a WebSocket protocol.
+ * - `authShell`: the WorkOS OAuth deep-link seam. Electron opens the system
+ *   browser via `shell.openExternal` and funnels the `memoize://auth/callback`
+ *   deep link back in; a headless server supplies a loopback-HTTP variant.
  */
 export interface MainLayerDeps {
   readonly userData: string;
   readonly folderPicker: typeof FolderPicker.Service;
   readonly serverProtocol: Layer.Layer<RpcServer.Protocol>;
+  readonly authShell: typeof AuthShell.Service;
 }
 
 /**
@@ -61,6 +67,7 @@ export interface MainLayerDeps {
 export const makeMainLayer = (deps: MainLayerDeps) => {
   const AppPathsLayer = Layer.succeed(AppPaths, { userData: deps.userData });
   const FolderPickerLayer = Layer.succeed(FolderPicker, deps.folderPicker);
+  const AuthShellLayer = Layer.succeed(AuthShell, deps.authShell);
 
   // SqlClient is the shared persistence handle. The migrator runs once on
   // boot via `Layer.provideMerge` so any layer that consumes SqlClient sees
@@ -247,10 +254,25 @@ export const makeMainLayer = (deps: MainLayerDeps) => {
     Layer.provide(MessageStoreLayer),
     Layer.provide(WorkspaceLayer),
   );
+  // AuthService owns the WorkOS PKCE flow + keychain token bundle. Depends on
+  // CredentialsService (keychain) and the host-supplied AuthShell (browser +
+  // deep-link). It registers its callback sink with the shell at build time,
+  // so it must be constructed at boot — Handlers depends on it, which forces
+  // that. No SqlClient: the (non-secret) profile rides along in the keychain
+  // bundle, so there's no users table to migrate.
+  const AuthLayer = AuthServiceLive.pipe(
+    Layer.provide(CredentialsServiceLive),
+    Layer.provide(AuthShellLayer),
+  );
+
   const HandlerSupportLayer = Layer.mergeAll(
     AppPathsLayer,
     MigratedSqlite,
     NodeContext.layer,
+    // AuthLayer is fully self-contained (its keychain + shell deps are already
+    // provided), merged in here to satisfy the auth.* handlers without adding
+    // another `.pipe` step — the Handlers pipe is at its 20-arg overload cap.
+    AuthLayer,
   );
 
   const Handlers = HandlersLayer.pipe(

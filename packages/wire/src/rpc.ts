@@ -14,6 +14,12 @@ import {
 } from "./agent.ts";
 import { AttachmentTouchRpc, AttachmentUploadRpc } from "./attachment.ts";
 import {
+  AuthGetSessionRpc,
+  AuthSessionChangesRpc,
+  AuthSignInRpc,
+  AuthSignOutRpc,
+} from "./auth.ts";
+import {
   BrowserCommandsRpc,
   BrowserFillForOriginRpc,
   BrowserListCredentialsRpc,
@@ -170,6 +176,10 @@ import {
  */
 export const MemoizeRpcs = RpcGroup.make(
   PingRpc,
+  AuthGetSessionRpc,
+  AuthSignInRpc,
+  AuthSignOutRpc,
+  AuthSessionChangesRpc,
   WorkspaceAddRpc,
   WorkspaceListRpc,
   WorkspaceRemoveRpc,

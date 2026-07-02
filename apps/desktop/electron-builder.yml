@@ -2,6 +2,15 @@ appId: app.memoize.desktop
 productName: memoize Alpha
 copyright: © ${author}
 
+# Register the `memoize://` custom scheme so packaged builds receive the WorkOS
+# OAuth callback (`memoize://auth/callback`) as a deep link. On macOS this
+# writes CFBundleURLTypes into Info.plist; combined with the unique appId above
+# the OS routes the scheme unambiguously (unlike dev's shared Electron.app).
+protocols:
+  - name: memoize
+    schemes:
+      - memoize
+
 # Output the .dmg + latest-mac.yml + blockmap to repo-root/dist so all
 # distributables for all apps land in one place. Build resources (icon,
 # entitlements) live in apps/desktop/build/.

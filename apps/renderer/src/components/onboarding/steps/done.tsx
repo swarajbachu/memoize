@@ -21,7 +21,7 @@ export function DoneStep({ onFinish }: { onFinish: () => void }) {
           <span className="text-foreground">Settings → General</span>.
         </p>
       </div>
-      <Button size="default" onClick={onFinish} className="rounded-full px-6">
+      <Button size="default" onClick={onFinish} className="rounded-lg px-6">
         Open Memoize
       </Button>
     </div>

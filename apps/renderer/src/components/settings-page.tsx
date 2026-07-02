@@ -44,6 +44,7 @@ import {
   prepareCompletionSound,
 } from "../lib/completion-sounds.ts";
 import { DEFAULT_SUBAGENT_PRESETS } from "../lib/subagent-presets.ts";
+import { useAuth } from "../hooks/use-auth.ts";
 import { useProvidersStore } from "../store/providers.ts";
 import { useSettingsStore } from "../store/settings.ts";
 import { useSubagentsStore } from "../store/subagents.ts";
@@ -56,6 +57,7 @@ import { DeveloperPane } from "./settings/developer-pane.tsx";
 import { KeybindingsPane } from "./settings/keybindings-editor.tsx";
 import { PokedexPane } from "./settings/pokedex-pane.tsx";
 import { RepositorySettings } from "./settings-repository.tsx";
+import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar.tsx";
 import { Button } from "./ui/button.tsx";
 import {
   Select,
@@ -578,6 +580,17 @@ function GeneralPane() {
   );
   const setView = useUiStore((s) => s.setView);
 
+  const {
+    user,
+    isSignedIn,
+    signIn,
+    signOut,
+    signingIn,
+    name,
+    displayName,
+    setDisplayName,
+  } = useAuth();
+
   // Local mirror so typing is smooth; persist on blur to avoid an atomic
   // settings-file write per keystroke.
   const [prefixDraft, setPrefixDraft] = useState(branchNamingPrefix);
@@ -585,8 +598,82 @@ function GeneralPane() {
     setPrefixDraft(branchNamingPrefix);
   }, [branchNamingPrefix]);
 
+  // Display-name override draft (local cosmetic alias; persisted to localStorage
+  // via the auth store). Mirror on external change.
+  const [nameDraft, setNameDraft] = useState(displayName);
+  useEffect(() => {
+    setNameDraft(displayName);
+  }, [displayName]);
+
   return (
     <div className="flex flex-col gap-4">
+      <SettingsGroup
+        title="Account"
+        description="Sign in to sync your account across devices and (soon) drive remote agents from your phone."
+      >
+        {isSignedIn ? (
+          <>
+            <div className="flex items-center gap-3 px-4 py-3.5">
+              <Avatar className="size-10">
+                {user?.profilePictureUrl ? (
+                  <AvatarImage src={user.profilePictureUrl} alt={name} />
+                ) : null}
+                <AvatarFallback>
+                  {(name || user?.email || "?").charAt(0).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-sm font-medium text-foreground">
+                  {name}
+                </span>
+                <span className="truncate text-xs text-muted-foreground">
+                  {user?.email}
+                </span>
+              </div>
+              <Button
+                variant="settings"
+                size="sm"
+                onClick={() => void signOut()}
+              >
+                Sign out
+              </Button>
+            </div>
+            <SettingsRow
+              title="Display name"
+              description="How your name shows in memoize. Local to this device — it doesn't change your WorkOS profile."
+            >
+              <input
+                value={nameDraft}
+                onChange={(e) => setNameDraft(e.target.value)}
+                onBlur={() => setDisplayName(nameDraft)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.currentTarget.blur();
+                  }
+                }}
+                placeholder={user?.email ?? "Your name"}
+                className="h-8 w-full max-w-[260px] rounded-lg border border-border/50 bg-background px-3 text-[13px] text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-border"
+              />
+            </SettingsRow>
+          </>
+        ) : (
+          <SettingsRow
+            title="Not signed in"
+            description="You're using memoize locally without an account. Sign in to sync and unlock remote agents."
+            action={
+              <Button
+                variant="settings"
+                size="sm"
+                loading={signingIn}
+                onClick={() => void signIn()}
+              >
+                Sign in
+              </Button>
+            }
+          />
+        )}
+      </SettingsGroup>
+
       <SettingsGroup
         title="Agent defaults"
         description="Defaults used when a new chat or background agent starts."
